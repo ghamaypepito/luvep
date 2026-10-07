@@ -25,7 +25,6 @@ export default function ImmigrationLayout({ children }) {
             badgeTone: "default",
             children: [
                 { name: "List of Leads",         href: "/portal/immigration/leads",                      icon: <UserSquare2 size={16} /> },
-                { name: "Potential Cases",       href: "/portal/immigration/potential-cases",            icon: <UserSquare2 size={16} /> },
                 { name: "Proposal & Agreements", href: "/portal/immigration/leads/proposals-agreements", icon: <FileText size={16} /> },
             ],
         },

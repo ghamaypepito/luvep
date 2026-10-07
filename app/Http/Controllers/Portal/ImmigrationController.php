@@ -1940,6 +1940,27 @@ class ImmigrationController extends Controller
      * The Assessment + intake are still progressed so the row leaves the
      * triage queue.
      */
+    /**
+     * Best-effort: stamp this assessment's pre-screening as converted so the
+     * potential-client vetting status stays in sync with the case flag. Keyed
+     * on the pre-screening's subject (the intake for submitted forms, the Lead
+     * for free assessments / drafts). Must never break the conversion itself.
+     */
+    private function recordPreScreeningConversion(\Illuminate\Database\Eloquent\Model $subject, Lead $lead): void
+    {
+        try {
+            $pre = \App\Models\PreScreening::where('subject_type', $subject->getMorphClass())
+                ->where('subject_id', $subject->getKey())
+                ->first();
+            if ($pre && $pre->status !== \App\Models\PreScreening::STATUS_CONVERTED) {
+                app(\App\Services\Immigration\PreScreeningService::class)
+                    ->recordConversion($pre, $lead->id, auth()->user());
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Pre-screening conversion sync failed', ['error' => $e->getMessage()]);
+        }
+    }
+
     public function convertAssessmentToCase(\Illuminate\Http\Request $request, $id)
     {
         try {
@@ -2131,6 +2152,8 @@ class ImmigrationController extends Controller
                     $this->fireCaseConverted($lead);
                 }
 
+                $this->recordPreScreeningConversion($intake, $lead);
+
                 return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
                     ->with('success', "Converted {$lead->first_name} to an immigration case.");
             });
@@ -2171,6 +2194,9 @@ class ImmigrationController extends Controller
                 'stage_updated_by' => auth()->id(),
             ])->save();
         }
+
+        // Free assessments pre-screen on the Lead itself (no intake record).
+        $this->recordPreScreeningConversion($lead, $lead);
 
         return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
             ->with('success', "Converted {$lead->first_name} to an immigration case.");
@@ -2221,6 +2247,8 @@ class ImmigrationController extends Controller
             if ($becameCase) {
                 $this->fireCaseConverted($lead);
             }
+
+            $this->recordPreScreeningConversion($intake, $lead);
 
             return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
                 ->with('success', "Converted {$intake->first_name} to an immigration case.");
@@ -2309,6 +2337,23 @@ class ImmigrationController extends Controller
     public function assessments()
     {
         return inertia('portal/immigration/Assessments', $this->assessmentsPayload());
+    }
+
+    /**
+     * Full-page pre-screening profile for one Visa Assessment (the potential-
+     * client vetting surface). Reuses the exact row the list builds — keyed by
+     * the pre-screening token — so its shape, flags, links and convert action
+     * match the list 1:1. The form sections / readiness are self-fetched by the
+     * page from the existing intake data endpoint. Procedural, not advice.
+     */
+    public function assessmentProfile(\App\Models\PreScreening $preScreening)
+    {
+        $row = collect($this->assessmentsPayload()['intakes'])
+            ->first(fn ($r) => ($r['pre_screen']['token'] ?? null) === $preScreening->token);
+
+        abort_unless($row, 404);
+
+        return inertia('portal/immigration/AssessmentProfile', ['intake' => $row]);
     }
 
     /** Assessments-page payload (intakes). Extracted so the adviser portal can

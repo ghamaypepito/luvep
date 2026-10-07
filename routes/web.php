@@ -1836,6 +1836,9 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
+            // Full-page pre-screening potential-client profile (the assessment
+            // detail as a page, not a modal). Keyed by the pre-screening token.
+            Route::get('/assessments/profile/{preScreening}', [ImmigrationController::class, 'assessmentProfile'])->name('assessments.profile');
             // Per-intake detail page — covers Work / Student / Visitor.
             // Resident intakes use the dedicated /admin/immigration/
             // resident-intakes/{id} route (richer document handling).

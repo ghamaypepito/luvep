@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import {
-    ChevronRight, ChevronDown, ClipboardCheck, FileEdit, Globe, Send, Search,
+    ChevronRight, ChevronLeft, ChevronDown, ClipboardCheck, FileEdit, Globe, Send, Search,
     Users, Briefcase, GraduationCap, Plane, Heart,
     Check, FileText, UserCheck, ArrowRightCircle, AlertTriangle,
     X, Mail, Phone, ExternalLink, Loader2, MessageCircle, User, Trash2,
@@ -535,6 +535,11 @@ function IntakeRow({ intake: i, expanded = false, onToggle }) {
                             <span className="text-[10.5px] text-gray-500 tabular-nums">
                                 {stage === "draft" ? `Saved ${timeAgo(i.saved_at || i.created_at)}` : timeAgo(i.created_at)}
                             </span>
+                            {i.pre_screen?.status && i.pre_screen.status !== "new" && (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${(PRE_STATUS[i.pre_screen.status] || PRE_STATUS.new).cls}`}>
+                                    {(PRE_STATUS[i.pre_screen.status] || PRE_STATUS.new).label}
+                                </span>
+                            )}
                         </div>
                     );
                 })()}
@@ -571,7 +576,13 @@ function IntakeRow({ intake: i, expanded = false, onToggle }) {
                     )}
                     <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); openModal(); }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            // Open the full pre-screening profile page. Fall back to
+                            // the inline modal only if the row has no pre-screen token.
+                            if (i.pre_screen?.token) router.visit(`/portal/immigration/assessments/profile/${i.pre_screen.token}`);
+                            else openModal();
+                        }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-white bg-gray-900 hover:bg-black transition-colors"
                     >
                         Open <ChevronRight size={10} />
@@ -655,7 +666,7 @@ function assessCsrf() {
 // Applicant review modal: LEFT = the submitted visa-assessment form in an
 // official, sectioned layout — the AI runs automatically and highlights the
 // fields it flags (red/amber). RIGHT = the adviser's panel: notes + actions.
-export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote }) {
+export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote, asPage = false }) {
     const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "long", year: "numeric" }) : "");
 
     // Self-fetch the payload when the parent didn't pre-load it — lets the case
@@ -704,11 +715,13 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const notesBase = `/portal/immigration/assessments/${i.visa_type}/${i.id}/notes`;
 
     // Lock the page behind the modal so scrolling a pane doesn't scroll the list.
+    // Skipped in page mode — there's no list underneath to isolate.
     useEffect(() => {
+        if (asPage) return;
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         return () => { document.body.style.overflow = prev; };
-    }, []);
+    }, [asPage]);
 
     // Adopt the review + notes. When a caller supplies its own notes (e.g. the
     // case profile's VIF-row thread), those win over the assessment notes.
@@ -836,8 +849,16 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-            <div className="w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div
+            className={asPage ? "" : "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"}
+            onClick={asPage ? undefined : onClose}
+        >
+            <div
+                className={asPage
+                    ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                    : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}
+                onClick={asPage ? undefined : (e) => e.stopPropagation()}
+            >
                 {/* Header — progress ring, gap / blocker badges, official export */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-start gap-4">
                     <div className="relative flex-shrink-0" style={{ width: 56, height: 56 }}>
@@ -878,7 +899,11 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50" title="Official Visa Information Form (PDF)"><FileText size={14} /> PDF</a>
                         <a href={`/portal/immigration/intakes/${i.visa_type}/${i.id}/word`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50" title="Official Visa Information Form (Word)"><FileText size={14} /> Word</a>
-                        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 ml-1"><X size={18} /></button>
+                        {asPage ? (
+                            <button type="button" onClick={onClose} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 ml-1"><ChevronLeft size={14} /> Back</button>
+                        ) : (
+                            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 ml-1"><X size={18} /></button>
+                        )}
                     </div>
                 </div>
 
