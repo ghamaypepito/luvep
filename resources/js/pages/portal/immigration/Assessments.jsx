@@ -855,7 +855,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
         >
             <div
                 className={chromeless
-                    ? "w-full h-[72vh] min-h-[520px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                    ? "w-full rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-visible"
                     : asPage
                         ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
                         : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}
@@ -919,9 +919,9 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         <Loader2 size={18} className="animate-spin" /> Loading submission…
                     </div>
                 ) : (
-                <div className="flex-1 min-h-0 flex overflow-hidden">
+                <div className={chromeless ? "flex" : "flex-1 min-h-0 flex overflow-hidden"}>
                     {/* LEFT rail — form-section nav + completeness */}
-                    <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-gray-100 overflow-y-auto p-4 gap-4">
+                    <aside className={`hidden md:flex flex-col w-56 flex-shrink-0 border-r border-gray-100 p-4 gap-4 ${chromeless ? "self-start sticky top-4" : "overflow-y-auto"}`}>
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Form sections</p>
                             <nav className="space-y-0.5">
@@ -946,7 +946,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </aside>
 
                     {/* CENTER — blockers + section field cards */}
-                    <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain p-6 bg-gray-100 space-y-5">
+                    <div className={`flex-1 min-w-0 p-6 bg-gray-100 space-y-5 ${chromeless ? "" : "overflow-y-auto overscroll-contain"}`}>
                         {sections.length === 0 ? (
                             <div className="text-center py-14">
                                 <FileText size={24} className="mx-auto text-gray-300" />
@@ -1039,7 +1039,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </div>
 
                     {/* RIGHT rail — notes & activity / documents */}
-                    <aside className="hidden lg:flex flex-col w-[340px] flex-shrink-0 border-l border-gray-100 overflow-hidden">
+                    <aside className={`hidden lg:flex flex-col w-[340px] flex-shrink-0 border-l border-gray-100 overflow-hidden ${chromeless ? "self-start sticky top-4 h-[72vh]" : ""}`}>
                         <div className="flex items-center gap-4 px-4 pt-3 border-b border-gray-100">
                             <button type="button" onClick={() => setRightTab("notes")} className={`pb-2 text-[12.5px] font-bold border-b-2 -mb-px ${rightTab === "notes" ? "border-[#009688] text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>Notes &amp; activity</button>
                             <button type="button" onClick={() => setRightTab("docs")} className={`pb-2 text-[12.5px] font-bold border-b-2 -mb-px ${rightTab === "docs" ? "border-[#009688] text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>Documents{docCount ? ` (${docCount})` : ""}</button>
