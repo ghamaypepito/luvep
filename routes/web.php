@@ -407,6 +407,16 @@ Route::middleware(['throttle:tracker'])->group(function () {
     Route::post('/engagement/{token}/proof-of-payment', [\App\Http\Controllers\EngagementSigningController::class, 'uploadProof'])->name('engagement.proof');
 });
 
+// Client-facing pre-screening application surface. The pre_screenings.token is
+// the bearer credential (no login) — the client sees their pre-screening status,
+// visa-assessment summary, consultations and consent step. Rate-limited like the
+// tracker; NOT behind tracker.enabled so an unrelated toggle can't take it down.
+Route::middleware(['throttle:tracker'])->group(function () {
+    $clientApp = \App\Http\Controllers\Immigration\ClientApplicationController::class;
+    Route::get('/application/{preScreening}', [$clientApp, 'show'])->name('application.show');
+    Route::post('/application/{preScreening}/consent-ack', [$clientApp, 'consentAck'])->name('application.consent-ack');
+});
+
 // Public Registration & Assessment Routes
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the

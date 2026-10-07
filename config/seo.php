@@ -52,7 +52,7 @@ return [
     'noindex_prefixes' => [
         'admin', 'portal', 'lead-portal', 'dtr',
         'login', 'logout', 'forgot-password', 'reset-password',
-        'track', 'engagement', 'agreement', 'pre-tenancy', 'apply',
+        'track', 'engagement', 'agreement', 'pre-tenancy', 'apply', 'application',
         'assessment', 'assessment-result',
         'booking/payment', 'booking/reschedule', 'booking/cancel', 'booking/busy',
         'api', 'webhook', 'stripe',
