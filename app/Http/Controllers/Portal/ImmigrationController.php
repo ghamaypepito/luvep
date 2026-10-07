@@ -2353,7 +2353,32 @@ class ImmigrationController extends Controller
 
         abort_unless($row, 404);
 
-        return inertia('portal/immigration/AssessmentProfile', ['intake' => $row]);
+        $fmtBooking = function (?\App\Models\Booking $b): ?array {
+            if (! $b) {
+                return null;
+            }
+
+            return [
+                'id' => $b->id,
+                'status' => $b->status,
+                'service_type' => $b->service_type,
+                'date' => optional($b->appointment_date)->toDateString(),
+                'time' => $b->appointment_time,
+                'at' => optional($b->appointment_at)->toIso8601String(),
+                'consultant' => $b->consultant_name,
+                'meet_link' => $b->meet_link,
+                'manage_token' => $b->manage_token,
+            ];
+        };
+
+        return inertia('portal/immigration/AssessmentProfile', [
+            'intake' => $row,
+            // The two pre-screening meetings (consultation, then consent).
+            'bookings' => [
+                'consult' => $fmtBooking($preScreening->consultBooking),
+                'consent' => $fmtBooking($preScreening->consentBooking),
+            ],
+        ]);
     }
 
     /** Assessments-page payload (intakes). Extracted so the adviser portal can

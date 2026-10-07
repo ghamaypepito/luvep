@@ -87,7 +87,7 @@ const initials = (name = "") =>
     name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "—";
 
 // ── Pre-screening (potential-client vetting) ────────────────────────────────
-const PRE_STATUS = {
+export const PRE_STATUS = {
     new:          { label: "New",          cls: "bg-slate-100 text-slate-600 border-slate-200" },
     consultation: { label: "Consultation", cls: "bg-blue-50 text-blue-700 border-blue-200" },
     consent:      { label: "Consent",      cls: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -100,7 +100,7 @@ const PRE_STATUS = {
 // private /application link, and the context-appropriate vetting actions.
 // Eligible = flag as a potential client; Convert (the existing footer button) =
 // make an official case.
-function PreScreenBar({ i }) {
+export function PreScreenBar({ i }) {
     const p = i?.pre_screen;
     if (!p) return null;
     const base = `/portal/immigration/pre-screening/${p.token}`;
@@ -666,7 +666,7 @@ function assessCsrf() {
 // Applicant review modal: LEFT = the submitted visa-assessment form in an
 // official, sectioned layout — the AI runs automatically and highlights the
 // fields it flags (red/amber). RIGHT = the adviser's panel: notes + actions.
-export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote, asPage = false }) {
+export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote, asPage = false, chromeless = false }) {
     const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "long", year: "numeric" }) : "");
 
     // Self-fetch the payload when the parent didn't pre-load it — lets the case
@@ -854,11 +854,15 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
             onClick={asPage ? undefined : onClose}
         >
             <div
-                className={asPage
-                    ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
-                    : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}
+                className={chromeless
+                    ? "w-full h-[calc(100vh-15rem)] min-h-[520px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                    : asPage
+                        ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                        : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}
                 onClick={asPage ? undefined : (e) => e.stopPropagation()}
             >
+                {!chromeless && (
+                <>
                 {/* Header — progress ring, gap / blocker badges, official export */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-start gap-4">
                     <div className="relative flex-shrink-0" style={{ width: 56, height: 56 }}>
@@ -906,6 +910,8 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         )}
                     </div>
                 </div>
+                </>
+                )}
 
                 {/* Body — readiness workspace: section nav · gaps · notes/docs */}
                 {loading ? (
@@ -1098,6 +1104,8 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                 </div>
                 )}
 
+                {!chromeless && (
+                <>
                 {/* Pre-screening (potential-client vetting) strip. */}
                 <PreScreenBar i={i} />
 
@@ -1117,6 +1125,8 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50">Done</button>
                     </div>
                 </div>
+                </>
+                )}
             </div>
 
             <ConfirmModal
