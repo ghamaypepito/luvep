@@ -855,7 +855,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
         >
             <div
                 className={chromeless
-                    ? "w-full h-[calc(100vh-15rem)] min-h-[520px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                    ? "w-full h-[72vh] min-h-[520px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
                     : asPage
                         ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
                         : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}

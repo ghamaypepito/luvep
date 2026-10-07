@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import {
     ChevronLeft, FileText, ExternalLink, Calendar, CalendarCheck, Clock,
@@ -168,7 +168,6 @@ function DocumentsGallery({ documents }) {
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
 export default function AssessmentProfile({ intake, bookings = {} }) {
-    const [tab, setTab] = useState("assessment");
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -190,12 +189,6 @@ export default function AssessmentProfile({ intake, bookings = {} }) {
     const docs = data?.documents || [];
     const status = intake.pre_screen?.status || "new";
     const st = PRE_STATUS[status] || PRE_STATUS.new;
-
-    const TABS = useMemo(() => ([
-        { key: "assessment", label: "Visa Assessment", icon: <ClipboardList size={14} /> },
-        { key: "bookings", label: "Bookings", icon: <Calendar size={14} /> },
-        { key: "documents", label: `Documents${docs.length ? ` (${docs.length})` : ""}`, icon: <Images size={14} /> },
-    ]), [docs.length]);
 
     return (
         <>
@@ -247,62 +240,54 @@ export default function AssessmentProfile({ intake, bookings = {} }) {
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex items-center gap-1 border-b border-gray-200">
-                    {TABS.map((t) => (
-                        <button key={t.key} type="button" onClick={() => setTab(t.key)}
-                            className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px transition-colors ${
-                                tab === t.key ? "border-[#009688] text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
-                            {t.icon} {t.label}
-                        </button>
-                    ))}
-                </div>
+                {/* Booking calendar — the two pre-screening meetings. */}
+                <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-[#009688]" />
+                        <h2 className="text-[15px] font-bold text-gray-900">Booking calendar</h2>
+                        <span className="text-[12px] text-gray-400">· two pre-screening meetings</span>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <BookingCard
+                            title="Meeting 1 · Immigration consultation"
+                            subtitle="Initial consultation with the adviser."
+                            booking={bookings.consult}
+                            applicationLink={intake.application_link}
+                        />
+                        <BookingCard
+                            title="Meeting 2 · Consent"
+                            subtitle="Consent + key-matters audio, if proceeding."
+                            booking={bookings.consent}
+                            applicationLink={intake.application_link}
+                        />
+                    </div>
+                </section>
 
-                {/* Tab content */}
-                {tab === "assessment" && (
+                {/* Visa assessment — the full form workspace. */}
+                <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <ClipboardList size={16} className="text-[#009688]" />
+                        <h2 className="text-[15px] font-bold text-gray-900">Visa assessment</h2>
+                        <span className="text-[12px] text-gray-400">· the submitted form</span>
+                    </div>
                     <IntakeViewModal intake={intake} data={data} loading={loading} asPage chromeless onClose={backToList} />
-                )}
+                </section>
 
-                {tab === "bookings" && (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                            <Calendar size={16} className="text-[#009688]" />
-                            <h2 className="text-[15px] font-bold text-gray-900">Booking calendar</h2>
-                            <span className="text-[12px] text-gray-400">· two pre-screening meetings</span>
-                        </div>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <BookingCard
-                                title="Meeting 1 · Immigration consultation"
-                                subtitle="Initial consultation with the adviser."
-                                booking={bookings.consult}
-                                applicationLink={intake.application_link}
-                            />
-                            <BookingCard
-                                title="Meeting 2 · Consent"
-                                subtitle="Consent + key-matters audio, if proceeding."
-                                booking={bookings.consent}
-                                applicationLink={intake.application_link}
-                            />
-                        </div>
+                {/* Documents — gallery of the client's uploads. */}
+                <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Images size={16} className="text-[#009688]" />
+                        <h2 className="text-[15px] font-bold text-gray-900">Documents</h2>
+                        <span className="text-[12px] text-gray-400">· uploaded by the client</span>
                     </div>
-                )}
-
-                {tab === "documents" && (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                            <Images size={16} className="text-[#009688]" />
-                            <h2 className="text-[15px] font-bold text-gray-900">Documents</h2>
-                            <span className="text-[12px] text-gray-400">· uploaded by the client</span>
+                    {loading ? (
+                        <div className="flex items-center justify-center gap-2 text-gray-400 text-sm py-12">
+                            <Loader2 size={18} className="animate-spin" /> Loading documents…
                         </div>
-                        {loading ? (
-                            <div className="flex items-center justify-center gap-2 text-gray-400 text-sm py-12">
-                                <Loader2 size={18} className="animate-spin" /> Loading documents…
-                            </div>
-                        ) : (
-                            <DocumentsGallery documents={docs} />
-                        )}
-                    </div>
-                )}
+                    ) : (
+                        <DocumentsGallery documents={docs} />
+                    )}
+                </section>
             </div>
         </>
     );
