@@ -2494,6 +2494,35 @@ class ImmigrationController extends Controller
                 ->where('status', 'Draft')
                 ->latest('updated_at')->limit(200)->get();
 
+            // Pre-screening hub (the token for the /application/{token} client
+            // link + the vetting stage) for every assessment entry — submitted
+            // intakes and draft/free Leads alike. Lazily created the first time
+            // an entry is seen here and keyed back to each row so the module can
+            // show the link + the pre-screen stage without per-row queries.
+            $preSvc = app(\App\Services\Immigration\PreScreeningService::class);
+            $preByKey = [];
+            $ensurePre = function ($models, string $record, ?string $visaType) use ($preSvc, &$preByKey) {
+                if ($models->isEmpty()) {
+                    return;
+                }
+                $map = $preSvc->ensureMany($models);
+                foreach ($models as $m) {
+                    $ps = $map["{$m->getMorphClass()}:{$m->getKey()}"] ?? null;
+                    if (! $ps) {
+                        continue;
+                    }
+                    $key = $record === 'intake' ? "intake:{$visaType}:{$m->getKey()}" : "lead:{$m->getKey()}";
+                    $preByKey[$key] = $preSvc->summary($ps);
+                }
+            };
+            $ensurePre($resident, 'intake', 'resident');
+            $ensurePre($work, 'intake', 'work');
+            $ensurePre($student, 'intake', 'student');
+            $ensurePre($visitor, 'intake', 'visitor');
+            $ensurePre($family, 'intake', 'family');
+            $ensurePre($free, 'lead', null);
+            $ensurePre($drafts, 'lead', null);
+
             $rows = $rows->concat(
                 $drafts
                     ->reject(fn (Lead $l) => isset($submittedEmails[mb_strtolower(trim((string) $l->email))]))
@@ -2504,7 +2533,17 @@ class ImmigrationController extends Controller
             // Sort on last activity where we have it (free assessments), falling
             // back to arrival time for the visa intakes, whose updated_at moves
             // whenever staff triage them and would reshuffle the queue.
-            $intakes = $rows->sortByDesc(fn ($r) => $r['saved_at'] ?? $r['created_at'])->values();
+            $intakes = $rows->sortByDesc(fn ($r) => $r['saved_at'] ?? $r['created_at'])
+                ->map(function ($r) use ($preByKey) {
+                    $key = ($r['record'] ?? '') === 'intake'
+                        ? "intake:{$r['visa_type']}:{$r['id']}"
+                        : "lead:{$r['id']}";
+                    $r['pre_screen'] = $preByKey[$key] ?? null;
+                    $r['application_link'] = $preByKey[$key]['link'] ?? null;
+
+                    return $r;
+                })
+                ->values();
 
             return ['intakes' => $intakes];
         } catch (\Throwable $e) {
