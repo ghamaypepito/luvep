@@ -1828,6 +1828,14 @@ Route::middleware(['auth'])->group(function () {
 
             // WORK
             Route::get('/assessments', [ImmigrationController::class, 'assessments'])->name('assessments');
+            // Pre-screening (potential-client vetting) staff actions on an
+            // assessment. {preScreening} resolves by its token (model route key).
+            $preScreen = \App\Http\Controllers\Immigration\PreScreeningController::class;
+            Route::post('/pre-screening/{preScreening}/consent-sent', [$preScreen, 'consentSent'])->name('pre-screening.consent-sent');
+            Route::post('/pre-screening/{preScreening}/consent-ack', [$preScreen, 'consentAck'])->name('pre-screening.consent-ack');
+            Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
+            Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
+            Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
             // Per-intake detail page — covers Work / Student / Visitor.
             // Resident intakes use the dedicated /admin/immigration/
             // resident-intakes/{id} route (richer document handling).

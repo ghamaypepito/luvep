@@ -86,6 +86,66 @@ const isRecent = (iso) => !! iso && Date.now() - new Date(iso).getTime() < 86400
 const initials = (name = "") =>
     name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "—";
 
+// ── Pre-screening (potential-client vetting) ────────────────────────────────
+const PRE_STATUS = {
+    new:          { label: "New",          cls: "bg-slate-100 text-slate-600 border-slate-200" },
+    consultation: { label: "Consultation", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+    consent:      { label: "Consent",      cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    eligible:     { label: "Eligible",     cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    converted:    { label: "Converted",    cls: "bg-green-50 text-green-700 border-green-200" },
+    declined:     { label: "Declined",     cls: "bg-slate-100 text-slate-400 border-slate-200" },
+};
+
+// Small pre-screening strip shown in the assessment detail: the stage, the
+// private /application link, and the context-appropriate vetting actions.
+// Eligible = flag as a potential client; Convert (the existing footer button) =
+// make an official case.
+function PreScreenBar({ i }) {
+    const p = i?.pre_screen;
+    if (!p) return null;
+    const base = `/portal/immigration/pre-screening/${p.token}`;
+    const act = (path, data) => router.post(`${base}/${path}`, data || {}, { preserveScroll: true });
+    const st = PRE_STATUS[p.status] || PRE_STATUS.new;
+    const terminal = p.status === "converted" || p.status === "declined";
+    const copyLink = () => {
+        try { navigator.clipboard.writeText(window.location.origin + i.application_link); toast.success("Application link copied"); }
+        catch { toast.error("Couldn't copy"); }
+    };
+    const Btn = ({ onClick, children, primary }) => (
+        <button type="button" onClick={onClick}
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border ${primary ? "bg-[#009688] text-white border-[#009688] hover:bg-[#00796b]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+            {children}
+        </button>
+    );
+
+    return (
+        <div className="px-6 py-2.5 border-t border-gray-100 bg-[#f7faf8]">
+            <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Pre-screen</span>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                {i.application_link && (
+                    <button type="button" onClick={copyLink} className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#009688]">
+                        <ExternalLink size={12} /> Copy application link
+                    </button>
+                )}
+                {!terminal && (
+                    <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                        {! p.consent_sent && <Btn onClick={() => act("consent-sent")}>Consent sent</Btn>}
+                        {p.consent_sent && ! p.consent_ack && <Btn onClick={() => act("consent-ack")}>Client acknowledged</Btn>}
+                        {! p.skipped && ! p.gate_passed && (
+                            <Btn onClick={() => { const r = window.prompt("Reason to skip the consultation/consent steps?"); if (r) act("skip", { reason: r }); }}>Skip steps</Btn>
+                        )}
+                        {p.status !== "eligible" && p.gate_passed && <Btn primary onClick={() => act("eligible")}>Mark eligible</Btn>}
+                        {p.status === "eligible" && <span className="text-[11px] text-emerald-600 font-semibold">Eligible ✓ potential client</span>}
+                        <Btn onClick={() => { const r = window.prompt("Reason for declining?"); if (r) act("decline", { reason: r }); }}>Decline</Btn>
+                    </div>
+                )}
+                {terminal && p.status === "declined" && <span className="text-[11px] text-gray-400">Declined{p.decline_reason ? ` · ${p.decline_reason}` : ""}</span>}
+            </div>
+        </div>
+    );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 // Readiness prioritisation — how complete/clean the submission is (NOT an
@@ -1012,6 +1072,9 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </aside>
                 </div>
                 )}
+
+                {/* Pre-screening (potential-client vetting) strip. */}
+                <PreScreenBar i={i} />
 
                 {/* Footer — indicative note + primary actions. */}
                 <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
