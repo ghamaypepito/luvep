@@ -45,37 +45,83 @@ function Stepper({ pre }) {
     );
 }
 
-function MeetingCard({ title, subtitle, booking, bookingUrl }) {
+function MeetingCard({ title, subtitle, booking, token, meeting }) {
     const booked = !!booking;
+    const pending = booking?.status === "pending";
+    const [open, setOpen] = useState(false);
+    const [date, setDate] = useState("");
+    const [time, setTime] = useState("");
+    const [note, setNote] = useState("");
+    const [saving, setSaving] = useState(false);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!date || !time) return;
+        setSaving(true);
+        router.post(`/application/${token}/book`, { meeting, date, time, note }, {
+            preserveScroll: true,
+            onSuccess: () => setOpen(false),
+            onFinish: () => setSaving(false),
+        });
+    };
+
     return (
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
             <div className="flex items-center gap-2 flex-wrap">
                 <Calendar size={16} className="text-[#009688]" />
                 <h3 className="text-[14px] font-bold text-gray-900">{title}</h3>
                 {booked ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-200">
-                        <CalendarCheck size={11} /> {booking.status || "Booked"}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${pending ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                        <CalendarCheck size={11} /> {pending ? "Time requested" : (booking.status || "Booked")}
                     </span>
                 ) : (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-gray-50 text-gray-400 border-gray-200">Not scheduled</span>
                 )}
             </div>
             <p className="text-[12.5px] text-gray-500 mt-1">{subtitle}</p>
+
             {booked ? (
                 <div className="mt-3 space-y-1.5 text-[13px] text-gray-700">
                     <p className="flex items-center gap-1.5"><Calendar size={14} className="text-gray-400" /> {fmtDate(booking.at || booking.date) || "—"}</p>
                     {booking.time && <p className="flex items-center gap-1.5"><Clock size={14} className="text-gray-400" /> {booking.time}</p>}
-                    {booking.consultant && <p className="text-[12px] text-gray-500">With {booking.consultant}</p>}
+                    {pending && <p className="text-[12px] text-amber-600">We'll confirm this time with you shortly.</p>}
+                    {booking.consultant && !pending && <p className="text-[12px] text-gray-500">With {booking.consultant}</p>}
                     {booking.meet_link && (
                         <a href={booking.meet_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#009688] hover:underline">
                             <Video size={14} /> Join meeting
                         </a>
                     )}
                 </div>
+            ) : open ? (
+                <form onSubmit={submit} className="mt-3 space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                            <span className="text-[11px] font-semibold text-gray-500">Preferred date</span>
+                            <input type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} required
+                                className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[11px] font-semibold text-gray-500">Preferred time</span>
+                            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required
+                                className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                        </label>
+                    </div>
+                    <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything we should know? (optional)" maxLength={500}
+                        className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                    <div className="flex items-center gap-2">
+                        <button type="submit" disabled={saving || !date || !time}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />} Send request
+                        </button>
+                        <button type="button" onClick={() => setOpen(false)} className="px-3 py-2 rounded-lg text-[13px] font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
+                    </div>
+                </form>
             ) : (
-                <a href={bookingUrl} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b]">
-                    Book this meeting <ArrowRight size={14} />
-                </a>
+                <button type="button" onClick={() => setOpen(true)}
+                    className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b]">
+                    Request a time <ArrowRight size={14} />
+                </button>
             )}
         </div>
     );
@@ -163,13 +209,15 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                                 title="Immigration consultation"
                                 subtitle="Meet an adviser to talk through your situation."
                                 booking={bookings.consult}
-                                bookingUrl={booking_url}
+                                token={pre.token}
+                                meeting="consult"
                             />
                             <MeetingCard
                                 title="Consent meeting"
                                 subtitle="If you decide to proceed, we confirm consent together."
                                 booking={bookings.consent}
-                                bookingUrl={booking_url}
+                                token={pre.token}
+                                meeting="consent"
                             />
                         </div>
                     </section>

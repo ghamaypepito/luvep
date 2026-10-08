@@ -140,6 +140,54 @@ class ClientApplicationController extends Controller
         return back()->with('success', 'Thanks — your consent has been recorded.');
     }
 
+    /**
+     * The client requests a preferred time for one of their two meetings. This
+     * creates a real (pending) Booking linked to the pre-screening and the
+     * working lead; staff confirm the actual slot from the Bookings surface.
+     */
+    public function book(Request $request, PreScreening $preScreening)
+    {
+        $data = $request->validate([
+            'meeting' => 'required|in:consult,consent',
+            'date' => 'required|date',
+            'time' => 'required|string|max:20',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $lead = $this->service->ensureWorkingLead($preScreening);
+        $subject = $preScreening->subject;
+
+        $at = null;
+        try {
+            $at = \Illuminate\Support\Carbon::parse("{$data['date']} {$data['time']}");
+        } catch (\Throwable $e) {
+            // Leave appointment_at null if the time string doesn't parse.
+        }
+
+        $booking = Booking::create([
+            'first_name' => $subject->first_name ?? $lead->first_name,
+            'last_name' => $subject->last_name ?? $subject->family_name ?? $lead->last_name,
+            'email' => $subject->email ?? $lead->email,
+            'phone' => $subject->phone ?? $lead->phone,
+            'service_type' => $data['meeting'] === 'consult' ? 'Immigration Consultation' : 'Consent Meeting',
+            'consultant_name' => 'Immigration Adviser',
+            'message' => $data['note'] ?? null,
+            'appointment_date' => $data['date'],
+            'appointment_time' => $data['time'],
+            'appointment_at' => $at,
+            'status' => 'pending',
+            'lead_id' => $lead->id,
+        ]);
+
+        if ($data['meeting'] === 'consult') {
+            $this->service->setConsultBooking($preScreening, $booking);
+        } else {
+            $this->service->setConsentBooking($preScreening, $booking);
+        }
+
+        return back()->with('success', "Thanks — your preferred time has been sent. We'll confirm shortly.");
+    }
+
     /** Name / contact, tolerant of both intake and lead field conventions. */
     private function applicant(?Model $subject): array
     {
