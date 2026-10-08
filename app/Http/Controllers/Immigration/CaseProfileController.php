@@ -132,6 +132,10 @@ class CaseProfileController extends Controller
             // INZ forms available for this visa type (current version + readiness).
             'inzForms' => $this->loadInzForms($lead),
             'dependents' => $this->loadDependents($lead),
+            // Multi-visa — this case's place in the client's chain of visa
+            // applications (Visa N of M), lock state, and whether the next
+            // application can be started (Approved Visa, latest, still open).
+            'visaChain' => app(\App\Services\Immigration\VisaApplicationService::class)->chainData($lead),
             // When this case is itself tied to a parent's case as a dependant,
             // the parent it belongs to (reciprocal indicator in the header).
             'tiedTo' => (function () use ($lead) {
@@ -1481,6 +1485,33 @@ class CaseProfileController extends Controller
     }
 
     /** Same policy as Build 10's case-analysis gate. */
+    /**
+     * POST /portal/immigration/cases/{lead}/next-visa — start the client's next
+     * visa application: a fresh case carrying their details + the documents the
+     * new visa also needs, with this (approved) application closed/locked.
+     */
+    public function startNextVisa(\Illuminate\Http\Request $request, Lead $lead, \App\Services\Immigration\VisaApplicationService $visas)
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        $this->ensureCanViewCases($user);
+        abort_unless($lead->is_immigration_case, 404);
+
+        $data = $request->validate([
+            'visa_type_id' => 'nullable|exists:visa_types,id',
+            'visa_label' => 'required_without:visa_type_id|string|max:120',
+        ]);
+
+        $label = $data['visa_label']
+            ?? \App\Models\VisaType::find($data['visa_type_id'])?->name
+            ?? 'New visa application';
+
+        $new = $visas->startNextVisa($lead, $label, $data['visa_type_id'] ?? null, $user);
+
+        return redirect("/portal/immigration/cases/{$new->id}/profile")
+            ->with('success', 'Started the next visa application — details and matching documents were carried over.');
+    }
+
     private function ensureCanViewCases(User $user): void
     {
         abort_unless(

@@ -1592,6 +1592,8 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/cases/{lead}/financials/payments/{payment}', [$cp, 'deleteFinancePayment']);
             Route::post('/cases/{lead}/financials/invoice', [$cp, 'generateInvoice']);
             Route::get('/cases/{lead}/financials/invoice/preview', [$cp, 'previewInvoice']);
+            // Multi-visa — start the client's next visa application from an approved case.
+            Route::post('/cases/{lead}/next-visa', [$cp, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [$cp, 'generateInzForm'])->where('code', 'INZ[0-9]+');
             Route::post('/cases/{lead}/inz-forms/{code}/assign', [$cp, 'assignInzForm'])->where('code', 'INZ[0-9]+');
 

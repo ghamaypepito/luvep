@@ -54,6 +54,37 @@ class VisaApplicationService
             ->get();
     }
 
+    /** UI-ready chain + this case's position/lock state for the Case Profile. */
+    public function chainData(Lead $lead): array
+    {
+        $current = $this->ensureFor($lead);
+
+        $chain = VisaApplication::where('root_lead_id', $current->root_lead_id)
+            ->orderBy('sequence')
+            ->with('lead:id,lead_id,first_name,last_name,inz_visa_type,immigration_stage')
+            ->get()
+            ->map(fn (VisaApplication $v) => [
+                'lead_id' => $v->lead_id,
+                'sequence' => $v->sequence,
+                'visa_type' => $v->visa_type ?: $v->lead?->inz_visa_type,
+                'status' => $v->status,
+                'outcome' => $v->outcome ?: $v->lead?->immigration_stage,
+                'is_current' => $v->lead_id === $lead->id,
+            ])->values()->all();
+
+        return [
+            'sequence' => $current->sequence,
+            'total' => count($chain),
+            'closed' => $current->isClosed(),
+            // Can start the next visa only from the latest, still-open application
+            // that has reached a positive outcome (Approved Visa).
+            'can_start_next' => ! $current->isClosed()
+                && $current->sequence === collect($chain)->max('sequence')
+                && $lead->immigration_stage === 'Approved Visa',
+            'chain' => $chain,
+        ];
+    }
+
     /**
      * Start the client's NEXT visa application: a fresh case Lead carrying their
      * details + the documents the new visa also needs, linked after the current
