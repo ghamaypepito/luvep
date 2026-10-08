@@ -1849,6 +1849,9 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
+            // Installment plan (pay-later terms) + recording a payment.
+            Route::post('/pre-screening/{preScreening}/plan', [$preScreen, 'setPlan'])->name('pre-screening.plan');
+            Route::post('/pre-screening/{preScreening}/installments/{installment}/pay', [$preScreen, 'payInstallment'])->name('pre-screening.installment.pay');
             // Full-page pre-screening potential-client profile (the assessment
             // detail as a page, not a modal). Keyed by the pre-screening token.
             Route::get('/assessments/profile/{preScreening}', [ImmigrationController::class, 'assessmentProfile'])->name('assessments.profile');

@@ -2371,6 +2371,8 @@ class ImmigrationController extends Controller
             ];
         };
 
+        $plans = app(\App\Services\Immigration\InstallmentPlanService::class);
+
         return inertia('portal/immigration/AssessmentProfile', [
             'intake' => $row,
             // The two pre-screening meetings (consultation, then consent).
@@ -2380,7 +2382,46 @@ class ImmigrationController extends Controller
             ],
             // Files the client uploaded from their /application link.
             'client_documents' => $this->preScreeningUploads($preScreening),
+            // Installments: the live plan (if any), a fee prefill from the visa
+            // type, and the config knobs (presets + deposit band).
+            'plan' => $preScreening->lead ? $plans->summary($plans->activeFor($preScreening->lead)) : null,
+            'fee_quote' => $this->feeQuote($preScreening),
+            'installment_config' => [
+                'presets' => $plans->presets(),
+                'deposit' => $plans->depositBounds(),
+            ],
         ]);
+    }
+
+    /** Fee prefill (GST-inclusive totals + INZ fee) for a pre-screening's visa. */
+    private function feeQuote(\App\Models\PreScreening $pre, string $location = 'onshore'): array
+    {
+        $subject = $pre->subject;
+        $visaType = null;
+
+        if ($subject instanceof Lead) {
+            $visaType = $subject->inz_visa_type
+                ? \App\Models\VisaType::where('name', $subject->inz_visa_type)->first()
+                : null;
+        } elseif ($subject) {
+            $visaType = \App\Support\IntakeVisaTypeMap::resolve($subject::class);
+        }
+
+        if (! $visaType) {
+            return ['resolved' => false, 'normal_total' => 0, 'discounted_total' => 0, 'inz_fee' => 0];
+        }
+
+        $rows = collect($visaType->feeBreakdown($location));
+        $normal = $rows->firstWhere('tier', 'normal');
+        $disc = $rows->firstWhere('tier', 'discounted');
+
+        return [
+            'resolved' => true,
+            'visa_type' => $visaType->name,
+            'normal_total' => (float) ($normal['total'] ?? 0),
+            'discounted_total' => (float) ($disc['total'] ?? 0),
+            'inz_fee' => (float) ($normal['inz_fee'] ?? 0),
+        ];
     }
 
     /** Documents the client uploaded via /application (the working lead's own uploads). */

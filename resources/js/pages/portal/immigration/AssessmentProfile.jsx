@@ -3,6 +3,7 @@ import { Head, router } from "@inertiajs/react";
 import {
     ChevronLeft, FileText, ExternalLink, Calendar, CalendarCheck, Clock,
     Images, Loader2, Video, CheckCircle2, Circle, ClipboardList, Copy,
+    Wallet, Receipt, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntakeViewModal, PreScreenBar, PRE_STATUS } from "./Assessments";
@@ -161,13 +162,169 @@ function DocumentsGallery({ documents }) {
     );
 }
 
+const money = (n) => "$" + Number(n || 0).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Payment plan (pay-later) — staff set the deposit % + plan length; the figures
+ * preview live. Once the client accepts pay-later on their application link the
+ * plan activates and the weekly schedule shows here for staff to record against.
+ */
+function PaymentPlanCard({ plan, feeQuote, config, token }) {
+    const presets = config?.presets || { 3: 13, 6: 26 };
+    const dep = config?.deposit || { default: 25, min: 20, max: 30 };
+    const monthsList = Object.keys(presets).map(Number).sort((a, b) => a - b);
+
+    const [months, setMonths] = useState(plan?.plan_months || monthsList[0] || 3);
+    const [pct, setPct] = useState(plan?.deposit_percent ?? dep.default);
+    const [total, setTotal] = useState(plan?.total_amount ?? feeQuote?.normal_total ?? 0);
+    const [inz, setInz] = useState(plan?.inz_fee ?? feeQuote?.inz_fee ?? 0);
+    const [saving, setSaving] = useState(false);
+    const [payingId, setPayingId] = useState(null);
+
+    const weeks = presets[months] || months * 4;
+    const deposit = Math.min(Math.max((Number(total) * Number(pct)) / 100, Number(inz)), Number(total));
+    const financed = Math.max(0, Number(total) - deposit);
+    const weekly = weeks > 0 ? financed / weeks : 0;
+
+    const active = plan && plan.status === "active";
+    const completed = plan && plan.status === "completed";
+
+    const save = () => {
+        setSaving(true);
+        router.post(`/portal/immigration/pre-screening/${token}/plan`,
+            { total_amount: Number(total), inz_fee: Number(inz), plan_months: Number(months), deposit_percent: Number(pct) },
+            { preserveScroll: true, onFinish: () => setSaving(false) });
+    };
+
+    const payRow = (id) => {
+        setPayingId(id);
+        router.post(`/portal/immigration/pre-screening/${token}/installments/${id}/pay`, {},
+            { preserveScroll: true, onFinish: () => setPayingId(null) });
+    };
+
+    return (
+        <section className="space-y-3">
+            <div className="flex items-center gap-2">
+                <Wallet size={16} className="text-[#009688]" />
+                <h2 className="text-[15px] font-bold text-gray-900">Payment plan</h2>
+                <span className="text-[12px] text-gray-400">· pay-later terms (deposit + weekly)</span>
+            </div>
+
+            <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
+                {/* Terms — editable until the plan is active */}
+                {!active && !completed && (
+                    <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">Total payable</span>
+                                <input type="number" min="0" step="0.01" value={total} onChange={(e) => setTotal(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">INZ fee</span>
+                                <input type="number" min="0" step="0.01" value={inz} onChange={(e) => setInz(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">Plan length</span>
+                                <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688] bg-white">
+                                    {monthsList.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"} · {presets[m]} wks</option>)}
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">Deposit % ({dep.min}–{dep.max})</span>
+                                <input type="number" min={dep.min} max={dep.max} step="1" value={pct} onChange={(e) => setPct(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                            </label>
+                        </div>
+
+                        {/* Live preview */}
+                        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <Figure label="Deposit (incl. INZ)" value={money(deposit)} strong />
+                            <Figure label="Financed" value={money(financed)} />
+                            <Figure label={`Weekly × ${weeks}`} value={money(weekly)} strong />
+                            <Figure label="Total" value={money(total)} />
+                        </div>
+                        <p className="mt-2 text-[11px] text-gray-400">Deposit is {pct}% of the total, raised to cover the INZ fee if needed. The client chooses pay-now or pay-later on their application link; pay-later activates this schedule.</p>
+
+                        <button type="button" onClick={save} disabled={saving || !Number(total)}
+                            className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {plan ? "Update plan" : "Save plan"}
+                        </button>
+                        {plan?.status === "draft" && <span className="ml-2 text-[12px] text-amber-600">Draft saved — awaiting the client's pay-later choice.</span>}
+                    </>
+                )}
+
+                {/* Active / completed — the schedule */}
+                {(active || completed) && (
+                    <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                            <Figure label="Deposit" value={money(plan.deposit_amount)} strong />
+                            <Figure label={`Weekly × ${plan.weeks}`} value={money(plan.weekly_amount)} />
+                            <Figure label="Paid" value={money(plan.total_paid)} strong />
+                            <Figure label="Owed" value={money(plan.amount_owed)} />
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-gray-100">
+                            <table className="w-full text-[12.5px]">
+                                <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase tracking-wider">
+                                    <tr>
+                                        <th className="text-left px-3 py-2 font-bold">#</th>
+                                        <th className="text-left px-3 py-2 font-bold">Due</th>
+                                        <th className="text-right px-3 py-2 font-bold">Amount</th>
+                                        <th className="text-right px-3 py-2 font-bold">Status</th>
+                                        <th className="px-3 py-2"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {(plan.schedule || []).map((r) => (
+                                        <tr key={r.id} className={r.status === "overdue" ? "bg-rose-50/40" : ""}>
+                                            <td className="px-3 py-2 text-gray-500">{r.kind === "deposit" ? "Deposit" : r.sequence}</td>
+                                            <td className="px-3 py-2 text-gray-700">{r.due_date}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-gray-900">{money(r.amount)}</td>
+                                            <td className="px-3 py-2 text-right">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                                    r.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                        : r.status === "overdue" ? "bg-rose-50 text-rose-600 border-rose-200"
+                                                        : "bg-gray-50 text-gray-500 border-gray-200"}`}>{r.status}</span>
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                                {r.status !== "paid" && (
+                                                    <button type="button" onClick={() => payRow(r.id)} disabled={payingId === r.id}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border border-[#009688] text-[#009688] hover:bg-[#009688]/5 disabled:opacity-50">
+                                                        {payingId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Receipt size={11} />} Mark paid
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {completed && <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700"><CheckCircle2 size={15} /> Fully paid.</p>}
+                    </>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function Figure({ label, value, strong }) {
+    return (
+        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</p>
+            <p className={`mt-1 tabular-nums ${strong ? "text-[17px] font-bold text-gray-900" : "text-[15px] font-semibold text-gray-700"}`}>{value}</p>
+        </div>
+    );
+}
+
 /**
  * Pre-screening potential-client profile. One place to work a Visa Assessment
  * before it becomes a case: the submitted form, the two pre-screening meetings
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {}, client_documents = [] }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -273,6 +430,11 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                     </div>
                     <IntakeViewModal intake={intake} data={data} loading={loading} asPage chromeless onClose={backToList} />
                 </section>
+
+                {/* Payment plan — pay-later deposit + weekly schedule. */}
+                {intake.pre_screen?.token && (
+                    <PaymentPlanCard plan={plan} feeQuote={fee_quote} config={installment_config} token={intake.pre_screen.token} />
+                )}
 
                 {/* Documents — gallery of the client's uploads. */}
                 <section className="space-y-3">

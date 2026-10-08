@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Immigration;
 
 use App\Http\Controllers\Controller;
+use App\Models\Installment;
 use App\Models\PreScreening;
 use App\Models\User;
+use App\Services\Immigration\InstallmentPlanService;
 use App\Services\Immigration\PreScreeningService;
 use Illuminate\Http\Request;
 
@@ -72,5 +74,38 @@ class PreScreeningController extends Controller
         $this->service->decline($preScreening, $user, $data['reason']);
 
         return back()->with('success', 'Pre-screening declined.');
+    }
+
+    /** Staff set the pay-later terms (deposit % + plan length) → a draft plan. */
+    public function setPlan(Request $request, PreScreening $preScreening, InstallmentPlanService $plans)
+    {
+        $user = $this->guard();
+        $data = $request->validate([
+            'total_amount' => 'required|numeric|min:0',
+            'inz_fee' => 'nullable|numeric|min:0',
+            'plan_months' => 'required|integer|min:1|max:24',
+            'deposit_percent' => 'required|numeric|min:0|max:100',
+        ]);
+
+        $lead = $this->service->ensureWorkingLead($preScreening);
+        $plans->draft($lead, $data, $user);
+
+        return back()->with('success', 'Payment plan saved.');
+    }
+
+    /** Staff record one installment as paid (writes a ledger receipt). */
+    public function payInstallment(Request $request, PreScreening $preScreening, Installment $installment, InstallmentPlanService $plans)
+    {
+        $this->guard();
+        abort_unless($installment->plan && $installment->plan->lead_id === $preScreening->lead_id, 403);
+
+        $data = $request->validate([
+            'method' => 'nullable|string|max:60',
+            'reference' => 'nullable|string|max:120',
+            'paid_at' => 'nullable|date',
+        ]);
+        $plans->recordPayment($installment, $data, auth()->user());
+
+        return back()->with('success', 'Payment recorded.');
     }
 }
