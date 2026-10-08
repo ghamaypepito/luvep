@@ -3,10 +3,10 @@ import { Head, router } from "@inertiajs/react";
 import {
     ChevronLeft, FileText, ExternalLink, Calendar, CalendarCheck, Clock,
     Images, Loader2, Video, CheckCircle2, Circle, ClipboardList, Copy,
-    Wallet, Receipt, Check,
+    Wallet, Receipt, Check, ArrowRightCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { IntakeViewModal, PreScreenBar, PRE_STATUS } from "./Assessments";
+import { IntakeViewModal, PRE_STATUS } from "./Assessments";
 
 const VISA_LABEL = {
     resident: "Resident Visa", work: "Work Visa", student: "Student Visa",
@@ -76,12 +76,9 @@ function DateBadge({ iso, date }) {
     );
 }
 
-function BookingCard({ title, subtitle, booking, applicationLink }) {
+function BookingCard({ title, subtitle, booking }) {
     const booked = !!booking;
-    const copyLink = () => {
-        try { navigator.clipboard.writeText(window.location.origin + applicationLink); toast.success("Application link copied"); }
-        catch { toast.error("Couldn't copy"); }
-    };
+    const pending = booking?.status === "pending";
     return (
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
             <div className="flex items-start gap-4">
@@ -90,8 +87,8 @@ function BookingCard({ title, subtitle, booking, applicationLink }) {
                     <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-[14px] font-bold text-gray-900">{title}</h3>
                         {booked ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-200">
-                                <CalendarCheck size={11} /> {booking.status || "Booked"}
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${pending ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                                <CalendarCheck size={11} /> {pending ? "Time requested" : (booking.status || "Confirmed")}
                             </span>
                         ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-gray-50 text-gray-400 border-gray-200">Not scheduled</span>
@@ -102,7 +99,8 @@ function BookingCard({ title, subtitle, booking, applicationLink }) {
                         <div className="mt-3 space-y-1.5 text-[12.5px] text-gray-700">
                             <p className="flex items-center gap-1.5"><Calendar size={13} className="text-gray-400" /> {fmtDate(booking.at || booking.date) || "—"}</p>
                             {booking.time && <p className="flex items-center gap-1.5"><Clock size={13} className="text-gray-400" /> {booking.time}</p>}
-                            {booking.consultant && <p className="text-[11.5px] text-gray-500">With {booking.consultant}</p>}
+                            {pending && <p className="text-[11.5px] text-amber-600">Client requested this time — confirm in Appointments.</p>}
+                            {booking.consultant && !pending && <p className="text-[11.5px] text-gray-500">With {booking.consultant}</p>}
                             {booking.meet_link && (
                                 <a href={booking.meet_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#009688] hover:underline">
                                     <Video size={13} /> Join meeting
@@ -110,14 +108,7 @@ function BookingCard({ title, subtitle, booking, applicationLink }) {
                             )}
                         </div>
                     ) : (
-                        <div className="mt-3">
-                            <p className="text-[12px] text-gray-500">The client books this from their application link, or staff can schedule it in Appointments.</p>
-                            {applicationLink && (
-                                <button type="button" onClick={copyLink} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50">
-                                    <Copy size={13} /> Copy application link
-                                </button>
-                            )}
-                        </div>
+                        <p className="mt-3 text-[12px] text-gray-500">The client requests a time from their application link, or staff schedule it in Appointments.</p>
                     )}
                 </div>
             </div>
@@ -196,7 +187,8 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
             { preserveScroll: true, onFinish: () => setSaving(false) });
     };
 
-    const payRow = (id) => {
+    const payRow = (id, amount) => {
+        if (!window.confirm(`Record this payment of ${money(amount)} as received?`)) return;
         setPayingId(id);
         router.post(`/portal/immigration/pre-screening/${token}/installments/${id}/pay`, {},
             { preserveScroll: true, onFinish: () => setPayingId(null) });
@@ -238,6 +230,12 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
                                     className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
                             </label>
                         </div>
+
+                        <p className="mt-2 text-[11.5px] text-gray-400">
+                            Professional fee <span className="font-semibold text-gray-600 tabular-nums">{money(Math.max(0, Number(total) - Number(inz)))}</span>
+                            {" · "}INZ fee <span className="font-semibold text-gray-600 tabular-nums">{money(inz)}</span>
+                            {" · "}Total payable <span className="font-semibold text-gray-600 tabular-nums">{money(total)}</span>
+                        </p>
 
                         {/* Live preview */}
                         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -290,7 +288,7 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
                                             </td>
                                             <td className="px-3 py-2 text-right">
                                                 {r.status !== "paid" && (
-                                                    <button type="button" onClick={() => payRow(r.id)} disabled={payingId === r.id}
+                                                    <button type="button" onClick={() => payRow(r.id, r.amount)} disabled={payingId === r.id}
                                                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border border-[#009688] text-[#009688] hover:bg-[#009688]/5 disabled:opacity-50">
                                                         {payingId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Receipt size={11} />} Mark paid
                                                     </button>
@@ -342,10 +340,12 @@ function EngagementCard({ agreement, token }) {
                         </div>
                         <div className="flex items-center gap-2">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span>
+                            <a href={`/application/${token}/agreement/pdf`} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"><FileText size={13} /> View</a>
                             {!signed && (
                                 <button type="button" onClick={send} disabled={sending}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                                    {sending ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Regenerate
+                                    {sending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Regenerate
                                 </button>
                             )}
                         </div>
@@ -369,6 +369,103 @@ function Figure({ label, value, strong }) {
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</p>
             <p className={`mt-1 tabular-nums ${strong ? "text-[17px] font-bold text-gray-900" : "text-[15px] font-semibold text-gray-700"}`}>{value}</p>
+        </div>
+    );
+}
+
+const ACTION_TONE = {
+    do: { dot: "bg-[#009688]", label: "text-[#009688]" },
+    wait: { dot: "bg-amber-500", label: "text-amber-600" },
+    done: { dot: "bg-emerald-500", label: "text-emerald-600" },
+    muted: { dot: "bg-gray-300", label: "text-gray-400" },
+};
+
+/**
+ * Next action — tells the staff member exactly what to do next for this
+ * pre-screening, driven by the existing pre-screen state. Replaces the flat
+ * action bar with a clear primary action + secondary options. Same endpoints.
+ */
+function NextAction({ i }) {
+    const p = i?.pre_screen;
+    if (!p) return null;
+
+    const base = `/portal/immigration/pre-screening/${p.token}`;
+    const act = (path, data) => router.post(`${base}/${path}`, data || {}, { preserveScroll: true });
+    const copyLink = () => {
+        try { navigator.clipboard.writeText(window.location.origin + i.application_link); toast.success("Application link copied"); }
+        catch { toast.error("Couldn't copy"); }
+    };
+    const convert = () => {
+        if (window.confirm("Convert this assessment to an immigration case? A case will be created (or matched on email).")) {
+            router.post(`/portal/immigration/assessments/${i.assessment_id ?? i.id}/convert-to-case`, { intake_type: i.visa_type, intake_id: i.id }, { preserveScroll: true });
+        }
+    };
+    const skip = () => { const r = window.prompt("Reason to skip the consultation/consent steps?"); if (r) act("skip", { reason: r }); };
+    const decline = () => { const r = window.prompt("Reason for declining?"); if (r) act("decline", { reason: r }); };
+
+    const terminal = p.status === "converted" || p.status === "declined";
+
+    let kind = "NEXT ACTION", tone = "do", title, body, primary = null;
+    if (p.status === "declined") {
+        kind = "DECLINED"; tone = "muted"; title = "Pre-screening declined";
+        body = p.decline_reason ? `Reason: ${p.decline_reason}` : "This pre-screening was declined.";
+    } else if (p.status === "converted") {
+        kind = "CONVERTED"; tone = "done"; title = "Converted to a case";
+        body = "This applicant is now an immigration case.";
+    } else if (p.status === "eligible") {
+        kind = "ELIGIBLE"; tone = "done"; title = "Eligible — ready to convert";
+        body = "Flagged as a strong potential client. Convert to an official case when ready.";
+        primary = { label: "Convert to case", onClick: convert };
+    } else if (p.gate_passed) {
+        kind = "READY FOR ELIGIBILITY"; tone = "do"; title = "Consent acknowledged";
+        body = "The applicant can now be marked as an eligible potential client.";
+        primary = { label: "Mark eligible", onClick: () => act("eligible") };
+    } else if (p.consent_sent) {
+        kind = "WAITING FOR CLIENT"; tone = "wait"; title = "Consent sent";
+        body = "Waiting for the client to acknowledge the consent on their application link.";
+        primary = { label: "Mark acknowledged", onClick: () => act("consent-ack"), ghost: true };
+    } else {
+        kind = "NEXT ACTION"; tone = "do"; title = "Send the consent";
+        body = "Consent has not yet been sent. Send it so the client can review and acknowledge it.";
+        primary = { label: "Send consent", onClick: () => act("consent-sent") };
+    }
+
+    const t = ACTION_TONE[tone];
+
+    return (
+        <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                    <p className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] ${t.label}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} /> {kind}
+                    </p>
+                    <p className="text-[14px] font-bold text-gray-900 mt-1">{title}</p>
+                    <p className="text-[12.5px] text-gray-500 mt-0.5 max-w-xl">{body}</p>
+                </div>
+                {primary && (
+                    <button type="button" onClick={primary.onClick}
+                        className={`flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold ${
+                            primary.ghost ? "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                : "bg-[#009688] text-white hover:bg-[#00796b]"}`}>
+                        {tone === "done" ? <ArrowRightCircle size={15} /> : <Check size={15} />} {primary.label}
+                    </button>
+                )}
+            </div>
+
+            {/* Secondary options */}
+            <div className="mt-3 flex items-center gap-3 flex-wrap text-[12px]">
+                {i.application_link && (
+                    <button type="button" onClick={copyLink} className="inline-flex items-center gap-1.5 text-gray-500 hover:text-[#009688] font-semibold">
+                        <Copy size={13} /> Copy application link
+                    </button>
+                )}
+                {!terminal && !p.gate_passed && !p.skipped && (
+                    <button type="button" onClick={skip} className="text-gray-400 hover:text-gray-700 font-semibold">Skip steps</button>
+                )}
+                {!terminal && (
+                    <button type="button" onClick={decline} className="text-gray-400 hover:text-rose-600 font-semibold">Decline</button>
+                )}
+            </div>
         </div>
     );
 }
@@ -444,39 +541,16 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                         </div>
                     </div>
 
-                    {/* Pipeline + actions */}
-                    <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-4 flex-wrap">
+                    {/* Pipeline */}
+                    <div className="mt-4 pt-4 border-t border-gray-100">
                         <Stepper status={status} />
                     </div>
-                    <div className="mt-2 -mx-5 -mb-5 rounded-b-2xl overflow-hidden">
-                        <PreScreenBar i={intake} />
-                    </div>
+
+                    {/* Next action — what the staff member should do now */}
+                    <NextAction i={intake} />
                 </div>
 
-                {/* Booking calendar — the two pre-screening meetings. */}
-                <section className="space-y-3">
-                    <div className="flex items-center gap-2">
-                        <Calendar size={16} className="text-[#009688]" />
-                        <h2 className="text-[15px] font-bold text-gray-900">Booking calendar</h2>
-                        <span className="text-[12px] text-gray-400">· two pre-screening meetings</span>
-                    </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <BookingCard
-                            title="Meeting 1 · Immigration consultation"
-                            subtitle="Initial consultation with the adviser."
-                            booking={bookings.consult}
-                            applicationLink={intake.application_link}
-                        />
-                        <BookingCard
-                            title="Meeting 2 · Consent"
-                            subtitle="Consent + key-matters audio, if proceeding."
-                            booking={bookings.consent}
-                            applicationLink={intake.application_link}
-                        />
-                    </div>
-                </section>
-
-                {/* Visa assessment — the full form workspace. */}
+                {/* Visa assessment — the full form workspace (primary). */}
                 <section className="space-y-3">
                     <div className="flex items-center gap-2">
                         <ClipboardList size={16} className="text-[#009688]" />
@@ -484,6 +558,27 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                         <span className="text-[12px] text-gray-400">· the submitted form</span>
                     </div>
                     <IntakeViewModal intake={intake} data={data} loading={loading} asPage chromeless onClose={backToList} />
+                </section>
+
+                {/* Consultations — the two pre-screening meetings. */}
+                <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-[#009688]" />
+                        <h2 className="text-[15px] font-bold text-gray-900">Consultations</h2>
+                        <span className="text-[12px] text-gray-400">· two pre-screening meetings</span>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <BookingCard
+                            title="Immigration consultation"
+                            subtitle="Initial consultation with the adviser."
+                            booking={bookings.consult}
+                        />
+                        <BookingCard
+                            title="Consent meeting"
+                            subtitle="Consent + key-matters audio, if proceeding."
+                            booking={bookings.consent}
+                        />
+                    </div>
                 </section>
 
                 {/* Engagement agreement — generate + send; client signs on /application. */}

@@ -208,6 +208,56 @@ function PlanSection({ plan, token }) {
     );
 }
 
+// Your next step — one clear current task, so the client always knows what to
+// do now. Derived from the existing state; buttons scroll to / open the step.
+function NextStep({ pre, agreement, bookings, plan, onSign }) {
+    if (pre.status === "declined" || pre.status === "converted") return null;
+    const go = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    let kind = "Your next step", tone = "do", title, body, cta = null;
+    if (agreement?.can_sign) {
+        kind = "Action required"; title = "Review & sign your agreement";
+        body = "Please review your engagement agreement and sign to continue."; cta = { text: "Review & sign", onClick: onSign };
+    } else if (pre.consent_sent && !pre.consent_ack) {
+        kind = "Action required"; title = "Review & acknowledge consent";
+        body = "Please review the consent information and acknowledge it."; cta = { text: "Review consent", onClick: () => go("consent") };
+    } else if (!bookings.consult) {
+        kind = "Your next step"; title = "Book your immigration consultation";
+        body = "Choose a preferred date and time and our team will confirm it."; cta = { text: "Request a time", onClick: () => go("consultations") };
+    } else if (bookings.consult?.status === "pending") {
+        kind = "Waiting for our team"; tone = "wait"; title = "Consultation request received";
+        body = "We'll confirm the time here once it has been scheduled.";
+    } else if (plan?.status === "draft") {
+        kind = "Action required"; title = "Choose how you'd like to pay";
+        body = "Select pay in full or weekly payments to continue."; cta = { text: "Choose payment", onClick: () => go("payment") };
+    } else {
+        kind = "You're up to date"; tone = "done"; title = "Nothing to do right now";
+        body = "We'll let you know here when there's a next step.";
+    }
+    const dot = tone === "wait" ? "bg-amber-500" : tone === "done" ? "bg-emerald-500" : "bg-[#009688]";
+    const lab = tone === "wait" ? "text-amber-600" : tone === "done" ? "text-emerald-600" : "text-[#009688]";
+
+    return (
+        <section className="rounded-2xl bg-white border border-gray-200 p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                    <p className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] ${lab}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${dot}`} /> {kind}
+                    </p>
+                    <h2 className="text-[17px] font-bold text-gray-900 mt-1">{title}</h2>
+                    <p className="text-[13px] text-gray-500 mt-1 max-w-md">{body}</p>
+                </div>
+                {cta && (
+                    <button type="button" onClick={cta.onClick}
+                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#009688] text-white text-[13.5px] font-semibold hover:bg-[#00796b]">
+                        {cta.text} <ArrowRight size={15} />
+                    </button>
+                )}
+            </div>
+        </section>
+    );
+}
+
 /**
  * Private client pre-screening page (/application/{token}). The pre-screening
  * token is the credential. Shows status + process only — status of the visa
@@ -246,7 +296,7 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
 
             {/* Slim private header */}
             <header className="bg-white border-b border-gray-100">
-                <div className="max-w-3xl mx-auto px-4 py-3.5 flex items-center justify-between">
+                <div className="max-w-[880px] mx-auto px-4 py-3.5 flex items-center justify-between">
                     <span className="text-[17px] font-extrabold tracking-tight text-gray-900">EP<span className="text-[#009688]">.</span></span>
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-400">
                         <Lock size={12} /> Private link
@@ -254,33 +304,41 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                 </div>
             </header>
 
-            <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 space-y-5">
-                {/* Status card */}
+            <main className="flex-1 max-w-[880px] w-full mx-auto px-4 py-6 space-y-5">
+                {/* Hero / status */}
                 <section className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#009688] mb-1">Visa assessment · {visa_label}</p>
                     <h1 className="text-2xl font-extrabold text-gray-900">Hi {applicant.first_name || applicant.name} 👋</h1>
-                    <p className="text-[13.5px] text-gray-500 mt-1">
-                        This is your private application page. Track your progress and book your consultations here.
-                        {submitted_at && <> You submitted your assessment on {fmtDate(submitted_at)}.</>}
+                    <p className="text-[15px] font-semibold text-gray-700 mt-1">Your {visa_label} application</p>
+                    <p className="text-[13px] text-gray-500 mt-1">
+                        We'll guide you through each step of your application here.
+                        {submitted_at && <> Submitted {fmtDate(submitted_at)}.</>}
                     </p>
                     <div className="mt-5">
                         <Stepper pre={pre} />
                     </div>
                     {pre.status === "declined" && (
-                        <p className="mt-4 text-[13px] text-gray-500 bg-gray-50 border border-gray-100 rounded-xl p-3">
-                            Our team has reviewed your assessment. {pre.decline_reason ? `Note: ${pre.decline_reason}` : "Please contact us if you'd like to discuss your options."}
-                        </p>
+                        <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                            <p className="text-[14px] font-bold text-gray-900">Your pre-screening has been closed</p>
+                            <p className="text-[13px] text-gray-500 mt-1">
+                                Our team has determined that we cannot proceed with this application at this stage.
+                                {pre.decline_reason ? ` ${pre.decline_reason}` : ""}
+                            </p>
+                        </div>
                     )}
                     {pre.status === "eligible" && (
-                        <p className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-                            <CheckCircle2 size={15} /> Great news — you're a strong candidate to proceed.
-                        </p>
+                        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                            <p className="inline-flex items-center gap-1.5 text-[14px] font-bold text-emerald-800"><CheckCircle2 size={16} /> You're ready to proceed</p>
+                            <p className="text-[13px] text-emerald-700/90 mt-1">Based on your current pre-screening, our team has identified you as a strong potential candidate. Continue with the next steps below.</p>
+                        </div>
                     )}
                 </section>
 
+                {/* Your next step — one clear current task */}
+                <NextStep pre={pre} agreement={agreement} bookings={bookings} plan={plan} onSign={() => setSignOpen(true)} />
+
                 {/* Consultations */}
                 {!terminal && (
-                    <section className="space-y-3">
+                    <section id="consultations" className="space-y-3 scroll-mt-4">
                         <div className="flex items-center gap-2">
                             <Calendar size={16} className="text-[#009688]" />
                             <h2 className="text-[15px] font-bold text-gray-900">Your consultations</h2>
@@ -307,7 +365,7 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
 
                 {/* Consent */}
                 {!terminal && (
-                    <section className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
+                    <section id="consent" className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 scroll-mt-4">
                         <div className="flex items-center gap-2 mb-2">
                             <ShieldCheck size={16} className="text-[#009688]" />
                             <h2 className="text-[15px] font-bold text-gray-900">Consent</h2>
@@ -365,7 +423,7 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                 )}
 
                 {/* Payment — pay now / pay later, or the active schedule */}
-                {!terminal && <PlanSection plan={plan} token={pre.token} />}
+                {!terminal && <div id="payment" className="scroll-mt-4"><PlanSection plan={plan} token={pre.token} /></div>}
 
                 {/* Documents — upload + view your own files */}
                 {!terminal && (
@@ -407,7 +465,7 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
             </main>
 
             <footer className="border-t border-gray-100 bg-white">
-                <div className="max-w-3xl mx-auto px-4 py-5 text-center">
+                <div className="max-w-[880px] mx-auto px-4 py-5 text-center">
                     <p className="text-[11.5px] text-gray-400">
                         This link is private to you — please don't share it. Information here describes your status and process only and is not immigration advice.
                     </p>
