@@ -2059,7 +2059,14 @@ class ImmigrationController extends Controller
                 $wantLast = strtolower(trim((string) $lastName));
                 $wantFirst = strtolower(trim((string) ($intake->first_name ?? $assessment->applicant_first_name ?? '')));
 
-                $lead = null;
+                // 0. Prefer the pre-screening's "working lead" — the record that
+                //    already holds this applicant's onboarding (payment plan,
+                //    bookings, uploaded documents). Converting onto it keeps all
+                //    of that attached instead of spawning a parallel case.
+                $lead = \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                    ->where('subject_id', $intake->getKey())
+                    ->whereNotNull('lead_id')
+                    ->first()?->lead;
 
                 // 1. Same email AND matching FULL name — the confident match.
                 //    Email is not unique to a person (families share an inbox)
@@ -2067,7 +2074,7 @@ class ImmigrationController extends Controller
                 //    too. Matching on surname alone would hijack a same-email
                 //    relative's lead (e.g. converting "Test Rogene" linked to a
                 //    different "… Rogene" and the success message named them).
-                if ($email && $wantLast !== '' && $wantFirst !== '') {
+                if (! $lead && $email && $wantLast !== '' && $wantFirst !== '') {
                     $lead = Lead::where('email', $email)->get()
                         ->first(fn ($l) => strtolower(trim((string) $l->last_name)) === $wantLast
                             && strtolower(trim((string) $l->first_name)) === $wantFirst);
