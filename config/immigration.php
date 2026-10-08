@@ -91,4 +91,32 @@ return [
     */
     'signing_adviser' => env('IMMIGRATION_SIGNING_ADVISER', 'Hendry Dai'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Installment payment plans (pay-later)
+    |--------------------------------------------------------------------------
+    |
+    | When a client chooses "pay later", the fee is paid WEEKLY across a
+    | staff-chosen plan. Staff set the plan length (one of the presets below)
+    | and the upfront deposit % (which covers the INZ application fee) when
+    | they generate the engagement + invoice. All knobs here so the terms can
+    | change without code.
+    |
+    | plan_presets: plan length (months) => number of weekly payments. Add or
+    | remove presets freely; the staff UI offers exactly these.
+    | deposit_percent_*: the allowed band + default for the upfront deposit.
+    |
+    */
+    'installments' => [
+        'plan_presets' => [
+            1 => 4,
+            2 => 9,
+            3 => 13,
+            6 => 26,
+        ],
+        'deposit_percent_default' => 25,
+        'deposit_percent_min' => 20,
+        'deposit_percent_max' => 30,
+    ],
+
 ];
