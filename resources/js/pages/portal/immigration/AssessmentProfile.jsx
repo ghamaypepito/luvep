@@ -167,7 +167,7 @@ function DocumentsGallery({ documents }) {
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {} }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [] }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -186,7 +186,8 @@ export default function AssessmentProfile({ intake, bookings = {} }) {
 
     const pct = data?.readiness?.pct ?? intake.readiness_pct ?? 0;
     const ring = 2 * Math.PI * 22;
-    const docs = data?.documents || [];
+    // Intake-attached files + the client's /application uploads, shown together.
+    const docs = [...(data?.documents || []), ...client_documents];
     const status = intake.pre_screen?.status || "new";
     const st = PRE_STATUS[status] || PRE_STATUS.new;
 

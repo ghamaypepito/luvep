@@ -2378,7 +2378,29 @@ class ImmigrationController extends Controller
                 'consult' => $fmtBooking($preScreening->consultBooking),
                 'consent' => $fmtBooking($preScreening->consentBooking),
             ],
+            // Files the client uploaded from their /application link.
+            'client_documents' => $this->preScreeningUploads($preScreening),
         ]);
+    }
+
+    /** Documents the client uploaded via /application (the working lead's own uploads). */
+    private function preScreeningUploads(\App\Models\PreScreening $pre): array
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return [];
+        }
+
+        return \App\Models\LeadDocument::where('lead_id', $lead->id)
+            ->where('source', \App\Models\LeadDocument::SOURCE_UPLOAD)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($d) => [
+                'label' => $d->original_name,
+                'ext' => strtoupper(pathinfo((string) $d->original_name, PATHINFO_EXTENSION)) ?: null,
+                'url' => "/application/{$pre->token}/uploads/{$d->id}?inline=1",
+            ])
+            ->all();
     }
 
     /** Assessments-page payload (intakes). Extracted so the adviser portal can

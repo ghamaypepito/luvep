@@ -3,6 +3,7 @@
 namespace App\Services\Immigration;
 
 use App\Models\Booking;
+use App\Models\Lead;
 use App\Models\PreScreening;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -63,6 +64,62 @@ class PreScreeningService
         }
 
         return $existing->all();
+    }
+
+    /**
+     * The "working lead" that holds this pre-screening's client uploads before
+     * conversion. Returns the linked lead if set; otherwise uses the subject
+     * when it is already a Lead (free assessment / draft), or finds-or-creates a
+     * lightweight non-case Lead from the intake's details. Stored on lead_id so
+     * the same lead is reused on later uploads, and so conversion (which matches
+     * on email + name) picks up the uploaded documents.
+     */
+    public function ensureWorkingLead(PreScreening $pre): Lead
+    {
+        if ($pre->lead_id && ($existing = Lead::find($pre->lead_id))) {
+            return $existing;
+        }
+
+        $subject = $pre->subject;
+
+        if ($subject instanceof Lead) {
+            $pre->lead_id = $subject->id;
+            $pre->save();
+
+            return $subject;
+        }
+
+        $first = $subject->first_name ?? null;
+        $last = $subject->last_name ?? $subject->family_name ?? null;
+        $email = $subject->email ?? null;
+        $wantFirst = strtolower(trim((string) $first));
+        $wantLast = strtolower(trim((string) $last));
+
+        // Reuse an existing non-case lead for the same person (email + full
+        // name) rather than creating a duplicate; otherwise create a fresh one.
+        $lead = null;
+        if ($email && $wantFirst !== '' && $wantLast !== '') {
+            $lead = Lead::where('email', $email)->get()
+                ->first(fn ($l) => strtolower(trim((string) $l->first_name)) === $wantFirst
+                    && strtolower(trim((string) $l->last_name)) === $wantLast);
+        }
+
+        if (! $lead) {
+            $lead = Lead::create([
+                'lead_id' => Lead::generateLeadId(),
+                'first_name' => $first,
+                'last_name' => $last,
+                'email' => $email,
+                'phone' => $subject->phone ?? null,
+                'source' => 'pre-screening',
+                'status' => 'New Leads',
+            ]);
+        }
+
+        $pre->lead_id = $lead->id;
+        $pre->save();
+
+        return $lead;
     }
 
     public function setConsultBooking(PreScreening $pre, Booking $booking): PreScreening

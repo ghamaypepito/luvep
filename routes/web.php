@@ -415,6 +415,8 @@ Route::middleware(['throttle:tracker'])->group(function () {
     $clientApp = \App\Http\Controllers\Immigration\ClientApplicationController::class;
     Route::get('/application/{preScreening}', [$clientApp, 'show'])->name('application.show');
     Route::post('/application/{preScreening}/consent-ack', [$clientApp, 'consentAck'])->name('application.consent-ack');
+    Route::post('/application/{preScreening}/document', [$clientApp, 'uploadDoc'])->name('application.document');
+    Route::get('/application/{preScreening}/uploads/{doc}', [$clientApp, 'streamUpload'])->name('application.upload.stream');
 });
 
 // Public Registration & Assessment Routes

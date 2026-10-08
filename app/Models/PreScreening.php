@@ -32,7 +32,7 @@ class PreScreening extends Model
     public const STATUS_DECLINED = 'declined';
 
     protected $fillable = [
-        'token', 'subject_type', 'subject_id', 'status',
+        'token', 'subject_type', 'subject_id', 'lead_id', 'status',
         'consult_booking_id', 'consent_booking_id',
         'consent_sent_at', 'consent_ack_at',
         'eligible_at', 'eligible_by',
@@ -77,6 +77,12 @@ class PreScreening extends Model
     public function subject(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /** The "working lead" holding the client's uploads before conversion. */
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class, 'lead_id');
     }
 
     public function consultBooking(): BelongsTo

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import {
     ShieldCheck, Calendar, CalendarCheck, Clock, Video, FileText, CheckCircle2,
-    Circle, Lock, ClipboardCheck, Loader2, ArrowRight,
+    Circle, Lock, ClipboardCheck, Loader2, ArrowRight, UploadCloud, Image as ImageIcon,
+    ExternalLink,
 } from "lucide-react";
 
 const fmtDate = (iso) =>
@@ -85,14 +86,27 @@ function MeetingCard({ title, subtitle, booking, bookingUrl }) {
  * token is the credential. Shows status + process only — status of the visa
  * assessment, consultations and consent — never immigration advice.
  */
-export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, booking_url = "/booking" }) {
+export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, documents = [], booking_url = "/booking" }) {
     const [acking, setAcking] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const fileRef = useRef(null);
 
     const ackConsent = () => {
         setAcking(true);
         router.post(`/application/${pre.token}/consent-ack`, {}, {
             preserveScroll: true,
             onFinish: () => setAcking(false),
+        });
+    };
+
+    const onPickFiles = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        setUploading(true);
+        router.post(`/application/${pre.token}/document`, { files }, {
+            forceFormData: true,
+            preserveScroll: true,
+            onFinish: () => { setUploading(false); if (fileRef.current) fileRef.current.value = ""; },
         });
     };
 
@@ -189,12 +203,43 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                     </section>
                 )}
 
-                {/* Documents (view/upload coming next) */}
-                <section className="rounded-2xl bg-white border border-dashed border-gray-200 p-6 text-center">
-                    <FileText size={22} className="mx-auto text-gray-300" />
-                    <p className="mt-2 text-[13px] font-semibold text-gray-600">Documents</p>
-                    <p className="text-[12px] text-gray-400 mt-0.5">You'll be able to upload and view your documents here soon.</p>
-                </section>
+                {/* Documents — upload + view your own files */}
+                {!terminal && (
+                    <section className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
+                        <div className="flex items-center gap-2 mb-1">
+                            <FileText size={16} className="text-[#009688]" />
+                            <h2 className="text-[15px] font-bold text-gray-900">Your documents</h2>
+                        </div>
+                        <p className="text-[12.5px] text-gray-500">Upload supporting documents (PDF or image). Our team will review them.</p>
+
+                        <label className={`mt-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-7 cursor-pointer transition-colors ${uploading ? "border-gray-200 bg-gray-50" : "border-gray-200 hover:border-[#009688] hover:bg-[#009688]/5"}`}>
+                            {uploading ? <Loader2 size={22} className="animate-spin text-[#009688]" /> : <UploadCloud size={22} className="text-gray-400" />}
+                            <span className="text-[13px] font-semibold text-gray-700">{uploading ? "Uploading…" : "Choose files to upload"}</span>
+                            <span className="text-[11px] text-gray-400">PDF, JPG or PNG</span>
+                            <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={onPickFiles} disabled={uploading} />
+                        </label>
+
+                        {documents.length > 0 && (
+                            <ul className="mt-4 space-y-2">
+                                {documents.map((d) => (
+                                    <li key={d.id}>
+                                        <a href={d.url} target="_blank" rel="noreferrer"
+                                            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 hover:border-[#009688] hover:bg-gray-50 transition-colors">
+                                            <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#009688]/10 text-[#00796b] flex items-center justify-center">
+                                                {d.is_image ? <ImageIcon size={16} /> : <FileText size={16} />}
+                                            </span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-[13px] font-semibold text-gray-800 truncate">{d.name}</span>
+                                                <span className="block text-[11px] text-gray-400">{d.status}</span>
+                                            </span>
+                                            <ExternalLink size={14} className="text-gray-400 flex-shrink-0" />
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                )}
             </main>
 
             <footer className="border-t border-gray-100 bg-white">
