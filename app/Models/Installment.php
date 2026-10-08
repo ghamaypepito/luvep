@@ -48,9 +48,9 @@ class Installment extends Model
         return $this->status === self::STATUS_PAID;
     }
 
-    /** Not paid and past its due date. */
+    /** Not paid and the due date is strictly before today (due today is not overdue). */
     public function isOverdue(): bool
     {
-        return ! $this->isPaid() && $this->due_date !== null && $this->due_date->isPast();
+        return ! $this->isPaid() && $this->due_date !== null && $this->due_date->lt(Carbon::today());
     }
 }

@@ -3,8 +3,10 @@ import { Head, router } from "@inertiajs/react";
 import {
     ShieldCheck, Calendar, CalendarCheck, Clock, Video, FileText, CheckCircle2,
     Circle, Lock, ClipboardCheck, Loader2, ArrowRight, UploadCloud, Image as ImageIcon,
-    ExternalLink,
+    ExternalLink, Wallet, Receipt,
 } from "lucide-react";
+
+const money = (n) => "$" + Number(n || 0).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const fmtDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : "";
@@ -127,12 +129,90 @@ function MeetingCard({ title, subtitle, booking, token, meeting }) {
     );
 }
 
+function PlanSection({ plan, token }) {
+    const [choosing, setChoosing] = useState(null);
+    if (!plan) return null;
+
+    const choose = (c) => {
+        setChoosing(c);
+        router.post(`/application/${token}/plan`, { choice: c }, { preserveScroll: true, onFinish: () => setChoosing(null) });
+    };
+
+    const draft = plan.status === "draft";
+    const active = plan.status === "active";
+    const completed = plan.status === "completed";
+
+    return (
+        <section className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center gap-2 mb-1">
+                <Wallet size={16} className="text-[#009688]" />
+                <h2 className="text-[15px] font-bold text-gray-900">Payment</h2>
+            </div>
+
+            {draft && (
+                <>
+                    <p className="text-[13px] text-gray-600">Total fee <span className="font-bold text-gray-900">{money(plan.total_amount)}</span>. Choose how you'd like to pay:</p>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button type="button" onClick={() => choose("pay_now")} disabled={choosing}
+                            className="text-left rounded-xl border border-gray-200 p-4 hover:border-[#009688] hover:bg-[#009688]/5 transition-colors disabled:opacity-60">
+                            <p className="text-[13px] font-bold text-gray-900">Pay in full</p>
+                            <p className="text-[20px] font-bold text-gray-900 mt-1 tabular-nums">{money(plan.total_amount)}</p>
+                            <p className="text-[11.5px] text-gray-500 mt-0.5">One payment.</p>
+                        </button>
+                        <button type="button" onClick={() => choose("pay_later")} disabled={choosing}
+                            className="text-left rounded-xl border border-gray-200 p-4 hover:border-[#009688] hover:bg-[#009688]/5 transition-colors disabled:opacity-60">
+                            <p className="text-[13px] font-bold text-gray-900">Pay weekly</p>
+                            <p className="text-[20px] font-bold text-gray-900 mt-1 tabular-nums">{money(plan.weekly_amount)}<span className="text-[12px] font-medium text-gray-400"> / week × {plan.weeks}</span></p>
+                            <p className="text-[11.5px] text-gray-500 mt-0.5">After a {money(plan.deposit_amount)} deposit.</p>
+                        </button>
+                    </div>
+                    {choosing && <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-gray-400"><Loader2 size={12} className="animate-spin" /> Saving…</p>}
+                </>
+            )}
+
+            {(active || completed) && (
+                <>
+                    <div className="grid grid-cols-3 gap-3">
+                        <div><p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Weekly</p><p className="text-[16px] font-bold text-gray-900 tabular-nums">{money(plan.weekly_amount)}</p></div>
+                        <div><p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Paid</p><p className="text-[16px] font-bold text-emerald-600 tabular-nums">{money(plan.total_paid)}</p></div>
+                        <div><p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Remaining</p><p className="text-[16px] font-bold text-gray-900 tabular-nums">{money(plan.amount_owed)}</p></div>
+                    </div>
+                    <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
+                        <table className="w-full text-[12.5px]">
+                            <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase tracking-wider">
+                                <tr><th className="text-left px-3 py-2 font-bold">Payment</th><th className="text-left px-3 py-2 font-bold">Due</th><th className="text-right px-3 py-2 font-bold">Amount</th><th className="text-right px-3 py-2 font-bold">Status</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {(plan.schedule || []).map((r) => (
+                                    <tr key={r.id} className={r.status === "overdue" ? "bg-rose-50/40" : ""}>
+                                        <td className="px-3 py-2 text-gray-700">{r.kind === "deposit" ? "Deposit" : `Week ${r.sequence}`}</td>
+                                        <td className="px-3 py-2 text-gray-500">{r.due_date}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums text-gray-900">{money(r.amount)}</td>
+                                        <td className="px-3 py-2 text-right">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                                r.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    : r.status === "overdue" ? "bg-rose-50 text-rose-600 border-rose-200"
+                                                    : "bg-gray-50 text-gray-500 border-gray-200"}`}>{r.status}</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="mt-3 text-[12px] text-gray-500 flex items-center gap-1.5"><Receipt size={13} /> Payments are recorded by our team as they're received.</p>
+                    {completed && <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700"><CheckCircle2 size={15} /> Fully paid — thank you.</p>}
+                </>
+            )}
+        </section>
+    );
+}
+
 /**
  * Private client pre-screening page (/application/{token}). The pre-screening
  * token is the credential. Shows status + process only — status of the visa
  * assessment, consultations and consent — never immigration advice.
  */
-export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, documents = [], booking_url = "/booking" }) {
+export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, documents = [], plan = null, booking_url = "/booking" }) {
     const [acking, setAcking] = useState(false);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef(null);
@@ -250,6 +330,9 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                         )}
                     </section>
                 )}
+
+                {/* Payment — pay now / pay later, or the active schedule */}
+                {!terminal && <PlanSection plan={plan} token={pre.token} />}
 
                 {/* Documents — upload + view your own files */}
                 {!terminal && (

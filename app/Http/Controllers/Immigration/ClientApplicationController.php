@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Immigration;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\InstallmentPlan;
 use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\PreScreening;
+use App\Services\Immigration\InstallmentPlanService;
 use App\Services\Immigration\PreScreeningService;
 use App\Support\IntakeVisaTypeMap;
 use App\Support\UploadValidation;
@@ -42,9 +44,47 @@ class ClientApplicationController extends Controller
                 'consent' => $this->fmtBooking($preScreening->consentBooking),
             ],
             'documents' => $this->documents($preScreening),
+            // Payment plan the client chooses pay-now / pay-later against.
+            'plan' => $this->planSummary($preScreening),
             // Where the client books a consultation (the public booking funnel).
             'booking_url' => '/booking',
         ]);
+    }
+
+    /** The client chooses pay-now (full) or pay-later (activate the plan). */
+    public function choosePlan(Request $request, PreScreening $preScreening, InstallmentPlanService $plans)
+    {
+        $data = $request->validate(['choice' => 'required|in:pay_now,pay_later']);
+
+        $lead = $preScreening->lead;
+        $plan = $lead ? $plans->activeFor($lead) : null;
+
+        if ($data['choice'] === 'pay_later') {
+            abort_unless($plan, 422, 'A payment plan has not been set up yet.');
+            if ($plan->status === InstallmentPlan::STATUS_DRAFT) {
+                $plans->activate($plan);
+            }
+
+            return back()->with('success', 'Your weekly payment plan is set.');
+        }
+
+        // Pay now — retire any plan; the full amount is due.
+        if ($plan && in_array($plan->status, [InstallmentPlan::STATUS_DRAFT, InstallmentPlan::STATUS_ACTIVE], true)) {
+            $plan->status = InstallmentPlan::STATUS_CANCELLED;
+            $plan->save();
+        }
+
+        return back()->with('success', 'Thanks — you have chosen to pay in full.');
+    }
+
+    private function planSummary(PreScreening $pre): ?array
+    {
+        if (! $pre->lead) {
+            return null;
+        }
+        $plans = app(InstallmentPlanService::class);
+
+        return $plans->summary($plans->activeFor($pre->lead));
     }
 
     /** The client uploads a document. Attaches to the pre-screening's working lead. */
