@@ -309,6 +309,61 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
     );
 }
 
+const AGR_STATUS = {
+    draft: { label: "Draft", cls: "bg-slate-100 text-slate-500 border-slate-200" },
+    sent: { label: "Sent", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    viewed: { label: "Viewed", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+    signed: { label: "Signed", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+};
+
+function EngagementCard({ agreement, token }) {
+    const [sending, setSending] = useState(false);
+    const send = () => {
+        setSending(true);
+        router.post(`/portal/immigration/pre-screening/${token}/agreement`, {}, { preserveScroll: true, onFinish: () => setSending(false) });
+    };
+    const st = agreement ? (AGR_STATUS[agreement.status] || AGR_STATUS.draft) : null;
+    const signed = agreement?.status === "signed";
+
+    return (
+        <section className="space-y-3">
+            <div className="flex items-center gap-2">
+                <FileText size={16} className="text-[#009688]" />
+                <h2 className="text-[15px] font-bold text-gray-900">Engagement agreement</h2>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
+                {agreement ? (
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                            <p className="text-[13.5px] font-semibold text-gray-900">{agreement.title}</p>
+                            <p className="text-[12px] text-gray-500 mt-0.5">
+                                {signed ? `Signed${agreement.signer_name ? ` by ${agreement.signer_name}` : ""}` : "Sent to the client to review and sign."}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span>
+                            {!signed && (
+                                <button type="button" onClick={send} disabled={sending}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                                    {sending ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Regenerate
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <p className="text-[13px] text-gray-500">No agreement yet. Generate the engagement agreement and send it to the client to sign.</p>
+                        <button type="button" onClick={send} disabled={sending}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                            {sending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Generate &amp; send
+                        </button>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
 function Figure({ label, value, strong }) {
     return (
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
@@ -324,7 +379,7 @@ function Figure({ label, value, strong }) {
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -430,6 +485,11 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                     </div>
                     <IntakeViewModal intake={intake} data={data} loading={loading} asPage chromeless onClose={backToList} />
                 </section>
+
+                {/* Engagement agreement — generate + send; client signs on /application. */}
+                {intake.pre_screen?.token && (
+                    <EngagementCard agreement={agreement} token={intake.pre_screen.token} />
+                )}
 
                 {/* Payment plan — pay-later deposit + weekly schedule. */}
                 {intake.pre_screen?.token && (

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Immigration;
 
+use App\Contracts\SignatureProvider;
 use App\Http\Controllers\Controller;
+use App\Models\Agreement;
 use App\Models\Booking;
 use App\Models\InstallmentPlan;
 use App\Models\Lead;
@@ -44,6 +46,8 @@ class ClientApplicationController extends Controller
                 'consent' => $this->fmtBooking($preScreening->consentBooking),
             ],
             'documents' => $this->documents($preScreening),
+            // Engagement agreement to review + sign (null until staff send one).
+            'agreement' => $this->agreementSummary($preScreening),
             // Payment plan the client chooses pay-now / pay-later against.
             'plan' => $this->planSummary($preScreening),
             // Where the client books a consultation (the public booking funnel).
@@ -75,6 +79,90 @@ class ClientApplicationController extends Controller
         }
 
         return back()->with('success', 'Thanks — you have chosen to pay in full.');
+    }
+
+    /** The client signs the engagement agreement (reuses the managed-agreement signer). */
+    public function signAgreement(Request $request, PreScreening $preScreening, SignatureProvider $signer)
+    {
+        $request->validate([
+            'signer_name' => 'required|string|max:200',
+            'signature_data' => 'required|string|max:5000000',
+            'terms_accepted' => 'required|accepted',
+        ]);
+
+        $agreement = $this->signableAgreement($preScreening);
+        abort_unless($agreement, 404, 'There is no agreement ready to sign.');
+
+        $ok = $signer->recordSignature($agreement, $request->only(['signer_name', 'signature_data']), $request);
+        abort_unless($ok, 422, 'Your signature could not be recorded.');
+
+        return back()->with('success', 'Thank you — your agreement is signed.');
+    }
+
+    /** Stream the agreement PDF for review (marks it viewed on first open). */
+    public function agreementPdf(PreScreening $preScreening)
+    {
+        $lead = $preScreening->lead;
+        abort_unless($lead, 404);
+
+        $agreement = Agreement::where('lead_id', $lead->id)
+            ->whereNotIn('status', [Agreement::STATUS_DRAFT, Agreement::STATUS_VOIDED])
+            ->latest('id')->first();
+        abort_unless($agreement, 404);
+
+        if ($agreement->status === Agreement::STATUS_SENT) {
+            $agreement->status = Agreement::STATUS_VIEWED;
+            $agreement->viewed_at = now();
+            $agreement->save();
+        }
+
+        $path = $agreement->signed_pdf_path ?: $agreement->pdf_path;
+        abort_unless($path && Storage::disk('local')->exists($path), 404);
+
+        return response()->file(Storage::disk('local')->path($path), [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="agreement.pdf"',
+        ]);
+    }
+
+    /** The agreement currently open for signing (sent or viewed), if any. */
+    private function signableAgreement(PreScreening $pre): ?Agreement
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return null;
+        }
+
+        return Agreement::where('lead_id', $lead->id)
+            ->whereIn('status', [Agreement::STATUS_SENT, Agreement::STATUS_VIEWED])
+            ->latest('id')->first();
+    }
+
+    /** Client-safe summary of the latest (non-draft) engagement agreement. */
+    private function agreementSummary(PreScreening $pre): ?array
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return null;
+        }
+
+        $a = Agreement::where('lead_id', $lead->id)
+            ->whereNotIn('status', [Agreement::STATUS_DRAFT, Agreement::STATUS_VOIDED])
+            ->latest('id')->first();
+        if (! $a) {
+            return null;
+        }
+
+        return [
+            'title' => $a->title,
+            'status' => $a->status,
+            'can_sign' => in_array($a->status, [Agreement::STATUS_SENT, Agreement::STATUS_VIEWED], true),
+            'signed' => $a->status === Agreement::STATUS_SIGNED,
+            'signer_name' => $a->signer_name,
+            'signed_at' => optional($a->signed_at)->toIso8601String(),
+            'pdf_url' => "/application/{$pre->token}/agreement/pdf",
+            'sign_url' => "/application/{$pre->token}/agreement/sign",
+        ];
     }
 
     private function planSummary(PreScreening $pre): ?array

@@ -2389,6 +2389,8 @@ class ImmigrationController extends Controller
             ],
             // Files the client uploaded from their /application link.
             'client_documents' => $this->preScreeningUploads($preScreening),
+            // Engagement agreement status (managed Agreement on the working lead).
+            'agreement' => $this->preScreeningAgreement($preScreening),
             // Installments: the live plan (if any), a fee prefill from the visa
             // type, and the config knobs (presets + deposit band).
             'plan' => $preScreening->lead ? $plans->summary($plans->activeFor($preScreening->lead)) : null,
@@ -2428,6 +2430,29 @@ class ImmigrationController extends Controller
             'normal_total' => (float) ($normal['total'] ?? 0),
             'discounted_total' => (float) ($disc['total'] ?? 0),
             'inz_fee' => (float) ($normal['inz_fee'] ?? 0),
+        ];
+    }
+
+    /** Engagement agreement status for a pre-screening's working lead. */
+    private function preScreeningAgreement(\App\Models\PreScreening $pre): ?array
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return null;
+        }
+
+        $a = \App\Models\Agreement::where('lead_id', $lead->id)
+            ->whereNotIn('status', [\App\Models\Agreement::STATUS_VOIDED])
+            ->latest('id')->first();
+        if (! $a) {
+            return null;
+        }
+
+        return [
+            'title' => $a->title,
+            'status' => $a->status,
+            'signer_name' => $a->signer_name,
+            'signed_at' => optional($a->signed_at)->toIso8601String(),
         ];
     }
 

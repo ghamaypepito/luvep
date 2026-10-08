@@ -417,6 +417,8 @@ Route::middleware(['throttle:tracker'])->group(function () {
     Route::post('/application/{preScreening}/consent-ack', [$clientApp, 'consentAck'])->name('application.consent-ack');
     Route::post('/application/{preScreening}/book', [$clientApp, 'book'])->name('application.book');
     Route::post('/application/{preScreening}/plan', [$clientApp, 'choosePlan'])->name('application.plan');
+    Route::post('/application/{preScreening}/agreement/sign', [$clientApp, 'signAgreement'])->name('application.agreement.sign');
+    Route::get('/application/{preScreening}/agreement/pdf', [$clientApp, 'agreementPdf'])->name('application.agreement.pdf');
     Route::post('/application/{preScreening}/document', [$clientApp, 'uploadDoc'])->name('application.document');
     Route::get('/application/{preScreening}/uploads/{doc}', [$clientApp, 'streamUpload'])->name('application.upload.stream');
 });
@@ -1850,6 +1852,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
+            // Engagement agreement — staff generate + send for the working lead.
+            Route::post('/pre-screening/{preScreening}/agreement', [$preScreen, 'generateAgreement'])->name('pre-screening.agreement');
             // Installment plan (pay-later terms) + recording a payment.
             Route::post('/pre-screening/{preScreening}/plan', [$preScreen, 'setPlan'])->name('pre-screening.plan');
             Route::post('/pre-screening/{preScreening}/installments/{installment}/pay', [$preScreen, 'payInstallment'])->name('pre-screening.installment.pay');

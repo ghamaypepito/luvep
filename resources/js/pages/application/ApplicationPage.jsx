@@ -3,8 +3,9 @@ import { Head, router } from "@inertiajs/react";
 import {
     ShieldCheck, Calendar, CalendarCheck, Clock, Video, FileText, CheckCircle2,
     Circle, Lock, ClipboardCheck, Loader2, ArrowRight, UploadCloud, Image as ImageIcon,
-    ExternalLink, Wallet, Receipt,
+    ExternalLink, Wallet, Receipt, FileSignature,
 } from "lucide-react";
+import AgreementSignModal from "@/components/AgreementSignModal";
 
 const money = (n) => "$" + Number(n || 0).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -212,9 +213,10 @@ function PlanSection({ plan, token }) {
  * token is the credential. Shows status + process only — status of the visa
  * assessment, consultations and consent — never immigration advice.
  */
-export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, documents = [], plan = null, booking_url = "/booking" }) {
+export default function ApplicationPage({ applicant, visa_label, submitted_at, pre, bookings = {}, documents = [], plan = null, agreement = null, booking_url = "/booking" }) {
     const [acking, setAcking] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [signOpen, setSignOpen] = useState(false);
     const fileRef = useRef(null);
 
     const ackConsent = () => {
@@ -329,6 +331,37 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                             <p className="text-[13px] text-gray-500">We'll share your consent information here after your consultation.</p>
                         )}
                     </section>
+                )}
+
+                {/* Engagement agreement — review & sign */}
+                {!terminal && agreement && (
+                    <section className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
+                        <div className="flex items-center gap-2 mb-1">
+                            <FileSignature size={16} className="text-[#009688]" />
+                            <h2 className="text-[15px] font-bold text-gray-900">Your agreement</h2>
+                        </div>
+                        {agreement.signed ? (
+                            <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700">
+                                <CheckCircle2 size={15} /> Signed{agreement.signer_name ? ` by ${agreement.signer_name}` : ""} — thank you.
+                                {agreement.pdf_url && <a href={agreement.pdf_url} target="_blank" rel="noreferrer" className="ml-2 text-[#009688] hover:underline font-semibold">View PDF</a>}
+                            </p>
+                        ) : agreement.can_sign ? (
+                            <div>
+                                <p className="text-[13px] text-gray-600">Please review your engagement agreement and sign to continue.</p>
+                                <div className="mt-3 flex items-center gap-2">
+                                    <a href={agreement.pdf_url} target="_blank" rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50"><FileText size={14} /> Review</a>
+                                    <button type="button" onClick={() => setSignOpen(true)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b]"><FileSignature size={14} /> Review &amp; sign</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-[13px] text-gray-500">Your agreement is being prepared.</p>
+                        )}
+                    </section>
+                )}
+                {signOpen && agreement?.sign_url && (
+                    <AgreementSignModal postUrl={agreement.sign_url} title="Sign your agreement" requireTerms reviewUrl={agreement.pdf_url} onClose={() => setSignOpen(false)} />
                 )}
 
                 {/* Payment — pay now / pay later, or the active schedule */}

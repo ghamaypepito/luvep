@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Immigration;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgreementTemplate;
 use App\Models\Installment;
 use App\Models\PreScreening;
 use App\Models\User;
+use App\Services\Immigration\AgreementService;
 use App\Services\Immigration\InstallmentPlanService;
 use App\Services\Immigration\PreScreeningService;
 use Illuminate\Http\Request;
@@ -91,6 +93,31 @@ class PreScreeningController extends Controller
         $plans->draft($lead, $data, $user);
 
         return back()->with('success', 'Payment plan saved.');
+    }
+
+    /** Staff generate + send the engagement agreement for the working lead. */
+    public function generateAgreement(PreScreening $preScreening, AgreementService $agreements)
+    {
+        $this->guard();
+        $lead = $this->service->ensureWorkingLead($preScreening);
+
+        // Prefer an active template matching this visa, else any active one.
+        $template = AgreementTemplate::where('is_active', true)
+            ->where(fn ($q) => $q->whereNull('visa_type')->orWhere('visa_type', $lead->inz_visa_type))
+            ->orderByRaw('visa_type IS NULL') // visa-specific first
+            ->first()
+            ?? AgreementTemplate::where('is_active', true)->first();
+
+        abort_unless($template, 422, 'No active agreement template is configured.');
+
+        try {
+            $agreement = $agreements->generate($lead, $template);
+            $agreements->send($agreement);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Could not generate the agreement: '.$e->getMessage());
+        }
+
+        return back()->with('success', 'Engagement agreement sent to the client.');
     }
 
     /** Staff record one installment as paid (writes a ledger receipt). */
