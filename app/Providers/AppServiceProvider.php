@@ -83,6 +83,27 @@ class AppServiceProvider extends ServiceProvider
         ResetPassword::createUrlUsing(fn ($notifiable, string $token) => rtrim(config('app.url'), '/')
             .'/reset-password/'.$token.'?email='.urlencode($notifiable->getEmailForPasswordReset()));
 
+        // Link immigration case money into the Finance portal's Accounts
+        // Receivable: a case's financials / installment plan drive one AR
+        // invoice, and every case payment (manual receipt or installment, which
+        // both write a CaseFinancePayment) is mirrored into its ledger. The
+        // service is best-effort + idempotent, so it never breaks case writes.
+        $financeSync = fn () => $this->app->make(\App\Services\Finance\FinanceSyncService::class);
+        \App\Models\CaseFinancial::saved(function ($cf) use ($financeSync) {
+            if ($lead = \App\Models\Lead::find($cf->lead_id)) {
+                $financeSync()->syncForLead($lead);
+            }
+        });
+        \App\Models\CaseFinancePayment::created(fn ($p) => $financeSync()->mirrorPayment($p));
+        \App\Models\CaseFinancePayment::deleted(fn ($p) => $financeSync()->removeMirroredPayment($p));
+        if (class_exists(\App\Models\InstallmentPlan::class)) {
+            \App\Models\InstallmentPlan::saved(function ($plan) use ($financeSync) {
+                if ($lead = \App\Models\Lead::find($plan->lead_id)) {
+                    $financeSync()->syncForLead($lead);
+                }
+            });
+        }
+
         // Professional tone, matching the lead-portal invitation email (D7).
         ResetPassword::toMailUsing(function ($notifiable, string $token) {
             $url = rtrim(config('app.url'), '/').'/reset-password/'.$token
