@@ -10,7 +10,18 @@
         $teal = [0.184, 0.490, 0.518];
         $grey = [0.42, 0.42, 0.42];
         $pdf->page_script(function ($pageNumber, $pageCount, $canvas, $fontMetrics) use ($header, $footerLeft, $teal, $grey) {
-            if ($pageNumber <= 1) { return; } // skip cover
+            if ($pageNumber == 1) {
+                // The teal cover is a fixed-height block — dompdf can't bleed it
+                // to the page bottom without overflowing onto blank pages — so
+                // paint the strip beneath it teal, extending the cover edge to
+                // edge. ~703pt ≈ the 940px cover height; it sits below the
+                // contact block (bottom: 58px) so nothing is covered.
+                $w = $canvas->get_width();
+                $h = $canvas->get_height();
+                $coverBottom = 663; // just below the contact block (bottom: 58px ≈ 661pt)
+                $canvas->filled_rectangle(0, $coverBottom, $w, $h - $coverBottom, $teal);
+                return;
+            }
             $bold = $fontMetrics->getFont("Helvetica", "bold");
             $reg  = $fontMetrics->getFont("Helvetica", "normal");
             $w = $canvas->get_width();

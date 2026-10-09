@@ -375,6 +375,52 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
         }
     }, [data, step, isSuccess, isEditing]);
 
+    // Silent server-side draft save. The other four visa forms do this via
+    // IntakeFormShell (draftEndpoint); the Resident form doesn't use that shell,
+    // so without this a half-filled Resident assessment stayed in localStorage
+    // only and never appeared in Visa Assessment. Gated on a first name + valid
+    // email (the minimum the endpoint needs to identify/de-dupe the row) and
+    // debounced; skipped while editing an existing intake.
+    const serverDraft = useRef({ inFlight: false, lastHash: '' });
+    useEffect(() => {
+        if (isEditing || isSuccess) return;
+        const okName = String(data.first_name ?? '').trim();
+        const okEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data.email ?? '').trim());
+        if (!okName || !okEmail) return;
+
+        // Files can't be serialised and are only persisted on final submit.
+        const { document_files, ...payload } = data;
+        let hash;
+        try { hash = JSON.stringify(payload); } catch { hash = String(Math.random()); }
+        if (hash === serverDraft.current.lastHash) return;
+
+        const t = setTimeout(async () => {
+            if (serverDraft.current.inFlight) return;
+            serverDraft.current.inFlight = true;
+            try {
+                const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+                const res = await fetch('/visa-interest/resident/draft', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrf,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                    credentials: 'same-origin',
+                });
+                if (res.ok) serverDraft.current.lastHash = hash;
+            } catch {
+                /* silent — the applicant never asked for this; their local copy is safe */
+            } finally {
+                serverDraft.current.inFlight = false;
+            }
+        }, 4000);
+
+        return () => clearTimeout(t);
+    }, [data, isSuccess, isEditing]);
+
     const handleStartOver = () => {
         if (!window.confirm('Clear everything you have entered and start over?')) return;
         try { window.localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ignore */ }

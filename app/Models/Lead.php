@@ -548,8 +548,9 @@ class Lead extends Model
         // numbers were re-encrypted by the migration.
         // SafeEncrypted (not plain 'encrypted'): still encrypts on write, but on
         // read a value that can't be decrypted — e.g. encrypted under a previous
-        // APP_KEY — degrades to null instead of throwing "The MAC is invalid" and
-        // taking the whole cases list down with it.
+        // APP_KEY — degrades to null (logged) instead of throwing a
+        // DecryptException ("The MAC is invalid") that would blank the whole
+        // cases list when serialising every case's passport number.
         'passport_number' => \App\Casts\SafeEncrypted::class,
         'current_nz_visa_number' => \App\Casts\SafeEncrypted::class,
         // Booleans (mirrors migration column types).

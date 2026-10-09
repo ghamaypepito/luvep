@@ -45,6 +45,24 @@ class IntakeSyncsToCaseTest extends TestCase
         $this->assertSame(1, Lead::where('is_immigration_case', true)->count());
     }
 
+    public function test_sync_preserves_a_visa_type_staff_already_set(): void
+    {
+        // Staff set a specific visa type on the case. A later public submission
+        // only knows the generic funnel label and must NOT switch it.
+        $case = $this->existingCase(['inz_visa_type' => 'Student Visa (Fee Paying)']);
+
+        $this->post('/work-interest', [
+            'first_name' => 'Ana', 'family_name' => 'Cruz', 'dob' => '1992-04-11',
+            'email' => 'ana@example.com', 'phone' => '+64 21 999 0000',
+            'country_of_citizenship' => 'Philippines', 'declaration_accepted' => true,
+        ])->assertSessionHasNoErrors();
+
+        $case->refresh();
+        $this->assertSame('+64 21 999 0000', $case->phone); // personal details still sync
+        // The staff-set visa type is preserved, not overwritten by 'Work Visa (AEWV)'.
+        $this->assertSame('Student Visa (Fee Paying)', $case->inz_visa_type);
+    }
+
     public function test_family_member_sharing_the_email_is_not_folded_in(): void
     {
         // Same email, DIFFERENT date of birth → a different person (e.g. spouse).

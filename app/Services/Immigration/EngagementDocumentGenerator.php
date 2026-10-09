@@ -616,7 +616,13 @@ class EngagementDocumentGenerator
         if (self::$logoCache !== null) {
             return self::$logoCache;
         }
-        $path = base_path('resources/assets/Immigration/migration_logo.png');
+        // PDF-optimised copy of the immigration logo — the source master is
+        // 15,625px / 1.1MB, which OOMs dompdf when embedded; this is the same
+        // logo downscaled for documents.
+        $path = base_path('resources/assets/Immigration/dimmigration-logo-pdf.png');
+        if (! is_file($path)) {
+            $path = base_path('resources/assets/Immigration/migration_logo.png');
+        }
         if (! is_file($path)) {
             $path = base_path('resources/assets/philipine_ep_logo.png');
         }

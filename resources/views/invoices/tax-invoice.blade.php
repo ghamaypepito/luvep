@@ -23,8 +23,9 @@
     .masthead td { vertical-align: top; }
     .logo-cell { text-align: right; }
     /* Explicit width — dompdf can ignore height-only sizing and render the
-       source image at full size, which blows the page out. */
-    .logo-cell img { width: 165px; height: 46px; }
+       source image at full size, which blows the page out. Sized to the
+       immigration logo's trimmed 3.17:1 aspect ratio so it isn't stretched. */
+    .logo-cell img { width: 130px; height: 41px; }
 
     h1.doc-title { font-size: 26pt; font-weight: 400; letter-spacing: -0.5px; margin: 0 0 6px 0; }
     .bill-to { font-size: 10.5pt; margin-left: 40px; }

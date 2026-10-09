@@ -29,6 +29,10 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            // Mirror the DB default so factory-made users are active in-memory
+            // (a fresh instance isn't reloaded from the DB, so without this the
+            // cast reads null → EnsureAccountActive treats them as deactivated).
+            'is_active' => true,
         ];
     }
 

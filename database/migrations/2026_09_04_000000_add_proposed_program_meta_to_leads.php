@@ -13,8 +13,17 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // NOTE: no `->after('proposed_program_reasons')` — that column is added by
+        // a LATER migration (2026_09_14_add_program_reasons_to_proposals), so on a
+        // fresh migrate it doesn't exist yet and the AFTER clause errors out.
+        // Column position is cosmetic; drop the ordering dependency and guard for
+        // idempotency so this is safe on both fresh and already-migrated DBs.
+        if (Schema::hasColumn('leads', 'proposed_program_meta')) {
+            return;
+        }
+
         Schema::table('leads', function (Blueprint $table) {
-            $table->json('proposed_program_meta')->nullable()->after('proposed_program_reasons');
+            $table->json('proposed_program_meta')->nullable();
         });
     }
 

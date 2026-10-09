@@ -52,12 +52,20 @@ trait SyncsIntakeToCase
                 'passport_number' => $intake->passport_number ?? null,
                 'passport_expiry' => $intake->passport_expiry ?? null,
                 'citizenship' => $intake->nationality ?? ($intake->country_of_citizenship ?? null),
-                'inz_visa_type' => $visaLabel,
             ];
 
             // Only write fields the submission actually provided — a blank answer
             // must never wipe a value staff already hold on the case.
             $patch = array_filter($patch, fn ($v) => $v !== null && $v !== '');
+
+            // The visa type on the case is staff's authoritative choice (e.g.
+            // "Student Visa (Fee Paying)"). A public assessment re-submission only
+            // knows the generic funnel label ("Student Visa"), so seed
+            // inz_visa_type only when the case has none yet — never overwrite an
+            // existing, more specific type the client would otherwise see switch.
+            if (empty($case->inz_visa_type)) {
+                $patch['inz_visa_type'] = $visaLabel;
+            }
 
             $case->forceFill($patch)->save();
         } catch (\Throwable $e) {

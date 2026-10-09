@@ -194,9 +194,11 @@ class LeadPortalController extends Controller
         //    taken it, open the editable form + VIF; if not, send them to the
         //    landing-page assessment form for their visa so they can complete it.
         $hasIntake = (bool) ($type && $intake);
-        $visaLabel = $intake
-            ? \App\Support\IntakeVisaTypeMap::label($intake::class)
-            : ($lead->inz_visa_type ?: null);
+        // Prefer the visa type staff set on the case (e.g. "Student Visa (Fee
+        // Paying)") so the card never switches to the generic funnel label once
+        // an assessment intake exists; fall back to the intake's generic label.
+        $visaLabel = ($lead->inz_visa_type ?: null)
+            ?? ($intake ? \App\Support\IntakeVisaTypeMap::label($intake::class) : null);
         $visaPct = $hasIntake ? \App\Support\AssessmentFormSchema::stats($intake, $type)['pct'] : null;
         $cards[] = [
             'key' => 'visa',
