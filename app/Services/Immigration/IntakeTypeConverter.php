@@ -10,6 +10,8 @@ use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Support\IntakeVisaTypeMap;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -51,6 +53,7 @@ class IntakeTypeConverter
     /** Equivalent fields that are named differently between forms. */
     private const ALIASES = [
         ['last_name', 'family_name'],
+        ['country_of_citizenship', 'nationality'],
     ];
 
     public function recreateAs(Model $source, string $targetType): Model
@@ -94,6 +97,11 @@ class IntakeTypeConverter
         // Reset the declaration — the client re-affirms it for the new visa.
         $attrs['declaration_accepted'] = false;
 
+        // Some intakes (Resident) have NOT NULL columns with no default that the
+        // other forms don't collect. Seed those with safe placeholders so the
+        // record saves; they're visa-specific and the client completes them.
+        $this->fillRequiredDefaults($target, $attrs);
+
         /** @var Model $new */
         $new = $targetClass::create($attrs);
 
@@ -101,5 +109,47 @@ class IntakeTypeConverter
         Assessment::createForIntake($new, $visaType);
 
         return $new;
+    }
+
+    /**
+     * Seed any NOT NULL column (with no DB default) the target form requires but
+     * the source form didn't provide — so the record saves. Values are neutral
+     * placeholders for visa-specific fields the client completes afterwards.
+     */
+    private function fillRequiredDefaults(Model $model, array &$attrs): void
+    {
+        try {
+            $columns = Schema::getColumns($model->getTable());
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        $fillable = $model->getFillable();
+        foreach ($columns as $col) {
+            $name = $col['name'];
+            // Already has a non-null value (set or copied), or the column can be
+            // null / has a default — nothing to seed.
+            $hasValue = array_key_exists($name, $attrs) && $attrs[$name] !== null;
+            if ($hasValue
+                || ! empty($col['nullable'])
+                || ($col['default'] ?? null) !== null
+                || in_array($name, ['id', 'created_at', 'updated_at'], true)
+                || ! in_array($name, $fillable, true)) {
+                continue;
+            }
+
+            $type = strtolower((string) ($col['type_name'] ?? $col['type'] ?? ''));
+            if (str_contains($type, 'json')) {
+                continue; // JSON columns are nullable in practice; leave them
+            }
+
+            $attrs[$name] = match (true) {
+                str_contains($type, 'bool') => false,
+                str_contains($type, 'int') => 0,
+                str_contains($type, 'dec') || str_contains($type, 'float') || str_contains($type, 'double') || str_contains($type, 'numeric') => 0,
+                str_contains($type, 'date') || str_contains($type, 'time') => Carbon::today()->toDateString(),
+                default => '',
+            };
+        }
     }
 }
