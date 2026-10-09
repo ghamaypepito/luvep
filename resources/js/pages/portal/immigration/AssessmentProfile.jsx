@@ -470,6 +470,58 @@ function NextAction({ i }) {
     );
 }
 
+const RECREATE_TYPES = [
+    { key: "resident", label: "Resident" },
+    { key: "work", label: "Work (AEWV)" },
+    { key: "student", label: "Student" },
+    { key: "visitor", label: "Visitor" },
+    { key: "family", label: "Family" },
+];
+
+/**
+ * "Wrong visa type?" — re-create this submitted assessment as a different visa
+ * type, carrying over every shared answer. Only for real submitted intakes
+ * (drafts/free have no intake to copy). Procedural fix, not advice.
+ */
+function RecreateVisaControl({ intake }) {
+    const [open, setOpen] = useState(false);
+    const [target, setTarget] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    // Needs a submitted intake record to copy from.
+    if (intake.record !== "intake") return null;
+    const options = RECREATE_TYPES.filter((t) => t.key !== intake.visa_type);
+
+    const go = () => {
+        if (!target) return;
+        if (!window.confirm(`Re-create this as a ${target} assessment? Shared answers carry over; the applicant completes the visa-specific sections. The original assessment is kept.`)) return;
+        setSaving(true);
+        router.post(`/portal/immigration/assessments/${intake.visa_type}/${intake.id}/recreate-as`, { target }, { onFinish: () => setSaving(false) });
+    };
+
+    if (!open) {
+        return (
+            <button type="button" onClick={() => setOpen(true)} className="text-[11.5px] font-semibold text-gray-400 hover:text-[#009688]">
+                Wrong visa type?
+            </button>
+        );
+    }
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <select value={target} onChange={(e) => setTarget(e.target.value)}
+                className="rounded-lg border border-gray-200 px-2 py-1 text-[12px] outline-none focus:border-[#009688] bg-white">
+                <option value="">Re-create as…</option>
+                {options.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+            <button type="button" onClick={go} disabled={saving || !target}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-[#009688] text-white hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                {saving ? <Loader2 size={11} className="animate-spin" /> : null} Re-create
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="text-[11px] font-semibold text-gray-400 hover:underline">Cancel</button>
+        </span>
+    );
+}
+
 /**
  * Pre-screening potential-client profile. One place to work a Visa Assessment
  * before it becomes a case: the submitted form, the two pre-screening meetings
@@ -516,9 +568,12 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                             <span className="absolute inset-0 flex items-center justify-center text-[12px] font-bold text-gray-900 tabular-nums">{pct}%</span>
                         </div>
                         <div className="min-w-0 flex-1">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#009688] mb-0.5">
-                                Visa assessment · {data?.visa_label || VISA_LABEL[intake.visa_type] || intake.visa_type}
-                            </p>
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#009688]">
+                                    Visa assessment · {data?.visa_label || VISA_LABEL[intake.visa_type] || intake.visa_type}
+                                </p>
+                                <RecreateVisaControl intake={intake} />
+                            </div>
                             <div className="flex items-center gap-2.5 flex-wrap">
                                 <span className={`w-8 h-8 rounded-full inline-flex items-center justify-center text-white text-[11px] font-bold ${VISA_AVATAR_BG[intake.visa_type] || "bg-gray-500"}`}>{initials(intake.name)}</span>
                                 <h1 className="text-lg font-bold text-gray-900 truncate">{data?.name || intake.name}</h1>

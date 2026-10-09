@@ -1961,6 +1961,49 @@ class ImmigrationController extends Controller
         }
     }
 
+    /**
+     * Re-create a submitted assessment as a DIFFERENT visa type, carrying over
+     * every answer the two forms share. For when a client picked the wrong visa
+     * type (e.g. an AEWV work form when they meant Student) — the applicant
+     * profile copies 1:1; only the visa-specific sections are left to complete.
+     * The original assessment is left intact.
+     */
+    public function recreateAssessmentAs(\Illuminate\Http\Request $request, $type, $id)
+    {
+        $typeMap = [
+            'resident' => ResidentIntake::class,
+            'work' => \App\Models\WorkIntake::class,
+            'student' => \App\Models\StudentIntake::class,
+            'visitor' => \App\Models\VisitorIntake::class,
+            'family' => \App\Models\FamilyIntake::class,
+        ];
+        abort_unless(isset($typeMap[$type]), 404);
+
+        $data = $request->validate([
+            'target' => 'required|in:resident,work,student,visitor,family',
+        ]);
+        abort_if($data['target'] === $type, 422, 'Pick a different visa type.');
+
+        $source = $typeMap[$type]::findOrFail($id);
+
+        try {
+            $new = app(\App\Services\Immigration\IntakeTypeConverter::class)->recreateAs($source, $data['target']);
+        } catch (\RuntimeException $e) {
+            // A user-actionable problem (e.g. the target visa type isn't set up).
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Recreate assessment as other type failed', ['type' => $type, 'id' => $id, 'target' => $data['target'], 'error' => $e->getMessage()]);
+
+            return back()->with('error', 'Could not re-create the assessment.');
+        }
+
+        // Land the staff on the new assessment's pre-screening profile.
+        $pre = app(\App\Services\Immigration\PreScreeningService::class)->ensureFor($new);
+
+        return redirect("/portal/immigration/assessments/profile/{$pre->token}")
+            ->with('success', 'Re-created as a '.ucfirst($data['target']).' assessment with the shared answers carried over — complete the visa-specific sections.');
+    }
+
     public function convertAssessmentToCase(\Illuminate\Http\Request $request, $id)
     {
         try {

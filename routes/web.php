@@ -1897,6 +1897,10 @@ Route::middleware(['auth'])->group(function () {
             // ResidentIntake.id for backward compat — any pre-Phase-B
             // bookmark that POSTed an intake id still resolves cleanly.
             Route::post('/assessments/{id}/convert-to-case', [ImmigrationController::class, 'convertAssessmentToCase'])->name('assessments.convert');
+            // Re-create a submitted assessment as a different visa type (wrong-type fix).
+            Route::post('/assessments/{type}/{id}/recreate-as', [ImmigrationController::class, 'recreateAssessmentAs'])
+                ->where(['type' => 'resident|work|student|visitor|family', 'id' => '[0-9]+'])
+                ->name('assessments.recreate');
             // Delete an assessment submission (intake + paired Assessment).
             Route::delete('/assessments', [ImmigrationController::class, 'destroyIntake'])->name('assessments.destroy');
             // AI completeness/consistency review of an intake (internal, indicative
