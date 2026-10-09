@@ -1084,17 +1084,25 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         ) : (
                             <div className="flex-1 overflow-y-auto p-4 space-y-2">
                                 {(data?.documents || []).length > 0 ? (
-                                    data.documents.map((doc, k) => (
-                                        <a key={k} href={doc.url} target="_blank" rel="noreferrer"
-                                            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 hover:border-[#009688] hover:bg-gray-50 transition-colors">
-                                            <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#009688]/10 text-[#00796b] flex items-center justify-center"><FileText size={15} /></span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-[12.5px] font-semibold text-gray-800 truncate">{doc.label}</span>
-                                                {doc.ext && <span className="block text-[10.5px] text-gray-400">{doc.ext}</span>}
-                                            </span>
-                                            <ExternalLink size={13} className="text-gray-400 flex-shrink-0" />
-                                        </a>
-                                    ))
+                                    data.documents.map((doc, k) => {
+                                        const isImg = doc.is_image || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(doc.label || "") || /\.(jpe?g|png|gif|webp|bmp|heic)(\?|$)/i.test(doc.url || "");
+                                        const meta = [doc.ext, doc.status].filter(Boolean).join(" · ");
+                                        return (
+                                            <a key={k} href={doc.url} target="_blank" rel="noreferrer"
+                                                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-2.5 hover:border-[#009688] hover:bg-gray-50 transition-colors">
+                                                <span className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+                                                    {isImg
+                                                        ? <img src={doc.url} alt={doc.label} loading="lazy" className="w-full h-full object-cover" />
+                                                        : <FileText size={16} className="text-[#00796b]" />}
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-[12.5px] font-semibold text-gray-800 truncate">{doc.label}</span>
+                                                    {meta && <span className="block text-[10.5px] text-gray-400 truncate">{meta}</span>}
+                                                </span>
+                                                <ExternalLink size={13} className="text-gray-400 flex-shrink-0" />
+                                            </a>
+                                        );
+                                    })
                                 ) : (
                                     <p className="text-center text-[12px] text-gray-400 pt-6">No documents uploaded.</p>
                                 )}
