@@ -210,6 +210,12 @@ function PlanSection({ plan, token }) {
             {draft && (
                 <>
                     <p className="text-[13px] text-gray-600">Total fee <span className="font-bold text-gray-900">{money(plan.total_amount)}</span>. Choose how you'd like to pay:</p>
+                    <p className="mt-1 text-[11.5px] text-gray-400">
+                        Professional fee <span className="font-semibold text-gray-600 tabular-nums">{money(plan.professional_fee)}</span>
+                        {Number(plan.discount_amount) > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{money(plan.discount_amount)}</span></>}
+                        {Number(plan.admin_fee) > 0 && <> + admin fee <span className="font-semibold text-gray-600 tabular-nums">{money(plan.admin_fee)}</span></>}
+                        {" + "}INZ fee <span className="font-semibold text-gray-600 tabular-nums">{money(plan.inz_fee)}</span>
+                    </p>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button type="button" onClick={() => choose("pay_now")} disabled={choosing}
                             className="text-left rounded-xl border border-gray-200 p-4 hover:border-[#009688] hover:bg-[#009688]/5 transition-colors disabled:opacity-60">

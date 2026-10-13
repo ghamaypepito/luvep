@@ -227,6 +227,7 @@ class CaseProfileController extends Controller
             'installment_config' => [
                 'presets' => (array) config('immigration.installments.plan_presets', [3 => 13, 6 => 26]),
                 'deposit' => app(\App\Services\Immigration\InstallmentPlanService::class)->depositBounds(),
+                'admin_fee' => (float) config('immigration.fees.admin_fee', 10),
             ],
         ];
     }
@@ -245,8 +246,11 @@ class CaseProfileController extends Controller
         $user = $this->guardCase($lead);
 
         $data = $request->validate([
-            'total_amount' => 'required|numeric|min:0',
+            'professional_fee' => 'required|numeric|min:0',
             'inz_fee' => 'nullable|numeric|min:0',
+            'discount_type' => 'nullable|in:none,percent,fixed',
+            'discount_value' => 'nullable|numeric|min:0',
+            'admin_fee' => 'nullable|numeric|min:0',
             'plan_months' => 'required|integer|min:1|max:24',
             'deposit_percent' => 'required|numeric|min:0|max:100',
         ]);

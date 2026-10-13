@@ -263,10 +263,21 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
 
     const [months, setMonths] = useState(plan?.plan_months || monthsList[0] || 3);
     const [pct, setPct] = useState(plan?.deposit_percent ?? dep.default);
-    const [total, setTotal] = useState(plan?.total_amount ?? feeQuote?.normal_total ?? 0);
+    const [professional, setProfessional] = useState(plan?.professional_fee ?? feeQuote?.normal_professional ?? feeQuote?.normal_total ?? 0);
     const [inz, setInz] = useState(plan?.inz_fee ?? feeQuote?.inz_fee ?? 0);
+    const [discountType, setDiscountType] = useState(plan?.discount_type ?? "none");
+    const [discountValue, setDiscountValue] = useState(plan?.discount_value ?? 0);
+    const [adminFee, setAdminFee] = useState(plan?.admin_fee ?? config?.admin_fee ?? 0);
     const [saving, setSaving] = useState(false);
     const [payingId, setPayingId] = useState(null);
+
+    // Discount applies to the professional fee only; admin fee + INZ then added.
+    const discountAmount = Math.max(0, Math.min(
+        discountType === "percent" ? (Number(professional) * Number(discountValue)) / 100
+            : discountType === "fixed" ? Number(discountValue) : 0,
+        Number(professional),
+    ));
+    const total = Math.max(0, Number(professional) - discountAmount) + Number(inz) + Number(adminFee);
 
     const weeks = presets[months] || months * 4;
     const deposit = Math.min(Math.max((Number(total) * Number(pct)) / 100, Number(inz)), Number(total));
@@ -279,7 +290,11 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
     const save = () => {
         setSaving(true);
         router.post(`/portal/immigration/pre-screening/${token}/plan`,
-            { total_amount: Number(total), inz_fee: Number(inz), plan_months: Number(months), deposit_percent: Number(pct) },
+            {
+                professional_fee: Number(professional), inz_fee: Number(inz),
+                discount_type: discountType, discount_value: Number(discountValue), admin_fee: Number(adminFee),
+                plan_months: Number(months), deposit_percent: Number(pct),
+            },
             { preserveScroll: true, onFinish: () => setSaving(false) });
     };
 
@@ -302,16 +317,35 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
                 {/* Terms — editable until the plan is active */}
                 {!active && !completed && (
                     <>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             <label className="block">
-                                <span className="text-[11px] font-semibold text-gray-500">Total payable</span>
-                                <input type="number" min="0" step="0.01" value={total} onChange={(e) => setTotal(e.target.value)}
+                                <span className="text-[11px] font-semibold text-gray-500">Professional fee</span>
+                                <input type="number" min="0" step="0.01" value={professional} onChange={(e) => setProfessional(e.target.value)}
                                     className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
                             </label>
                             <label className="block">
                                 <span className="text-[11px] font-semibold text-gray-500">INZ fee</span>
                                 <input type="number" min="0" step="0.01" value={inz} onChange={(e) => setInz(e.target.value)}
                                     className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">Admin fee</span>
+                                <input type="number" min="0" step="0.01" value={adminFee} onChange={(e) => setAdminFee(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">Discount</span>
+                                <select value={discountType} onChange={(e) => setDiscountType(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688] bg-white">
+                                    <option value="none">No discount</option>
+                                    <option value="percent">Percent off</option>
+                                    <option value="fixed">Fixed $ off</option>
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500">{discountType === "percent" ? "Discount %" : "Discount $"}</span>
+                                <input type="number" min="0" step="0.01" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} disabled={discountType === "none"}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688] disabled:bg-gray-50 disabled:text-gray-400" />
                             </label>
                             <label className="block">
                                 <span className="text-[11px] font-semibold text-gray-500">Plan length</span>
@@ -328,9 +362,11 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
                         </div>
 
                         <p className="mt-2 text-[11.5px] text-gray-400">
-                            Professional fee <span className="font-semibold text-gray-600 tabular-nums">{money(Math.max(0, Number(total) - Number(inz)))}</span>
-                            {" · "}INZ fee <span className="font-semibold text-gray-600 tabular-nums">{money(inz)}</span>
-                            {" · "}Total payable <span className="font-semibold text-gray-600 tabular-nums">{money(total)}</span>
+                            Professional <span className="font-semibold text-gray-600 tabular-nums">{money(professional)}</span>
+                            {discountAmount > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{money(discountAmount)}</span></>}
+                            {" + "}admin <span className="font-semibold text-gray-600 tabular-nums">{money(adminFee)}</span>
+                            {" + "}INZ <span className="font-semibold text-gray-600 tabular-nums">{money(inz)}</span>
+                            {" = "}<span className="font-bold text-gray-800 tabular-nums">{money(total)}</span>
                         </p>
 
                         {/* Live preview */}
@@ -353,6 +389,13 @@ function PaymentPlanCard({ plan, feeQuote, config, token }) {
                 {/* Active / completed — the schedule */}
                 {(active || completed) && (
                     <>
+                        <p className="mb-3 text-[11.5px] text-gray-400">
+                            Professional <span className="font-semibold text-gray-600 tabular-nums">{money(plan.professional_fee)}</span>
+                            {Number(plan.discount_amount) > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{money(plan.discount_amount)}</span></>}
+                            {Number(plan.admin_fee) > 0 && <> + admin <span className="font-semibold text-gray-600 tabular-nums">{money(plan.admin_fee)}</span></>}
+                            {" + "}INZ <span className="font-semibold text-gray-600 tabular-nums">{money(plan.inz_fee)}</span>
+                            {" = "}<span className="font-bold text-gray-800 tabular-nums">{money(plan.total_amount)}</span>
+                        </p>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                             <Figure label="Deposit" value={money(plan.deposit_amount)} strong />
                             <Figure label={`Weekly × ${plan.weeks}`} value={money(plan.weekly_amount)} />

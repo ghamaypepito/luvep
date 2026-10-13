@@ -60,6 +60,11 @@ class InstallmentPlanService
             'deposit_percent' => $figures['deposit_percent'],
             'deposit_amount' => $figures['deposit_amount'],
             'inz_fee' => $figures['inz_fee'],
+            'professional_fee' => $figures['professional_fee'],
+            'discount_type' => $figures['discount_type'],
+            'discount_value' => $figures['discount_value'],
+            'discount_amount' => $figures['discount_amount'],
+            'admin_fee' => $figures['admin_fee'],
             'financed_amount' => $figures['financed_amount'],
             'weekly_amount' => $figures['weekly_amount'],
             'status' => InstallmentPlan::STATUS_DRAFT,
@@ -74,8 +79,37 @@ class InstallmentPlanService
         $months = (int) ($terms['plan_months'] ?? array_key_first($presets));
         $weeks = (int) ($presets[$months] ?? max(1, $months * 4));
 
-        $total = round((float) ($terms['total_amount'] ?? 0), 2);
         $inzFee = round((float) ($terms['inz_fee'] ?? 0), 2);
+
+        // New structured path: professional fee − discount + admin fee + INZ.
+        // Legacy callers still pass `total_amount` directly (no discount/admin).
+        if (array_key_exists('professional_fee', $terms)) {
+            $professional = round((float) ($terms['professional_fee'] ?? 0), 2);
+
+            $discountType = in_array($terms['discount_type'] ?? 'none', ['percent', 'fixed'], true)
+                ? $terms['discount_type'] : 'none';
+            $discountValue = round((float) ($terms['discount_value'] ?? 0), 2);
+            $discountAmount = match ($discountType) {
+                'percent' => round($professional * $discountValue / 100, 2),
+                'fixed' => round($discountValue, 2),
+                default => 0.0,
+            };
+            $discountAmount = max(0.0, min($discountAmount, $professional));
+
+            $adminFee = round((float) ($terms['admin_fee'] ?? config('immigration.fees.admin_fee', 10)), 2);
+            if (config('immigration.fees.admin_fee_gst', false)) {
+                $adminFee = round($adminFee * (1 + \App\Models\VisaType::GST_RATE), 2);
+            }
+
+            $total = round(($professional - $discountAmount) + $inzFee + $adminFee, 2);
+        } else {
+            $total = round((float) ($terms['total_amount'] ?? 0), 2);
+            $professional = round(max(0, $total - $inzFee), 2);
+            $discountType = 'none';
+            $discountValue = 0.0;
+            $discountAmount = 0.0;
+            $adminFee = 0.0;
+        }
 
         $bounds = $this->depositBounds();
         $pct = (float) ($terms['deposit_percent'] ?? $bounds['default']);
@@ -99,6 +133,11 @@ class InstallmentPlanService
             'deposit_percent' => $pct,
             'deposit_amount' => $deposit,
             'inz_fee' => $inzFee,
+            'professional_fee' => $professional,
+            'discount_type' => $discountType,
+            'discount_value' => $discountValue,
+            'discount_amount' => $discountAmount,
+            'admin_fee' => $adminFee,
             'financed_amount' => $financed,
             'weekly_amount' => $weekly,
         ];
@@ -204,6 +243,11 @@ class InstallmentPlanService
             'deposit_percent' => (float) $plan->deposit_percent,
             'deposit_amount' => (float) $plan->deposit_amount,
             'inz_fee' => (float) $plan->inz_fee,
+            'professional_fee' => (float) $plan->professional_fee,
+            'discount_type' => $plan->discount_type ?? 'none',
+            'discount_value' => (float) $plan->discount_value,
+            'discount_amount' => (float) $plan->discount_amount,
+            'admin_fee' => (float) $plan->admin_fee,
             'financed_amount' => (float) $plan->financed_amount,
             'weekly_amount' => (float) $plan->weekly_amount,
             'total_paid' => $plan->totalPaid(),

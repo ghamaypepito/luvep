@@ -2441,6 +2441,7 @@ class ImmigrationController extends Controller
             'installment_config' => [
                 'presets' => $plans->presets(),
                 'deposit' => $plans->depositBounds(),
+                'admin_fee' => (float) config('immigration.fees.admin_fee', 10),
             ],
         ]);
     }
@@ -2467,12 +2468,17 @@ class ImmigrationController extends Controller
         $normal = $rows->firstWhere('tier', 'normal');
         $disc = $rows->firstWhere('tier', 'discounted');
 
+        $inzFee = (float) ($normal['inz_fee'] ?? 0);
+
         return [
             'resolved' => true,
             'visa_type' => $visaType->name,
             'normal_total' => (float) ($normal['total'] ?? 0),
             'discounted_total' => (float) ($disc['total'] ?? 0),
-            'inz_fee' => (float) ($normal['inz_fee'] ?? 0),
+            'inz_fee' => $inzFee,
+            // Professional portion (GST-inclusive) = total − INZ, for the plan's
+            // professional-fee field (discount applies to this, not the INZ fee).
+            'normal_professional' => max(0, (float) ($normal['total'] ?? 0) - $inzFee),
         ];
     }
 

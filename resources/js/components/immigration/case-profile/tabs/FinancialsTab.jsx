@@ -137,7 +137,7 @@ export default function FinancialsTab({ lead, financials = { record: null, payme
                 leadId={lead.id}
                 plan={financials.installment_plan}
                 config={financials.installment_config}
-                defaults={{ total: t.payable, inz: r.inz_fee }}
+                defaults={{ professional: Math.max(0, (Number(t.payable) || 0) - (Number(r.inz_fee) || 0)), inz: r.inz_fee }}
                 fmt={fmt}
             />
         </div>
@@ -153,13 +153,23 @@ function PaymentSchedule({ leadId, plan, config, defaults = {}, fmt }) {
 
     const [months, setMonths] = useState(monthsList[0] || 3);
     const [pct, setPct] = useState(dep.default);
-    const [total, setTotal] = useState(defaults.total || "");
+    const [professional, setProfessional] = useState(defaults.professional ?? defaults.total ?? "");
     const [inz, setInz] = useState(defaults.inz || "");
+    const [discountType, setDiscountType] = useState("none");
+    const [discountValue, setDiscountValue] = useState(0);
+    const [adminFee, setAdminFee] = useState(config?.admin_fee ?? 0);
     const [saving, setSaving] = useState(false);
     const [payingId, setPayingId] = useState(null);
 
     const base = `${immBase()}/cases/${leadId}`;
     const active = plan && (plan.status === "active" || plan.status === "completed");
+
+    const discountAmount = Math.max(0, Math.min(
+        discountType === "percent" ? (Number(professional) * Number(discountValue)) / 100
+            : discountType === "fixed" ? Number(discountValue) : 0,
+        Number(professional || 0),
+    ));
+    const total = Math.max(0, Number(professional || 0) - discountAmount) + Number(inz || 0) + Number(adminFee || 0);
 
     const weeks = presets[months] || months * 4;
     const deposit = Math.min(Math.max((Number(total) * Number(pct)) / 100, Number(inz || 0)), Number(total || 0));
@@ -167,10 +177,14 @@ function PaymentSchedule({ leadId, plan, config, defaults = {}, fmt }) {
     const weekly = weeks > 0 ? financed / weeks : 0;
 
     const createPlan = () => {
-        if (!Number(total)) { toast.error("Enter the total payable"); return; }
+        if (!Number(professional)) { toast.error("Enter the professional fee"); return; }
         setSaving(true);
         router.post(`${base}/installment-plan`,
-            { total_amount: Number(total), inz_fee: Number(inz || 0), plan_months: Number(months), deposit_percent: Number(pct) },
+            {
+                professional_fee: Number(professional), inz_fee: Number(inz || 0),
+                discount_type: discountType, discount_value: Number(discountValue), admin_fee: Number(adminFee || 0),
+                plan_months: Number(months), deposit_percent: Number(pct),
+            },
             { preserveScroll: true, preserveState: true, onFinish: () => setSaving(false) });
     };
     const markPaid = (row) => {
@@ -190,11 +204,21 @@ function PaymentSchedule({ leadId, plan, config, defaults = {}, fmt }) {
 
             {!active ? (
                 <div className="p-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Total payable</span>
-                            <input type="number" min="0" step="0.01" value={total} onChange={(e) => setTotal(e.target.value)} className={inputCls} /></label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Professional fee</span>
+                            <input type="number" min="0" step="0.01" value={professional} onChange={(e) => setProfessional(e.target.value)} className={inputCls} /></label>
                         <label className="block"><span className="text-[11px] font-semibold text-gray-500">INZ fee</span>
                             <input type="number" min="0" step="0.01" value={inz} onChange={(e) => setInz(e.target.value)} className={inputCls} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Admin fee</span>
+                            <input type="number" min="0" step="0.01" value={adminFee} onChange={(e) => setAdminFee(e.target.value)} className={inputCls} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Discount</span>
+                            <select value={discountType} onChange={(e) => setDiscountType(e.target.value)} className={inputCls + " bg-white"}>
+                                <option value="none">No discount</option>
+                                <option value="percent">Percent off</option>
+                                <option value="fixed">Fixed $ off</option>
+                            </select></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">{discountType === "percent" ? "Discount %" : "Discount $"}</span>
+                            <input type="number" min="0" step="0.01" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} disabled={discountType === "none"} className={inputCls + " disabled:bg-gray-100 disabled:text-gray-400"} /></label>
                         <label className="block"><span className="text-[11px] font-semibold text-gray-500">Plan length</span>
                             <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className={inputCls + " bg-white"}>
                                 {monthsList.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"} · {presets[m]} wks</option>)}
@@ -202,7 +226,14 @@ function PaymentSchedule({ leadId, plan, config, defaults = {}, fmt }) {
                         <label className="block"><span className="text-[11px] font-semibold text-gray-500">Deposit % ({dep.min}–{dep.max})</span>
                             <input type="number" min={dep.min} max={dep.max} step="1" value={pct} onChange={(e) => setPct(e.target.value)} className={inputCls} /></label>
                     </div>
-                    <p className="mt-2 text-[11px] text-gray-500">Deposit <span className="font-semibold text-gray-700">{fmt(deposit)}</span> (incl. INZ) · then <span className="font-semibold text-gray-700">{fmt(weekly)}</span> / week × {weeks} · financed {fmt(financed)}</p>
+                    <p className="mt-2 text-[11px] text-gray-500">
+                        Professional <span className="font-semibold text-gray-700 tabular-nums">{fmt(professional || 0)}</span>
+                        {discountAmount > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{fmt(discountAmount)}</span></>}
+                        {" + "}admin <span className="font-semibold text-gray-700 tabular-nums">{fmt(adminFee || 0)}</span>
+                        {" + "}INZ <span className="font-semibold text-gray-700 tabular-nums">{fmt(inz || 0)}</span>
+                        {" = "}<span className="font-bold text-gray-900 tabular-nums">{fmt(total)}</span>
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-500">Deposit <span className="font-semibold text-gray-700">{fmt(deposit)}</span> (incl. INZ) · then <span className="font-semibold text-gray-700">{fmt(weekly)}</span> / week × {weeks} · financed {fmt(financed)}</p>
                     <button type="button" onClick={createPlan} disabled={saving}
                         className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-black disabled:opacity-50">
                         <Plus size={13} /> Create payment plan

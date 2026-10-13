@@ -119,4 +119,35 @@ return [
         'deposit_percent_max' => 30,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Fees — admin fee
+    |--------------------------------------------------------------------------
+    |
+    | A flat admin fee added to every engagement total, for BOTH pay-now and
+    | pay-later. Editable per case; this is the default. `admin_fee_gst` toggles
+    | whether GST is added on top of the admin fee (default: flat, no GST).
+    |
+    */
+    'fees' => [
+        'admin_fee' => 10,
+        'admin_fee_gst' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Onboarding deadlines (pre-screening / application)
+    |--------------------------------------------------------------------------
+    |
+    | After the adviser sends the written agreement the client is expected to
+    | SIGN within `sign_days`, and after signing to CHOOSE pay-now/pay-later
+    | within `choose_days`. These drive the countdowns shown to staff + client
+    | and the automated reminder emails.
+    |
+    */
+    'onboarding' => [
+        'sign_days' => 5,
+        'choose_days' => 5,
+    ],
+
 ];

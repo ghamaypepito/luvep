@@ -29,6 +29,7 @@ class InstallmentPlan extends Model
     protected $fillable = [
         'lead_id', 'payment_type', 'plan_months', 'weeks',
         'total_amount', 'deposit_percent', 'deposit_amount', 'inz_fee',
+        'professional_fee', 'discount_type', 'discount_value', 'discount_amount', 'admin_fee',
         'financed_amount', 'weekly_amount', 'start_date', 'currency',
         'status', 'created_by',
     ];
@@ -40,6 +41,10 @@ class InstallmentPlan extends Model
         'deposit_percent' => 'decimal:2',
         'deposit_amount' => 'decimal:2',
         'inz_fee' => 'decimal:2',
+        'professional_fee' => 'decimal:2',
+        'discount_value' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'admin_fee' => 'decimal:2',
         'financed_amount' => 'decimal:2',
         'weekly_amount' => 'decimal:2',
         'start_date' => 'date',
