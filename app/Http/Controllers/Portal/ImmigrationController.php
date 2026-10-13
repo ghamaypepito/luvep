@@ -2497,11 +2497,20 @@ class ImmigrationController extends Controller
             return null;
         }
 
+        $awaitingSign = in_array($a->status, [\App\Models\Agreement::STATUS_SENT, \App\Models\Agreement::STATUS_VIEWED], true);
+        $signBy = $a->sent_at ? $a->sent_at->copy()->addDays((int) config('immigration.onboarding.sign_days', 5)) : null;
+        $chooseBy = $a->signed_at ? $a->signed_at->copy()->addDays((int) config('immigration.onboarding.choose_days', 5)) : null;
+
         return [
             'title' => $a->title,
             'status' => $a->status,
             'signer_name' => $a->signer_name,
             'signed_at' => optional($a->signed_at)->toIso8601String(),
+            // Deadlines for the staff countdown (same windows the client sees).
+            'sign_by' => $awaitingSign ? optional($signBy)->toIso8601String() : null,
+            'sign_overdue' => $awaitingSign && $signBy ? now()->greaterThan($signBy) : false,
+            'choose_by' => optional($chooseBy)->toIso8601String(),
+            'choose_overdue' => $chooseBy ? now()->greaterThan($chooseBy) : false,
         ];
     }
 

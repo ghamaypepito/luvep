@@ -96,6 +96,17 @@ class ClientApplicationController extends Controller
         $ok = $signer->recordSignature($agreement, $request->only(['signer_name', 'signature_data']), $request);
         abort_unless($ok, 422, 'Your signature could not be recorded.');
 
+        // Notify staff the agreement is signed, and start the "choose payment"
+        // window (config-driven automation; no-op unless the message is enabled).
+        if ($lead = $preScreening->lead) {
+            $signedAt = optional($agreement->fresh()->signed_at ?? now());
+            $chooseBy = $signedAt->copy()->addDays((int) config('immigration.onboarding.choose_days', 5));
+            app(\App\Services\EmailAutomationService::class)->fire('immigration.engagement.signed', $lead, [
+                'signed_at' => $signedAt->toFormattedDateString(),
+                'choose_by' => $chooseBy->toFormattedDateString(),
+            ]);
+        }
+
         return back()->with('success', 'Thank you — your agreement is signed.');
     }
 
@@ -153,15 +164,25 @@ class ClientApplicationController extends Controller
             return null;
         }
 
+        $awaitingSign = in_array($a->status, [Agreement::STATUS_SENT, Agreement::STATUS_VIEWED], true);
+        $signBy = $a->sent_at ? $a->sent_at->copy()->addDays((int) config('immigration.onboarding.sign_days', 5)) : null;
+        $chooseBy = $a->signed_at ? $a->signed_at->copy()->addDays((int) config('immigration.onboarding.choose_days', 5)) : null;
+
         return [
             'title' => $a->title,
             'status' => $a->status,
-            'can_sign' => in_array($a->status, [Agreement::STATUS_SENT, Agreement::STATUS_VIEWED], true),
+            'can_sign' => $awaitingSign,
             'signed' => $a->status === Agreement::STATUS_SIGNED,
             'signer_name' => $a->signer_name,
             'signed_at' => optional($a->signed_at)->toIso8601String(),
             'pdf_url' => "/application/{$pre->token}/agreement/pdf",
             'sign_url' => "/application/{$pre->token}/agreement/sign",
+            // Sign-by (while awaiting signature) and choose-payment-by (after
+            // signing) deadlines for the client countdown.
+            'sign_by' => $awaitingSign ? optional($signBy)->toIso8601String() : null,
+            'sign_overdue' => $awaitingSign && $signBy ? now()->greaterThan($signBy) : false,
+            'choose_by' => optional($chooseBy)->toIso8601String(),
+            'choose_overdue' => $chooseBy ? now()->greaterThan($chooseBy) : false,
         ];
     }
 

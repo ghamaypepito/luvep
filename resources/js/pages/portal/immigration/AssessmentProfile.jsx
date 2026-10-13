@@ -50,6 +50,21 @@ const initials = (name) =>
 const fmtDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "long", year: "numeric" }) : "";
 
+// A deadline countdown pill (amber while pending, rose once overdue).
+function DeadlinePill({ iso, overdue, label }) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    const days = Math.ceil((d - new Date()) / 86400000);
+    const when = d.toLocaleDateString("en-NZ", { day: "numeric", month: "short" });
+    const tail = overdue ? "overdue" : days <= 0 ? "due today" : `${days} day${days === 1 ? "" : "s"} left`;
+    return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+            overdue ? "bg-rose-50 text-rose-600 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+            <Clock size={10} /> {label} {when} · {tail}
+        </span>
+    );
+}
+
 // Pre-screening pipeline — the visual stages a potential client moves through.
 const STEPS = [
     { key: "new", label: "New" },
@@ -476,6 +491,10 @@ function EngagementCard({ agreement, token }) {
                             <p className="text-[12px] text-gray-500 mt-0.5">
                                 {signed ? `Signed${agreement.signer_name ? ` by ${agreement.signer_name}` : ""}` : "Sent to the client to review and sign."}
                             </p>
+                            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                {!signed && agreement.sign_by && <DeadlinePill iso={agreement.sign_by} overdue={agreement.sign_overdue} label="Sign by" />}
+                                {signed && agreement.choose_by && <DeadlinePill iso={agreement.choose_by} overdue={agreement.choose_overdue} label="Choose payment by" />}
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span>

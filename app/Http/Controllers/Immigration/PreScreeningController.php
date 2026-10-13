@@ -171,6 +171,15 @@ class PreScreeningController extends Controller
             return back()->with('error', 'Could not generate the agreement: '.$e->getMessage());
         }
 
+        // Email the client a link to sign + the sign-by date (config-driven
+        // automation; a no-op unless the "engagement sent" message is enabled).
+        $signBy = optional($agreement->sent_at ?? now())
+            ->copy()->addDays((int) config('immigration.onboarding.sign_days', 5));
+        app(\App\Services\EmailAutomationService::class)->fire('immigration.engagement.sent', $lead, [
+            'engagement_url' => rtrim((string) config('app.url'), '/').'/application/'.$preScreening->token,
+            'sign_by' => $signBy->toFormattedDateString(),
+        ]);
+
         return back()->with('success', 'Engagement agreement sent to the client.');
     }
 

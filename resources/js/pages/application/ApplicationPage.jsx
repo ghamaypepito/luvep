@@ -14,6 +14,21 @@ const money = (n) => "$" + Number(n || 0).toLocaleString("en-NZ", { minimumFract
 const fmtDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : "";
 
+// A deadline countdown pill (amber while pending, rose once overdue).
+function DeadlinePill({ iso, overdue, label }) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    const days = Math.ceil((d - new Date()) / 86400000);
+    const when = d.toLocaleDateString("en-NZ", { day: "numeric", month: "short" });
+    const tail = overdue ? "overdue" : days <= 0 ? "due today" : `${days} day${days === 1 ? "" : "s"} left`;
+    return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+            overdue ? "bg-rose-50 text-rose-600 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+            <Clock size={11} /> {label} {when} · {tail}
+        </span>
+    );
+}
+
 // Teal-branded calendar styling for react-day-picker (matches the page accent).
 const RDP_TEAL = {
     "--rdp-accent-color": "#009688",
@@ -187,7 +202,7 @@ function MeetingCard({ title, subtitle, booking, token, meeting }) {
     );
 }
 
-function PlanSection({ plan, token }) {
+function PlanSection({ plan, token, agreement }) {
     const [choosing, setChoosing] = useState(null);
     if (!plan) return null;
 
@@ -210,6 +225,9 @@ function PlanSection({ plan, token }) {
             {draft && (
                 <>
                     <p className="text-[13px] text-gray-600">Total fee <span className="font-bold text-gray-900">{money(plan.total_amount)}</span>. Choose how you'd like to pay:</p>
+                    {agreement?.choose_by && (
+                        <div className="mt-1.5"><DeadlinePill iso={agreement.choose_by} overdue={agreement.choose_overdue} label="Please choose by" /></div>
+                    )}
                     <p className="mt-1 text-[11.5px] text-gray-400">
                         Professional fee <span className="font-semibold text-gray-600 tabular-nums">{money(plan.professional_fee)}</span>
                         {Number(plan.discount_amount) > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{money(plan.discount_amount)}</span></>}
@@ -461,6 +479,9 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                         ) : agreement.can_sign ? (
                             <div>
                                 <p className="text-[13px] text-gray-600">Please review your engagement agreement and sign to continue.</p>
+                                {agreement.sign_by && (
+                                    <div className="mt-2"><DeadlinePill iso={agreement.sign_by} overdue={agreement.sign_overdue} label="Please sign by" /></div>
+                                )}
                                 <div className="mt-3 flex items-center gap-2">
                                     <a href={agreement.pdf_url} target="_blank" rel="noreferrer"
                                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50"><FileText size={14} /> Review</a>
@@ -478,7 +499,7 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                 )}
 
                 {/* Payment — pay now / pay later, or the active schedule */}
-                {!terminal && <div id="payment" className="scroll-mt-4"><PlanSection plan={plan} token={pre.token} /></div>}
+                {!terminal && <div id="payment" className="scroll-mt-4"><PlanSection plan={plan} token={pre.token} agreement={agreement} /></div>}
 
                 {/* Documents — upload + view your own files */}
                 {!terminal && (
