@@ -100,6 +100,7 @@ const TABS = [
     { key: "dependants",     label: "Family",             icon: Users,         Comp: DependantsTab },
     { key: "documents",      label: "Documents",          icon: FileText,      Comp: DocumentsTab },
     { key: "stages",         label: "Stages",             icon: Milestone,     Comp: StagesTab },
+    { key: "financials",     label: "Financials",         icon: DollarSign,    Comp: FinancialsTab },
     { key: "communications", label: "Communications",     icon: MessageSquare, Comp: CommunicationsTab },
     { key: "ai_health",      label: "AI Health",       icon: Sparkles,        Comp: AIHealthTab },
     { key: "notes",          label: "Notes & Activity", icon: StickyNote,     Comp: NotesTab },
