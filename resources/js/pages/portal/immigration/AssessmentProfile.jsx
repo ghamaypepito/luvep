@@ -3,7 +3,7 @@ import { Head, router } from "@inertiajs/react";
 import {
     ChevronLeft, FileText, ExternalLink, Calendar, CalendarCheck, Clock,
     Images, Loader2, Video, CheckCircle2, Circle, ClipboardList, Copy,
-    Wallet, Receipt, Check, ArrowRightCircle,
+    Wallet, Receipt, Check, ArrowRightCircle, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
@@ -531,6 +531,7 @@ function RecreateVisaControl({ intake }) {
 export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [showAssessment, setShowAssessment] = useState(false);
 
     const backToList = () => router.visit("/portal/immigration/assessments");
 
@@ -547,6 +548,9 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
 
     const pct = data?.readiness?.pct ?? intake.readiness_pct ?? 0;
     const ring = 2 * Math.PI * 22;
+    const ring2 = 2 * Math.PI * 24;
+    const readiness = data?.readiness || null;
+    const gaps = readiness ? Math.max(0, (readiness.total || 0) - (readiness.filled || 0)) : null;
     // Intake-attached files + the client's /application uploads, shown together.
     const docs = [...(data?.documents || []), ...client_documents];
     const status = intake.pre_screen?.status || "new";
@@ -605,14 +609,52 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                     <NextAction i={intake} />
                 </div>
 
-                {/* Visa assessment — the full form workspace (primary). */}
+                {/* Visa assessment — a compact "available" card; opens the full
+                    form workspace in a modal so it doesn't dominate the page. */}
                 <section className="space-y-3">
                     <div className="flex items-center gap-2">
                         <ClipboardList size={16} className="text-[#009688]" />
                         <h2 className="text-[15px] font-bold text-gray-900">Visa assessment</h2>
                         <span className="text-[12px] text-gray-400">· the submitted form</span>
                     </div>
-                    <IntakeViewModal intake={intake} data={data} loading={loading} asPage chromeless onClose={backToList} />
+                    <button type="button" onClick={() => setShowAssessment(true)}
+                        className="group w-full text-left rounded-2xl border border-gray-100 bg-white shadow-sm p-5 hover:border-[#009688] hover:shadow-md transition-all">
+                        <div className="flex items-center gap-4 flex-wrap">
+                            {/* Completeness ring */}
+                            <div className="relative flex-shrink-0" style={{ width: 56, height: 56 }}>
+                                <svg width="56" height="56" viewBox="0 0 56 56" className="-rotate-90">
+                                    <circle cx="28" cy="28" r="24" fill="none" stroke="#e5e7eb" strokeWidth="4" />
+                                    <circle cx="28" cy="28" r="24" fill="none" stroke="#009688" strokeWidth="4" strokeLinecap="round"
+                                        strokeDasharray={ring2} strokeDashoffset={ring2 * (1 - pct / 100)} />
+                                </svg>
+                                <span className="absolute inset-0 flex items-center justify-center text-[13px] font-bold text-gray-900 tabular-nums">{pct}%</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-[14px] font-bold text-gray-900">
+                                        {data?.visa_label || VISA_LABEL[intake.visa_type] || intake.visa_type} assessment
+                                    </h3>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                        <ClipboardList size={11} /> Available
+                                    </span>
+                                </div>
+                                <p className="text-[12px] text-gray-500 mt-1">
+                                    {loading ? (
+                                        <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading the submitted form…</span>
+                                    ) : readiness ? (
+                                        <>
+                                            <span className="font-semibold text-gray-700 tabular-nums">{readiness.filled} / {readiness.total}</span> fields answered
+                                            {gaps > 0 && <> · <span className="font-semibold text-amber-600 tabular-nums">{gaps} gap{gaps === 1 ? "" : "s"}</span></>}
+                                        </>
+                                    ) : "Submitted form ready to review"}
+                                    {data?.submitted_at && <> · Submitted {fmtDate(data.submitted_at)}</>}
+                                </p>
+                            </div>
+                            <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold group-hover:bg-[#00796b]">
+                                <Eye size={15} /> View assessment
+                            </span>
+                        </div>
+                    </button>
                 </section>
 
                 {/* Consultations — the two pre-screening meetings. */}
@@ -662,6 +704,16 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                     )}
                 </section>
             </div>
+
+            {/* Full assessment workspace — opened from the card above. */}
+            {showAssessment && (
+                <IntakeViewModal
+                    intake={intake}
+                    data={data}
+                    loading={loading}
+                    onClose={() => setShowAssessment(false)}
+                />
+            )}
         </>
     );
 }
