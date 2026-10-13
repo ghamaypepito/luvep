@@ -155,8 +155,8 @@
         <tr><th style="width:60%">Item</th><th class="amt">Amount</th></tr>
         <tr><td>Weekly Rent — payable in advance every {!! $f($t['rent_day'] ?? 'Friday', 'Friday') !!}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
         @unless($isTransient)
-            <tr><td>Utilities — Option 1 (Exalt manages)</td><td class="amt">{{ ($utilOption == '1' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
-            <tr><td>Utilities — Option 2 (Tenant arranges)</td><td class="amt">{{ ($utilOption == '2' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+            <tr><td>Option 1 — Exalt Manages Utilities</td><td class="amt">{{ ($utilOption == '1' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+            <tr><td>Option 2 — Tenant Arranges Utilities Directly</td><td class="amt">{{ ($utilOption == '2' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
         @endunless
         <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : ($hasUtility ? 'Rent + Utilities' : 'Rent') }}</td><td class="amt">NZ${!! $m($weeklyTotal) !!}</td></tr>
     </table>
