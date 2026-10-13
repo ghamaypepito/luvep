@@ -392,30 +392,22 @@ export default function ApplicationPage({ applicant, visa_label, submitted_at, p
                 {/* Your next step — one clear current task */}
                 <NextStep pre={pre} agreement={agreement} bookings={bookings} plan={plan} onSign={() => setSignOpen(true)} />
 
-                {/* Consultations */}
+                {/* Consultation — a single booking; the client books one meeting
+                    with an adviser and isn't shown the internal meeting steps. */}
                 {!terminal && (
                     <section id="consultations" className="space-y-3 scroll-mt-4">
                         <div className="flex items-center gap-2">
                             <Calendar size={16} className="text-[#009688]" />
-                            <h2 className="text-[15px] font-bold text-gray-900">Your consultations</h2>
+                            <h2 className="text-[15px] font-bold text-gray-900">Your consultation</h2>
                         </div>
-                        <p className="text-[12.5px] text-gray-500 -mt-1">You can book these at any time — no need to finish everything else first.</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <MeetingCard
-                                title="Immigration consultation"
-                                subtitle="Meet an adviser to talk through your situation."
-                                booking={bookings.consult}
-                                token={pre.token}
-                                meeting="consult"
-                            />
-                            <MeetingCard
-                                title="Consent meeting"
-                                subtitle="If you decide to proceed, we confirm consent together."
-                                booking={bookings.consent}
-                                token={pre.token}
-                                meeting="consent"
-                            />
-                        </div>
+                        <p className="text-[12.5px] text-gray-500 -mt-1">You can book this at any time — no need to finish everything else first.</p>
+                        <MeetingCard
+                            title="Book a consultation"
+                            subtitle="Meet an adviser to talk through your situation."
+                            booking={bookings.consult}
+                            token={pre.token}
+                            meeting="consult"
+                        />
                     </section>
                 )}
 
