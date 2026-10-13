@@ -190,8 +190,8 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                         <Loader2 size={16} className="animate-spin" /> Loading client details…
                     </div>
                 ) : (
-                    <div className="grid gap-0 xl:grid-cols-2">
-                        {/* Fields editor */}
+                    <div className="grid gap-0 xl:grid-cols-[26rem_1fr]">
+                        {/* Fields editor — fixed slim width so the preview gets the rest. */}
                         <div className="max-h-[44rem] space-y-5 overflow-y-auto border-r border-gray-100 p-4">
                             <label className="block">
                                 <span className="mb-1 block text-xs font-medium text-gray-500">Property address</span>

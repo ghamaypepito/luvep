@@ -167,7 +167,7 @@
     {{-- ---------- Signatures ---------- --}}
     <h2 class="section">Signatures</h2>
     <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
-    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; @endphp
+    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <table class="sign">
         <tr>
             <td>
@@ -181,7 +181,13 @@
         </tr>
         <tr>
             <td><div class="sign-line"></div><div class="sign-cap">Exalt Property Management &nbsp;·&nbsp; Date</div></td>
-            <td></td>
+            <td>
+                @if($adminSignature)
+                    <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
+                @endif
+                <div class="sign-line"></div>
+                <div class="sign-cap">{{ $adminName ? $adminName.' — ' : '' }}Exalt Property Admin</div>
+            </td>
         </tr>
     </table>
 

@@ -86,6 +86,9 @@ class AccommodationAgreementController extends Controller
             'data' => $v['data'] ?? [],
             'titles' => self::TITLES,
             'preview' => true,
+            // Exalt Property Admin signatory — the generating user's saved signature.
+            'adminSignature' => $request->user()->signatureDataUriTrimmed(),
+            'adminName' => $request->user()->name,
         ])->render();
 
         return response($html)->header('Content-Type', 'text/html');
@@ -109,11 +112,23 @@ class AccommodationAgreementController extends Controller
         abort_if($ctx === null, 404);
 
         try {
+            // Bake the generating user's saved signature onto the Exalt Property
+            // Admin signatory, and snapshot it in `data` so the signed PDF re-render
+            // (and any later re-render) reproduces the same admin signature.
+            $admin = $request->user();
+            $adminSignature = $admin->signatureDataUriTrimmed();
+            $adminName = $admin->name;
+            $data = $v['data'];
+            $data['admin_signature'] = $adminSignature;
+            $data['admin_name'] = $adminName;
+
             $pdf = Pdf::loadView('agreements.flatmate.agreement', [
                 'agreementType' => $v['agreement_type'],
-                'data' => $v['data'],
+                'data' => $data,
                 'titles' => self::TITLES,
                 'preview' => false,
+                'adminSignature' => $adminSignature,
+                'adminName' => $adminName,
             ])->setPaper('a4')->output();
 
             $name = Str::slug(($ctx['name'] ?: 'client').'-'.$v['agreement_type']);
@@ -125,8 +140,8 @@ class AccommodationAgreementController extends Controller
                 'pre_tenancy_form_id' => $ctx['pre_tenancy_form_id'],
                 'eoi_submission_id' => $ctx['eoi_submission_id'],
                 'client_name' => $ctx['name'],
-                'property_address' => $v['data']['property_address'] ?? $ctx['property_address'],
-                'data' => $v['data'],
+                'property_address' => $data['property_address'] ?? $ctx['property_address'],
+                'data' => $data,
                 'status' => AccommodationAgreement::STATUS_SENT,
                 'pdf_path' => $path,
                 'signing_token' => Str::random(48),

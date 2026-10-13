@@ -505,6 +505,9 @@ Route::middleware(['auth'])->group(function () {
     // Profile avatar — role-agnostic; any authenticated user manages their own.
     Route::post('/profile/avatar', [UserController::class, 'uploadAvatar'])->name('profile.avatar.upload');
     Route::delete('/profile/avatar', [UserController::class, 'deleteAvatar'])->name('profile.avatar.delete');
+    // Generic staff e-signature (any portal). Used on department agreements etc.
+    Route::post('/profile/signature', [UserController::class, 'saveSignature'])->name('profile.signature.save');
+    Route::delete('/profile/signature', [UserController::class, 'deleteSignature'])->name('profile.signature.delete');
 
     // Global search — Cmd+K across leads, tenants, properties, programs,
     // schools, English classes/assessments, applications, bookings.
@@ -2130,6 +2133,20 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/applications/{submission}/pre-tenancy/{kind}/download', [\App\Http\Controllers\PreTenancyFormController::class, 'download'])->name('applications.pre-tenancy.download');
             Route::delete('/applications/{submission}', [EoiSubmissionController::class, 'destroy'])->name('applications.destroy');
 
+            // My Profile — staff account + e-signature (used as the Exalt admin
+            // signatory on generated agreements).
+            Route::get('/profile', function () {
+                $me = auth()->user();
+
+                return inertia('portal/accommodation/Profile', [
+                    'user' => $me->only(['id', 'name', 'email', 'role']),
+                    'signature' => [
+                        'data_uri' => $me->signatureDataUri(),
+                        'updated_at' => optional($me->signature_updated_at)?->toIso8601String(),
+                    ],
+                ]);
+            })->name('profile');
+
             // ----------------------------------------------------------------
             // Forms — the standalone Pre-Tenancy list + the Agreements builder.
             // ----------------------------------------------------------------
@@ -2150,7 +2167,7 @@ Route::middleware(['auth'])->group(function () {
             // incrementally. Each points at the shared Placeholder page until
             // its controller/model/pages are built.
             // ----------------------------------------------------------------
-            $stub = fn (string $title, string $description) => fn () => inertia('portal/accommodation/Placeholder', compact('title', 'description'));
+            $stub = fn (string $title, string $description) => fn () => inertia('portal/accommodation/Placeholder', ['title' => $title, 'description' => $description]);
 
             // Work (Tenants + Onboarding + Calendar are real above; Task Tracker
             // uses the shared Task Board; the rest are scaffolded placeholders).
@@ -2173,9 +2190,8 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/message-templates/{template}', [MessageTemplateController::class, 'update'])->name('message-templates.update');
             Route::delete('/message-templates/{template}', [MessageTemplateController::class, 'destroy'])->name('message-templates.destroy');
 
-            // Reports & Account
+            // Reports & Account ('/profile' is a real page defined above.)
             Route::get('/reports', $stub('Reports', 'Weekly, monthly, quarterly and custom reports.'))->name('reports');
-            Route::get('/profile', $stub('My Profile', 'Your account details and preferences.'))->name('profile');
             Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
         });
 

@@ -137,6 +137,9 @@ class AccommodationAgreementSigningController extends Controller
             'data' => $agreement->data ?? [],
             'titles' => self::TITLES,
             'preview' => $preview,
+            // Exalt Property Admin signatory snapshotted at generate time.
+            'adminSignature' => $agreement->data['admin_signature'] ?? null,
+            'adminName' => $agreement->data['admin_name'] ?? null,
         ], $extra))->render();
     }
 

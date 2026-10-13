@@ -7,7 +7,9 @@ use App\Models\User;
 use App\Support\UploadValidation;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
@@ -267,6 +269,70 @@ class UserController extends Controller
         ]);
 
         return back()->with('success', $user->is_active ? 'User activated.' : 'User deactivated.');
+    }
+
+    /**
+     * Save the signed-in staff member's e-signature (drawn/typed canvas data or
+     * an uploaded image). Stored on the user and reused anywhere their signature
+     * is rendered (e.g. the accommodation agreement's Exalt admin signatory).
+     */
+    public function saveSignature(Request $request)
+    {
+        $request->validate([
+            'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
+            'signature_data' => 'nullable|string',
+        ]);
+        $me = $request->user();
+        try {
+            $binary = null;
+            $ext = 'png';
+            if ($request->hasFile('signature_image')) {
+                $file = $request->file('signature_image');
+                $binary = file_get_contents($file->getRealPath());
+                $ext = strtolower($file->getClientOriginalExtension()) === 'jpg' ? 'jpeg' : strtolower($file->getClientOriginalExtension());
+                $ext = in_array($ext, ['png', 'jpeg'], true) ? $ext : 'png';
+            } elseif ($request->filled('signature_data')) {
+                $data = $request->input('signature_data');
+                if (preg_match('/^data:image\/(png|jpe?g);base64,/', $data, $m)) {
+                    $ext = str_starts_with($m[1], 'jp') ? 'jpeg' : 'png';
+                    $data = substr($data, strpos($data, ',') + 1);
+                }
+                $binary = base64_decode(str_replace(' ', '+', $data), true);
+            }
+            if (! $binary) {
+                return back()->withErrors(['error' => 'No signature provided.']);
+            }
+            if ($me->signature_path) {
+                Storage::disk('local')->delete($me->signature_path);
+            }
+            $path = "signatures/user-{$me->id}-".Str::random(8).".{$ext}";
+            Storage::disk('local')->put($path, $binary);
+            $me->forceFill(['signature_path' => $path, 'signature_updated_at' => now()])->save();
+
+            return back()->with('success', 'Signature saved.');
+        } catch (\Throwable $e) {
+            Log::error('Signature save failed', ['user_id' => $me?->id, 'error' => $e->getMessage()]);
+
+            return back()->withErrors(['error' => 'Could not save the signature.']);
+        }
+    }
+
+    /** Remove the signed-in staff member's stored e-signature. */
+    public function deleteSignature(Request $request)
+    {
+        $me = $request->user();
+        try {
+            if ($me->signature_path) {
+                Storage::disk('local')->delete($me->signature_path);
+            }
+            $me->forceFill(['signature_path' => null, 'signature_updated_at' => null])->save();
+
+            return back()->with('success', 'Signature removed.');
+        } catch (\Throwable $e) {
+            Log::error('Signature delete failed', ['user_id' => $me?->id, 'error' => $e->getMessage()]);
+
+            return back()->withErrors(['error' => 'Could not remove the signature.']);
+        }
     }
 
     // ─── Profile avatar ───────────────────────────────────────────────────
