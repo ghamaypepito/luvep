@@ -105,6 +105,8 @@ class EmailEventRegistry
                 ['key' => 'immigration.engagement.sent', 'label' => 'Engagement pack sent', 'when' => 'When the signing link is emailed', 'vars' => ['first_name', 'adviser_name', 'engagement_url']],
                 ['key' => 'immigration.engagement.signed', 'label' => 'Agreement signed', 'when' => 'When the client e-signs the agreement', 'vars' => ['first_name', 'adviser_name', 'signed_at']],
                 ['key' => 'immigration.engagement.expired', 'label' => 'Pack expired unsigned', 'when' => '14 days after the pack was sent', 'vars' => ['first_name', 'adviser_name'], 'scheduled' => true],
+                ['key' => 'immigration.engagement.reminder', 'label' => 'Reminder to sign', 'when' => 'Sign-by window elapsed without a signature', 'vars' => ['first_name', 'adviser_name', 'engagement_url', 'sign_by'], 'scheduled' => true],
+                ['key' => 'immigration.payment.choice.reminder', 'label' => 'Reminder to choose payment', 'when' => 'Choose-by window elapsed without a payment choice', 'vars' => ['first_name', 'adviser_name', 'choose_by'], 'scheduled' => true],
             ]],
             ['group' => 'Money', 'events' => [
                 ['key' => 'immigration.invoice.sent', 'label' => 'Invoice sent', 'when' => 'When an invoice is generated & sent', 'vars' => ['first_name', 'invoice_number', 'invoice_total', 'due_date']],

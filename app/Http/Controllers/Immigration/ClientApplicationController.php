@@ -299,7 +299,7 @@ class ClientApplicationController extends Controller
         // Meetings are scheduled at least 5 days ahead (mirrors the client calendar).
         $data = $request->validate([
             'meeting' => 'required|in:consult,consent',
-            'date' => 'required|date|after_or_equal:' . now()->addDays(5)->toDateString(),
+            'date' => 'required|date|after_or_equal:'.now()->addDays(5)->toDateString(),
             'time' => 'required|string|max:20',
             'note' => 'nullable|string|max:500',
         ], [

@@ -86,3 +86,12 @@ Schedule::command('tasks:overdue-digest')
     ->timezone('Pacific/Auckland')
     ->name('tasks-overdue-digest')
     ->withoutOverlapping();
+
+// Chase onboarding deadlines: remind clients who haven't signed the agreement
+// within the sign-by window, then haven't chosen a payment option within the
+// choose-by window. Once-per-window markers dedupe, so once daily is enough.
+Schedule::command('immigration:onboarding-reminders')
+    ->dailyAt('09:45')
+    ->timezone('Pacific/Auckland')
+    ->name('immigration-onboarding-reminders')
+    ->withoutOverlapping();

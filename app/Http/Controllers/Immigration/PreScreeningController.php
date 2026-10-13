@@ -90,7 +90,7 @@ class PreScreeningController extends Controller
         $this->guard();
         $data = $request->validate([
             'meeting' => 'required|in:consult,consent',
-            'date' => 'required|date|after_or_equal:' . now()->toDateString(),
+            'date' => 'required|date|after_or_equal:'.now()->toDateString(),
             'time' => 'required|string|max:20',
             'note' => 'nullable|string|max:500',
         ]);
