@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Head, router } from "@inertiajs/react";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import {
     ChevronLeft, FileText, ExternalLink, Calendar, CalendarCheck, Clock,
     Images, Loader2, Video, CheckCircle2, Circle, ClipboardList, Copy,
@@ -7,6 +9,31 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
+
+// Teal-branded calendar styling for react-day-picker (matches the page accent).
+const RDP_TEAL = {
+    "--rdp-accent-color": "#009688",
+    "--rdp-accent-background-color": "#00968815",
+    "--rdp-day-width": "34px",
+    "--rdp-day-height": "34px",
+    "--rdp-day_button-width": "34px",
+    "--rdp-day_button-height": "34px",
+    "--rdp-nav_button-width": "28px",
+    "--rdp-nav_button-height": "28px",
+    fontSize: "0.78rem",
+};
+
+// Bookable half-hour slots, 9:00 AM – 4:30 PM.
+const TIME_SLOTS = (() => {
+    const out = [];
+    for (let h = 9; h <= 16; h++) { out.push(`${String(h).padStart(2, "0")}:00`); out.push(`${String(h).padStart(2, "0")}:30`); }
+    return out;
+})();
+const slotLabel = (t) => {
+    const [h, m] = t.split(":").map(Number);
+    return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+};
+const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const VISA_LABEL = {
     resident: "Resident Visa", work: "Work Visa", student: "Student Visa",
@@ -80,20 +107,20 @@ function BookingCard({ title, subtitle, booking, token, meeting }) {
     const booked = !!booking;
     const pending = booking?.status === "pending";
     const [open, setOpen] = useState(false);
-    const [date, setDate] = useState("");
+    const [day, setDay] = useState(null);
     const [time, setTime] = useState("");
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
-    const today = new Date().toISOString().slice(0, 10);
-    const inputCls = "mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]";
+    const inputCls = "w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]";
+    const todayMidnight = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
     const submit = (e) => {
         e.preventDefault();
-        if (!date || !time || !token) return;
+        if (!day || !time || !token) return;
         setSaving(true);
-        router.post(`/portal/immigration/pre-screening/${token}/book`, { meeting, date, time, note }, {
+        router.post(`/portal/immigration/pre-screening/${token}/book`, { meeting, date: toYmd(day), time, note }, {
             preserveScroll: true,
-            onSuccess: () => { setOpen(false); setDate(""); setTime(""); setNote(""); },
+            onSuccess: () => { setOpen(false); setDay(null); setTime(""); setNote(""); },
             onFinish: () => setSaving(false),
         });
     };
@@ -133,20 +160,40 @@ function BookingCard({ title, subtitle, booking, token, meeting }) {
 
                     {/* Staff schedule / reschedule directly from the profile. */}
                     {token && (open ? (
-                        <form onSubmit={submit} className="mt-3 space-y-2.5">
-                            <div className="grid grid-cols-2 gap-2">
-                                <label className="block">
-                                    <span className="text-[11px] font-semibold text-gray-500">Date</span>
-                                    <input type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} required className={inputCls} />
-                                </label>
-                                <label className="block">
-                                    <span className="text-[11px] font-semibold text-gray-500">Time</span>
-                                    <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className={inputCls} />
-                                </label>
+                        <form onSubmit={submit} className="mt-3 space-y-3">
+                            <div>
+                                <span className="text-[11px] font-semibold text-gray-500">Choose a date</span>
+                                <div className="mt-1 rounded-xl border border-gray-200 p-2 flex justify-center">
+                                    <DayPicker
+                                        mode="single"
+                                        selected={day}
+                                        onSelect={(d) => { setDay(d); setTime(""); }}
+                                        startMonth={todayMidnight}
+                                        disabled={{ before: todayMidnight }}
+                                        style={RDP_TEAL}
+                                    />
+                                </div>
                             </div>
-                            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={500} className={inputCls.replace("mt-1 ", "")} />
+                            <div>
+                                <span className="text-[11px] font-semibold text-gray-500">Choose a time</span>
+                                {!day ? (
+                                    <p className="mt-1 text-[12px] text-gray-400">Choose a date first.</p>
+                                ) : (
+                                    <div className="mt-1 grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                        {TIME_SLOTS.map((t) => (
+                                            <button key={t} type="button" onClick={() => setTime(t)}
+                                                className={`px-2 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${
+                                                    time === t ? "bg-[#009688] text-white border-[#009688]"
+                                                        : "bg-white text-gray-600 border-gray-200 hover:border-[#009688] hover:text-[#009688]"}`}>
+                                                {slotLabel(t)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={500} className={inputCls} />
                             <div className="flex items-center gap-2">
-                                <button type="submit" disabled={saving || !date || !time}
+                                <button type="submit" disabled={saving || !day || !time}
                                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
                                     {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />} {booked ? "Reschedule" : "Schedule meeting"}
                                 </button>
@@ -722,8 +769,8 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                             meeting="consult"
                         />
                         <BookingCard
-                            title="Consent meeting"
-                            subtitle="Consent + key-matters audio, if proceeding."
+                            title="Agreement meeting"
+                            subtitle="Agreement + key-matters audio, if proceeding."
                             booking={bookings.consent}
                             token={intake.pre_screen?.token}
                             meeting="consent"
