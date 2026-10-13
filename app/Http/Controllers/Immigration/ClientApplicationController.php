@@ -275,11 +275,14 @@ class ClientApplicationController extends Controller
      */
     public function book(Request $request, PreScreening $preScreening)
     {
+        // Meetings are scheduled at least 5 days ahead (mirrors the client calendar).
         $data = $request->validate([
             'meeting' => 'required|in:consult,consent',
-            'date' => 'required|date',
+            'date' => 'required|date|after_or_equal:' . now()->addDays(5)->toDateString(),
             'time' => 'required|string|max:20',
             'note' => 'nullable|string|max:500',
+        ], [
+            'date.after_or_equal' => 'Please choose a date at least 5 days from today.',
         ]);
 
         $lead = $this->service->ensureWorkingLead($preScreening);

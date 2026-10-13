@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import {
     ShieldCheck, Calendar, CalendarCheck, Clock, Video, FileText, CheckCircle2,
     Circle, Lock, ClipboardCheck, Loader2, ArrowRight, UploadCloud, Image as ImageIcon,
@@ -11,6 +13,35 @@ const money = (n) => "$" + Number(n || 0).toLocaleString("en-NZ", { minimumFract
 
 const fmtDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : "";
+
+// Teal-branded calendar styling for react-day-picker (matches the page accent).
+const RDP_TEAL = {
+    "--rdp-accent-color": "#009688",
+    "--rdp-accent-background-color": "#00968815",
+    "--rdp-day-width": "38px",
+    "--rdp-day-height": "38px",
+    "--rdp-day_button-width": "38px",
+    "--rdp-day_button-height": "38px",
+    "--rdp-nav_button-width": "30px",
+    "--rdp-nav_button-height": "30px",
+    fontSize: "0.8rem",
+};
+
+// The earliest a meeting can be booked — we schedule at least 5 days ahead.
+const MEETING_LEAD_DAYS = 5;
+
+// Bookable half-hour slots, 9:00 AM – 4:30 PM.
+const TIME_SLOTS = (() => {
+    const out = [];
+    for (let h = 9; h <= 16; h++) { out.push(`${String(h).padStart(2, "0")}:00`); out.push(`${String(h).padStart(2, "0")}:30`); }
+    return out;
+})();
+const slotLabel = (t) => {
+    const [h, m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "PM" : "AM";
+    return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${ap}`;
+};
+const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // Client-facing pre-screening stages (process only — not an outcome/advice).
 const STEPS = [
@@ -52,17 +83,19 @@ function MeetingCard({ title, subtitle, booking, token, meeting }) {
     const booked = !!booking;
     const pending = booking?.status === "pending";
     const [open, setOpen] = useState(false);
-    const [date, setDate] = useState("");
+    const [day, setDay] = useState(null);
     const [time, setTime] = useState("");
     const [note, setNote] = useState("");
     const [saving, setSaving] = useState(false);
-    const today = new Date().toISOString().slice(0, 10);
+
+    // Meetings are booked at least MEETING_LEAD_DAYS ahead.
+    const minDate = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + MEETING_LEAD_DAYS); return d; })();
 
     const submit = (e) => {
         e.preventDefault();
-        if (!date || !time) return;
+        if (!day || !time) return;
         setSaving(true);
-        router.post(`/application/${token}/book`, { meeting, date, time, note }, {
+        router.post(`/application/${token}/book`, { meeting, date: toYmd(day), time, note }, {
             preserveScroll: true,
             onSuccess: () => setOpen(false),
             onFinish: () => setSaving(false),
@@ -97,23 +130,46 @@ function MeetingCard({ title, subtitle, booking, token, meeting }) {
                     )}
                 </div>
             ) : open ? (
-                <form onSubmit={submit} className="mt-3 space-y-2.5">
-                    <div className="grid grid-cols-2 gap-2">
-                        <label className="block">
-                            <span className="text-[11px] font-semibold text-gray-500">Preferred date</span>
-                            <input type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} required
-                                className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
-                        </label>
-                        <label className="block">
-                            <span className="text-[11px] font-semibold text-gray-500">Preferred time</span>
-                            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required
-                                className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
-                        </label>
+                <form onSubmit={submit} className="mt-3 space-y-3">
+                    {/* Pick a day — earliest is MEETING_LEAD_DAYS out. */}
+                    <div>
+                        <span className="text-[11px] font-semibold text-gray-500">Choose a date</span>
+                        <div className="mt-1 rounded-xl border border-gray-200 p-2 flex justify-center">
+                            <DayPicker
+                                mode="single"
+                                selected={day}
+                                onSelect={(d) => { setDay(d); setTime(""); }}
+                                startMonth={minDate}
+                                disabled={{ before: minDate }}
+                                style={RDP_TEAL}
+                            />
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1">Earliest available {fmtDate(minDate)} — we schedule at least {MEETING_LEAD_DAYS} days ahead.</p>
                     </div>
+
+                    {/* Pick a time slot — enabled once a day is chosen. */}
+                    <div>
+                        <span className="text-[11px] font-semibold text-gray-500">Choose a time</span>
+                        {!day ? (
+                            <p className="mt-1 text-[12px] text-gray-400">Choose a date first.</p>
+                        ) : (
+                            <div className="mt-1 grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                {TIME_SLOTS.map((t) => (
+                                    <button key={t} type="button" onClick={() => setTime(t)}
+                                        className={`px-2 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${
+                                            time === t ? "bg-[#009688] text-white border-[#009688]"
+                                                : "bg-white text-gray-600 border-gray-200 hover:border-[#009688] hover:text-[#009688]"}`}>
+                                        {slotLabel(t)}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything we should know? (optional)" maxLength={500}
                         className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
                     <div className="flex items-center gap-2">
-                        <button type="submit" disabled={saving || !date || !time}
+                        <button type="submit" disabled={saving || !day || !time}
                             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />} Send request
                         </button>
