@@ -2434,6 +2434,17 @@ class ImmigrationController extends Controller
             'client_documents' => $this->preScreeningUploads($preScreening),
             // Engagement agreement status (managed Agreement on the working lead).
             'agreement' => $this->preScreeningAgreement($preScreening),
+            // Data for the shared "Generate engagement" modal (pack + invoice),
+            // driven against the working lead — reuses the case-profile modal.
+            'engagement_pack' => $preScreening->lead ? [
+                'lead_id' => $preScreening->lead->id,
+                'lead_name' => trim("{$preScreening->lead->first_name} {$preScreening->lead->last_name}") ?: 'Client',
+                'documents' => \App\Services\Immigration\EngagementDocumentGenerator::catalogue(),
+                'signers' => $this->signingAdvisers(),
+                'default_signer_id' => $this->defaultSignerId(),
+                'has_email' => ! empty($preScreening->lead->email),
+                'sent' => (bool) $preScreening->lead->engagement_sent_at,
+            ] : null,
             // Installments: the live plan (if any), a fee prefill from the visa
             // type, and the config knobs (presets + deposit band).
             'plan' => $preScreening->lead ? $plans->summary($plans->activeFor($preScreening->lead)) : null,

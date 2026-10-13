@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
 import RichTextEditor from "@/components/templates/RichTextEditor";
+import CaseEngagementModal from "@/components/immigration/case-profile/CaseEngagementModal";
 
 // Teal-branded calendar styling for react-day-picker (matches the page accent).
 const RDP_TEAL = {
@@ -469,20 +470,26 @@ const AGR_STATUS = {
     signed: { label: "Signed", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
 };
 
-function EngagementCard({ agreement, token }) {
+function EngagementCard({ agreement, token, engagementPack = null }) {
     const [sending, setSending] = useState(false);
     const [mode, setMode] = useState("initial");
     const [body, setBody] = useState("");
     const [title, setTitle] = useState("Engagement Agreement");
     const [composing, setComposing] = useState(!agreement);
+    const [showPackModal, setShowPackModal] = useState(false);
 
     const st = agreement ? (AGR_STATUS[agreement.status] || AGR_STATUS.draft) : null;
     const signed = agreement?.status === "signed";
 
     const generate = () => {
-        const payload = mode === "engagement_pack" ? { mode: "engagement_pack" } : { mode: "initial", body, title };
+        // The engagement pack + invoice uses the shared generation modal (doc
+        // selection, signer, fees). The initial agreement posts its typed body.
+        if (mode === "engagement_pack") {
+            if (engagementPack?.lead_id) setShowPackModal(true);
+            return;
+        }
         setSending(true);
-        router.post(`/portal/immigration/pre-screening/${token}/agreement`, payload, {
+        router.post(`/portal/immigration/pre-screening/${token}/agreement`, { mode: "initial", body, title }, {
             preserveScroll: true,
             onSuccess: () => setComposing(false),
             onFinish: () => setSending(false),
@@ -565,6 +572,15 @@ function EngagementCard({ agreement, token }) {
                     </div>
                 )}
             </div>
+
+            {showPackModal && engagementPack?.lead_id && (
+                <CaseEngagementModal
+                    leadId={engagementPack.lead_id}
+                    leadName={engagementPack.lead_name}
+                    engagement={engagementPack}
+                    onClose={() => setShowPackModal(false)}
+                />
+            )}
         </section>
     );
 }
@@ -733,7 +749,7 @@ function RecreateVisaControl({ intake }) {
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null, engagement_pack = null }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showAssessment, setShowAssessment] = useState(false);
@@ -889,7 +905,7 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
 
                 {/* Engagement agreement — generate + send; client signs on /application. */}
                 {intake.pre_screen?.token && (
-                    <EngagementCard agreement={agreement} token={intake.pre_screen.token} />
+                    <EngagementCard agreement={agreement} token={intake.pre_screen.token} engagementPack={engagement_pack} />
                 )}
 
                 {/* Payment plan — pay-later deposit + weekly schedule. */}
