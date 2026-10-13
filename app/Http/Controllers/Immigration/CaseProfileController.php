@@ -221,7 +221,58 @@ class CaseProfileController extends Controller
                 'net_after_disbursement' => $fin ? $fin->netAfterDisbursement() : 0,
                 'settled' => $fin ? $fin->isSettled() : false,
             ],
+            // Pay-later installment plan (deposit + weekly schedule), so staff
+            // see which scheduled payments are paid and can record against them.
+            'installment_plan' => $this->installmentSummary($lead),
+            'installment_config' => [
+                'presets' => (array) config('immigration.installments.plan_presets', [3 => 13, 6 => 26]),
+                'deposit' => app(\App\Services\Immigration\InstallmentPlanService::class)->depositBounds(),
+            ],
         ];
+    }
+
+    /** The case's live installment plan + schedule for the Financials tab. */
+    private function installmentSummary(Lead $lead): ?array
+    {
+        $svc = app(\App\Services\Immigration\InstallmentPlanService::class);
+
+        return $svc->summary($svc->activeFor($lead));
+    }
+
+    /** Staff set / update the pay-later installment terms, generating the schedule. */
+    public function setInstallmentPlan(Request $request, Lead $lead)
+    {
+        $user = $this->guardCase($lead);
+
+        $data = $request->validate([
+            'total_amount' => 'required|numeric|min:0',
+            'inz_fee' => 'nullable|numeric|min:0',
+            'plan_months' => 'required|integer|min:1|max:24',
+            'deposit_percent' => 'required|numeric|min:0|max:100',
+        ]);
+
+        $svc = app(\App\Services\Immigration\InstallmentPlanService::class);
+        $plan = $svc->draft($lead, $data, $user);
+        // On a case the plan is agreed, so generate the schedule straight away.
+        $svc->activate($plan);
+
+        return back()->with('success', 'Payment plan saved.');
+    }
+
+    /** Staff record one installment as paid (writes a ledger receipt + mirrors to AR). */
+    public function payInstallment(Request $request, Lead $lead, \App\Models\Installment $installment)
+    {
+        $user = $this->guardCase($lead);
+        abort_unless($installment->plan && $installment->plan->lead_id === $lead->id, 403);
+
+        $data = $request->validate([
+            'method' => 'nullable|string|max:60',
+            'reference' => 'nullable|string|max:120',
+            'paid_at' => 'nullable|date',
+        ]);
+        app(\App\Services\Immigration\InstallmentPlanService::class)->recordPayment($installment, $data, $user);
+
+        return back()->with('success', 'Payment recorded.');
     }
 
     /** Create/update the case's fee + invoice record, and the referral. */

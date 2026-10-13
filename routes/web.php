@@ -1592,6 +1592,9 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/cases/{lead}/financials/payments/{payment}', [$cp, 'deleteFinancePayment']);
             Route::post('/cases/{lead}/financials/invoice', [$cp, 'generateInvoice']);
             Route::get('/cases/{lead}/financials/invoice/preview', [$cp, 'previewInvoice']);
+            // Installment payment plan (pay-later) — set terms + mark a payment paid.
+            Route::post('/cases/{lead}/installment-plan', [$cp, 'setInstallmentPlan']);
+            Route::post('/cases/{lead}/installments/{installment}/pay', [$cp, 'payInstallment']);
             // Multi-visa — start the client's next visa application from an approved case.
             Route::post('/cases/{lead}/next-visa', [$cp, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [$cp, 'generateInzForm'])->where('code', 'INZ[0-9]+');
@@ -2049,6 +2052,11 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.financials.invoice');
             Route::get('/cases/{lead}/financials/invoice/preview', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'previewInvoice'])
                 ->name('cases.financials.invoice.preview');
+            // Installment payment plan (pay-later) — set terms + mark a payment paid.
+            Route::post('/cases/{lead}/installment-plan', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'setInstallmentPlan'])
+                ->name('cases.installment-plan.set');
+            Route::post('/cases/{lead}/installments/{installment}/pay', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'payInstallment'])
+                ->name('cases.installments.pay');
 
             // Generate a filled INZ form (official PDF) as a draft on the case.
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'generateInzForm'])
