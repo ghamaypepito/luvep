@@ -1857,6 +1857,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
+            // Staff schedule a consultation / consent meeting directly.
+            Route::post('/pre-screening/{preScreening}/book', [$preScreen, 'book'])->name('pre-screening.book');
             // Engagement agreement — staff generate + send for the working lead.
             Route::post('/pre-screening/{preScreening}/agreement', [$preScreen, 'generateAgreement'])->name('pre-screening.agreement');
             // Installment plan (pay-later terms) + recording a payment.

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Immigration;
 
 use App\Http\Controllers\Controller;
 use App\Models\AgreementTemplate;
+use App\Models\Booking;
 use App\Models\Installment;
 use App\Models\PreScreening;
 use App\Models\User;
@@ -76,6 +77,56 @@ class PreScreeningController extends Controller
         $this->service->decline($preScreening, $user, $data['reason']);
 
         return back()->with('success', 'Pre-screening declined.');
+    }
+
+    /**
+     * Staff schedule (or reschedule) one of the pre-screening meetings directly
+     * from the profile, instead of waiting for the client to request a time.
+     * Staff-scheduled meetings are confirmed, and may be booked for any future
+     * date (the client-side 5-day lead time doesn't bind staff).
+     */
+    public function book(Request $request, PreScreening $preScreening)
+    {
+        $this->guard();
+        $data = $request->validate([
+            'meeting' => 'required|in:consult,consent',
+            'date' => 'required|date|after_or_equal:' . now()->toDateString(),
+            'time' => 'required|string|max:20',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $lead = $this->service->ensureWorkingLead($preScreening);
+        $subject = $preScreening->subject;
+
+        $at = null;
+        try {
+            $at = \Illuminate\Support\Carbon::parse("{$data['date']} {$data['time']}");
+        } catch (\Throwable $e) {
+            // Leave appointment_at null if the time string doesn't parse.
+        }
+
+        $booking = Booking::create([
+            'first_name' => $subject->first_name ?? $lead->first_name,
+            'last_name' => $subject->last_name ?? $subject->family_name ?? $lead->last_name,
+            'email' => $subject->email ?? $lead->email,
+            'phone' => $subject->phone ?? $lead->phone,
+            'service_type' => $data['meeting'] === 'consult' ? 'Immigration Consultation' : 'Consent Meeting',
+            'consultant_name' => 'Immigration Adviser',
+            'message' => $data['note'] ?? null,
+            'appointment_date' => $data['date'],
+            'appointment_time' => $data['time'],
+            'appointment_at' => $at,
+            'status' => 'confirmed',
+            'lead_id' => $lead->id,
+        ]);
+
+        if ($data['meeting'] === 'consult') {
+            $this->service->setConsultBooking($preScreening, $booking);
+        } else {
+            $this->service->setConsentBooking($preScreening, $booking);
+        }
+
+        return back()->with('success', 'Meeting scheduled.');
     }
 
     /** Staff set the pay-later terms (deposit % + plan length) → a draft plan. */

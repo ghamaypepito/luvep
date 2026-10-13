@@ -76,9 +76,28 @@ function DateBadge({ iso, date }) {
     );
 }
 
-function BookingCard({ title, subtitle, booking }) {
+function BookingCard({ title, subtitle, booking, token, meeting }) {
     const booked = !!booking;
     const pending = booking?.status === "pending";
+    const [open, setOpen] = useState(false);
+    const [date, setDate] = useState("");
+    const [time, setTime] = useState("");
+    const [note, setNote] = useState("");
+    const [saving, setSaving] = useState(false);
+    const today = new Date().toISOString().slice(0, 10);
+    const inputCls = "mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]";
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!date || !time || !token) return;
+        setSaving(true);
+        router.post(`/portal/immigration/pre-screening/${token}/book`, { meeting, date, time, note }, {
+            preserveScroll: true,
+            onSuccess: () => { setOpen(false); setDate(""); setTime(""); setNote(""); },
+            onFinish: () => setSaving(false),
+        });
+    };
+
     return (
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
             <div className="flex items-start gap-4">
@@ -95,11 +114,11 @@ function BookingCard({ title, subtitle, booking }) {
                         )}
                     </div>
                     <p className="text-[11.5px] text-gray-500 mt-0.5">{subtitle}</p>
-                    {booked ? (
+                    {booked && (
                         <div className="mt-3 space-y-1.5 text-[12.5px] text-gray-700">
                             <p className="flex items-center gap-1.5"><Calendar size={13} className="text-gray-400" /> {fmtDate(booking.at || booking.date) || "—"}</p>
                             {booking.time && <p className="flex items-center gap-1.5"><Clock size={13} className="text-gray-400" /> {booking.time}</p>}
-                            {pending && <p className="text-[11.5px] text-amber-600">Client requested this time — confirm in Appointments.</p>}
+                            {pending && <p className="text-[11.5px] text-amber-600">Client requested this time — confirm it or reschedule below.</p>}
                             {booking.consultant && !pending && <p className="text-[11.5px] text-gray-500">With {booking.consultant}</p>}
                             {booking.meet_link && (
                                 <a href={booking.meet_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#009688] hover:underline">
@@ -107,9 +126,39 @@ function BookingCard({ title, subtitle, booking }) {
                                 </a>
                             )}
                         </div>
-                    ) : (
-                        <p className="mt-3 text-[12px] text-gray-500">The client requests a time from their application link, or staff schedule it in Appointments.</p>
                     )}
+                    {!booked && !open && (
+                        <p className="mt-3 text-[12px] text-gray-500">The client requests a time from their application link, or schedule it here.</p>
+                    )}
+
+                    {/* Staff schedule / reschedule directly from the profile. */}
+                    {token && (open ? (
+                        <form onSubmit={submit} className="mt-3 space-y-2.5">
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="block">
+                                    <span className="text-[11px] font-semibold text-gray-500">Date</span>
+                                    <input type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} required className={inputCls} />
+                                </label>
+                                <label className="block">
+                                    <span className="text-[11px] font-semibold text-gray-500">Time</span>
+                                    <input type="time" value={time} onChange={(e) => setTime(e.target.value)} required className={inputCls} />
+                                </label>
+                            </div>
+                            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={500} className={inputCls.replace("mt-1 ", "")} />
+                            <div className="flex items-center gap-2">
+                                <button type="submit" disabled={saving || !date || !time}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                                    {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />} {booked ? "Reschedule" : "Schedule meeting"}
+                                </button>
+                                <button type="button" onClick={() => setOpen(false)} className="px-3 py-2 rounded-lg text-[13px] font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
+                            </div>
+                        </form>
+                    ) : (
+                        <button type="button" onClick={() => setOpen(true)}
+                            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#009688] text-[#009688] text-[12.5px] font-semibold hover:bg-[#009688]/5">
+                            <CalendarCheck size={13} /> {booked ? "Reschedule" : "Schedule a time"}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
@@ -669,11 +718,15 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                             title="Immigration consultation"
                             subtitle="Initial consultation with the adviser."
                             booking={bookings.consult}
+                            token={intake.pre_screen?.token}
+                            meeting="consult"
                         />
                         <BookingCard
                             title="Consent meeting"
                             subtitle="Consent + key-matters audio, if proceeding."
                             booking={bookings.consent}
+                            token={intake.pre_screen?.token}
+                            meeting="consent"
                         />
                     </div>
                 </section>
