@@ -149,23 +149,45 @@ class PreScreeningController extends Controller
         return back()->with('success', 'Payment plan saved.');
     }
 
-    /** Staff generate + send the engagement agreement for the working lead. */
-    public function generateAgreement(PreScreening $preScreening, AgreementService $agreements)
+    /**
+     * Staff generate + send an agreement for the working lead. Two modes:
+     *  - initial (default): a blank, staff-typed agreement (free body HTML),
+     *    signed by the client on /application.
+     *  - engagement_pack: the full engagement pack (written agreement + IAA
+     *    docs) + a tax invoice reflecting the plan's discount + admin fee,
+     *    signed on the /engagement/{token} surface.
+     */
+    public function generateAgreement(Request $request, PreScreening $preScreening, AgreementService $agreements)
     {
         $this->guard();
+        $data = $request->validate([
+            'mode' => 'nullable|in:initial,engagement_pack',
+            'body' => 'nullable|string|max:200000',
+            'title' => 'nullable|string|max:200',
+        ]);
+
+        if (($data['mode'] ?? 'initial') === 'engagement_pack') {
+            return $this->generateEngagementPack($preScreening);
+        }
+
         $lead = $this->service->ensureWorkingLead($preScreening);
+        $body = trim((string) ($data['body'] ?? ''));
 
-        // Prefer an active template matching this visa, else any active one.
-        $template = AgreementTemplate::where('is_active', true)
-            ->where(fn ($q) => $q->whereNull('visa_type')->orWhere('visa_type', $lead->inz_visa_type))
-            ->orderByRaw('visa_type IS NULL') // visa-specific first
-            ->first()
-            ?? AgreementTemplate::where('is_active', true)->first();
+        // Prefer the staff-typed body; fall back to the active template when blank.
+        $template = $body === ''
+            ? (AgreementTemplate::where('is_active', true)
+                ->where(fn ($q) => $q->whereNull('visa_type')->orWhere('visa_type', $lead->inz_visa_type))
+                ->orderByRaw('visa_type IS NULL')
+                ->first()
+                ?? AgreementTemplate::where('is_active', true)->first())
+            : null;
 
-        abort_unless($template, 422, 'No active agreement template is configured.');
+        abort_if($body === '' && ! $template, 422, 'Type the agreement text, or configure an active agreement template.');
 
         try {
-            $agreement = $agreements->generate($lead, $template);
+            $agreement = $body !== ''
+                ? $agreements->generate($lead, null, [], $body, $data['title'] ?? 'Engagement Agreement')
+                : $agreements->generate($lead, $template);
             $agreements->send($agreement);
         } catch (\Throwable $e) {
             return back()->with('error', 'Could not generate the agreement: '.$e->getMessage());
@@ -181,6 +203,71 @@ class PreScreeningController extends Controller
         ]);
 
         return back()->with('success', 'Engagement agreement sent to the client.');
+    }
+
+    /**
+     * Generate the full engagement pack (4 docs) + a tax invoice for the working
+     * lead, reusing the existing generators. The invoice reflects the active
+     * installment plan's professional fee, discount and admin fee. Prior UNSIGNED
+     * copies are replaced; signed ones are left untouched. The client signs on
+     * the /engagement/{token} surface (emailed via the engagement template).
+     */
+    private function generateEngagementPack(PreScreening $preScreening)
+    {
+        $lead = $this->service->ensureWorkingLead($preScreening);
+
+        // Fee overrides from the live plan (the authoritative onboarding money).
+        $plan = app(InstallmentPlanService::class)->summary(app(InstallmentPlanService::class)->activeFor($lead));
+        $invoiceOpts = [];
+        if ($plan) {
+            $invoiceOpts['service_fee'] = (float) $plan['professional_fee'];
+            $invoiceOpts['inz_fee'] = (float) $plan['inz_fee'];
+            $invoiceOpts['discount_amount'] = (float) $plan['discount_amount'];
+            $invoiceOpts['admin_fee'] = (float) $plan['admin_fee'];
+        }
+
+        try {
+            $generator = app(\App\Services\Immigration\EngagementDocumentGenerator::class);
+            $types = array_keys(\App\Services\Immigration\EngagementDocumentGenerator::DOCS);
+
+            // Replace prior UNSIGNED engagement docs + invoice so drafts don't stack.
+            \App\Models\LeadDocument::where('lead_id', $lead->id)
+                ->where(fn ($q) => $q->where('source_variant', 'like', 'engagement:%')->orWhere('source_variant', 'invoice'))
+                ->whereNull('client_signed_at')
+                ->get()
+                ->each(function (\App\Models\LeadDocument $old) {
+                    if ($old->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($old->file_path)) {
+                        \Illuminate\Support\Facades\Storage::disk('local')->delete($old->file_path);
+                    }
+                    $old->delete();
+                });
+
+            foreach ($types as $t) {
+                $generator->generate($lead, $t, []);
+            }
+            app(\App\Services\Immigration\InvoiceGenerator::class)->generate($lead, $invoiceOpts);
+
+            $token = $lead->ensureEngagementSigningToken();
+            $this->notifyEngagementPack($lead, $token);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Could not generate the engagement pack: '.$e->getMessage());
+        }
+
+        return back()->with('success', 'Engagement pack + invoice generated and sent to the client.');
+    }
+
+    /** Email the client their engagement documents (the /engagement/{token} link). */
+    private function notifyEngagementPack(\App\Models\Lead $lead, string $token): void
+    {
+        $template = \App\Models\MessageTemplate::active()
+            ->where('key', 'migration_agreement')
+            ->orderByRaw("CASE WHEN department = '' THEN 0 ELSE 1 END")
+            ->first();
+        if (! $template) {
+            return;
+        }
+        $link = rtrim((string) config('app.url'), '/').'/engagement/'.$token;
+        app(\App\Services\CommunicationService::class)->sendTemplate($template, $lead, ['engagement_url' => $link]);
     }
 
     /** Staff record one installment as paid (writes a ledger receipt). */

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
+import RichTextEditor from "@/components/templates/RichTextEditor";
 
 // Teal-branded calendar styling for react-day-picker (matches the page accent).
 const RDP_TEAL = {
@@ -470,12 +471,23 @@ const AGR_STATUS = {
 
 function EngagementCard({ agreement, token }) {
     const [sending, setSending] = useState(false);
-    const send = () => {
-        setSending(true);
-        router.post(`/portal/immigration/pre-screening/${token}/agreement`, {}, { preserveScroll: true, onFinish: () => setSending(false) });
-    };
+    const [mode, setMode] = useState("initial");
+    const [body, setBody] = useState("");
+    const [title, setTitle] = useState("Engagement Agreement");
+    const [composing, setComposing] = useState(!agreement);
+
     const st = agreement ? (AGR_STATUS[agreement.status] || AGR_STATUS.draft) : null;
     const signed = agreement?.status === "signed";
+
+    const generate = () => {
+        const payload = mode === "engagement_pack" ? { mode: "engagement_pack" } : { mode: "initial", body, title };
+        setSending(true);
+        router.post(`/portal/immigration/pre-screening/${token}/agreement`, payload, {
+            preserveScroll: true,
+            onSuccess: () => setComposing(false),
+            onFinish: () => setSending(false),
+        });
+    };
 
     return (
         <section className="space-y-3">
@@ -483,8 +495,9 @@ function EngagementCard({ agreement, token }) {
                 <FileText size={16} className="text-[#009688]" />
                 <h2 className="text-[15px] font-bold text-gray-900">Engagement agreement</h2>
             </div>
-            <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5">
-                {agreement ? (
+            <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-5 space-y-4">
+                {/* Current agreement (initial path), if one exists. */}
+                {agreement && (
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div>
                             <p className="text-[13.5px] font-semibold text-gray-900">{agreement.title}</p>
@@ -500,21 +513,55 @@ function EngagementCard({ agreement, token }) {
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${st.cls}`}>{st.label}</span>
                             <a href={`/application/${token}/agreement/pdf`} target="_blank" rel="noreferrer"
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"><FileText size={13} /> View</a>
-                            {!signed && (
-                                <button type="button" onClick={send} disabled={sending}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                                    {sending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Regenerate
+                            {!composing && (
+                                <button type="button" onClick={() => setComposing(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50">
+                                    <Check size={13} /> New / replace
                                 </button>
                             )}
                         </div>
                     </div>
-                ) : (
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <p className="text-[13px] text-gray-500">No agreement yet. Generate the engagement agreement and send it to the client to sign.</p>
-                        <button type="button" onClick={send} disabled={sending}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
-                            {sending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Generate &amp; send
-                        </button>
+                )}
+
+                {/* Compose: choose Initial agreement (blank, editable) or the pack. */}
+                {composing && (
+                    <div className={agreement ? "pt-4 border-t border-gray-100" : ""}>
+                        <div className="inline-flex rounded-lg border border-gray-200 p-0.5 mb-3">
+                            {[["initial", "Initial agreement"], ["engagement_pack", "Engagement pack + invoice"]].map(([k, label]) => (
+                                <button key={k} type="button" onClick={() => setMode(k)}
+                                    className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors ${
+                                        mode === k ? "bg-[#009688] text-white" : "text-gray-600 hover:text-gray-900"}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {mode === "initial" ? (
+                            <div className="space-y-2">
+                                <label className="block">
+                                    <span className="text-[11px] font-semibold text-gray-500">Title</span>
+                                    <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200}
+                                        className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688]" />
+                                </label>
+                                <span className="text-[11px] font-semibold text-gray-500">Agreement text</span>
+                                <RichTextEditor value={body} onChange={setBody} variant="email" />
+                                <p className="text-[11px] text-gray-400">Type the agreement the client will sign on their application page. You can use {"{{first_name}}"} and other placeholders.</p>
+                            </div>
+                        ) : (
+                            <p className="text-[12.5px] text-gray-500">
+                                Generates the full engagement pack — Written Agreement, Professional Standards, Code of Conduct and Complaints Procedure — plus a tax invoice reflecting the payment plan&apos;s professional fee, discount and admin fee. The client signs via their engagement link.
+                            </p>
+                        )}
+
+                        <div className="mt-3 flex items-center gap-2">
+                            <button type="button" onClick={generate} disabled={sending || (mode === "initial" && !body.trim())}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#009688] text-white text-[13px] font-semibold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                                {sending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Generate &amp; send
+                            </button>
+                            {agreement && (
+                                <button type="button" onClick={() => setComposing(false)} className="px-3 py-2 rounded-lg text-[13px] font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
