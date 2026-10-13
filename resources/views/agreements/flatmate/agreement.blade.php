@@ -207,7 +207,7 @@
                     <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
                 @endif
                 <div class="sign-line"></div>
-                <div class="sign-cap">{{ $adminName ? $adminName.' — ' : '' }}Exalt Property Admin</div>
+                <div class="sign-cap">Exalt Property Admin</div>
             </td>
             <td></td>
         </tr>
