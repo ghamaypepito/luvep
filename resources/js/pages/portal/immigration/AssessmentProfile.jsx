@@ -27,7 +27,7 @@ const fmtDate = (iso) =>
 const STEPS = [
     { key: "new", label: "New" },
     { key: "consultation", label: "Consultation" },
-    { key: "consent", label: "Consent" },
+    { key: "consent", label: "Agreement" },
     { key: "eligible", label: "Eligible" },
 ];
 const STEP_ORDER = { new: 0, consultation: 1, consent: 2, eligible: 3, converted: 4, declined: 4 };
@@ -400,7 +400,7 @@ function NextAction({ i }) {
             router.post(`/portal/immigration/assessments/${i.assessment_id ?? i.id}/convert-to-case`, { intake_type: i.visa_type, intake_id: i.id }, { preserveScroll: true });
         }
     };
-    const skip = () => { const r = window.prompt("Reason to skip the consultation/consent steps?"); if (r) act("skip", { reason: r }); };
+    const skip = () => { const r = window.prompt("Reason to skip the consultation/agreement steps?"); if (r) act("skip", { reason: r }); };
     const decline = () => { const r = window.prompt("Reason for declining?"); if (r) act("decline", { reason: r }); };
 
     const terminal = p.status === "converted" || p.status === "declined";
@@ -417,17 +417,17 @@ function NextAction({ i }) {
         body = "Flagged as a strong potential client. Convert to an official case when ready.";
         primary = { label: "Convert to case", onClick: convert };
     } else if (p.gate_passed) {
-        kind = "READY FOR ELIGIBILITY"; tone = "do"; title = "Consent acknowledged";
+        kind = "READY FOR ELIGIBILITY"; tone = "do"; title = "Agreement acknowledged";
         body = "The applicant can now be marked as an eligible potential client.";
         primary = { label: "Mark eligible", onClick: () => act("eligible") };
     } else if (p.consent_sent) {
-        kind = "WAITING FOR CLIENT"; tone = "wait"; title = "Consent sent";
-        body = "Waiting for the client to acknowledge the consent on their application link.";
+        kind = "WAITING FOR CLIENT"; tone = "wait"; title = "Agreement sent";
+        body = "Waiting for the client to acknowledge the agreement on their application link.";
         primary = { label: "Mark acknowledged", onClick: () => act("consent-ack"), ghost: true };
     } else {
-        kind = "NEXT ACTION"; tone = "do"; title = "Send the consent";
-        body = "Consent has not yet been sent. Send it so the client can review and acknowledge it.";
-        primary = { label: "Send consent", onClick: () => act("consent-sent") };
+        kind = "NEXT ACTION"; tone = "do"; title = "Send the agreement";
+        body = "The agreement has not yet been sent. Send it so the client can review and acknowledge it.";
+        primary = { label: "Send agreement", onClick: () => act("consent-sent") };
     }
 
     const t = ACTION_TONE[tone];

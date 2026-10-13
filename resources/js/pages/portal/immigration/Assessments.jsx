@@ -90,7 +90,7 @@ const initials = (name = "") =>
 export const PRE_STATUS = {
     new:          { label: "New",          cls: "bg-slate-100 text-slate-600 border-slate-200" },
     consultation: { label: "Consultation", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-    consent:      { label: "Consent",      cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    consent:      { label: "Agreement",    cls: "bg-amber-50 text-amber-700 border-amber-200" },
     eligible:     { label: "Eligible",     cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
     converted:    { label: "Converted",    cls: "bg-green-50 text-green-700 border-green-200" },
     declined:     { label: "Declined",     cls: "bg-slate-100 text-slate-400 border-slate-200" },
@@ -130,10 +130,10 @@ export function PreScreenBar({ i }) {
                 )}
                 {!terminal && (
                     <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                        {! p.consent_sent && <Btn onClick={() => act("consent-sent")}>Consent sent</Btn>}
+                        {! p.consent_sent && <Btn onClick={() => act("consent-sent")}>Send agreement</Btn>}
                         {p.consent_sent && ! p.consent_ack && <Btn onClick={() => act("consent-ack")}>Client acknowledged</Btn>}
                         {! p.skipped && ! p.gate_passed && (
-                            <Btn onClick={() => { const r = window.prompt("Reason to skip the consultation/consent steps?"); if (r) act("skip", { reason: r }); }}>Skip steps</Btn>
+                            <Btn onClick={() => { const r = window.prompt("Reason to skip the consultation/agreement steps?"); if (r) act("skip", { reason: r }); }}>Skip steps</Btn>
                         )}
                         {p.status !== "eligible" && p.gate_passed && <Btn primary onClick={() => act("eligible")}>Mark eligible</Btn>}
                         {p.status === "eligible" && <span className="text-[11px] text-emerald-600 font-semibold">Eligible ✓ potential client</span>}
