@@ -140,6 +140,7 @@ function MeetingCard({ title, subtitle, booking, token, meeting }) {
                                 selected={day}
                                 onSelect={(d) => { setDay(d); setTime(""); }}
                                 startMonth={minDate}
+                                today={minDate}
                                 disabled={{ before: minDate }}
                                 style={RDP_TEAL}
                             />
