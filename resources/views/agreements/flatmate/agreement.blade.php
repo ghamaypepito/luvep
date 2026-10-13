@@ -164,12 +164,7 @@
         <tr><td class="label">Reference</td><td>{!! $f($bank['reference'] ?? '', '[Property name]') !!}</td></tr>
     </table>
 
-    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
-    <div class="appendix">@include('agreements.flatmate._terms')</div>
-    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-    <div class="appendix">@include('agreements.flatmate._declaration')</div>
-
-    {{-- ---------- Signatures (at the very end, after the Declaration) ---------- --}}
+    {{-- ---------- Signatures (sub-tenants + Exalt Property Management) ---------- --}}
     @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <h2 class="section">Signatures</h2>
     <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
@@ -186,13 +181,7 @@
         </tr>
         <tr>
             <td><div class="sign-line"></div><div class="sign-cap">Exalt Property Management &nbsp;·&nbsp; Date</div></td>
-            <td>
-                @if($adminSignature)
-                    <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
-                @endif
-                <div class="sign-line"></div>
-                <div class="sign-cap">{{ $adminName ? $adminName.' — ' : '' }}Exalt Property Admin</div>
-            </td>
+            <td></td>
         </tr>
     </table>
 
@@ -204,4 +193,23 @@
             This audit record is embedded in the signed document.
         </div>
     @endif
+
+    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
+    <div class="appendix">@include('agreements.flatmate._terms')</div>
+    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    <div class="appendix">@include('agreements.flatmate._declaration')</div>
+
+    {{-- ---------- Exalt Property Admin signatory (at the very end, after the Declaration) ---------- --}}
+    <table class="sign">
+        <tr>
+            <td>
+                @if($adminSignature)
+                    <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
+                @endif
+                <div class="sign-line"></div>
+                <div class="sign-cap">{{ $adminName ? $adminName.' — ' : '' }}Exalt Property Admin</div>
+            </td>
+            <td></td>
+        </tr>
+    </table>
 @endsection
