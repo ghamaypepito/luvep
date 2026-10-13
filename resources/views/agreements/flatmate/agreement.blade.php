@@ -164,10 +164,15 @@
         <tr><td class="label">Reference</td><td>{!! $f($bank['reference'] ?? '', '[Property name]') !!}</td></tr>
     </table>
 
-    {{-- ---------- Signatures ---------- --}}
+    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
+    <div class="appendix">@include('agreements.flatmate._terms')</div>
+    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    <div class="appendix">@include('agreements.flatmate._declaration')</div>
+
+    {{-- ---------- Signatures (at the very end, after the Declaration) ---------- --}}
+    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <h2 class="section">Signatures</h2>
     <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
-    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <table class="sign">
         <tr>
             <td>
@@ -199,9 +204,4 @@
             This audit record is embedded in the signed document.
         </div>
     @endif
-
-    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
-    <div class="appendix">@include('agreements.flatmate._terms')</div>
-    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-    <div class="appendix">@include('agreements.flatmate._declaration')</div>
 @endsection
