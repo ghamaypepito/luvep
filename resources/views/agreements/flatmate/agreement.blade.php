@@ -139,8 +139,8 @@
         <p><strong>Option 1 — Exalt Manages Utilities.</strong> The Tenant authorises Exalt Property Management to manage the applicable utility bills for the Property. Once Exalt receives a payable utility bill, Exalt will provide the relevant bill or payment amount to the Tenant, who must pay the full amount by the applicable due date.</p>
         <p><strong>Option 2 — Tenant Arranges Utilities Directly.</strong> The Tenant is responsible for arranging and maintaining their own utility accounts with the relevant providers and paying the applicable costs directly by their due dates.</p>
         <p>Selected Utility Arrangement:<br>
-            <span class="tick">{{ ($t['utility_option'] ?? '') == '1' ? '☑' : '☐' }}</span> Option 1 — Exalt Manages Utilities<br>
-            <span class="tick">{{ ($t['utility_option'] ?? '') == '2' ? '☑' : '☐' }}</span> Option 2 — Tenant Arranges Utilities Directly
+            <span class="tick">{{ ($t['utility_option'] ?? '') == '1' ? '☑' : '☐' }}</span> Option 1 — Exalt Manages Utilities @if(($t['utility_option'] ?? '') == '1' && ! empty($t['utility_amount'])) &nbsp;—&nbsp; <strong>NZ${!! $m($t['utility_amount']) !!} / week</strong>@endif<br>
+            <span class="tick">{{ ($t['utility_option'] ?? '') == '2' ? '☑' : '☐' }}</span> Option 2 — Tenant Arranges Utilities Directly @if(($t['utility_option'] ?? '') == '2' && ! empty($t['utility_amount'])) &nbsp;—&nbsp; <strong>NZ${!! $m($t['utility_amount']) !!} / week</strong>@endif
         </p>
     @endif
 
@@ -208,6 +208,7 @@
                 @endif
                 <div class="sign-line"></div>
                 <div class="sign-cap">Exalt Property Admin</div>
+                <div class="decl-cap">[signatory of admin]</div>
             </td>
             <td></td>
         </tr>

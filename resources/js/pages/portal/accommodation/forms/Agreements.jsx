@@ -245,6 +245,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
                                     <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
+                                    {fields.tenancy?.utility_option ? (
+                                        <Mini label="Utility amount / week" type="number" step="0.01" prefix="NZ$" value={fields.tenancy?.utility_amount} onChange={(v) => setF(["tenancy", "utility_amount"], v)} />
+                                    ) : null}
                                 </div>
                             </div>
 
