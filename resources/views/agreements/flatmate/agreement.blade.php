@@ -139,16 +139,26 @@
         <p><strong>Option 1 — Exalt Manages Utilities.</strong> The Tenant authorises Exalt Property Management to manage the applicable utility bills for the Property. Once Exalt receives a payable utility bill, Exalt will provide the relevant bill or payment amount to the Tenant, who must pay the full amount by the applicable due date.</p>
         <p><strong>Option 2 — Tenant Arranges Utilities Directly.</strong> The Tenant is responsible for arranging and maintaining their own utility accounts with the relevant providers and paying the applicable costs directly by their due dates.</p>
         <p>Selected Utility Arrangement:<br>
-            <span class="tick">{{ ($t['utility_option'] ?? '') == '1' ? '☑' : '☐' }}</span> Option 1 — Exalt Manages Utilities @if(($t['utility_option'] ?? '') == '1' && ! empty($t['utility_amount'])) &nbsp;—&nbsp; <strong>NZ${!! $m($t['utility_amount']) !!} / week</strong>@endif<br>
-            <span class="tick">{{ ($t['utility_option'] ?? '') == '2' ? '☑' : '☐' }}</span> Option 2 — Tenant Arranges Utilities Directly @if(($t['utility_option'] ?? '') == '2' && ! empty($t['utility_amount'])) &nbsp;—&nbsp; <strong>NZ${!! $m($t['utility_amount']) !!} / week</strong>@endif
+            <span class="tick">{{ ($t['utility_option'] ?? '') == '1' ? '☑' : '☐' }}</span> Option 1 — Exalt Manages Utilities<br>
+            <span class="tick">{{ ($t['utility_option'] ?? '') == '2' ? '☑' : '☐' }}</span> Option 2 — Tenant Arranges Utilities Directly
         </p>
     @endif
 
     <h3 class="blk">Weekly Rent{{ $isTransient ? ' + Utilities' : '' }} Payable</h3>
+    @php
+        $utilOption = $t['utility_option'] ?? '';
+        $utilAmount = $t['utility_amount'] ?? '';
+        $hasUtility = ! $isTransient && $utilAmount !== '' && $utilAmount !== null;
+        $weeklyTotal = (float) ($t['weekly_rent'] ?? 0) + ($hasUtility ? (float) $utilAmount : 0);
+    @endphp
     <table class="grid">
         <tr><th style="width:60%">Item</th><th class="amt">Amount</th></tr>
         <tr><td>Weekly Rent — payable in advance every {!! $f($t['rent_day'] ?? 'Friday', 'Friday') !!}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
-        <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : 'Rent' }}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
+        @unless($isTransient)
+            <tr><td>Utilities — Option 1 (Exalt manages)</td><td class="amt">{{ ($utilOption == '1' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+            <tr><td>Utilities — Option 2 (Tenant arranges)</td><td class="amt">{{ ($utilOption == '2' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+        @endunless
+        <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : ($hasUtility ? 'Rent + Utilities' : 'Rent') }}</td><td class="amt">NZ${!! $m($weeklyTotal) !!}</td></tr>
     </table>
     <p class="callout">Weekly rent is due every {{ $t['rent_day'] ?? 'Friday' }}. The payment made each {{ $t['rent_day'] ?? 'Friday' }} is for the upcoming rental week.
         @unless($isTransient) Under Option 1, applicable utility costs are payable separately from the weekly rent and an administration fee applies. Under Option 2, the Tenant pays the utility providers directly.@endunless
