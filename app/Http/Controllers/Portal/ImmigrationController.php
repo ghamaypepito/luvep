@@ -3610,14 +3610,14 @@ class ImmigrationController extends Controller
     {
         return match ($type) {
             'resident' => [
-                'Personal Details' => ['dob', 'nationality'],
-                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history'],
-                'Employment' => ['job_title', 'employment_start', 'employment_type', 'hourly_rate'],
+                'Personal Details' => ['dob', 'nationality', 'birth_certificate_available', 'birth_certificate_reason'],
+                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history', 'face_image_consent'],
+                'Employment' => ['job_title', 'employer_name', 'employment_start', 'employment_type', 'hourly_rate'],
                 'Qualifications' => ['highest_qualification', 'institution_name', 'country_of_study', 'nzqa_status', 'nzqa_iqa_reference'],
                 'Work Experience' => ['nz_skilled_years', 'total_skilled_years', 'career_summary'],
                 'English & Family' => ['english_evidence', 'english_test_score', 'english_test_date', 'include_family', 'family_members'],
                 'Documents' => ['documents', 'document_files'],
-                'Additional Information' => ['character_health_disclosure', 'other_notes'],
+                'Additional Information' => ['character_health_disclosure', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type', 'police_certificate_available', 'other_notes'],
             ],
             'work' => [
                 'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'partnership_status', 'current_address'],
@@ -3669,6 +3669,13 @@ class ImmigrationController extends Controller
         static $labels = [
             'dob' => 'Date of Birth',
             'nationality' => 'Nationality',
+            'birth_certificate_available' => 'Birth Certificate — can provide at processing',
+            'birth_certificate_reason' => 'If no birth certificate — reason',
+            'face_image_consent' => 'Agrees to provide a face image (JPG) at processing',
+            'medical_cert_recent' => 'Has a medical certificate under 3 months old (unsubmitted)',
+            'medical_cert_submitted_last' => 'Submitted a medical certificate in last visa application',
+            'medical_cert_type' => 'Medical certificate type',
+            'police_certificate_available' => 'Can provide a Police Certificate',
             'national_id' => 'National ID',
             'country_of_citizenship' => 'Country of Citizenship',
             'other_citizenships' => 'Other Citizenships',
@@ -3808,7 +3815,17 @@ class ImmigrationController extends Controller
             return $value ? 'Yes' : 'No';
         }
         if ($value instanceof \Illuminate\Support\Carbon || $value instanceof \DateTimeInterface) {
-            return \Illuminate\Support\Carbon::parse($value)->toFormattedDateString();
+            return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+        }
+        // Date columns arrive as ISO strings after ->toArray() serialisation
+        // (e.g. 1983-10-21T00:00:00.000000Z); render them as a plain date rather
+        // than the raw timestamp. Only touches values that are already dates.
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}([T ]|$)/', $value)) {
+            try {
+                return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+            } catch (\Throwable $e) {
+                // fall through to the string return below
+            }
         }
         if (is_array($value)) {
             if (array_is_list($value) && collect($value)->every(fn ($v) => is_scalar($v))) {

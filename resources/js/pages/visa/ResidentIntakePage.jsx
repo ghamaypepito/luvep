@@ -150,12 +150,15 @@ const FORM_DEFAULTS = {
     last_name: '',
     dob: '',
     nationality: '',
+    birth_certificate_available: '',
+    birth_certificate_reason: '',
     email: '',
     phone: '',
     // Passport
     passport_number: '',
     passport_expiry: '',
     issuing_country: '',
+    face_image_consent: false,
     // Visa status
     current_visa_type: '',
     current_visa_other: '',
@@ -164,6 +167,7 @@ const FORM_DEFAULTS = {
     previous_nz_visa_history: '',
     // Employment
     job_title: '',
+    employer_name: '',
     employment_start: '',
     employment_type: '',
     hourly_rate: '',
@@ -198,6 +202,10 @@ const FORM_DEFAULTS = {
     document_files: freshDocumentFiles(),
     // Disclosures
     character_health_disclosure: '',
+    medical_cert_recent: '',
+    medical_cert_submitted_last: '',
+    medical_cert_type: '',
+    police_certificate_available: '',
     other_notes: '',
 };
 
@@ -460,6 +468,9 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
                 if (!data.last_name.trim()) errs.last_name = 'Last name is required';
                 if (!isValidDmy(isoToDmy(data.dob))) errs.dob = 'Date of birth is required (DD/MM/YYYY)';
                 if (!data.nationality.trim()) errs.nationality = 'Nationality is required';
+                if (data.birth_certificate_available === 'No' && !data.birth_certificate_reason.trim()) {
+                    errs.birth_certificate_reason = 'Please tell us why';
+                }
                 if (!data.email.trim()) errs.email = 'Email is required';
                 else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errs.email = 'Enter a valid email address';
                 if (!data.phone.trim()) errs.phone = 'Phone number is required';
@@ -505,6 +516,11 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
                             if (!m.relationship) errs[`family_members.${i}.relationship`] = 'Relationship is required';
                         });
                     }
+                }
+                break;
+            case 9:
+                if (data.medical_cert_submitted_last === 'Yes' && !data.medical_cert_type) {
+                    errs.medical_cert_type = 'Please select the certificate type';
                 }
                 break;
         }
@@ -739,7 +755,7 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
                                             {step === 6 && <StepExperience data={data} setData={setData} errors={localErrors} />}
                                             {step === 7 && <StepEnglishFamily data={data} setData={setData} errors={localErrors} />}
                                             {step === 8 && <StepDocuments data={data} setData={setData} docChecked={docChecked} docTotal={docTotal} />}
-                                            {step === 9 && <StepDisclosures data={data} setData={setData} />}
+                                            {step === 9 && <StepDisclosures data={data} setData={setData} errors={localErrors} />}
                                         </motion.div>
                                     </AnimatePresence>
                                 </div>
@@ -1002,6 +1018,19 @@ function StepPersonal({ data, setData, errors }) {
                     <input type="tel" className={inputCls} placeholder="+64 ..." value={data.phone} onChange={e => setData('phone', e.target.value)} />
                 </Field>
             </div>
+
+            <Field label="Do you have a birth certificate you can provide at the time of processing your visa?" error={errors.birth_certificate_available}>
+                <div className="flex flex-wrap gap-3 mt-2">
+                    {['Yes', 'No'].map(v => (
+                        <PillRadio key={v} value={v} current={data.birth_certificate_available} onClick={() => setData('birth_certificate_available', v)}>{v}</PillRadio>
+                    ))}
+                </div>
+            </Field>
+            {data.birth_certificate_available === 'No' && (
+                <Field label="If no, please tell us why *" error={errors.birth_certificate_reason}>
+                    <input type="text" className={inputCls} value={data.birth_certificate_reason} onChange={e => setData('birth_certificate_reason', e.target.value)} />
+                </Field>
+            )}
         </div>
     );
 }
@@ -1059,6 +1088,18 @@ function StepPassportVisa({ data, setData, errors }) {
                     onChange={e => setData('previous_nz_visa_history', e.target.value)}
                 />
             </Field>
+
+            <label className="flex items-center gap-5 p-4 cursor-pointer group rounded-2xl transition-all bg-gray-50/50 border border-gray-100">
+                <input
+                    type="checkbox"
+                    className="w-6 h-6 rounded border-gray-300 text-[#00A693] focus:ring-[#00A693] cursor-pointer"
+                    checked={!!data.face_image_consent}
+                    onChange={e => setData('face_image_consent', e.target.checked)}
+                />
+                <span className="text-sm font-medium text-gray-600">
+                    I understand you will ask me for a face image (JPG format) at the time of processing my visa.
+                </span>
+            </label>
         </div>
     );
 }
@@ -1073,6 +1114,9 @@ function StepEmployment({ data, setData, errors }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Field label="Job Title *" error={errors.job_title}>
                     <input type="text" className={inputCls} value={data.job_title} onChange={e => setData('job_title', e.target.value)} />
+                </Field>
+                <Field label="Employer Name" hint="Your current NZ employer" error={errors.employer_name}>
+                    <input type="text" className={inputCls} value={data.employer_name} onChange={e => setData('employer_name', e.target.value)} />
                 </Field>
                 <Field label="Employment Start Date *" error={errors.employment_start}>
                     <DateField className={inputCls} value={data.employment_start} onChange={(v) => setData('employment_start', v)} />
@@ -1546,7 +1590,7 @@ function StepDocuments({ data, setData, docChecked, docTotal }) {
     );
 }
 
-function StepDisclosures({ data, setData }) {
+function StepDisclosures({ data, setData, errors = {} }) {
     return (
         <div className="space-y-10">
             <div>
@@ -1561,6 +1605,39 @@ function StepDisclosures({ data, setData }) {
                     value={data.character_health_disclosure}
                     onChange={e => setData('character_health_disclosure', e.target.value)}
                 />
+            </Field>
+
+            <Field label="Do you have a medical certificate (unsubmitted) less than 3 months old from the date of issuance?">
+                <div className="flex flex-wrap gap-3 mt-2">
+                    {['Yes', 'No'].map(v => (
+                        <PillRadio key={v} value={v} current={data.medical_cert_recent} onClick={() => setData('medical_cert_recent', v)}>{v}</PillRadio>
+                    ))}
+                </div>
+            </Field>
+
+            <Field label="Have you submitted a medical certificate in your last visa application?">
+                <div className="flex flex-wrap gap-3 mt-2">
+                    {['Yes', 'No'].map(v => (
+                        <PillRadio key={v} value={v} current={data.medical_cert_submitted_last} onClick={() => setData('medical_cert_submitted_last', v)}>{v}</PillRadio>
+                    ))}
+                </div>
+            </Field>
+            {data.medical_cert_submitted_last === 'Yes' && (
+                <Field label="Which type? *" error={errors.medical_cert_type}>
+                    <div className="flex flex-wrap gap-3 mt-2">
+                        {['General Medical', 'X-Ray Medical Examination'].map(v => (
+                            <PillRadio key={v} value={v} current={data.medical_cert_type} onClick={() => setData('medical_cert_type', v)}>{v}</PillRadio>
+                        ))}
+                    </div>
+                </Field>
+            )}
+
+            <Field label="Can you provide a Police Certificate (country of citizenship and any country you have lived in more than 1 year in the last 10 years)?">
+                <div className="flex flex-wrap gap-3 mt-2">
+                    {['Yes', 'No'].map(v => (
+                        <PillRadio key={v} value={v} current={data.police_certificate_available} onClick={() => setData('police_certificate_available', v)}>{v}</PillRadio>
+                    ))}
+                </div>
             </Field>
             <Field label="Other Notes or Questions for Your Adviser">
                 <textarea
