@@ -32,7 +32,7 @@ class FamilyIntake extends Model
         // F — Work history
         'currently_working', 'current_employer_name', 'current_employer_address',
         'current_employer_phone', 'current_employer_email', 'current_occupation',
-        'current_start', 'current_end', 'previous_work',
+        'current_start', 'current_end', 'previous_work', 'job_skills_level',
         // G — Other contacts
         'nz_contacts',
         // H — Declaration

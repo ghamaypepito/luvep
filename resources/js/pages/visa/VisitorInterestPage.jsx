@@ -87,7 +87,7 @@ export default function VisitorInterestPage() {
         currently_working: '', current_job_title: '', current_job_duties: '',
         current_job_start: '', current_job_finish: '', current_job_country: '', current_job_region: '',
         current_employer_name: '', current_employer_address: '',
-        current_employer_phone: '', current_employer_email: '',
+        current_employer_phone: '', current_employer_email: '', job_skills_level: '',
 
         has_nz_contacts: '',
         military_compulsory: '', military_undertaken: '',
@@ -376,6 +376,7 @@ export default function VisitorInterestPage() {
                             <TextField label="Organisation name" value={data.current_employer_name} onChange={set('current_employer_name')} />
                             <TextField label="Employer phone" value={data.current_employer_phone} onChange={set('current_employer_phone')} />
                             <TextField label="Employer email" type="email" value={data.current_employer_email} onChange={set('current_employer_email')} />
+                            <SelectField label="Do you know your Job Skills Level as per ANZSCO or NOL?" value={data.job_skills_level} onChange={set('job_skills_level')} options={['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'No']} />
                         </FieldGrid>
                         <div className="mt-4 space-y-4">
                             <TextareaField label="Detailed job duties" value={data.current_job_duties} onChange={set('current_job_duties')} />

@@ -21,7 +21,7 @@ class StudentIntake extends Model
         'qualifications', 'currently_working', 'current_job_title', 'current_job_duties',
         'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region',
         'current_employer_name', 'current_employer_address', 'current_employer_phone',
-        'current_employer_email', 'family_members', 'has_nz_contacts', 'nz_contacts',
+        'current_employer_email', 'job_skills_level', 'family_members', 'has_nz_contacts', 'nz_contacts',
         'military_compulsory', 'military_undertaken', 'military_details',
         'travelled_internationally', 'travel_trips', 'programmes',
         'study_period_from', 'study_period_to', 'school_name', 'has_offer',

@@ -115,6 +115,7 @@ class VisaIntakeSubmitSmokeTest extends TestCase
             'face_image_consent' => true,
             'medical_cert_recent' => 'Yes', 'medical_cert_submitted_last' => 'Yes',
             'medical_cert_type' => 'X-Ray Medical Examination', 'police_certificate_available' => 'Yes',
+            'job_skills_level' => 'Level 3',
         ];
 
         $this->post('/resident-interest', $payload)->assertSessionHasNoErrors();
@@ -128,6 +129,7 @@ class VisaIntakeSubmitSmokeTest extends TestCase
         $this->assertSame('Yes', $row->medical_cert_recent);
         $this->assertSame('X-Ray Medical Examination', $row->medical_cert_type);
         $this->assertSame('Yes', $row->police_certificate_available);
+        $this->assertSame('Level 3', $row->job_skills_level);
     }
 
     public function test_work_intake_saves_new_processing_questions(): void
@@ -136,7 +138,7 @@ class VisaIntakeSubmitSmokeTest extends TestCase
             'declaration_accepted' => true,
             'birth_certificate_available' => 'Yes', 'face_image_consent' => true,
             'medical_cert_submitted_last' => 'Yes', 'medical_cert_type' => 'General Medical',
-            'police_certificate_available' => 'No',
+            'police_certificate_available' => 'No', 'job_skills_level' => 'Level 2',
         ])->assertSessionHasNoErrors();
 
         $row = \App\Models\WorkIntake::latest('id')->first();
@@ -145,6 +147,7 @@ class VisaIntakeSubmitSmokeTest extends TestCase
         $this->assertTrue((bool) $row->face_image_consent);
         $this->assertSame('General Medical', $row->medical_cert_type);
         $this->assertSame('No', $row->police_certificate_available);
+        $this->assertSame('Level 2', $row->job_skills_level);
     }
 
     public function test_birth_certificate_reason_is_required_when_not_available(): void

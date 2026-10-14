@@ -77,6 +77,7 @@ class ResidentIntakeController extends Controller
             'employment_start' => 'required|date',
             'employment_type' => 'required|string|max:120',
             'hourly_rate' => 'required|numeric|min:0',
+            'job_skills_level' => 'nullable|in:Level 1,Level 2,Level 3,Level 4,Level 5,No',
 
             'highest_qualification' => 'required|string|max:120',
             'institution_name' => 'nullable|string|max:255',

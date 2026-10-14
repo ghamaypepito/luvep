@@ -154,6 +154,7 @@ class FamilyIntakeController extends Controller
             'birth_certificate_available' => 'nullable|in:Yes,No',
             'birth_certificate_reason' => 'nullable|required_if:birth_certificate_available,No|string|max:500',
             'face_image_consent' => 'nullable|boolean',
+            'job_skills_level' => 'nullable|in:Level 1,Level 2,Level 3,Level 4,Level 5,No',
             // H — Declaration
             'declaration_accepted' => 'nullable|boolean',
             'signature_name' => 'nullable|string|max:255',

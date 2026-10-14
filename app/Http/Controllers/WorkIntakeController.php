@@ -206,6 +206,7 @@ class WorkIntakeController extends Controller
             'medical_cert_submitted_last' => 'nullable|in:Yes,No',
             'medical_cert_type' => 'nullable|required_if:medical_cert_submitted_last,Yes|in:General Medical,X-Ray Medical Examination',
             'police_certificate_available' => 'nullable|in:Yes,No',
+            'job_skills_level' => 'nullable|in:Level 1,Level 2,Level 3,Level 4,Level 5,No',
 
             // Work Interest & Qualifications document tab.
             'documents' => 'nullable|array',

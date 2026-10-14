@@ -15,7 +15,7 @@ class WorkIntake extends Model
         'current_country', 'previous_nz_visa', 'previous_nz_visa_details', 'previous_nzeta',
         'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months',
         'employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed',
-        'job_start_date', 'hourly_rate', 'supports_dependent_children',
+        'job_start_date', 'hourly_rate', 'supports_dependent_children', 'job_skills_level',
         'character_convicted', 'character_investigation', 'character_deported',
         'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details',
         'health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant',

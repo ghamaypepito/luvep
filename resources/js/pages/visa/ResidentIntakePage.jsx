@@ -171,6 +171,7 @@ const FORM_DEFAULTS = {
     employment_start: '',
     employment_type: '',
     hourly_rate: '',
+    job_skills_level: '',
     // Qualifications
     highest_qualification: '',
     institution_name: '',
@@ -1131,6 +1132,17 @@ function StepEmployment({ data, setData, errors }) {
                 </Field>
                 <Field label="Hourly Rate (NZD) *" error={errors.hourly_rate} hint="Median: $35.00">
                     <input type="number" step="0.01" min="0" className={inputCls} placeholder="e.g. 45.00" value={data.hourly_rate} onChange={e => setData('hourly_rate', e.target.value)} />
+                </Field>
+                <Field label="Do you know your Job Skills Level as per ANZSCO or NOL?" error={errors.job_skills_level} hint="Select your level, or No if unsure">
+                    <select className={inputCls} value={data.job_skills_level} onChange={e => setData('job_skills_level', e.target.value)}>
+                        <option value="">Select...</option>
+                        <option value="Level 1">Level 1</option>
+                        <option value="Level 2">Level 2</option>
+                        <option value="Level 3">Level 3</option>
+                        <option value="Level 4">Level 4</option>
+                        <option value="Level 5">Level 5</option>
+                        <option value="No">No</option>
+                    </select>
                 </Field>
             </div>
         </div>

@@ -109,7 +109,7 @@ export default function WorkInterestPage() {
 
         employer_name: '', employer_is_family: '', employer_family_relation: '',
         self_employed: '', job_start_date: '', hourly_rate: '',
-        supports_dependent_children: '',
+        supports_dependent_children: '', job_skills_level: '',
 
         character_convicted: '', character_investigation: '', character_deported: '',
         character_visa_refused: '', lived_other_country_5y: '', lived_other_country_details: '',
@@ -392,6 +392,7 @@ export default function WorkInterestPage() {
                         <DateField label="Date job is available / work starts" value={data.job_start_date} onChange={set('job_start_date')} required error={errors.job_start_date} />
                         <TextField label="Minimum hourly rate of pay (NZD)" type="number" value={data.hourly_rate} onChange={set('hourly_rate')} hint="e.g. 29.66" required error={errors.hourly_rate} />
                         <YesNoField label="Do you intend to support any dependent children on a visitor/student visa?" value={data.supports_dependent_children} onChange={set('supports_dependent_children')} />
+                        <SelectField label="Do you know your Job Skills Level as per ANZSCO or NOL?" value={data.job_skills_level} onChange={set('job_skills_level')} options={['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'No']} />
                     </FieldGrid>
                 </>
             ),

@@ -71,7 +71,7 @@ export default function FamilyInterestPage() {
         countries_visited_3m: '', previous_xray: '', previous_medical_cert: '',
         currently_working: '', current_employer_name: '', current_employer_address: '',
         current_employer_phone: '', current_employer_email: '', current_occupation: '',
-        current_start: '', current_end: '',
+        current_start: '', current_end: '', job_skills_level: '',
         nz_contacts: '', declaration_accepted: false, signature_name: '', signature_date: '',
         // Shared document tab — files can't serialise to the local draft.
         documents: {}, document_files: {},
@@ -295,6 +295,7 @@ export default function FamilyInterestPage() {
                         <TextField label="Employer email address" value={data.current_employer_email} onChange={set('current_employer_email')} />
                         <TextField label="Start date (year and month)" value={data.current_start} onChange={set('current_start')} placeholder="e.g. 2021-03" />
                         <TextField label="End date (year and month)" value={data.current_end} onChange={set('current_end')} placeholder="e.g. present" />
+                        <SelectField label="Do you know your Job Skills Level as per ANZSCO or NOL?" value={data.job_skills_level} onChange={set('job_skills_level')} options={['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'No']} />
                     </FieldGrid>
                     <div className="mt-4"><TextareaField label="Address of organisation" rows={2} value={data.current_employer_address} onChange={set('current_employer_address')} /></div>
                 </>

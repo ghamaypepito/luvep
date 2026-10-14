@@ -40,6 +40,7 @@ class ResidentIntake extends Model
         'employment_start',
         'employment_type',
         'hourly_rate',
+        'job_skills_level',
         'highest_qualification',
         'institution_name',
         'country_of_study',
