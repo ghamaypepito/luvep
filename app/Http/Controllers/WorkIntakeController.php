@@ -198,6 +198,15 @@ class WorkIntakeController extends Controller
             'signature_name' => 'nullable|string|max:255',
             'signature_date' => 'nullable|date',
 
+            // Extra processing questions (all optional).
+            'birth_certificate_available' => 'nullable|in:Yes,No',
+            'birth_certificate_reason' => 'nullable|required_if:birth_certificate_available,No|string|max:500',
+            'face_image_consent' => 'nullable|boolean',
+            'medical_cert_recent' => 'nullable|in:Yes,No',
+            'medical_cert_submitted_last' => 'nullable|in:Yes,No',
+            'medical_cert_type' => 'nullable|required_if:medical_cert_submitted_last,Yes|in:General Medical,X-Ray Medical Examination',
+            'police_certificate_available' => 'nullable|in:Yes,No',
+
             // Work Interest & Qualifications document tab.
             'documents' => 'nullable|array',
             'documents.*' => 'nullable|string|max:20',

@@ -60,6 +60,7 @@ export default function FamilyInterestPage() {
         family_name: '', first_name: '', other_names: '', gender: '', dob: '',
         partnership_status: '', country_of_birth: '', place_of_birth: '',
         country_of_citizenship: '', other_citizenships: '', national_id: '',
+        birth_certificate_available: '', birth_certificate_reason: '', face_image_consent: false,
         current_country: '', previous_nz_visa: '', current_address: '', email: '', phone: '',
         applying_as: '', visa_type: '',
         partner_living_together: '', partner_12_months: '', partner_same_period: '', partner_close_relatives: '',
@@ -108,6 +109,7 @@ export default function FamilyInterestPage() {
                 if (!data.family_name?.trim()) errs.family_name = 'Family name is required';
                 if (!data.first_name?.trim()) errs.first_name = 'First name is required';
                 if (!data.dob) errs.dob = 'Date of birth is required';
+                if (data.birth_certificate_available === 'No' && !data.birth_certificate_reason?.trim()) errs.birth_certificate_reason = 'Please tell us why';
                 break;
             case 3:
                 if (!data.email?.trim()) errs.email = 'Email is required';
@@ -194,6 +196,16 @@ export default function FamilyInterestPage() {
                         <TextField label="Other citizenships" value={data.other_citizenships} onChange={set('other_citizenships')} />
                         <TextField label="National ID number (if applicable)" value={data.national_id} onChange={set('national_id')} />
                     </FieldGrid>
+                    <div className="mt-4 space-y-4">
+                        <YesNoField label="Do you have a birth certificate you can provide at the time of processing your visa?" value={data.birth_certificate_available} onChange={set('birth_certificate_available')} error={errors.birth_certificate_available} />
+                        {data.birth_certificate_available === 'No' && (
+                            <TextField label="If no, please tell us why" value={data.birth_certificate_reason} onChange={set('birth_certificate_reason')} error={errors.birth_certificate_reason} />
+                        )}
+                        <label className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 bg-white cursor-pointer">
+                            <input type="checkbox" className="w-5 h-5 rounded border-gray-300 text-[#00A693] focus:ring-[#00A693]" checked={!!data.face_image_consent} onChange={(e) => set('face_image_consent')(e.target.checked)} />
+                            <span className="text-sm text-gray-600">I understand you will ask me for a face image (JPG format) at the time of processing my visa.</span>
+                        </label>
+                    </div>
                 </>
             ),
         },

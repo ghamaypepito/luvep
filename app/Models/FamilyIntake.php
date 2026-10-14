@@ -17,6 +17,7 @@ class FamilyIntake extends Model
         'family_name', 'first_name', 'other_names', 'gender', 'dob',
         'country_of_birth', 'place_of_birth', 'country_of_citizenship',
         'other_citizenships', 'national_id', 'partnership_status',
+        'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent',
         // B — NZ immigration history
         'current_country', 'previous_nz_visa', 'current_address', 'email', 'phone',
         // C — Visa details
@@ -47,6 +48,7 @@ class FamilyIntake extends Model
         'document_files' => 'array',
         'declaration_accepted' => 'bool',
         'terms_accepted' => 'bool',
+        'face_image_consent' => 'bool',
     ];
 
     public function assessment(): MorphOne

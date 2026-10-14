@@ -74,13 +74,16 @@ export default function StudentInterestPage() {
         country_of_birth: '', place_of_birth: '', current_address: '', overseas_address: '',
         email: '', phone: '', country_of_citizenship: '', other_citizenships: '',
         national_id: '', passport_number: '', passport_expiry: '', partnership_status: '',
+        birth_certificate_available: '', birth_certificate_reason: '', face_image_consent: false,
 
         current_country: '', travelled_nz: '', last_nz_departure: '', over_24_months: '',
 
         character_convicted: '', character_investigation: '', character_deported: '',
         character_visa_refused: '', lived_other_country_5y: '', lived_other_country_details: '',
+        police_certificate_available: '',
 
         health_tb: '', health_renal: '', health_hospital: '', health_residential: '', health_pregnant: '',
+        medical_cert_recent: '', medical_cert_submitted_last: '', medical_cert_type: '',
 
         currently_working: '', current_job_title: '', current_job_duties: '',
         current_job_start: '', current_job_finish: '', current_job_country: '', current_job_region: '',
@@ -149,6 +152,7 @@ export default function StudentInterestPage() {
                 if (!data.phone?.trim()) errs.phone = 'Contact number is required';
                 if (!data.country_of_citizenship?.trim()) errs.country_of_citizenship = 'Country of citizenship is required';
                 if (!data.passport_number?.trim()) errs.passport_number = 'Passport number is required';
+                if (data.birth_certificate_available === 'No' && !data.birth_certificate_reason?.trim()) errs.birth_certificate_reason = 'Please tell us why';
                 break;
             case 3:
                 if (!data.travelled_nz) errs.travelled_nz = 'Please answer';
@@ -161,6 +165,7 @@ export default function StudentInterestPage() {
                 ['health_tb','health_renal','health_hospital','health_residential'].forEach((k) => {
                     if (!data[k]) errs[k] = 'Please answer';
                 });
+                if (data.medical_cert_submitted_last === 'Yes' && !data.medical_cert_type) errs.medical_cert_type = 'Please select the certificate type';
                 break;
             case 5:
                 if (!data.currently_working) errs.currently_working = 'Please answer';
@@ -294,6 +299,16 @@ export default function StudentInterestPage() {
                         <TextField label="Email address" type="email" value={data.email} onChange={set('email')} required error={errors.email} />
                         <TextField label="Contact number" value={data.phone} onChange={set('phone')} required hint="Include country code" error={errors.phone} />
                     </FieldGrid>
+                    <div className="mt-4 space-y-4">
+                        <YesNoField label="Do you have a birth certificate you can provide at the time of processing your visa?" value={data.birth_certificate_available} onChange={set('birth_certificate_available')} error={errors.birth_certificate_available} />
+                        {data.birth_certificate_available === 'No' && (
+                            <TextField label="If no, please tell us why" value={data.birth_certificate_reason} onChange={set('birth_certificate_reason')} error={errors.birth_certificate_reason} />
+                        )}
+                        <label className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 bg-white cursor-pointer">
+                            <input type="checkbox" className="w-5 h-5 rounded border-gray-300 text-[#00A693] focus:ring-[#00A693]" checked={!!data.face_image_consent} onChange={(e) => set('face_image_consent')(e.target.checked)} />
+                            <span className="text-sm text-gray-600">I understand you will ask me for a face image (JPG format) at the time of processing my visa.</span>
+                        </label>
+                    </div>
                 </>
             ),
         },
@@ -322,6 +337,7 @@ export default function StudentInterestPage() {
                         <YesNoField label="Ever expelled, deported or refused entry?" value={data.character_deported} onChange={set('character_deported')} error={errors.character_deported} />
                         <YesNoField label="Ever refused a visa by any country (excl. NZ)?" value={data.character_visa_refused} onChange={set('character_visa_refused')} error={errors.character_visa_refused} />
                         <YesNoField label="Lived in any country 5+ yrs since age 17 (excl. citizenship)?" value={data.lived_other_country_5y} onChange={set('lived_other_country_5y')} error={errors.lived_other_country_5y} />
+                        <YesNoField label="Can you provide a Police Certificate (country of citizenship and any country you have lived in more than 1 year in the last 10 years)?" value={data.police_certificate_available} onChange={set('police_certificate_available')} />
                     </FieldGrid>
                     {data.lived_other_country_5y === 'Yes' && (
                         <div className="mt-4">
@@ -336,7 +352,14 @@ export default function StudentInterestPage() {
                             <YesNoField label="Receiving hospital care?" value={data.health_hospital} onChange={set('health_hospital')} error={errors.health_hospital} />
                             <YesNoField label="Receiving residential care?" value={data.health_residential} onChange={set('health_residential')} error={errors.health_residential} />
                             <YesNoField label="Are you pregnant?" value={data.health_pregnant} onChange={set('health_pregnant')} />
+                            <YesNoField label="Do you have a medical certificate (unsubmitted) less than 3 months old from the date of issuance?" value={data.medical_cert_recent} onChange={set('medical_cert_recent')} />
+                            <YesNoField label="Have you submitted a medical certificate in your last visa application?" value={data.medical_cert_submitted_last} onChange={set('medical_cert_submitted_last')} />
                         </FieldGrid>
+                        {data.medical_cert_submitted_last === 'Yes' && (
+                            <div className="mt-4">
+                                <SelectField label="Which type?" value={data.medical_cert_type} onChange={set('medical_cert_type')} options={['General Medical', 'X-Ray Medical Examination']} error={errors.medical_cert_type} />
+                            </div>
+                        )}
                     </div>
                 </>
             ),

@@ -26,24 +26,29 @@ class WorkIntake extends Model
         'military_compulsory', 'military_undertaken', 'military_details',
         'travelled_internationally', 'travel_trips', 'declaration_accepted',
         'signature_name', 'signature_date',
+        // Extra processing questions (birth cert / face image / medical / police).
+        'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent',
+        'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type',
+        'police_certificate_available',
         // Work Interest & Qualifications document tab (see the intake controller).
         'documents', 'document_files',
     ];
 
     protected $casts = [
-        'dob'                => 'date',
-        'last_nz_departure'  => 'date',
-        'job_start_date'     => 'date',
-        'current_job_start'  => 'date',
-        'signature_date'     => 'date',
-        'hourly_rate'        => 'decimal:2',
-        'previous_roles'     => 'array',
-        'family_members'     => 'array',
-        'nz_contacts'        => 'array',
-        'travel_trips'       => 'array',
-        'documents'          => 'array',
-        'document_files'     => 'array',
+        'dob' => 'date',
+        'last_nz_departure' => 'date',
+        'job_start_date' => 'date',
+        'current_job_start' => 'date',
+        'signature_date' => 'date',
+        'hourly_rate' => 'decimal:2',
+        'previous_roles' => 'array',
+        'family_members' => 'array',
+        'nz_contacts' => 'array',
+        'travel_trips' => 'array',
+        'documents' => 'array',
+        'document_files' => 'array',
         'declaration_accepted' => 'bool',
+        'face_image_consent' => 'bool',
     ];
 
     public function assessment(): MorphOne

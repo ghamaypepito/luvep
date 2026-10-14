@@ -30,23 +30,25 @@ class VisitorIntake extends Model
         'multi_entry_plans', 'has_leave_permit', 'travel_funds_description',
         'can_provide_statements', 'has_other_assets', 'other_assets_details',
         'declaration_accepted', 'signature_name', 'signature_date',
+        'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent',
         'documents', 'document_files',
     ];
 
     protected $casts = [
-        'documents'          => 'array',
-        'document_files'     => 'array',
-        'dob'                => 'date',
-        'passport_expiry'    => 'date',
-        'last_nz_departure'  => 'date',
-        'current_job_start'  => 'date',
-        'intended_from'      => 'date',
-        'intended_to'        => 'date',
-        'signature_date'     => 'date',
-        'family_members'     => 'array',
-        'nz_contacts'        => 'array',
-        'travel_trips'       => 'array',
+        'documents' => 'array',
+        'document_files' => 'array',
+        'dob' => 'date',
+        'passport_expiry' => 'date',
+        'last_nz_departure' => 'date',
+        'current_job_start' => 'date',
+        'intended_from' => 'date',
+        'intended_to' => 'date',
+        'signature_date' => 'date',
+        'family_members' => 'array',
+        'nz_contacts' => 'array',
+        'travel_trips' => 'array',
         'declaration_accepted' => 'bool',
+        'face_image_consent' => 'bool',
     ];
 
     public function assessment(): MorphOne

@@ -150,6 +150,10 @@ class FamilyIntakeController extends Controller
             'previous_work' => 'nullable|array',
             // G — Other contacts
             'nz_contacts' => 'nullable|string',
+            // Extra processing questions (all optional).
+            'birth_certificate_available' => 'nullable|in:Yes,No',
+            'birth_certificate_reason' => 'nullable|required_if:birth_certificate_available,No|string|max:500',
+            'face_image_consent' => 'nullable|boolean',
             // H — Declaration
             'declaration_accepted' => 'nullable|boolean',
             'signature_name' => 'nullable|string|max:255',
