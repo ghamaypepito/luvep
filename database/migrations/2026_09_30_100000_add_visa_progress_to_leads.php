@@ -25,27 +25,6 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
-    /** Large, free-text / link / misc columns safe to store off-page as TEXT
-     *  (never searched or indexed) — mirrors the nzer_number batch. */
-    private array $toText = [
-        'other_names', 'preferred_name', 'place_of_birth',
-        'residence_city', 'residence_state',
-        'residence_address_line_1', 'residence_address_line_2',
-        'passport_path', 'passport_issuing_country',
-        'current_nz_visa_type', 'previous_nz_visa_type',
-        'utm_source', 'utm_medium', 'utm_campaign', 'utm_content',
-        'client_info_link', 'call_update_form_link',
-        'prescreened_by', 'goal_setting_by',
-        'student_school', 'student_gdrive_link', 'gdrive_folder_id',
-        'preferred_course', 'preferred_qualification_level',
-        'preferred_city_of_study', 'preferred_intake', 'target_institution',
-        'current_employer_name', 'current_position_title',
-        'current_employer_country', 'current_employer_email',
-        'nz_professional_registration_body',
-        'highest_qualification', 'highest_qualification_field',
-        'highest_qualification_country', 'nzqa_assessment_level',
-    ];
-
     public function up(): void
     {
         if (Schema::hasColumn('leads', 'visa_progress')) {
@@ -59,15 +38,35 @@ return new class extends Migration
             return;
         }
 
+        // Columns that are indexed can't become TEXT without a prefix length —
+        // never touch those (and never touch the primary key).
+        $indexed = collect(DB::select('SHOW INDEX FROM `leads`'))
+            ->pluck('Column_name')->filter()->unique()->all();
+
+        // Discover EVERY large, default-less, non-indexed VARCHAR and move it
+        // off-page to TEXT (exempt from the 8126 in-row limit). This is schema-
+        // adaptive, so it frees enough room even on a server where
+        // ROW_FORMAT=DYNAMIC is a no-op, and regardless of how many wide columns
+        // the god table has grown. Skipping defaulted columns (and keeping each
+        // column's own nullability) keeps the change safe — no DEFAULT or NOT
+        // NULL semantics are lost, and TEXT holds >= the old VARCHAR data.
+        $wide = DB::select(
+            "SELECT COLUMN_NAME AS name, IS_NULLABLE AS nullable FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'leads'
+               AND DATA_TYPE = 'varchar' AND CHARACTER_MAXIMUM_LENGTH >= 100
+               AND COLUMN_DEFAULT IS NULL"
+        );
+
         $clauses = ['ROW_FORMAT=DYNAMIC'];
-        foreach ($this->toText as $col) {
-            if (Schema::hasColumn('leads', $col)) {
-                $clauses[] = "MODIFY `{$col}` TEXT NULL";
+        foreach ($wide as $col) {
+            if (! in_array($col->name, $indexed, true)) {
+                $null = $col->nullable === 'YES' ? 'NULL' : 'NOT NULL';
+                $clauses[] = "MODIFY `{$col->name}` TEXT {$null}";
             }
         }
         $clauses[] = 'ADD COLUMN `visa_progress` JSON NULL AFTER `stage_history`';
 
-        // One atomic ALTER — MySQL evaluates only the resulting (much smaller) table.
+        // One atomic ALTER — MySQL only evaluates the resulting (much smaller) table.
         DB::statement('ALTER TABLE `leads` '.implode(', ', $clauses));
     }
 
