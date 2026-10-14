@@ -98,6 +98,75 @@ class VisaIntakeSubmitSmokeTest extends TestCase
         $this->assertSame(1, \App\Models\VisaType::withTrashed()->where('code', 'FAMILY')->count());
     }
 
+    public function test_resident_intake_saves_new_processing_questions(): void
+    {
+        $payload = $this->base() + [
+            'terms_accepted' => true,
+            'nationality' => 'Filipino',
+            'passport_number' => 'P1234567', 'passport_expiry' => '2031-01-01', 'issuing_country' => 'Philippines',
+            'current_visa_type' => 'AEWV', 'current_visa_expiry' => '2027-01-01', 'nz_arrival_date' => '2023-06-01',
+            'job_title' => 'Chef', 'employer_name' => 'Acme Ltd',
+            'employment_start' => '2023-07-01', 'employment_type' => 'Full-time', 'hourly_rate' => 32.5,
+            'highest_qualification' => "Bachelor's Degree",
+            'nz_skilled_years' => 2, 'total_skilled_years' => 5,
+            'english_evidence' => 'Recognised employment', 'include_family' => 'No',
+            // The new processing questions.
+            'birth_certificate_available' => 'No', 'birth_certificate_reason' => 'Lost in a fire',
+            'face_image_consent' => true,
+            'medical_cert_recent' => 'Yes', 'medical_cert_submitted_last' => 'Yes',
+            'medical_cert_type' => 'X-Ray Medical Examination', 'police_certificate_available' => 'Yes',
+        ];
+
+        $this->post('/resident-interest', $payload)->assertSessionHasNoErrors();
+
+        $row = \App\Models\ResidentIntake::latest('id')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('No', $row->birth_certificate_available);
+        $this->assertSame('Lost in a fire', $row->birth_certificate_reason);
+        $this->assertTrue((bool) $row->face_image_consent);
+        $this->assertSame('Acme Ltd', $row->employer_name);
+        $this->assertSame('Yes', $row->medical_cert_recent);
+        $this->assertSame('X-Ray Medical Examination', $row->medical_cert_type);
+        $this->assertSame('Yes', $row->police_certificate_available);
+    }
+
+    public function test_work_intake_saves_new_processing_questions(): void
+    {
+        $this->post('/work-interest', $this->base() + [
+            'declaration_accepted' => true,
+            'birth_certificate_available' => 'Yes', 'face_image_consent' => true,
+            'medical_cert_submitted_last' => 'Yes', 'medical_cert_type' => 'General Medical',
+            'police_certificate_available' => 'No',
+        ])->assertSessionHasNoErrors();
+
+        $row = \App\Models\WorkIntake::latest('id')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('Yes', $row->birth_certificate_available);
+        $this->assertTrue((bool) $row->face_image_consent);
+        $this->assertSame('General Medical', $row->medical_cert_type);
+        $this->assertSame('No', $row->police_certificate_available);
+    }
+
+    public function test_birth_certificate_reason_is_required_when_not_available(): void
+    {
+        $res = $this->post('/work-interest', $this->base() + [
+            'declaration_accepted' => true,
+            'birth_certificate_available' => 'No', // no reason given
+        ]);
+
+        $res->assertSessionHasErrors('birth_certificate_reason');
+    }
+
+    public function test_medical_type_is_required_when_submitted_last(): void
+    {
+        $res = $this->post('/work-interest', $this->base() + [
+            'declaration_accepted' => true,
+            'medical_cert_submitted_last' => 'Yes', // no type given
+        ]);
+
+        $res->assertSessionHasErrors('medical_cert_type');
+    }
+
     /** @dataProvider draftVisas */
     public function test_draft_endpoint_saves(string $visa): void
     {
