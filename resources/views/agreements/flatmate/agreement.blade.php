@@ -35,8 +35,10 @@
     $c = $data['costs'] ?? [];
     $bank = $data['bank'] ?? [];
     $subtenants = $data['subtenants'] ?? [];
-    // Always show at least 3 sub-tenant blocks like the source template.
-    $slots = max(3, count($subtenants));
+    // Only render the sub-tenants that actually exist — Sub-Tenant 1 (the main
+    // applicant) always shows; additional blocks appear only when the client
+    // listed other sub-tenants in the pre-tenancy form (solo = just Sub-Tenant 1).
+    $slots = max(1, count($subtenants));
 @endphp
 
 @section('body')
@@ -74,6 +76,7 @@
             <tr><td class="label">Current Address</td><td colspan="3">{!! $f($s['current_address'] ?? '') !!}</td></tr>
             <tr><td class="label">Email</td><td colspan="3">{!! $f($s['email'] ?? '') !!}</td></tr>
             <tr><td class="label">Mobile No / WhatsApp</td><td colspan="3">{!! $f($s['mobile'] ?? '') !!}</td></tr>
+            <tr><td class="label">Visa Type</td><td colspan="3">{!! $f($s['visa_type'] ?? '') !!}</td></tr>
             @if($i > 0)
                 <tr><td class="label">Relationship to Sub-Tenant 1</td><td colspan="3">{!! $f($s['relationship'] ?? '') !!}</td></tr>
             @endif

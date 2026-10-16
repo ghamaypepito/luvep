@@ -115,6 +115,7 @@ class AgreementBuilder
             'current_address' => $main['current_address'] ?? '',
             'email' => $main['email'] ?? '',
             'mobile' => $main['mobile'] ?? '',
+            'visa_type' => $main['visa_type'] ?? '',
             'relationship' => '',
         ];
         // Sub-Tenant 2..N = the additional occupants they listed.
@@ -129,6 +130,7 @@ class AgreementBuilder
                 'current_address' => '',
                 'email' => $o['email'] ?? '',
                 'mobile' => $o['mobile'] ?? '',
+                'visa_type' => $o['visa_type'] ?? '',
                 'relationship' => $o['relationship'] ?? '',
             ];
         }

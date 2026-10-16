@@ -56,6 +56,8 @@ class AccommodationAgreementController extends Controller
             'agreements' => $agreements,
             'types' => AccommodationAgreement::TYPES,
             'properties' => $properties,
+            // Immigration visa catalogue — drives the per-sub-tenant Visa Type dropdown.
+            'visaTypes' => \App\Models\VisaType::where('active', true)->orderBy('name')->pluck('name')->values()->all(),
         ]);
     }
 

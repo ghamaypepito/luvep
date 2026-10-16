@@ -8,7 +8,7 @@ import PdfPreviewModal from "@/components/ui/PdfPreviewModal";
 // auto-filled editable fields and a live preview then use the full width.
 // Generating renders the chosen Exalt agreement to a stored PDF (and links it to
 // the onboarding record when the client has one).
-export default function Agreements({ clients = [], agreements = [], types = {}, properties = [] }) {
+export default function Agreements({ clients = [], agreements = [], types = {}, properties = [], visaTypes = [] }) {
     const typeKeys = Object.keys(types);
     const [search, setSearch] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -226,6 +226,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                             <Mini label="Mobile" type="tel" value={s.mobile} onChange={(v) => setSub(i, "mobile", v)} />
                                             <Mini label="Email" type="email" value={s.email} onChange={(v) => setSub(i, "email", v)} full />
                                             <Mini label="Current address" value={s.current_address} onChange={(v) => setSub(i, "current_address", v)} full />
+                                            <Mini label="Visa type" options={visaTypes} value={s.visa_type} onChange={(v) => setSub(i, "visa_type", v)} full />
                                             {i > 0 && <Mini label="Relationship to Sub-Tenant 1" value={s.relationship} onChange={(v) => setSub(i, "relationship", v)} full />}
                                         </div>
                                     </div>
@@ -379,7 +380,7 @@ function StatusBadge({ status }) {
 }
 
 function emptySub() {
-    return { first_name: "", last_name: "", passport_id: "", expiry_date: "", dob: "", current_address: "", email: "", mobile: "", relationship: "" };
+    return { first_name: "", last_name: "", passport_id: "", expiry_date: "", dob: "", current_address: "", email: "", mobile: "", visa_type: "", relationship: "" };
 }
 function emptyFields() {
     return { property_address: "", subtenants: [emptySub()], tenancy: {}, costs: {}, bank: {} };
