@@ -4,7 +4,7 @@ import { CheckCircle2, Upload, FileText, Plus, Trash2 } from "lucide-react";
 
 const PRIMARY = "#1F5A8B";
 
-const emptyOccupant = () => ({ full_name: "", id_number: "", dob: "", age: "", relationship: "", email: "", mobile: "" });
+const emptyOccupant = () => ({ full_name: "", id_number: "", dob: "", age: "", relationship: "", email: "", mobile: "", visa_type: "" });
 
 function Field({ label, hint, required, error, children }) {
     return (
@@ -72,6 +72,7 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
         email: prefill.email || "",
         mobile: prefill.mobile || "",
         current_address: prefill.current_address || "",
+        visa_type: prefill.visa_type || "",
         has_additional_occupants: "no",
         occupants: [emptyOccupant()],
         valid_id: null,
@@ -189,6 +190,17 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
                     <Field label="Current Address" required error={errors.current_address}>
                         <input className={inputClass} value={data.current_address} onChange={(e) => setData("current_address", e.target.value)} />
                     </Field>
+                    <Field label="Visa Type" error={errors.visa_type}>
+                        <select className={inputClass} value={data.visa_type} onChange={(e) => setData("visa_type", e.target.value)}>
+                            <option value="">Select a visa type…</option>
+                            {(options.visa_types || []).map((v) => (
+                                <option key={v} value={v}>{v}</option>
+                            ))}
+                            {data.visa_type && !(options.visa_types || []).includes(data.visa_type) && (
+                                <option value={data.visa_type}>{data.visa_type}</option>
+                            )}
+                        </select>
+                    </Field>
                 </SectionCard>
 
                 {/* Section 2 — Other Occupants (with a dynamic occupant list) */}
@@ -232,6 +244,17 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
                                         </Field>
                                         <Field label="Mobile Number" hint="If the additional subtenant is under 18 years old, this is optional." error={occupantError(i, "mobile")}>
                                             <input className={inputClass} value={occ.mobile} onChange={(e) => setOccupant(i, "mobile", e.target.value)} />
+                                        </Field>
+                                        <Field label="Visa Type" error={occupantError(i, "visa_type")}>
+                                            <select className={inputClass} value={occ.visa_type || ""} onChange={(e) => setOccupant(i, "visa_type", e.target.value)}>
+                                                <option value="">Select a visa type…</option>
+                                                {(options.visa_types || []).map((v) => (
+                                                    <option key={v} value={v}>{v}</option>
+                                                ))}
+                                                {occ.visa_type && !(options.visa_types || []).includes(occ.visa_type) && (
+                                                    <option value={occ.visa_type}>{occ.visa_type}</option>
+                                                )}
+                                            </select>
                                         </Field>
                                     </div>
                                 </div>

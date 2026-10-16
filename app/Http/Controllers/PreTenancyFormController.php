@@ -40,6 +40,17 @@ class PreTenancyFormController extends Controller
         'One Single Room (shared toilet and bathroom) & One Ensuite Room (private toilet and bathroom)' => 'One Single room with shared toilet and bathroom and One room with its own private toilet and bathroom (ensuite)',
     ];
 
+    /** Active immigration visa types for the Visa Type dropdown. */
+    private function visaTypeOptions(): array
+    {
+        return \App\Models\VisaType::where('active', true)
+            ->orderBy('name')
+            ->pluck('name')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
     /** Distinct active property addresses for the Property Address dropdown. */
     private function propertyOptions(): array
     {
@@ -91,6 +102,7 @@ class PreTenancyFormController extends Controller
                 'lengths' => self::LENGTHS,
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
+                'visa_types' => $this->visaTypeOptions(),
             ],
         ]);
     }
@@ -111,6 +123,7 @@ class PreTenancyFormController extends Controller
             'email' => 'required|email|max:191',
             'mobile' => 'required|string|max:40',
             'current_address' => 'required|string|max:500',
+            'visa_type' => 'nullable|string|max:191',
             // Other occupants
             'has_additional_occupants' => 'required|in:no,yes',
             // No fixed cap — the tenant adds as many occupants as they need; a
@@ -123,6 +136,7 @@ class PreTenancyFormController extends Controller
             'occupants.*.relationship' => 'nullable|string|max:120',
             'occupants.*.email' => 'nullable|email|max:191',
             'occupants.*.mobile' => 'nullable|string|max:40',
+            'occupants.*.visa_type' => 'nullable|string|max:191',
             // Documents
             'valid_id' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
             'visa' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
@@ -174,6 +188,7 @@ class PreTenancyFormController extends Controller
                     'email' => $data['email'],
                     'mobile' => $data['mobile'],
                     'current_address' => $data['current_address'],
+                    'visa_type' => $data['visa_type'] ?? '',
                 ],
                 'has_additional_occupants' => $data['has_additional_occupants'] === 'yes',
                 'occupants' => $occupants,
@@ -272,6 +287,7 @@ class PreTenancyFormController extends Controller
                 'lengths' => self::LENGTHS,
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
+                'visa_types' => $this->visaTypeOptions(),
             ],
         ]);
     }
@@ -285,6 +301,7 @@ class PreTenancyFormController extends Controller
             'email' => 'required|email|max:191',
             'mobile' => 'required|string|max:40',
             'current_address' => 'required|string|max:500',
+            'visa_type' => 'nullable|string|max:191',
             'has_additional_occupants' => 'required|in:no,yes',
             'occupants' => 'nullable|array|max:30',
             'occupants.*.full_name' => 'nullable|string|max:191',
@@ -294,6 +311,7 @@ class PreTenancyFormController extends Controller
             'occupants.*.relationship' => 'nullable|string|max:120',
             'occupants.*.email' => 'nullable|email|max:191',
             'occupants.*.mobile' => 'nullable|string|max:40',
+            'occupants.*.visa_type' => 'nullable|string|max:191',
             'valid_id' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
             'visa' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
             'account_name' => 'required|string|max:191',
@@ -341,6 +359,7 @@ class PreTenancyFormController extends Controller
                     'email' => $data['email'],
                     'mobile' => $data['mobile'],
                     'current_address' => $data['current_address'],
+                    'visa_type' => $data['visa_type'] ?? '',
                 ],
                 'has_additional_occupants' => $data['has_additional_occupants'] === 'yes',
                 'occupants' => $occupants,

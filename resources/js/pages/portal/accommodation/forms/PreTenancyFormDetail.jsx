@@ -47,6 +47,7 @@ export default function PreTenancyFormDetail({ form }) {
                 <RowKV label="Email" value={d.main?.email} />
                 <RowKV label="Mobile" value={d.main?.mobile} />
                 <RowKV label="Current address" value={d.main?.current_address} />
+                <RowKV label="Visa type" value={d.main?.visa_type} />
             </Block>
 
             {d.has_additional_occupants && (d.occupants || []).length > 0 && (
@@ -60,6 +61,7 @@ export default function PreTenancyFormDetail({ form }) {
                             <RowKV label="Relationship" value={o.relationship} />
                             <RowKV label="Email" value={o.email} />
                             <RowKV label="Mobile" value={o.mobile} />
+                            <RowKV label="Visa type" value={o.visa_type} />
                         </dl>
                     ))}
                 </div>
