@@ -21,7 +21,7 @@ Provisional targets: initial login JavaScript below 1.5 MB decoded for this firs
 - [x] Preserve hashed assets from previous releases in production/staging rsync so already-open sessions can load their older chunks after deployment. Add a documented retention/cleanup policy after release-age data is available.
 - [x] Verify login, public navigation, role layouts, main-site HR, calendar, preview exit and logout with real-browser synthetic fixtures; verify imported pages resolve and no chunk-load/console errors appear.
 - [x] Measure initial script bytes before/after and build manifest gzip sizes. Run HR/backend regressions appropriate to the change; no permissions or database schema changes.
-- [ ] Deploy through the existing fork workflow, verify live login/public pages and new chunk responses, retain rollback assets and exact release SHA.
+- [x] Deploy through the existing fork workflow, verify live login/public pages and new chunk responses, retain rollback assets and exact release SHA.
 
 ## Phase 2 — Media and request optimization
 
@@ -75,3 +75,15 @@ Cold-login browser resource measurement: 5,287,553 → 703,912 decoded JavaScrip
 Four Chrome tests pass: payload budget + production stylesheet/computed layout, main-site HR login/calendar/attendance, Admin preview exit, and public/Admin/Immigration/Sales/Education/English/Accommodation/Finance/HR navigation. 135 HR backend tests / 745 assertions pass. Build passes with existing education duplicate-key and chunk-size warnings. Synthetic rsync check confirms old chunks retained, new chunks copied and manifest replaced. Independent review caught the consolidated-CSS template integration; fixed and covered with a failing-then-passing style check. Visual HR calendar inspected after the fix.
 
 CSS deliberately remains consolidated; production Blade explicitly includes style.css, while development continues using Vite-injected CSS. Existing hashed assets are protected from deletion. Add a bounded retention cleanup only after checking active release manifests and session/tab lifetime; monitor disk growth meanwhile.
+
+## Live release — 20 October 2026
+
+Merged PR #2: https://github.com/ghamaypepito/luvep/pull/2 . VPS deployment marker: `9c8cc3f8d82a8b7933fabfd792264112ea877a95`, run `39286487863`. Source checksums match the tested frontend/template. GitHub status API lagged the verified server state; live evidence establishes deployment, not a claimed completed API status.
+
+Live Chrome cold-login measurement before: 5,287,553 decoded and transferred JavaScript bytes, one script. After: 703,912 decoded bytes and 222,725 transferred bytes across nine required scripts. This is 86.7% less decoded JavaScript and 95.8% less transferred JavaScript. These are single-run payload measurements; no median LCP or real-user speed multiplier is claimed. One built stylesheet is linked and applied; computed login min-height is correct and no JavaScript runtime errors occurred.
+
+Additional immediate VPS changes: enabled gzip types for CSS/JavaScript/SVG via `/etc/nginx/conf.d/luvep-static-compression.conf`; added `public, max-age=31536000, immutable` only to generated `/build/assets/` static file types in the Luvep virtual host. Nginx syntax/reload checks passed. Live CSS and JS return 200 with gzip and immutable caching. Public home, activities and login return 200 with private/no-cache HTML; guest HR redirects to login. Read-only live checks confirm Admin HR 200 and pending employee 403; worker is healthy.
+
+Rollback snapshot: `/root/luvep-performance-20261020` on the VPS contains the prior frontend/build and Nginx configuration. Revert the performance code through the release workflow if necessary; preserve old asset files for open tabs. To reverse server-only tuning, remove the dedicated compression include, restore the saved Luvep virtual host, run `nginx -t`, then reload. No cloud resources were provisioned, no database schema changes were introduced by this optimization, and employee enrollment was unchanged.
+
+Next planned work: representative mobile/desktop timing baselines, media optimization, query/response profiling, independent off-server backups and the priced cloud evaluation.
