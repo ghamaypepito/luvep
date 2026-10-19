@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/reports', [\App\Http\Controllers\Hr\ReportController::class, 'index'])->name('reports');
+        Route::post('/reports/exports', [\App\Http\Controllers\Hr\ReportController::class, 'store'])->name('reports.export');
+        Route::get('/reports/exports/{export}', [\App\Http\Controllers\Hr\ReportController::class, 'download'])->name('reports.download');
         Route::get('/milestones', [\App\Http\Controllers\Hr\MilestoneController::class, 'index'])->name('milestones');
         Route::post('/milestones', [\App\Http\Controllers\Hr\MilestoneController::class, 'save'])->name('milestones.store');
         Route::post('/milestones/{milestone}', [\App\Http\Controllers\Hr\MilestoneController::class, 'save'])->name('milestones.save');
@@ -46,6 +49,7 @@ $hrRoutes = function () {
         Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
         Route::get('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'index'])->name('leave');
         Route::get('/leave/review', [\App\Http\Controllers\Hr\LeaveController::class, 'inbox'])->name('leave.inbox');
+        Route::get('/leave/{leave}/print', [\App\Http\Controllers\Hr\LeaveController::class, 'print'])->name('leave.print');
         Route::post('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'store'])->name('leave.store');
         Route::post('/leave/{leave}/decision', [\App\Http\Controllers\Hr\LeaveController::class, 'decide'])->name('leave.decision');
         Route::post('/leave/{leave}/emergency', [\App\Http\Controllers\Hr\LeaveController::class, 'emergency'])->name('leave.emergency');

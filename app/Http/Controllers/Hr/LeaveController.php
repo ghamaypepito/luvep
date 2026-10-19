@@ -42,6 +42,24 @@ class LeaveController extends Controller
         return Inertia::render('hr/LeaveInbox', compact('leaves'));
     }
 
+    public function print(Request $request, DtrLeave $leave)
+    {
+        $context = app(HrContext::class);
+        $actor = $request->user();
+        $access = app(HrAccess::class);
+        $employee = HrEmployee::where('user_id', $leave->user_id)->firstOrFail();
+        if ($context->isPreview($request)) {
+            abort_unless($context->subject($request)->id === $employee->id, 404);
+        } elseif ($actor->id === $leave->user_id) {
+            abort_unless($access->employee($actor)?->id === $employee->id, 404);
+        } else {
+            abort_unless($access->allows($actor, 'leave.review', $employee) || $access->allows($actor, 'leave.fallback', $employee) || $access->allows($actor, 'leave.emergency', $employee), 404);
+        }
+        app(\App\Services\Hr\HrAudit::class)->record($actor, 'leave.print_viewed', $leave, ['employee_id' => $employee->id]);
+
+        return response()->view('hr.leave-print', compact('employee', 'leave'))->header('Cache-Control', 'private, no-store')->header('X-Content-Type-Options', 'nosniff');
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate(['request_id' => 'required|uuid']);
@@ -78,6 +96,6 @@ class LeaveController extends Controller
 
     private function result(Request $request, DtrLeave $leave)
     {
-        return $request->expectsJson() ? response()->json(['leave' => $this->row($leave)]) : back()->with('success','Leave request saved.');
+        return $request->expectsJson() ? response()->json(['leave' => $this->row($leave)]) : back()->with('success', 'Leave request saved.');
     }
 }

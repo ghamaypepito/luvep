@@ -34,6 +34,7 @@ export default function HrLayout({ children }) {
     if (hr?.permissions?.["dtr.review"])
         links.push(["/dtr/review", "Time reviews", ClipboardCheck]);
     links.push(["/checklists", "Onboarding & exits", ListChecks]);
+    links.push(["/reports", "Reports", ClipboardCheck]);
     links.push(["/milestones", "Milestones", CalendarDays]);
     links.push(["/equipment", "Equipment", Laptop]);
     links.push(["/requests", "HR support", MessageSquareLock]);

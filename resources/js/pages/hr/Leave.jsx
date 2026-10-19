@@ -300,6 +300,14 @@ export default function Leave({ leaves, types, manager, today }) {
                             · {l.status}
                         </summary>
                         <LeaveDetails leave={l} />
+                        <a
+                            className="hr-text-link"
+                            href={`/leave/${l.id}/print`}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Print / Save as PDF
+                        </a>
                         {!hr.preview &&
                             ["pending", "deferred"].includes(l.status) && (
                                 <button
