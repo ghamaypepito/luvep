@@ -26,6 +26,11 @@ return [
     |
     */
     'restricted' => [
+        'hr' => [
+            'label' => 'Human Resources',
+            'description' => 'Private employee services. Sensitive features require explicit individual grants.',
+            'features' => array_combine(config('hr.abilities'), array_map(fn ($ability) => ['label' => ucfirst(str_replace('.', ' ', $ability)), 'description' => 'Explicit HR permission'], config('hr.abilities'))),
+        ],
         'agents' => [
             'label' => 'Agents',
             'description' => 'Manage referral agents — their leads, profiles, and agreements.',
