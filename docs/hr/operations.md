@@ -1,6 +1,6 @@
 # Luvep HR operations
 
-Status: Releases 1–3 are implemented on `codex/hr-portal`; independent review fixes, local verification and isolated VPS acceptance checks are complete. Nothing in this document claims a production deployment. HR defaults off. Do not enable real employee mail or upload real confidential files during local/staging verification.
+Status: Deployed on 20 October 2026 at `https://luvep.com/portal/hr/dashboard` from merged commit `d65d65f204031ee42be56f140a381907e4f192e4`. Main-site HR and notifications are enabled; shared-domain cookies are disabled. Employee enrollment/activation remains pending owner review. Historical verification and predeployment notes below are retained as evidence.
 
 ## Configuration
 
@@ -105,3 +105,15 @@ The calendar shows authorized leave availability without reasons/types, own sche
 Verification: 132 HR tests / 722 assertions pass; production frontend build passes; Chrome verifies direct login return, month/week/day calendar, mobile overflow, profile navigation, clock and break/resume. The preexisting build warnings remain.
 
 Predeployment review fixes: main-site mode validates the session password hash independently of shared cookies, pending managers with unrelated grants cannot read team calendar leave, and the main-site HR notification route retains its HR layout. Regression suite: 135 tests / 745 assertions pass. Fresh production database/application/config backup completed in a root-only server directory; SMTP connection/authentication succeeded without sending a test message. Redis queue and session services are configured.
+
+### Production result — 20 October 2026
+
+PR #1 merged; production marker identifies `d65d65f204031ee42be56f140a381907e4f192e4`, workflow run `39284163780`. GitHub API still reported queued during final verification, but server deployment marker, reviewed PHP checksums, all 13 migrations (batch 106), rebuilt assets and restarted worker confirm the release reached production. No fallback/manual code synchronization was performed.
+
+Activated `HR_ENABLED=true`, `HR_PORTAL_MODE=true`, `HR_SHARED_SESSION=false`, `HR_NOTIFICATIONS_ENABLED=true`. Main-site login/session retained. Installed only the three HR commands in `/etc/cron.d/luvep-hr` with process locks; did not activate unrelated legacy schedules. Private document directory created outside public storage. Root-only database/application/Nginx/Supervisor backup: `/root/luvep-hr-predeploy-20261020` on the VPS.
+
+Live checks: guest dashboard/calendar → 302 login; read-only HTTP-kernel checks with existing Admin authorization return 200 for dashboard, calendar, People, enrollment setup, HR notifications and main Admin dashboard. Unenrolled staff return 403 with `hr/Pending`. Public home and activities return 200. Nginx, PHP-FPM, cron and production worker are running. Enrollment and active-employee counts are both zero; no accounts were activated. SMTP handshake/authentication passed; no test email was sent, so inbox delivery is not claimed.
+
+Latest verification: 135 HR tests / 745 assertions; two Chrome flows pass with main-site mode enabled and shared sessions disabled. Includes login return, scoped calendar navigation/mobile, attendance, setup and preview exit.
+
+Rollback: set `HR_ENABLED=false` and `HR_NOTIFICATIONS_ENABLED=false`, rebuild configuration cache and restart the queue. Retain HR tables and submissions. Full predeployment backup is available if a code rollback is required.
