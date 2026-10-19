@@ -88,3 +88,5 @@ Schedule::command('tasks:overdue-digest')
     ->withoutOverlapping();
 
 Schedule::command('hr:dispatch-notifications')->everyMinute()->withoutOverlapping();
+
+Schedule::command('hr:notify-due-work')->hourly()->withoutOverlapping();

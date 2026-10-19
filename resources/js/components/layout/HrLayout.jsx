@@ -34,6 +34,7 @@ export default function HrLayout({ children }) {
     if (hr?.permissions?.["dtr.review"])
         links.push(["/dtr/review", "Time reviews", ClipboardCheck]);
     links.push(["/checklists", "Onboarding & exits", ListChecks]);
+    links.push(["/milestones", "Milestones", CalendarDays]);
     links.push(["/equipment", "Equipment", Laptop]);
     links.push(["/requests", "HR support", MessageSquareLock]);
     links.push(["/policies", "Policies", BookOpen]);
@@ -59,7 +60,7 @@ export default function HrLayout({ children }) {
                     ))}
                 </nav>
                 <div className="hr-sidebar-footer">
-                    <a href="https://luvep.com/">
+                    <a href={hr?.main_url || "/"}>
                         Back to Luvep <ArrowUpRight size={16} />
                     </a>
                     <button onClick={() => router.post("/logout")}>

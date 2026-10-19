@@ -48,7 +48,7 @@ class HrNotificationRecipients
 
             return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u) && ($u->isAdmin() || app(HrAccess::class)->employee($u)))->values();
         }
-        if ($event->subject instanceof \App\Models\HrChecklistTask) {
+        if ($event->subject instanceof \App\Models\HrChecklistTask || $event->subject instanceof \App\Models\HrMilestone) {
             $owner = User::find($event->subject->owner_user_id);
             if ($owner && app(ChecklistService::class)->eligibleOwner($owner)) {
                 $ids->push($owner->id);
@@ -59,7 +59,7 @@ class HrNotificationRecipients
             if (str_starts_with($event->type, 'dtr.')) {
                 $ids->push($employee->reviewer_user_id);
             }
-            if (! ($event->subject instanceof \App\Models\HrChecklistTask) || $event->subject->employee_visible || $event->subject->owner_user_id === $employee->user_id) {
+            if (! ($event->subject instanceof \App\Models\HrChecklistTask || $event->subject instanceof \App\Models\HrMilestone) || $event->subject->employee_visible || $event->subject->owner_user_id === $employee->user_id) {
                 $ids->push($employee->user_id);
             }
         }
@@ -72,6 +72,9 @@ class HrNotificationRecipients
         $employee = $this->employee($event);
         $access = app(HrAccess::class);
         $path = 'notifications';
+        if ($event->subject instanceof \App\Models\HrMilestone) {
+            return app(HrContext::class)->url('milestones');
+        }
         if ($event->subject instanceof \App\Models\HrChecklistTask) {
             return app(HrContext::class)->url('checklists');
         }

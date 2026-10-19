@@ -12,6 +12,7 @@ export default function Dashboard({
     upcomingLeave = [],
     reviews = {},
     absences = [],
+    dueMilestones = 0,
 }) {
     const { hr } = usePage().props;
     const firstName = profile.user?.name?.split(" ")[0] || "there";
@@ -97,6 +98,22 @@ export default function Dashboard({
                     </div>
                 </section>
             )}
+            <section className="hr-panel">
+                <div className="hr-section-bar">
+                    <h2>Next steps</h2>
+                    <span className="hr-status">
+                        {dueMilestones} due milestones
+                    </span>
+                </div>
+                <div className="hr-actions">
+                    <Link href="/milestones" className="hr-text-link">
+                        View milestones <ArrowRight size={16} />
+                    </Link>
+                    <Link href="/checklists" className="hr-text-link">
+                        Onboarding & exit tasks <ArrowRight size={16} />
+                    </Link>
+                </div>
+            </section>
             <div className="hr-dashboard-grid">
                 <section className="hr-panel">
                     <div className="hr-section-bar">

@@ -13,10 +13,10 @@ use Illuminate\Support\Str;
 
 class HrEvents
 {
-    public function record(string $type, Model $subject, User $actor, string $deduplicationKey): HrEvent
+    public function record(string $type, Model $subject, ?User $actor, string $deduplicationKey): HrEvent
     {
         return DB::transaction(function () use ($type, $subject, $actor, $deduplicationKey) {
-            $event = HrEvent::firstOrCreate(['deduplication_key' => $deduplicationKey], ['type' => $type, 'subject_type' => $subject->getMorphClass(), 'subject_id' => $subject->getKey(), 'actor_id' => $actor->id, 'created_at' => now()]);
+            $event = HrEvent::firstOrCreate(['deduplication_key' => $deduplicationKey], ['type' => $type, 'subject_type' => $subject->getMorphClass(), 'subject_id' => $subject->getKey(), 'actor_id' => $actor?->id, 'created_at' => now()]);
             if ($event->wasRecentlyCreated && config('hr.notifications_enabled')) {
                 foreach (app(HrNotificationRecipients::class)->forEvent($event) as $user) {
                     foreach (['database', 'mail'] as $channel) {

@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/milestones', [\App\Http\Controllers\Hr\MilestoneController::class, 'index'])->name('milestones');
+        Route::post('/milestones', [\App\Http\Controllers\Hr\MilestoneController::class, 'save'])->name('milestones.store');
+        Route::post('/milestones/{milestone}', [\App\Http\Controllers\Hr\MilestoneController::class, 'save'])->name('milestones.save');
+        Route::post('/milestones/{milestone}/complete', [\App\Http\Controllers\Hr\MilestoneController::class, 'complete'])->name('milestones.complete');
         Route::get('/checklists', [\App\Http\Controllers\Hr\ChecklistController::class, 'index'])->name('checklists');
         Route::post('/checklists', [\App\Http\Controllers\Hr\ChecklistController::class, 'start'])->name('checklists.start');
         Route::post('/checklists/templates', [\App\Http\Controllers\Hr\ChecklistController::class, 'template'])->name('checklists.template.create');

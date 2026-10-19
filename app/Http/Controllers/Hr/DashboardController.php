@@ -48,6 +48,9 @@ class DashboardController extends Controller
             $absences = DtrLeave::with('user:id,name')->whereIn('user_id', $leaveIds)->where('status', 'approved')->whereDate('end_date', '>=', $today)->whereDate('start_date', '<=', now()->addDays(30)->toDateString())->orderBy('start_date')->limit(50)->get()->map(fn ($l) => ['id' => $l->id, 'name' => $l->user?->name, 'start_date' => $l->start_date->toDateString(), 'end_date' => $l->end_date->toDateString(), 'half_day' => $l->half_day]);
         }
 
-        return Inertia::render('hr/Dashboard', ['profile' => EmployeeController::profileData($employee, $employee?->user ?? $actor), 'ownSummary' => $own, 'upcomingLeave' => $upcoming, 'reviews' => $review, 'absences' => $absences]);
+        $milestoneUser = $preview ? $employee->user : $actor;
+        $dueMilestones = app(\App\Services\Hr\MilestoneService::class)->visible($milestoneUser, ! $preview && $access->allows($actor, 'operations.manage'))->with('employee.schedule')->whereNull('completed_at')->get()->filter(fn ($m) => $m->due_date->toDateString() <= now($m->employee->schedule?->timezone ?? 'UTC')->toDateString())->count();
+
+        return Inertia::render('hr/Dashboard', ['dueMilestones' => $dueMilestones, 'profile' => EmployeeController::profileData($employee, $employee?->user ?? $actor), 'ownSummary' => $own, 'upcomingLeave' => $upcoming, 'reviews' => $review, 'absences' => $absences]);
     }
 }

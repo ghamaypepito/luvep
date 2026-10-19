@@ -68,7 +68,7 @@ class HrContext
             $abilities['dtr.review'] = $abilities['dtr.review'] || HrEmployee::where('reviewer_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
         }
 
-        return ['enabled' => (bool) config('hr.enabled'), 'url' => $this->url(), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
+        return ['enabled' => (bool) config('hr.enabled'), 'url' => $this->url(), 'main_url' => config('hr.main_url'), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
             'permissions' => $abilities, 'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
     }
 }
