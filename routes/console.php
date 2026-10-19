@@ -86,3 +86,5 @@ Schedule::command('tasks:overdue-digest')
     ->timezone('Pacific/Auckland')
     ->name('tasks-overdue-digest')
     ->withoutOverlapping();
+
+Schedule::command('hr:dispatch-notifications')->everyMinute()->withoutOverlapping();

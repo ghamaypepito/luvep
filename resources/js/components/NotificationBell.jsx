@@ -92,7 +92,13 @@ export default function NotificationBell() {
 
     const openItem = (n) => {
         setOpen(false);
-        const go = () => n.url && router.visit(n.url);
+        const go = () => {
+            if (!n.url) return;
+            const destination = new URL(n.url, window.location.origin);
+            if (!['https:', 'http:'].includes(destination.protocol)) return;
+            if (destination.origin !== window.location.origin) window.location.assign(destination.href);
+            else router.visit(destination.href);
+        };
         if (n.is_read) return go();
         // Mark read (refreshes shared unread_count via the redirect), then navigate.
         router.post(`/notifications/${n.id}/read`, {}, { preserveScroll: true, preserveState: true, onFinish: go });
@@ -105,6 +111,8 @@ export default function NotificationBell() {
             onFinish: () => setItems((prev) => prev.map((n) => ({ ...n, is_read: true }))),
         });
     };
+
+    if (props.hr?.preview) return null;
 
     const badge = unread > 99 ? "99+" : unread;
 

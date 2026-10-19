@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications');
+        Route::get('/api/notifications/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('notifications.recent');
+        Route::get('/api/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.count');
+        Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
+        Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+        Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
         Route::get('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'index'])->name('leave');
         Route::get('/leave/review', [\App\Http\Controllers\Hr\LeaveController::class, 'inbox'])->name('leave.inbox');
         Route::post('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'store'])->name('leave.store');

@@ -41,7 +41,7 @@ class HandleInertiaRequests extends Middleware
             $user = $hr['preview'] ? $context->subject($request)->user : $request->user();
 
             return [...parent::share($request), 'auth' => ['user' => $user?->only(['id', 'name', 'email', 'avatar_url']), 'modules' => [], 'portals' => [], 'can_manage_modules' => false],
-                'hr' => $hr, 'flash' => ['success' => $request->session()->get('success'), 'error' => $request->session()->get('error')]];
+                'notifications' => ['unread_count' => $hr['preview'] ? 0 : ($request->user()?->unreadNotifications()->count() ?? 0)], 'hr' => $hr, 'flash' => ['success' => $request->session()->get('success'), 'error' => $request->session()->get('error')]];
         }
 
         return [
