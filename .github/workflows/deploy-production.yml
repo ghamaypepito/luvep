@@ -1,12 +1,21 @@
 name: Deploy to Production
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: luvep-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: github.repository == 'ghamaypepito/luvep' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -85,5 +94,11 @@ jobs:
             php artisan db:seed --class=OfficialInzFormsSeeder --force &&
             php artisan config:cache &&
             php artisan view:cache &&
-            php artisan queue:restart
+            php artisan queue:restart &&
+            printf "%s\n" "{\"repository\":\"ghamaypepito/luvep\",\"commit\":\"${{ github.sha }}\",\"run_id\":\"${{ github.run_id }}\"}" > .deployment-source.json
           '
+
+      - name: Verify live website
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/activities
