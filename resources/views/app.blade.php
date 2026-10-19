@@ -54,7 +54,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Urbanist:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
 
     @viteReactRefresh
-    @vite('resources/js/app.jsx')
+    {{-- CSS is consolidated in production; Vite injects it through JS in development. --}}
+    @vite(app(\Illuminate\Foundation\Vite::class)->isRunningHot() ? ['resources/js/app.jsx'] : ['resources/js/app.jsx', 'style.css'])
     @inertiaHead
 </head>
 
