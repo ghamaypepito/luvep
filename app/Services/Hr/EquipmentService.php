@@ -35,8 +35,9 @@ class EquipmentService
         return DB::transaction(function () use ($actor, $employee, $assetTag, $description) {
             HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
             abort_if($employee->fresh()->status === 'archived', 409);
-            $item = HrEquipment::firstOrCreate(['asset_tag' => $assetTag], ['description' => $description, 'hr_employee_id' => $employee->id, 'status' => 'returned']);
-            $item = HrEquipment::whereKey($item->id)->lockForUpdate()->firstOrFail();
+            // A locking read after insert-or-ignore sees a concurrent winner even under MySQL REPEATABLE READ.
+            HrEquipment::query()->insertOrIgnore(['asset_tag' => $assetTag, 'description' => $description, 'hr_employee_id' => $employee->id, 'status' => 'returned', 'created_at' => now(), 'updated_at' => now()]);
+            $item = HrEquipment::where('asset_tag', $assetTag)->lockForUpdate()->firstOrFail();
             abort_if($item->status === 'issued', 409, 'This asset is already assigned. Record its return first.');
             $item->update(['description' => $description, 'hr_employee_id' => $employee->id, 'status' => 'issued', 'issued_at' => now(), 'returned_at' => null, 'condition' => null, 'version' => $item->version + 1]);
             $this->event($actor, $item, 'issued');
@@ -67,6 +68,6 @@ class EquipmentService
     {
         HrEquipmentEvent::create(['hr_equipment_id' => $item->id, 'hr_employee_id' => $item->hr_employee_id, 'actor_id' => $actor->id, 'action' => $action, 'asset_tag' => $item->asset_tag, 'description' => $item->description, 'condition' => $item->condition, 'created_at' => now()]);
         app(HrAudit::class)->record($actor, 'equipment.'.$action, $item, ['employee_id' => $item->hr_employee_id, 'version' => $item->version]);
-        app(HrEvents::class)->record('equipment.'.$action,$item,$actor,'equipment:'.$item->id.':'.$item->version);
+        app(HrEvents::class)->record('equipment.'.$action, $item, $actor, 'equipment:'.$item->id.':'.$item->version);
     }
 }
