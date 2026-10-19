@@ -49,6 +49,7 @@ jobs:
         run: |
           sync_to_vps() {
             rsync -rlptvz -e "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4" --delete --no-owner --no-group \
+              --filter='P /public/build/assets/***' \
               --exclude='.git' \
               --exclude='.github' \
               --exclude='.env' \

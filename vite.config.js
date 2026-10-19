@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+    // Preserve the existing global stylesheet while splitting page JavaScript.
+    build: { cssCodeSplit: false },
     optimizeDeps: {
         include: ["swiper"],
     },
