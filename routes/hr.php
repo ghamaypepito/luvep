@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/documents', [\App\Http\Controllers\Hr\DocumentController::class, 'index'])->name('documents');
+        Route::post('/documents', [\App\Http\Controllers\Hr\DocumentController::class, 'store'])->name('documents.store');
+        Route::get('/documents/versions/{version}', [\App\Http\Controllers\Hr\DocumentController::class, 'download'])->name('documents.download');
+        Route::post('/documents/versions/{version}/release', [\App\Http\Controllers\Hr\DocumentController::class, 'release'])->name('documents.release');
+        Route::post('/documents/{document}/archive', [\App\Http\Controllers\Hr\DocumentController::class, 'archive'])->name('documents.archive');
         Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications');
         Route::get('/api/notifications/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('notifications.recent');
         Route::get('/api/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.count');
