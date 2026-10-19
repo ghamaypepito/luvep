@@ -48,7 +48,7 @@ class HrContext
 
     public function url(string $path = ''): string
     {
-        return 'https://'.config('hr.host').'/'.ltrim($path, '/');
+        return rtrim(config('hr.url'), '/').'/'.ltrim($path, '/');
     }
 
     public function props(Request $request): array

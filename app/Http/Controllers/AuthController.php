@@ -95,6 +95,30 @@ class AuthController extends Controller
                     ->with('success', 'Welcome back, '.$user->name.'!');
             }
 
+            // Only return to this site or the explicitly configured HR host.
+            $intended = $request->session()->get('url.intended');
+            if (is_string($intended)) {
+                $parts = parse_url($intended);
+                $relative = str_starts_with($intended, '/') && ! str_starts_with($intended, '//') && ! str_contains($intended, '\\');
+                $allowedOrigins = [$request->getSchemeAndHttpHost()];
+                if (config('hr.enabled')) {
+                    $allowedOrigins[] = rtrim(config('hr.url'), '/');
+                }
+                $origin = ($parts['scheme'] ?? '').'://'.($parts['host'] ?? '').(isset($parts['port']) ? ':'.$parts['port'] : '');
+                $allowed = $parts && ! isset($parts['user']) && ! isset($parts['pass']) && ! str_contains($intended, '\\')
+                    && in_array($origin, $allowedOrigins, true);
+                if (! $relative && ! $allowed) {
+                    $request->session()->forget('url.intended');
+                }
+            }
+            $destination = $request->session()->get('url.intended');
+            if ($request->header('X-Inertia') && is_string($destination) && str_starts_with($destination, rtrim(config('hr.url'), '/').'/')
+                && parse_url($destination, PHP_URL_HOST) !== $request->getHost()) {
+                $request->session()->forget('url.intended');
+
+                return Inertia::location($destination);
+            }
+
             return redirect()->intended($user->homeRoute())
                 ->with('success', 'Welcome back, '.$user->name.'!');
         }
@@ -208,6 +232,10 @@ class AuthController extends Controller
         $request->session()->invalidate();
 
         $request->session()->regenerateToken();
+
+        if (config('hr.enabled') && $request->getHost() === config('hr.host')) {
+            return Inertia::location(rtrim(config('hr.main_url'), '/').'/login');
+        }
 
         return redirect('/')->with('success', 'Logged out successfully');
     }

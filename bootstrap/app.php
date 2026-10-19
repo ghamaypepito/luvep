@@ -20,7 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
             '/webhook/zernio',
         ]);
         $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\RestrictHrHost::class);
-        $middleware->web(append: [
+        $middleware->web(replace: [\Illuminate\Session\Middleware\StartSession::class => \App\Http\Middleware\StartLuvepSharedSession::class], append: [
             \App\Http\Middleware\RestrictHrHost::class,
             \App\Http\Middleware\BlockHrPreviewWrites::class,
             HandleInertiaRequests::class,
