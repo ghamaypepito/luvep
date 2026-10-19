@@ -1,5 +1,7 @@
 <?php
 
+require __DIR__.'/hr.php';
+
 use App\Http\Controllers\AccommodationController as PublicAccommodationController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Admin\MaintenanceController;

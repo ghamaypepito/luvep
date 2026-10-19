@@ -19,7 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
             '/stripe/webhook',
             '/webhook/zernio',
         ]);
+        $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\RestrictHrHost::class);
         $middleware->web(append: [
+            \App\Http\Middleware\RestrictHrHost::class,
+            \App\Http\Middleware\BlockHrPreviewWrites::class,
             HandleInertiaRequests::class,
             \App\Http\Middleware\EnsureAccountActive::class,
             \App\Http\Middleware\EnsureNotInMaintenance::class,

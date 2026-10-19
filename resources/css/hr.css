@@ -1,0 +1,70 @@
+/* Luvep HR: restrained branded surfaces for everyday employee work. */
+.hr-app { --hr-green:#36582e; --hr-ink:#243128; --hr-muted:#5f6c62; --hr-line:#dce2da; display:flex; min-height:100vh; background:#f5f6f2; color:var(--hr-ink); font-family:var(--font-urbanist),sans-serif; font-size:16px; }
+.hr-app * { box-sizing:border-box; }
+.hr-app :focus-visible,.hr-profile-menu :focus-visible { outline:3px solid #537b44; outline-offset:3px; }
+.hr-sidebar { width:236px; flex-shrink:0; padding:34px 22px; background:#fff; border-right:1px solid var(--hr-line); display:flex; flex-direction:column; }
+.hr-logo { display:flex; align-items:flex-start; flex-direction:column; gap:14px; margin:0 12px 40px; text-decoration:none; }
+.hr-logo img { width:132px; height:70px; object-fit:contain; object-position:left; }
+.hr-logo span { font-size:14px; color:var(--hr-muted); }
+.hr-sidebar nav { display:grid; gap:7px; }
+.hr-sidebar nav a { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:8px; font-weight:600; color:#536054; }
+.hr-sidebar nav a:hover { background:#f2f5ef; }
+.hr-sidebar nav a[aria-current] { color:var(--hr-green); background:#eaf0e5; }
+.hr-sidebar-footer { display:grid; gap:18px; margin-top:auto; padding:40px 12px 0; font-size:14px; }
+.hr-sidebar-footer a,.hr-sidebar-footer button { display:flex; align-items:center; gap:9px; text-align:left; color:var(--hr-muted); }
+.hr-workspace { min-width:0; flex:1; }
+.hr-topbar { display:flex; justify-content:space-between; align-items:center; padding:20px 40px; min-height:80px; border-bottom:1px solid var(--hr-line); background:#fff; gap:16px; }
+.hr-topbar>span { color:var(--hr-muted); font-size:14px; }
+.hr-profile-menu { position:relative; font-family:var(--font-urbanist),sans-serif; }
+.hr-profile-trigger { list-style:none; display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px; font-weight:600; }
+.hr-profile-trigger::-webkit-details-marker { display:none; }
+.hr-profile-trigger>img,.hr-avatar { width:36px; height:36px; border-radius:50%; background:#e8eddf; color:#36582e; display:inline-flex; align-items:center; justify-content:center; object-fit:cover; overflow:hidden; }
+.hr-dropdown { position:absolute; right:0; top:calc(100% + 12px); z-index:40; min-width:218px; padding:8px; border-radius:12px; background:#fff; box-shadow:0 8px 24px #24312826; }
+.hr-dropdown a { display:flex; gap:10px; padding:12px; border-radius:6px; color:#243128; white-space:nowrap; }
+.hr-dropdown a:hover { background:#eff3eb; }
+#hr-main { max-width:1240px; margin:auto; padding:40px; }
+.hr-page-heading { margin-bottom:32px; }
+.hr-page-heading h1 { font-size:36px; line-height:1.15; font-weight:600; letter-spacing:-.025em; margin:0 0 10px; text-wrap:balance; }
+.hr-page-heading p { color:var(--hr-muted); max-width:68ch; line-height:1.65; }
+.hr-panel { background:#fff; border:1px solid var(--hr-line); padding:28px; border-radius:14px; margin-bottom:24px; }
+.hr-panel h2 { font-size:22px; font-weight:600; margin:0 0 8px; letter-spacing:-.015em; }
+.hr-panel p { color:var(--hr-muted); line-height:1.6; }
+.hr-welcome { display:grid; grid-template-columns:1.2fr 1fr; gap:44px; }
+.hr-welcome .hr-button { margin-top:24px; }
+.hr-button,.hr-button-secondary { display:inline-flex; align-items:center; justify-content:center; gap:9px; padding:11px 17px; border-radius:8px; font-size:14px; font-weight:600; min-height:44px; cursor:pointer; }
+.hr-button { background:var(--hr-green,#36582e); color:#fff; border:1px solid transparent; }
+.hr-button:hover { background:#294722; }
+.hr-button-secondary { border:1px solid #bdc8b9; color:#36582e; background:#fff; }
+.hr-button-secondary:hover { background:#edf2e9; }
+.hr-app button:disabled { opacity:.55; cursor:not-allowed; }
+.hr-detail-list>div { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--hr-line); gap:16px; }
+.hr-detail-list dt,.hr-profile-grid dt { color:var(--hr-muted); font-size:14px; }
+.hr-detail-list dd { font-weight:600; text-align:right; }
+.hr-person-heading { display:flex; align-items:center; gap:18px; padding-bottom:24px; }
+.hr-avatar-large { width:64px; height:64px; font-size:26px; flex-shrink:0; }
+.hr-avatar-large img { width:100%; height:100%; object-fit:cover; }
+.hr-profile-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 40px; padding-top:24px; border-top:1px solid var(--hr-line); }
+.hr-profile-grid dd { margin-top:6px; overflow-wrap:anywhere; }
+.hr-form { display:grid; gap:18px; max-width:640px; margin-top:24px; }
+.hr-form label { display:grid; gap:8px; font-size:14px; font-weight:600; }
+.hr-form label>span { font-size:13px; font-weight:400; color:var(--hr-muted); }
+.hr-form input,.hr-form textarea,.hr-search input { border:1px solid #bdc8b9; border-radius:7px; background:#fff; padding:11px 12px; width:100%; color:var(--hr-ink); font-size:16px; }
+.hr-form input:disabled,.hr-form textarea:disabled { background:#f5f6f2; color:#536054; }
+.hr-saved { margin-left:16px; font-size:14px; color:var(--hr-green); }
+.hr-error { color:#a13226!important; font-size:14px; }
+.hr-preview-banner { display:flex; align-items:center; flex-wrap:wrap; gap:12px; background:#263c2b; color:#fff; padding:14px 40px; font-size:14px; }
+.hr-preview-banner button { margin-left:auto; padding:8px 12px; border:1px solid #9cb498; border-radius:6px; color:#fff; cursor:pointer; }
+.hr-search { display:grid; gap:8px; max-width:600px; margin-bottom:24px; font-size:14px; }
+.hr-search>div { display:flex; gap:10px; }
+.hr-table-wrap { overflow-x:auto; }
+.hr-app table { border-collapse:collapse; width:100%; font-size:14px; text-align:left; }
+.hr-app th { padding:12px; font-weight:600; color:var(--hr-muted); border-bottom:1px solid var(--hr-line); }
+.hr-app td { padding:18px 12px; border-bottom:1px solid var(--hr-line); }
+.hr-app td a { color:var(--hr-green); font-weight:600; text-decoration:underline; text-underline-offset:3px; }
+.hr-employee-list { list-style:none; padding:0; }
+.hr-employee-list li { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:18px 0; border-bottom:1px solid var(--hr-line); }
+.hr-employee-list p { font-size:14px; margin-top:4px; }
+.hr-pagination { display:flex; justify-content:space-between; margin-top:18px; font-size:14px; text-decoration:underline; }
+.hr-footer { padding:10px 40px 30px; font-size:12px; color:var(--hr-muted); }
+@media(max-width:800px) { .hr-app{display:block}.hr-sidebar{width:auto;padding:18px;border-right:0;border-bottom:1px solid var(--hr-line)}.hr-logo{margin:0 0 16px;flex-direction:row;align-items:center;gap:18px}.hr-logo img{width:86px;height:42px}.hr-sidebar nav{display:flex;overflow-x:auto}.hr-sidebar nav a{white-space:nowrap;font-size:14px;padding:10px}.hr-sidebar-footer{display:none}.hr-topbar{padding:16px 20px}.hr-menu-name{display:none}#hr-main{padding:26px 18px}.hr-page-heading h1{font-size:30px}.hr-panel{padding:20px}.hr-welcome{grid-template-columns:1fr;gap:20px}.hr-profile-grid{gap:22px}.hr-preview-banner{padding:14px 18px}.hr-preview-banner button{margin-left:30px}.hr-footer{padding:10px 18px 24px}.hr-employee-list li{align-items:flex-start;flex-direction:column}.hr-person-heading h2{overflow-wrap:anywhere} }
+@media(prefers-reduced-motion:reduce) { .hr-app * { scroll-behavior:auto!important; transition:none!important; } }

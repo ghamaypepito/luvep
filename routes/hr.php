@@ -1,0 +1,28 @@
+<?php
+
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Hr\DashboardController;
+use App\Http\Controllers\Hr\EmployeeController;
+use App\Http\Controllers\Hr\PreviewController;
+use App\Http\Middleware\EnsureHrAccess;
+use Illuminate\Support\Facades\Route;
+
+$hrRoutes = function () {
+    Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/', DashboardController::class)->name('dashboard');
+        Route::get('/profile', [EmployeeController::class, 'profile'])->name('profile');
+        Route::patch('/profile', [EmployeeController::class, 'update'])->name('profile.update');
+        Route::get('/people', [EmployeeController::class, 'index'])->name('people');
+        Route::get('/people/{employee}', [EmployeeController::class, 'show'])->name('people.show');
+        Route::get('/preview', [PreviewController::class, 'index'])->name('preview');
+        Route::post('/preview/exit', [PreviewController::class, 'destroy'])->name('preview.exit');
+        Route::post('/preview/{employee}', [PreviewController::class, 'store'])->name('preview.start');
+    });
+};
+Route::domain(config('hr.host'))->name('hr.')->group(function () use ($hrRoutes) {
+    $hrRoutes();
+    Route::get('/login', fn () => redirect()->away(config('hr.main_url').'/login'))->name('login');
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+    Route::any('/{path?}', fn () => abort(404))->where('path', '.*')->name('not-found');
+});
+Route::prefix('hr')->name('hr.main.')->group($hrRoutes);
