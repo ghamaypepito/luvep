@@ -1,5 +1,5 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, useForm, usePage, router } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
 export const duration = seconds => `${Math.floor((seconds || 0) / 3600)}h ${Math.floor((seconds || 0) % 3600 / 60)}m`;
 export function Errors({ errors }) { return Object.keys(errors).length > 0 && <div className="hr-error" role="alert">{Object.entries(errors).map(([key, value]) => <p key={key}>{value}</p>)}</div>; }
 export function RecordDetails({ entry }) {
@@ -15,6 +15,7 @@ function Editor({ entry, locked }) {
 }
 export default function Dtr({ entries, weeks, today }) {
     const { hr } = usePage().props;
+    useEffect(() => { const changed = () => router.reload({ only: ['entries', 'today'] }); window.addEventListener('hr-clock-changed', changed); return () => window.removeEventListener('hr-clock-changed', changed); }, []);
     const [selected, select] = useState(entries[0]?.id);
     const entry = entries.find(e => e.id === selected) || entries[0];
     const week = useForm({ week_start: '', declaration: false });

@@ -1,6 +1,7 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { LayoutDashboard, UserRound, UsersRound, LogOut, ArrowUpRight, Clock3, ClipboardCheck, CalendarDays } from 'lucide-react';
 import NotificationBell from '../NotificationBell';
+import ClockWidget from '../hr/ClockWidget';
 import ProfileMenu from '../hr/ProfileMenu';
 import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
@@ -20,6 +21,6 @@ export default function HrLayout({ children }) {
             <nav aria-label="HR navigation">{links.map(([href, label, Icon]) => <Link href={href} key={href} aria-current={path === href ? 'page' : undefined}><Icon size={19} />{label}</Link>)}</nav>
             <div className="hr-sidebar-footer"><a href="https://luvep.com/">Back to Luvep <ArrowUpRight size={16} /></a><button onClick={() => router.post('/logout')}><LogOut size={16} />Sign out</button></div>
         </aside>
-        <div className="hr-workspace"><header className="hr-topbar"><span>Employee portal</span><div className="hr-actions"><NotificationBell /><ProfileMenu /></div></header><PreviewBanner /><main id="hr-main">{children}</main><footer className="hr-footer">Luv, eP. · Your people, your workplace.</footer></div>
+        <div className="hr-workspace"><header className="hr-topbar"><span>Employee portal</span><div className="hr-actions"><NotificationBell /><ProfileMenu /></div></header><PreviewBanner /><main id="hr-main"><ClockWidget />{children}</main><footer className="hr-footer">Luv, eP. · Your people, your workplace.</footer></div>
     </div>;
 }

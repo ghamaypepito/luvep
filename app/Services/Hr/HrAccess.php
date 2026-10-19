@@ -34,10 +34,10 @@ class HrAccess
             return $this->employee($actor)?->id === $subject->id;
         }
         if ($ability === 'leave.review' && $subject?->manager_user_id === $actor->id) {
-            return $this->employee($actor) !== null;
+            return $this->employee($actor) !== null || $actor->isAdmin();
         }
         if ($ability === 'dtr.review' && $subject?->reviewer_user_id === $actor->id) {
-            return $this->employee($actor) !== null;
+            return $this->employee($actor) !== null || $actor->isAdmin();
         }
         if ($ability === 'dtr.review' && $actor->isAdmin()) {
             return true;

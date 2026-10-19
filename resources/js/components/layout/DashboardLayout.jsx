@@ -27,6 +27,7 @@ const portalIcon = (key) => {
     const Icon = PORTAL_ICONS[key] || LayoutGrid;
     return <Icon size={20} />;
 };
+import ClockWidget from "@/components/hr/ClockWidget";
 import NotificationBell from "@/components/NotificationBell";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import RequestTicketButton from "@/components/RequestTicketButton";
@@ -472,6 +473,7 @@ export default function DashboardLayout({
                         </div>
                     )}
                     <h1 className="text-2xl font-bold text-gray-900 lg:hidden mb-6 tracking-tight">{getPageTitle()}</h1>
+                    <ClockWidget />
                     {children}
                 </main>
             </div>
