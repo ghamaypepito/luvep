@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/access', [\App\Http\Controllers\Hr\AccessController::class, 'index'])->name('access');
+        Route::post('/access/{user}', [\App\Http\Controllers\Hr\AccessController::class, 'update'])->name('access.update');
+        Route::get('/audit', [\App\Http\Controllers\Hr\AuditController::class, 'index'])->name('audit');
         Route::get('/reports', [\App\Http\Controllers\Hr\ReportController::class, 'index'])->name('reports');
         Route::post('/reports/exports', [\App\Http\Controllers\Hr\ReportController::class, 'store'])->name('reports.export');
         Route::get('/reports/exports/{export}', [\App\Http\Controllers\Hr\ReportController::class, 'download'])->name('reports.download');

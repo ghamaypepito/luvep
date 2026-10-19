@@ -29,7 +29,7 @@ class LeaveController extends Controller
         $all = $access->allows($actor, 'leave.review') || $access->allows($actor, 'leave.fallback') || $access->allows($actor, 'leave.emergency');
         $scope = HrEmployee::where('user_id', '!=', $actor->id);
         if (! $all) {
-            $scope->where('manager_user_id', $actor->id);
+            $scope->where('manager_user_id', ($access->employee($actor) || $actor->isAdmin()) ? $actor->id : 0);
         }
         $ids = $scope->pluck('user_id');
         abort_unless($access->internal($actor) && ($all || $ids->isNotEmpty()), 403);

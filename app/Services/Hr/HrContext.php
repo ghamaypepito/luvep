@@ -63,7 +63,7 @@ class HrContext
             $abilities[$ability] = ! $preview && $actor && $access->allows($actor, $ability);
         }
 
-        if (! $preview && $actor && $access->internal($actor)) {
+        if (! $preview && $actor && ($access->employee($actor) || $actor->isAdmin())) {
             $abilities['leave.review'] = $abilities['leave.review'] || $abilities['leave.fallback'] || $abilities['leave.emergency'] || HrEmployee::where('manager_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
             $abilities['dtr.review'] = $abilities['dtr.review'] || HrEmployee::where('reviewer_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
         }

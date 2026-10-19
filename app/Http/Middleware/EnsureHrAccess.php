@@ -17,7 +17,7 @@ class EnsureHrAccess
         $actor = $request->user();
         abort_unless($actor, 401);
         $access = app(HrAccess::class);
-        abort_unless($access->employee($actor) || $access->allows($actor, 'people') || $access->allows($actor, 'preview'), 403);
+        abort_unless($access->employee($actor) || collect(config('hr.abilities'))->contains(fn ($ability) => $access->allows($actor, $ability)), 403);
         if (str_starts_with($request->route()?->getName() ?? '', 'hr.main.') && $request->isMethod('GET') && ! $request->expectsJson() && ! $request->is('hr/clock*', 'hr/api/*')) {
             $path = substr($request->getPathInfo(), 3);
             $query = $request->getQueryString();

@@ -41,6 +41,10 @@ export default function HrLayout({ children }) {
     links.push(["/policies", "Policies", BookOpen]);
     links.push(["/documents", "Documents", FolderLock]);
     if (hr?.permissions?.people) links.push(["/people", "People", UsersRound]);
+    if (hr?.permissions?.["access.manage"])
+        links.push(["/access", "Access", UsersRound]);
+    if (hr?.permissions?.audit)
+        links.push(["/audit", "Activity & delivery", ClipboardCheck]);
     return (
         <div className="hr-app">
             <aside className="hr-sidebar">

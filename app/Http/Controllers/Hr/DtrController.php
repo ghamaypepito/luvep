@@ -72,7 +72,7 @@ class DtrController extends Controller
         abort_if(app(HrContext::class)->isPreview($request), 403);
         $scope = HrEmployee::where('user_id', '!=', $actor->id);
         if (! $access->allows($actor, 'dtr.review')) {
-            $scope->where('reviewer_user_id', $actor->id);
+            $scope->where('reviewer_user_id', ($access->employee($actor) || $actor->isAdmin()) ? $actor->id : 0);
         }
         $ids = $scope->pluck('user_id');
         abort_unless($access->internal($actor) && ($access->allows($actor, 'dtr.review') || $ids->isNotEmpty()), 403);
@@ -86,6 +86,6 @@ class DtrController extends Controller
 
     private function result(Request $request, DtrEntry $entry)
     {
-        return $request->expectsJson() ? response()->json(['entry' => app(DtrService::class)->row($entry)]) : back()->with('success','Time record saved.');
+        return $request->expectsJson() ? response()->json(['entry' => app(DtrService::class)->row($entry)]) : back()->with('success', 'Time record saved.');
     }
 }

@@ -35,7 +35,7 @@ class DashboardController extends Controller
         if (! $preview) {
             $leaveScope = HrEmployee::where('user_id', '!=', $actor->id);
             if (! $access->allows($actor, 'leave.review') && ! $access->allows($actor, 'leave.fallback') && ! $access->allows($actor, 'leave.emergency')) {
-                $leaveScope->where('manager_user_id', $actor->id);
+                $leaveScope->where('manager_user_id', ($employee || $actor->isAdmin()) ? $actor->id : 0);
             }
             $leaveIds = $leaveScope->pluck('user_id');
             $pending = DtrLeave::whereIn('user_id', $leaveIds)->whereIn('status', ['pending', 'deferred']);
@@ -43,7 +43,7 @@ class DashboardController extends Controller
             $review['overdue_leave'] = (clone $pending)->where('response_due', '<', $today)->count();
             $dtrScope = HrEmployee::where('user_id', '!=', $actor->id);
             if (! $access->allows($actor, 'dtr.review')) {
-                $dtrScope->where('reviewer_user_id', $actor->id);
+                $dtrScope->where('reviewer_user_id', ($employee || $actor->isAdmin()) ? $actor->id : 0);
             }$review['dtr'] = DtrEntry::whereIn('user_id', $dtrScope->pluck('user_id'))->where('hr_status', 'submitted')->count();
             $absences = DtrLeave::with('user:id,name')->whereIn('user_id', $leaveIds)->where('status', 'approved')->whereDate('end_date', '>=', $today)->whereDate('start_date', '<=', now()->addDays(30)->toDateString())->orderBy('start_date')->limit(50)->get()->map(fn ($l) => ['id' => $l->id, 'name' => $l->user?->name, 'start_date' => $l->start_date->toDateString(), 'end_date' => $l->end_date->toDateString(), 'half_day' => $l->half_day]);
         }
