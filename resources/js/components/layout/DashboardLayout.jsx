@@ -81,6 +81,7 @@ export default function DashboardLayout({
     // "Portals" group when the user can reach more than one portal.
     const navWithPortals = [
         ...nav,
+        ...(hr?.enabled && (hr?.employee || Object.values(hr?.permissions || {}).some(Boolean)) ? [{name: "HR Portal", href: "/portal/hr/dashboard", icon: <LayoutGrid size={20} />}]: []),
         ...(moduleExtras.length > 0 ? [{ section: true, name: "Tools" }, ...moduleExtras] : []),
         ...(portals.length > 1
             ? [{

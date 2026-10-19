@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors, RecordDetails } from "./Dtr";
 function Review({ record, weekly = false }) {
@@ -22,7 +23,7 @@ function Review({ record, weekly = false }) {
             )}
             <a
                 className="hr-button-secondary"
-                href={`/dtr/report?employee=${record.employee_id}&${weekly ? `week=${record.week_start}` : `date=${record.work_date}`}`}
+                href={hrPath(`/dtr/report?employee=${record.employee_id}&${weekly ? `week=${record.week_start}` : `date=${record.work_date}`}`)}
                 target="_blank"
                 rel="noreferrer"
             >
@@ -33,7 +34,7 @@ function Review({ record, weekly = false }) {
                 onSubmit={(e) => {
                     e.preventDefault();
                     form.post(
-                        `/dtr/${weekly ? "week/" : ""}${record.id}/review`,
+                        hrPath(`/dtr/${weekly ? "week/" : ""}${record.id}/review`),
                         { preserveScroll: true },
                     );
                 }}

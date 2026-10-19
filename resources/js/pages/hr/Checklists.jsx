@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 const emptyTask = () => ({
@@ -37,8 +38,8 @@ function Template({ template, owners }) {
                     e.preventDefault();
                     form.post(
                         template
-                            ? `/checklists/templates/${template.id}`
-                            : "/checklists/templates",
+                            ? hrPath(`/checklists/templates/${template.id}`)
+                            : hrPath("/checklists/templates"),
                         {
                             preserveScroll: true,
                             onSuccess: () => {
@@ -223,7 +224,7 @@ function Task({ task }) {
                     className="hr-button-secondary"
                     disabled={form.processing}
                     onClick={() =>
-                        form.post(`/checklists/tasks/${task.id}/complete`, {
+                        form.post(hrPath(`/checklists/tasks/${task.id}/complete`), {
                             preserveScroll: true,
                         })
                     }
@@ -262,7 +263,7 @@ export default function Checklists({
                             className="hr-form"
                             onSubmit={(e) => {
                                 e.preventDefault();
-                                start.post("/checklists", {
+                                start.post(hrPath("/checklists"), {
                                     preserveScroll: true,
                                     onSuccess: () => start.reset(),
                                 });

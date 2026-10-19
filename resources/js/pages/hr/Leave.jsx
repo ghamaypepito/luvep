@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm, usePage, router } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 export function LeaveDetails({ leave }) {
@@ -109,7 +110,7 @@ export default function Leave({ leaves, types, manager, today }) {
                 ? new Date(data.notified_at).toISOString()
                 : null,
         }));
-        form.post("/leave", {
+        form.post(hrPath("/leave"), {
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();
@@ -303,7 +304,7 @@ export default function Leave({ leaves, types, manager, today }) {
                         <LeaveDetails leave={l} />
                         <a
                             className="hr-text-link"
-                            href={`/leave/${l.id}/print`}
+                            href={hrPath(`/leave/${l.id}/print`)}
                             target="_blank"
                             rel="noreferrer"
                         >
@@ -320,7 +321,7 @@ export default function Leave({ leaves, types, manager, today }) {
                                             )
                                         )
                                             router.post(
-                                                `/leave/${l.id}/cancel`,
+                                                hrPath(`/leave/${l.id}/cancel`),
                                                 { version: l.hr_version },
                                                 { preserveScroll: true },
                                             );

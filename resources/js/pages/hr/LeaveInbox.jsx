@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 import { LeaveDetails } from "./Leave";
@@ -18,7 +19,7 @@ function Decision({ leave }) {
                 className="hr-form"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    form.post(`/leave/${leave.id}/decision`, {
+                    form.post(hrPath(`/leave/${leave.id}/decision`), {
                         preserveScroll: true,
                     });
                 }}
@@ -70,7 +71,7 @@ function Decision({ leave }) {
                                     form.processing || !form.data.comment.trim()
                                 }
                                 onClick={() =>
-                                    form.post(`/leave/${leave.id}/emergency`, {
+                                    form.post(hrPath(`/leave/${leave.id}/emergency`), {
                                         preserveScroll: true,
                                     })
                                 }

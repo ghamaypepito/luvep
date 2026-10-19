@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, router } from "@inertiajs/react";
 import { useState } from "react";
 import { Eye } from "lucide-react";
@@ -20,7 +21,7 @@ export default function Preview({ employees, search = "" }) {
                 onSubmit={(e) => {
                     e.preventDefault();
                     router.get(
-                        "/preview",
+                        hrPath("/preview"),
                         { search: query },
                         { preserveState: true },
                     );
@@ -54,7 +55,7 @@ export default function Preview({ employees, search = "" }) {
                                 onClick={() => {
                                     setPending(e.id);
                                     router.post(
-                                        `/preview/${e.id}`,
+                                        hrPath(`/preview/${e.id}`),
                                         {},
                                         { onFinish: () => setPending(null) },
                                     );

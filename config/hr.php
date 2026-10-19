@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'portal_mode' => (bool) env('HR_PORTAL_MODE', false),
     'enabled' => (bool) env('HR_ENABLED', false),
     'host' => env('HR_HOST', 'hr.luvep.com'),
     'url' => env('HR_URL', 'https://'.env('HR_HOST', 'hr.luvep.com')),

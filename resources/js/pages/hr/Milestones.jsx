@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 function Editor({ milestone, employees, owners }) {
@@ -17,7 +18,7 @@ function Editor({ milestone, employees, owners }) {
             onSubmit={(e) => {
                 e.preventDefault();
                 form.post(
-                    milestone ? `/milestones/${milestone.id}` : "/milestones",
+                    milestone ? hrPath(`/milestones/${milestone.id}`) : hrPath("/milestones"),
                     {
                         preserveScroll: true,
                         onSuccess: () => {
@@ -134,7 +135,7 @@ function Complete({ milestone }) {
         <form
             onSubmit={(e) => {
                 e.preventDefault();
-                f.post(`/milestones/${milestone.id}/complete`, {
+                f.post(hrPath(`/milestones/${milestone.id}/complete`), {
                     preserveScroll: true,
                 });
             }}

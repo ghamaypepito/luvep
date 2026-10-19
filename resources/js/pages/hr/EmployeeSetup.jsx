@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 export default function EmployeeSetup({
@@ -63,7 +64,7 @@ export default function EmployeeSetup({
                     onSubmit={(e) => {
                         e.preventDefault();
                         if (employee)
-                            form.patch(`/people/${employee.id}`, {
+                            form.patch(hrPath(`/people/${employee.id}`), {
                                 preserveScroll: true,
                                 onSuccess: () =>
                                     form.setData(
@@ -71,7 +72,7 @@ export default function EmployeeSetup({
                                         form.data.version + 1,
                                     ),
                             });
-                        else form.post("/people");
+                        else form.post(hrPath("/people"));
                     }}
                 >
                     <Errors errors={form.errors} />
@@ -280,7 +281,7 @@ export default function EmployeeSetup({
                                 ? "Save employee setup"
                                 : "Create candidate record"}
                         </button>
-                        <Link className="hr-button-secondary" href="/people">
+                        <Link className="hr-button-secondary" href={hrPath("/people")}>
                             Back to people
                         </Link>
                     </div>

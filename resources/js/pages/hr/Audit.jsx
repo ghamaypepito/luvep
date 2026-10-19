@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 export default function Audit({
@@ -28,7 +29,7 @@ export default function Audit({
                     className="hr-form"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        f.get("/audit", { preserveState: false });
+                        f.get(hrPath("/audit"), { preserveState: false });
                     }}
                 >
                     <Errors errors={f.errors} />

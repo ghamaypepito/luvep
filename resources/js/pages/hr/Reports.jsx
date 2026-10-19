@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, router, useForm } from "@inertiajs/react";
 import { useEffect } from "react";
 import { Errors } from "./Dtr";
@@ -52,7 +53,7 @@ export default function Reports({
                     className="hr-form"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        f.get("/reports", { preserveState: false });
+                        f.get(hrPath("/reports"), { preserveState: false });
                     }}
                 >
                     <Errors errors={f.errors} />
@@ -61,7 +62,7 @@ export default function Reports({
                         <select
                             value={f.data.type}
                             onChange={(e) =>
-                                router.get("/reports", {
+                                router.get(hrPath("/reports"), {
                                     type: e.target.value,
                                     from: filters.from,
                                     to: filters.to,
@@ -168,7 +169,7 @@ export default function Reports({
                                 disabled={f.processing}
                                 onClick={() =>
                                     router.post(
-                                        "/reports/exports",
+                                        hrPath("/reports/exports"),
                                         { type, ...filters },
                                         { preserveScroll: true },
                                     )
@@ -246,7 +247,7 @@ export default function Reports({
                                     {x.status === "ready" && (
                                         <a
                                             className="hr-text-link"
-                                            href={`/reports/exports/${x.id}`}
+                                            href={hrPath(`/reports/exports/${x.id}`)}
                                         >
                                             Download CSV
                                         </a>

@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm, usePage } from "@inertiajs/react";
 import { useState } from "react";
 import axios from "axios";
@@ -22,7 +23,7 @@ function Draft({ policy }) {
                 onSubmit={(e) => {
                     e.preventDefault();
                     form.post(
-                        policy ? `/policies/${policy.id}/draft` : "/policies",
+                        policy ? hrPath(`/policies/${policy.id}/draft`) : hrPath("/policies"),
                         {
                             preserveScroll: true,
                             onSuccess: () => {
@@ -79,7 +80,7 @@ function Draft({ policy }) {
                                     )
                                 )
                                     form.post(
-                                        `/policies/${policy.id}/publish`,
+                                        hrPath(`/policies/${policy.id}/publish`),
                                         { preserveScroll: true },
                                     );
                             }}
@@ -153,7 +154,7 @@ function Published({ policy, manage }) {
                         onSubmit={(e) => {
                             e.preventDefault();
                             form.post(
-                                `/policies/versions/${version.id}/acknowledge`,
+                                hrPath(`/policies/versions/${version.id}/acknowledge`),
                                 { preserveScroll: true },
                             );
                         }}
@@ -193,7 +194,7 @@ function Published({ policy, manage }) {
                         onClick={async () => {
                             try {
                                 const { data } = await axios.get(
-                                    `/policies/versions/${version.id}/acknowledgements`,
+                                    hrPath(`/policies/versions/${version.id}/acknowledgements`),
                                 );
                                 setReport(data.employees);
                                 setReportError("");

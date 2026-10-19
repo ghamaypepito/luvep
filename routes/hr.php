@@ -71,6 +71,8 @@ $hrRoutes = function () {
         Route::get('/clock/reminder/preview', [\App\Http\Controllers\Hr\ReminderController::class, 'preview'])->name('clock.reminder.preview');
         Route::get('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'show'])->name('clock');
         Route::post('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'store'])->name('clock.store');
+        Route::get('/dashboard', DashboardController::class)->name('overview');
+        Route::get('/calendar', \App\Http\Controllers\Hr\CalendarController::class)->name('calendar');
         Route::get('/', DashboardController::class)->name('dashboard');
         Route::get('/profile', [EmployeeController::class, 'profile'])->name('profile');
         Route::post('/profile/avatar', [\App\Http\Controllers\UserController::class, 'uploadAvatar'])->name('profile.avatar.upload');
@@ -94,3 +96,5 @@ Route::domain(config('hr.host'))->name('hr.')->group(function () use ($hrRoutes)
     Route::any('/{path?}', fn () => abort(404))->where('path', '.*')->name('not-found');
 });
 Route::prefix('hr')->name('hr.main.')->group($hrRoutes);
+
+Route::prefix('portal/hr')->name('hr.portal.')->group($hrRoutes);

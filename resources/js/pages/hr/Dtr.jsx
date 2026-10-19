@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 export const duration = (seconds) =>
@@ -136,7 +137,7 @@ function Editor({ entry, locked }) {
                 className="hr-form hr-form-wide"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    form.post("/dtr", { preserveScroll: true });
+                    form.post(hrPath("/dtr"), { preserveScroll: true });
                 }}
             >
                 <Errors errors={form.errors} />
@@ -329,7 +330,7 @@ function Editor({ entry, locked }) {
                 className="hr-form"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    declaration.post(`/dtr/${entry.id}/submit`, {
+                    declaration.post(hrPath(`/dtr/${entry.id}/submit`), {
                         preserveScroll: true,
                     });
                 }}
@@ -407,7 +408,7 @@ export default function Dtr({ entries, weeks, today }) {
                             <span className="hr-status">{entry.hr_status}</span>
                             <a
                                 className="hr-button-secondary"
-                                href={`/dtr/report?date=${entry.work_date}`}
+                                href={hrPath(`/dtr/report?date=${entry.work_date}`)}
                                 target="_blank"
                                 rel="noreferrer"
                             >
@@ -438,7 +439,7 @@ export default function Dtr({ entries, weeks, today }) {
                         className="hr-form"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            week.post("/dtr/week/sign", {
+                            week.post(hrPath("/dtr/week/sign"), {
                                 preserveScroll: true,
                             });
                         }}
@@ -495,7 +496,7 @@ export default function Dtr({ entries, weeks, today }) {
                             </div>
                             <a
                                 className="hr-button-secondary"
-                                href={`/dtr/report?week=${w.week_start}`}
+                                href={hrPath(`/dtr/report?week=${w.week_start}`)}
                                 target="_blank"
                                 rel="noreferrer"
                             >

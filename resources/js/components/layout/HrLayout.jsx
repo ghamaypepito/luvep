@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Link, router, usePage } from "@inertiajs/react";
 import {
     LayoutDashboard,
@@ -24,33 +25,34 @@ export default function HrLayout({ children }) {
     const { hr, flash, errors } = usePage().props;
     const path = usePage().url.split("?")[0];
     const links = [
-        ["/", "Overview", LayoutDashboard],
-        ["/profile", "My profile", UserRound],
+        [hrPath("/dashboard"), "Overview", LayoutDashboard],
+        [hrPath("/calendar"), "Calendar", CalendarDays],
+        [hrPath("/profile"), "My profile", UserRound],
     ];
-    if (hr?.employee) links.push(["/leave", "My leave", CalendarDays]);
+    if (hr?.employee) links.push([hrPath("/leave"), "My leave", CalendarDays]);
     if (hr?.permissions?.["leave.review"])
-        links.push(["/leave/review", "Leave decisions", ClipboardCheck]);
-    if (hr?.employee) links.push(["/dtr", "My time records", Clock3]);
+        links.push([hrPath("/leave/review"), "Leave decisions", ClipboardCheck]);
+    if (hr?.employee) links.push([hrPath("/dtr"), "My time records", Clock3]);
     if (hr?.permissions?.["dtr.review"])
-        links.push(["/dtr/review", "Time reviews", ClipboardCheck]);
+        links.push([hrPath("/dtr/review"), "Time reviews", ClipboardCheck]);
     if (hr?.permissions?.["dtr.correct"])
-        links.push(["/dtr/corrections", "Time corrections", Clock3]);
-    links.push(["/checklists", "Onboarding & exits", ListChecks]);
-    links.push(["/reports", "Reports", ClipboardCheck]);
-    links.push(["/milestones", "Milestones", CalendarDays]);
-    links.push(["/equipment", "Equipment", Laptop]);
-    links.push(["/requests", "HR support", MessageSquareLock]);
-    links.push(["/policies", "Policies", BookOpen]);
-    links.push(["/documents", "Documents", FolderLock]);
-    if (hr?.permissions?.people) links.push(["/people", "People", UsersRound]);
+        links.push([hrPath("/dtr/corrections"), "Time corrections", Clock3]);
+    links.push([hrPath("/checklists"), "Onboarding & exits", ListChecks]);
+    links.push([hrPath("/reports"), "Reports", ClipboardCheck]);
+    links.push([hrPath("/milestones"), "Milestones", CalendarDays]);
+    links.push([hrPath("/equipment"), "Equipment", Laptop]);
+    links.push([hrPath("/requests"), "HR support", MessageSquareLock]);
+    links.push([hrPath("/policies"), "Policies", BookOpen]);
+    links.push([hrPath("/documents"), "Documents", FolderLock]);
+    if (hr?.permissions?.people) links.push([hrPath("/people"), "People", UsersRound]);
     if (hr?.permissions?.["access.manage"])
-        links.push(["/access", "Access", UsersRound]);
+        links.push([hrPath("/access"), "Access", UsersRound]);
     if (hr?.permissions?.audit)
-        links.push(["/audit", "Activity & delivery", ClipboardCheck]);
+        links.push([hrPath("/audit"), "Activity & delivery", ClipboardCheck]);
     return (
         <div className="hr-app">
             <aside className="hr-sidebar">
-                <a href="/" aria-label="Luvep HR home" className="hr-logo">
+                <a href={hrPath("/dashboard")} aria-label="Luvep HR home" className="hr-logo">
                     <img src="/images/luvep-hr-logo.png" alt="Luv, eP." />
                     <span>People & culture</span>
                 </a>

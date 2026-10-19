@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 function NewRequest() {
@@ -16,7 +17,7 @@ function NewRequest() {
                 className="hr-form"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    form.post("/requests");
+                    form.post(hrPath("/requests"));
                 }}
             >
                 <Errors errors={form.errors} />
@@ -84,7 +85,7 @@ function Conversation({ record, assignees }) {
     });
     return (
         <>
-            <Link className="hr-text-link" href="/requests">
+            <Link className="hr-text-link" href={hrPath("/requests")}>
                 ← All HR requests
             </Link>
             <section className="hr-panel">
@@ -105,7 +106,7 @@ function Conversation({ record, assignees }) {
                             onClick={() => {
                                 if (window.confirm("Close this HR request?"))
                                     router.post(
-                                        `/requests/${record.id}/close`,
+                                        hrPath(`/requests/${record.id}/close`),
                                         { version: record.version },
                                         { preserveScroll: true },
                                     );
@@ -120,7 +121,7 @@ function Conversation({ record, assignees }) {
                         className="hr-form"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            assign.post(`/requests/${record.id}/assign`, {
+                            assign.post(hrPath(`/requests/${record.id}/assign`), {
                                 preserveScroll: true,
                             });
                         }}
@@ -180,7 +181,7 @@ function Conversation({ record, assignees }) {
                         className="hr-form hr-form-wide"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            reply.post(`/requests/${record.id}/reply`, {
+                            reply.post(hrPath(`/requests/${record.id}/reply`), {
                                 preserveScroll: true,
                                 onSuccess: () => reply.reset(),
                             });
@@ -260,7 +261,7 @@ export default function Requests({ requests, case: record, assignees }) {
                                             {r.can_view ? (
                                                 <Link
                                                     className="hr-text-link"
-                                                    href={`/requests/${r.id}`}
+                                                    href={hrPath(`/requests/${r.id}`)}
                                                 >
                                                     {r.subject}
                                                 </Link>

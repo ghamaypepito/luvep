@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 function Account({ account, abilities, actorId }) {
@@ -18,7 +19,7 @@ function Account({ account, abilities, actorId }) {
                     className="hr-form"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        f.post(`/access/${account.id}`, {
+                        f.post(hrPath(`/access/${account.id}`), {
                             preserveScroll: true,
                         });
                     }}

@@ -6,7 +6,7 @@ export default function PreviewBanner() {
     if (!hr?.preview) return null;
     const exit = () =>
         router.post(
-            window.location.host === new URL(hr.url).host
+            hr.portal_mode ? "/portal/hr/preview/exit" : window.location.host === new URL(hr.url).host
                 ? "/preview/exit"
                 : "/hr/preview/exit",
         );

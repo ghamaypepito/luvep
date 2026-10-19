@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, usePage } from "@inertiajs/react";
 import {
     ArrowRight,
@@ -37,21 +38,21 @@ export default function Dashboard({
                             "Leave requests",
                             ownSummary.pending_leave,
                             "Waiting for a decision",
-                            "/leave",
+                            hrPath("/leave"),
                             CalendarDays,
                         ],
                         [
                             "Time records",
                             ownSummary.submitted_dtr,
                             "Submitted for review",
-                            "/dtr",
+                            hrPath("/dtr"),
                             ClipboardCheck,
                         ],
                         [
                             "Needs your attention",
                             ownSummary.returned_dtr,
                             "Records returned for correction",
-                            "/dtr",
+                            hrPath("/dtr"),
                             ArrowRight,
                         ],
                     ].map(([label, value, detail, href, Icon]) => (
@@ -80,7 +81,7 @@ export default function Dashboard({
                     <div className="hr-actions">
                         {hr.permissions["leave.review"] && (
                             <Link
-                                href="/leave/review"
+                                href={hrPath("/leave/review")}
                                 className="hr-button-secondary"
                             >
                                 Leave decisions{" "}
@@ -89,7 +90,7 @@ export default function Dashboard({
                         )}
                         {hr.permissions["dtr.review"] && (
                             <Link
-                                href="/dtr/review"
+                                href={hrPath("/dtr/review")}
                                 className="hr-button-secondary"
                             >
                                 Time reviews <strong>{reviews.dtr || 0}</strong>
@@ -106,10 +107,10 @@ export default function Dashboard({
                     </span>
                 </div>
                 <div className="hr-actions">
-                    <Link href="/milestones" className="hr-text-link">
+                    <Link href={hrPath("/milestones")} className="hr-text-link">
                         View milestones <ArrowRight size={16} />
                     </Link>
-                    <Link href="/checklists" className="hr-text-link">
+                    <Link href={hrPath("/checklists")} className="hr-text-link">
                         Onboarding & exit tasks <ArrowRight size={16} />
                     </Link>
                 </div>
@@ -142,11 +143,11 @@ export default function Dashboard({
                             <dd>{profile.reviewer || "Not yet assigned"}</dd>
                         </div>
                     </dl>
-                    <Link className="hr-text-link" href="/profile">
+                    <Link className="hr-text-link" href={hrPath("/profile")}>
                         View your profile <ArrowRight size={16} />
                     </Link>
                     {hr.permissions.people && (
-                        <Link className="hr-text-link" href="/people">
+                        <Link className="hr-text-link" href={hrPath("/people")}>
                             Manage employee records <ArrowRight size={16} />
                         </Link>
                     )}
@@ -183,7 +184,7 @@ export default function Dashboard({
                                 </p>
                             </div>
                         )}
-                        <Link className="hr-text-link" href="/leave">
+                        <Link className="hr-text-link" href={hrPath("/leave")}>
                             {hr.preview
                                 ? "View leave records"
                                 : "Plan time away"}{" "}

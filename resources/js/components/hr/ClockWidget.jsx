@@ -19,7 +19,7 @@ export default function ClockWidget() {
 function Attendance({ hr }) {
     const enabled = true;
     const onHrHost = hr?.url && new URL(hr.url).host === window.location.host;
-    const endpoint = onHrHost ? "/clock" : "/hr/clock";
+    const endpoint = hr.portal_mode ? "/portal/hr/clock" : onHrHost ? "/clock" : "/hr/clock";
     const { state, pending, error, stale, refresh, transition } = useHrClock({
         enabled,
         preview: !!hr?.preview,

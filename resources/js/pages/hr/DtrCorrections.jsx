@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors, RecordDetails } from "./Dtr";
 function Editor({ record }) {
@@ -36,7 +37,7 @@ function Editor({ record }) {
                         })),
                     })),
                 }));
-                f.post(`/dtr/${record.id}/correct`, { preserveScroll: true });
+                f.post(hrPath(`/dtr/${record.id}/correct`), { preserveScroll: true });
             }}
         >
             <Errors errors={f.errors} />
@@ -148,7 +149,7 @@ export default function DtrCorrections({ employees, record, filters }) {
                     className="hr-form"
                     onSubmit={(e) => {
                         e.preventDefault();
-                        f.get("/dtr/corrections", { preserveState: false });
+                        f.get(hrPath("/dtr/corrections"), { preserveState: false });
                     }}
                 >
                     <Errors errors={f.errors} />

@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 function Return({ item }) {
@@ -7,7 +8,7 @@ function Return({ item }) {
             className="hr-form"
             onSubmit={(e) => {
                 e.preventDefault();
-                form.post(`/equipment/${item.id}/return`, {
+                form.post(hrPath(`/equipment/${item.id}/return`), {
                     preserveScroll: true,
                 });
             }}
@@ -53,7 +54,7 @@ export default function Equipment({ items, history, employees }) {
                         className="hr-form"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            form.post("/equipment", {
+                            form.post(hrPath("/equipment"), {
                                 preserveScroll: true,
                                 onSuccess: () => form.reset(),
                             });

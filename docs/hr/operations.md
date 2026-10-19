@@ -13,6 +13,8 @@ Status: Releases 1–3 are implemented on `codex/hr-portal`; independent review 
 
 ## Employee enrollment and access
 
+**Launch decision confirmed by the owner (2026-10-19):** Keep employee access pending until the owner reviews the roster and Department Head/DTR reviewer assignments in HR setup. Do not bulk-activate existing accounts or infer assignments.
+
 People → Enroll employee creates a candidate from an existing internal active account. Candidates do not gain employee portal access. Activation requires a completed schedule and non-self Department Head and Operations/DTR reviewer. Only active internal staff and administrators are eligible reviewers. Confirm the actual employee roster and mappings with authorized HR before enabling real access.
 
 Ordinary Admin has employee record/setup and preview access, plus existing attendance-review access. Confidential documents, medical/compensation/case files, policy publishing, fallback/emergency leave decisions and access administration require exact grants. A parent `hr` grant does not imply sensitive permissions. Never use broad module inheritance to bypass these checks.
@@ -52,7 +54,7 @@ HR events and notification deliveries commit with the record. Initial queue disp
 1. Local implementation and independent review fixes are complete. [Review and regression evidence](review-2026-10-19.md) records the checks and known baseline failures.
 2. Isolated VPS acceptance is complete using synthetic accounts and log mail. The public HR host, TLS/FPM, live worker and designated mail-transport checks remain part of production activation.
 3. Confirm real roster, Department Heads, Operations reviewers and confidential grants. No guessed activation mappings.
-4. Verify Hostinger DNS-zone access (VPS access alone is insufficient), sibling-domain control and intended `hr` record.
+4. Hostinger DNS-zone access verified and A `hr` → `76.13.193.63` created with TTL 300 on 2026-10-19. Authoritative `orbit.dns-parking.com` returns the matching record. Sibling-domain control verification remains pending before shared-session enablement.
 5. Take a fresh database/config/application backup; configure Nginx HR virtual host, DNS A record and TLS. Run `nginx -t`, renewal checks and host smoke tests.
 6. Promote through the fork deployment workflow; record exact SHA/run, queue/scheduler health, SSO, main-site public/departmental checks and test mail results.
 7. Enable real notifications only after designated test checks. Record completion below.
@@ -61,7 +63,9 @@ Rollback: disable HR and shared-session flags as needed, revert application code
 
 ## Deployment record
 
-Pending. No HR DNS, TLS, production migration or staff notification enablement has been performed by this implementation run.
+2026-10-19: Hostinger confirmed “DNS Record created successfully” for A `hr` → `76.13.193.63`, TTL 300. Verified against the authoritative nameserver. DNS creation alone does not deploy the HR application or configure its TLS. Employee access remains pending owner roster/assignment review.
+
+DNS was configured on 19 October; production application rollout remains pending the deployment record below.
 
 ## Private documents, policies and support
 
@@ -91,3 +95,11 @@ Application fix commit: `9b4201a` on `codex/hr-portal`. Reviewable draft: https:
 - Acceptance used a loopback PHP server and local HTTPS proxy over SSH, with synthetic data and sync queues. It does not establish production TLS, FPM, Redis worker or SMTP delivery readiness.
 
 The temporary test server, schema, database account and upload packages are removed after verification. Screenshot previews use synthetic employees. The normal production and existing staging deployments remain unchanged. Real enrollment, reviewer assignments, confidential grants and notification enablement are still pending the launch inputs and checks above.
+
+## Main-site portal rollout — 20 October 2026
+
+Owner approved replacing the subdomain entry point with `https://luvep.com/portal/hr/dashboard` and adding a month/week/day calendar. `HR_PORTAL_MODE=true` uses the existing main-site login/session; `HR_SHARED_SESSION=false` retains the existing cookie scope. No new TLS certificate or parent-domain session cookie is required. Old main-site `/hr` links redirect to the portal.
+
+The calendar shows authorized leave availability without reasons/types, own schedules/configured holidays, and scoped HR milestones without private notes. Employee access remains pending owner roster review. Admins can open People and enroll candidates before activation.
+
+Verification: 132 HR tests / 722 assertions pass; production frontend build passes; Chrome verifies direct login return, month/week/day calendar, mobile overflow, profile navigation, clock and break/resume. The preexisting build warnings remain.

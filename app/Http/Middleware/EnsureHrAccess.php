@@ -17,7 +17,14 @@ class EnsureHrAccess
         $actor = $request->user();
         abort_unless($actor, 401);
         $access = app(HrAccess::class);
-        abort_unless($access->employee($actor) || collect(config('hr.abilities'))->contains(fn ($ability) => $access->allows($actor, $ability)), 403);
+        $permitted = $access->employee($actor) || collect(config('hr.abilities'))->contains(fn ($ability) => $access->allows($actor, $ability));
+        if (! $permitted && $access->internal($actor) && $request->is('portal/hr', 'portal/hr/dashboard') && $request->isMethod('GET')) {
+            $response = \Inertia\Inertia::render('hr/Pending')->toResponse($request)->setStatusCode(403);
+            $response->headers->set('Cache-Control', 'private, no-store');
+
+            return $response;
+        }
+        abort_unless($permitted, 403);
         if (str_starts_with($request->route()?->getName() ?? '', 'hr.main.') && $request->isMethod('GET') && ! $request->expectsJson() && ! $request->is('hr/clock*', 'hr/api/*')) {
             $path = substr($request->getPathInfo(), 3);
             $query = $request->getQueryString();

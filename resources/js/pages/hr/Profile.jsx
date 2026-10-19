@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 
 export default function Profile({ profile, readOnly = false }) {
@@ -10,7 +11,7 @@ export default function Profile({ profile, readOnly = false }) {
     });
     const submit = (event) => {
         event.preventDefault();
-        if (!locked) form.patch("/profile", { preserveScroll: true });
+        if (!locked) form.patch(hrPath("/profile"), { preserveScroll: true });
     };
     return (
         <>
@@ -23,7 +24,7 @@ export default function Profile({ profile, readOnly = false }) {
                     hr.permissions["profile.manage"] && (
                         <Link
                             className="hr-button-secondary"
-                            href={`/people/${profile.id}/edit`}
+                            href={hrPath(`/people/${profile.id}/edit`)}
                         >
                             Edit employee setup
                         </Link>
@@ -68,7 +69,7 @@ export default function Profile({ profile, readOnly = false }) {
                         className="hr-form"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            photo.post("/profile/avatar", {
+                            photo.post(hrPath("/profile/avatar"), {
                                 forceFormData: true,
                                 preserveScroll: true,
                             });
@@ -106,7 +107,7 @@ export default function Profile({ profile, readOnly = false }) {
                                     type="button"
                                     className="hr-button-secondary"
                                     onClick={() =>
-                                        router.delete("/profile/avatar", {
+                                        router.delete(hrPath("/profile/avatar"), {
                                             preserveScroll: true,
                                         })
                                     }

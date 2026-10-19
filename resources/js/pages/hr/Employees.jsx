@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useState } from "react";
 
@@ -11,7 +12,7 @@ export default function Employees({ employees, search = "" }) {
                 <h1>People</h1>
                 <p>Employee records and employment details.</p>
                 {hr.permissions.enroll && (
-                    <Link className="hr-button" href="/people/new">
+                    <Link className="hr-button" href={hrPath("/people/new")}>
                         Enroll employee
                     </Link>
                 )}
@@ -21,7 +22,7 @@ export default function Employees({ employees, search = "" }) {
                 onSubmit={(e) => {
                     e.preventDefault();
                     router.get(
-                        "/people",
+                        hrPath("/people"),
                         { search: query },
                         { preserveState: true },
                     );
@@ -54,7 +55,7 @@ export default function Employees({ employees, search = "" }) {
                                 {employees.data.map((e) => (
                                     <tr key={e.id}>
                                         <td>
-                                            <Link href={`/people/${e.id}`}>
+                                            <Link href={hrPath(`/people/${e.id}`)}>
                                                 {e.name}
                                             </Link>
                                         </td>

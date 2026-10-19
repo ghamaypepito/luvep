@@ -1,3 +1,4 @@
+import { hrPath } from "@/lib/hrPath";
 import { Head, useForm, router, usePage } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 const label = (value) => value.replaceAll("_", " ");
@@ -31,7 +32,7 @@ export default function Documents({ documents, employees, classifications }) {
                         className="hr-form"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            form.post("/documents", {
+                            form.post(hrPath("/documents"), {
                                 forceFormData: true,
                                 preserveScroll: true,
                                 onSuccess: () => form.reset(),
@@ -178,7 +179,7 @@ export default function Documents({ documents, employees, classifications }) {
                                             )
                                         )
                                             router.post(
-                                                `/documents/${d.id}/archive`,
+                                                hrPath(`/documents/${d.id}/archive`),
                                                 {},
                                                 { preserveScroll: true },
                                             );
@@ -210,7 +211,7 @@ export default function Documents({ documents, employees, classifications }) {
                                     <div className="hr-actions">
                                         <a
                                             className="hr-button-secondary"
-                                            href={`/documents/versions/${v.id}`}
+                                            href={hrPath(`/documents/versions/${v.id}`)}
                                         >
                                             Download
                                         </a>
@@ -219,7 +220,7 @@ export default function Documents({ documents, employees, classifications }) {
                                                 className="hr-button-secondary"
                                                 onClick={() =>
                                                     router.post(
-                                                        `/documents/versions/${v.id}/release`,
+                                                        hrPath(`/documents/versions/${v.id}/release`),
                                                         {
                                                             released:
                                                                 !v.released_at,
