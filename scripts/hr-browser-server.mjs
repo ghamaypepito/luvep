@@ -4,6 +4,7 @@ import {
     writeFileSync,
     existsSync,
     mkdtempSync,
+    rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -43,12 +44,17 @@ const env = {
     HR_FIXTURE_FILE: `${scratch}/fixture.json`,
 };
 if (!remote) {
+    rmSync(env.HR_FIXTURE_FILE, { force: true });
     writeFileSync(env.DB_DATABASE, "");
     execFileSync(php, ["tests/Fixtures/hr-browser.php"], {
         cwd: root,
         env,
         stdio: "inherit",
     });
+    if (!existsSync(env.HR_FIXTURE_FILE))
+        throw new Error(
+            "Synthetic HR fixture setup did not complete; browser server stopped.",
+        );
 }
 if (!existsSync(`${scratch}/cert.pem`))
     execFileSync(

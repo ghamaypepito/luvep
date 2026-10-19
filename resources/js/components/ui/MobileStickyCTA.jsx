@@ -14,6 +14,7 @@ export default function MobileStickyCTA() {
     const url = page?.url || "";
 
     const isInternal =
+        page?.component?.startsWith("hr/") ||
         url.startsWith("/admin") ||
         url.startsWith("/portal") ||
         url.startsWith("/login");

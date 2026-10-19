@@ -36,7 +36,7 @@ class HrReportsTest extends TestCase
             $r->forceFill(['hr_status' => 'reviewed'])->save();
         }
 
-return [$e, $reviewer, $other];
+        return [$e, $reviewer, $other];
     }
 
     private function filters(array $override = []): array
@@ -70,6 +70,20 @@ return [$e, $reviewer, $other];
         $this->assertSame(27000, $rows[0]['working_seconds']);
         $this->assertSame(1800, $rows[0]['break_seconds']);
         $this->assertStringNotContainsString('PRIVATE MEDICAL NOTE', json_encode($rows));
+    }
+
+    public function test_export_survives_database_json_key_reordering_but_not_changed_filters(): void
+    {
+        [$e, $r] = $this->fixture();
+        $s = app(ReportService::class);
+        $x = $s->requestExport($r, 'attendance', $this->filters(['employee_id' => $e->id]));
+        // Native MySQL JSON storage normalizes object member order.
+        $x->update(['filters' => array_reverse($x->filters, true)]);
+        (new BuildHrExport($x->id))->handle();
+        $this->assertSame('ready', $x->fresh()->status);
+        $this->actingAs($r)->get('https://hr.luvep.com/reports/exports/'.$x->id)->assertOk();
+        $x->update(['filters' => [...$x->filters, 'from' => '2026-09-01']]);
+        $this->get('https://hr.luvep.com/reports/exports/'.$x->id)->assertNotFound();
     }
 
     public function test_revoked_export_is_not_downloadable(): void

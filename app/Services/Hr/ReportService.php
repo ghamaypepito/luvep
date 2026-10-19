@@ -64,6 +64,8 @@ class ReportService
 
     public function scopeHash(User $actor, string $type, array $filters): string
     {
+        // JSON object ordering is not stable across database drivers.
+        ksort($filters);
         $actor = $actor->fresh();
         abort_unless($actor, 403);
         $scope = $this->employees($actor, $type);
@@ -96,7 +98,7 @@ class ReportService
                     }yield [...$base($e), 'status' => $e->status, 'position' => $e->position ?? '', 'employment_start' => $e->employment_start?->toDateString() ?? '', 'employment_end' => $e->employment_end?->toDateString() ?? ''];
                 }
 
-return;
+                return;
             }
             if (in_array($type, ['attendance', 'approved_hours'], true)) {
                 $q = DtrEntry::whereIn('user_id', $ids)->whereDate('work_date', '>=', $filters['from'])->whereDate('work_date', '<=', $filters['to']);
@@ -109,7 +111,7 @@ return;
                     yield [...$base($byUser[$entry->user_id]), 'work_date' => $row['work_date'], 'status' => $entry->hr_status, 'time_source' => $entry->time_source, 'working_seconds' => $row['working_seconds'], 'break_seconds' => $row['break_seconds']];
                 }
 
-return;
+                return;
             }
             if ($type === 'leave') {
                 $q = DtrLeave::whereIn('user_id', $ids)->whereDate('end_date', '>=', $filters['from'])->whereDate('start_date', '<=', $filters['to']);
@@ -119,7 +121,7 @@ return;
                     yield [...$base($byUser[$l->user_id]), 'start_date' => $l->start_date->toDateString(), 'end_date' => $l->end_date->toDateString(), 'working_days' => $l->total_days, 'status' => $l->status];
                 }
 
-return;
+                return;
             }
             foreach (HrPolicyAcknowledgement::whereIn('user_id', $ids)->whereDate('acknowledged_at', '>=', $filters['from'])->whereDate('acknowledged_at', '<=', $filters['to'])->lazyById(100) as $ack) {
                 $v = HrPolicyVersion::find($ack->hr_policy_version_id);
@@ -158,6 +160,6 @@ return;
     {
         $s = (string) ($value ?? '');
 
-        return preg_match('/^[\s\x00-\x1f]*[=+@-]|^[\t\r\n]/u',$s) ? "'".$s : $s;
+        return preg_match('/^[\s\x00-\x1f]*[=+@-]|^[\t\r\n]/u', $s) ? "'".$s : $s;
     }
 }

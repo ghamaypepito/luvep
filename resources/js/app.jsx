@@ -89,8 +89,12 @@ createInertiaApp({
       <>
         <App {...props} />
         <FlashToaster />
-        <FloatingContact />
-        <MobileStickyCTA />
+        {!props.initialPage.component.startsWith('hr/') && (
+          <>
+            <FloatingContact />
+            <MobileStickyCTA />
+          </>
+        )}
         <ConfirmHost />
         <Toaster position="top-right" richColors closeButton />
       </>

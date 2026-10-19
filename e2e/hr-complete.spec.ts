@@ -231,6 +231,10 @@ test("desktop and mobile portal visual review and administrative pages", async (
     await expect(
         page.getByRole("navigation", { name: "HR navigation" }),
     ).toHaveCount(1);
+    await expect(page.getByRole("link", { name: /Book Free/i })).toHaveCount(0);
+    await expect(
+        page.getByRole("link", { name: "Chat on WhatsApp" }),
+    ).toHaveCount(0);
     await page.screenshot({
         path: "/private/tmp/luvep-hr-employee-mobile.png",
         fullPage: false,
