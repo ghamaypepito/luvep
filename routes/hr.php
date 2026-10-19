@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'show'])->name('clock');
+        Route::post('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'store'])->name('clock.store');
         Route::get('/', DashboardController::class)->name('dashboard');
         Route::get('/profile', [EmployeeController::class, 'profile'])->name('profile');
         Route::patch('/profile', [EmployeeController::class, 'update'])->name('profile.update');

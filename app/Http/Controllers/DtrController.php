@@ -1230,6 +1230,14 @@ class DtrController extends Controller
     /** One-tap clock in — stamps the current time (in the user's DTR timezone). */
     public function timeIn()
     {
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
+        }
+        if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
+            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_in', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
+
+            return back()->with('success', 'Attendance updated.');
+        }
         $setting = $this->requireSetting();
         $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
@@ -1245,6 +1253,14 @@ class DtrController extends Controller
     /** One-tap clock out — closes the latest open shift (handles cross-midnight). */
     public function timeOut()
     {
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
+        }
+        if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
+            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_out', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
+
+            return back()->with('success', 'Attendance updated.');
+        }
         $setting = $this->requireSetting();
         $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
