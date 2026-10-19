@@ -154,10 +154,14 @@ class DtrService
             }
             for ($i = 0; $i < $days; $i++) {
                 $date = $start->addDays($i)->toDateString();
-                if (! $setting->scheduleForDate($date)['working']) {
+                if (! app(WorkingCalendar::class)->day($employee, $date)['working']) {
                     continue;
                 }
                 $entry = DtrEntry::where('user_id', $employee->user_id)->whereDate('work_date', $date)->first();
+                $fullLeave = \App\Models\DtrLeave::where('user_id', $employee->user_id)->where('status', 'approved')->whereDate('start_date', '<=', $date)->whereDate('end_date', '>=', $date)->where(fn ($q) => $q->whereNull('half_day')->orWhere('half_day', 'N/A'))->exists();
+                if (! $entry && $fullLeave) {
+                    continue;
+                }
                 if (! $entry || $entry->hr_status !== 'reviewed') {
                     throw ValidationException::withMessages(['week' => 'Every scheduled day needs a reviewed DTR before weekly sign-off.']);
                 }
@@ -305,7 +309,7 @@ class DtrService
 
     private function minutes(string $time): int
     {
-        [$h,$m] = explode(':',$time);
+        [$h,$m] = explode(':', $time);
 
         return (int) $h * 60 + (int) $m;
     }

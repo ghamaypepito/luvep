@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { LayoutDashboard, UserRound, UsersRound, LogOut, ArrowUpRight, Clock3, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, UserRound, UsersRound, LogOut, ArrowUpRight, Clock3, ClipboardCheck, CalendarDays } from 'lucide-react';
 import ProfileMenu from '../hr/ProfileMenu';
 import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
@@ -8,6 +8,8 @@ export default function HrLayout({ children }) {
     const { hr } = usePage().props;
     const path = usePage().url.split('?')[0];
     const links = [['/', 'Overview', LayoutDashboard], ['/profile', 'My profile', UserRound]];
+    if (hr?.employee) links.push(['/leave', 'My leave', CalendarDays]);
+    if (hr?.permissions?.['leave.review']) links.push(['/leave/review', 'Leave decisions', ClipboardCheck]);
     if (hr?.employee) links.push(['/dtr', 'My time records', Clock3]);
     if (hr?.permissions?.['dtr.review']) links.push(['/dtr/review', 'Time reviews', ClipboardCheck]);
     if (hr?.permissions?.people) links.push(['/people', 'People', UsersRound]);

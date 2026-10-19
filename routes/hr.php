@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'index'])->name('leave');
+        Route::get('/leave/review', [\App\Http\Controllers\Hr\LeaveController::class, 'inbox'])->name('leave.inbox');
+        Route::post('/leave', [\App\Http\Controllers\Hr\LeaveController::class, 'store'])->name('leave.store');
+        Route::post('/leave/{leave}/decision', [\App\Http\Controllers\Hr\LeaveController::class, 'decide'])->name('leave.decision');
+        Route::post('/leave/{leave}/emergency', [\App\Http\Controllers\Hr\LeaveController::class, 'emergency'])->name('leave.emergency');
+        Route::post('/leave/{leave}/cancel', [\App\Http\Controllers\Hr\LeaveController::class, 'cancel'])->name('leave.cancel');
         Route::get('/dtr/report', \App\Http\Controllers\Hr\DtrReportController::class)->name('dtr.report');
         Route::get('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'index'])->name('dtr');
         Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
