@@ -62,7 +62,7 @@ The user explicitly approved both notification channels. No actual staff mail is
 - [x] Store the approved spec and plans on the feature branch. Never push planning commits to `main` because it deploys automatically.
 - [x] Provisioned local PHP 8.3 and Composer 2. Verification uses the PHP runtime directly.
 - [x] Install locked Composer/npm dependencies. Use a disposable local `.env` from `.env.example`, SQLite and log/array mail only; never copy the production `.env`.
-- [x] Ran the full PHPUnit suite and saved the named baseline failures and exit status. Baseline: 1,036 tests, 57 failures, 10 errors; final: 1,164 tests with the identical 67 failing/error test names.
+- [x] Ran the full PHPUnit suite and saved the named baseline failures and exit status. Baseline: 1,036 tests, 57 failures, 10 errors; final: 1,165 tests with the identical 67 failing/error test names.
 - [x] Ran focused HR/auth/profile verification and `npm run build`; full-suite comparison is recorded separately.
 
 ## Common test/commit cycle

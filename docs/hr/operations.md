@@ -1,6 +1,6 @@
 # Luvep HR operations
 
-Status: Releases 1–3 are implemented on `codex/hr-portal`; independent review fixes and local verification are complete. Nothing in this document claims a production deployment. HR defaults off. Do not enable real employee mail or upload real confidential files during local/staging verification.
+Status: Releases 1–3 are implemented on `codex/hr-portal`; independent review fixes, local verification and isolated VPS acceptance checks are complete. Nothing in this document claims a production deployment. HR defaults off. Do not enable real employee mail or upload real confidential files during local/staging verification.
 
 ## Configuration
 
@@ -50,7 +50,7 @@ HR events and notification deliveries commit with the record. Initial queue disp
 ## Deployment checklist — still pending
 
 1. Local implementation and independent review fixes are complete. [Review and regression evidence](review-2026-10-19.md) records the checks and known baseline failures.
-2. Deploy additive schema/assets to staging using synthetic data and a mail sink. Verify employee journey and direct authorization checks.
+2. Isolated VPS acceptance is complete using synthetic accounts and log mail. The public HR host, TLS/FPM, live worker and designated mail-transport checks remain part of production activation.
 3. Confirm real roster, Department Heads, Operations reviewers and confidential grants. No guessed activation mappings.
 4. Verify Hostinger DNS-zone access (VPS access alone is insufficient), sibling-domain control and intended `hr` record.
 5. Take a fresh database/config/application backup; configure Nginx HR virtual host, DNS A record and TLS. Run `nginx -t`, renewal checks and host smoke tests.
@@ -78,3 +78,16 @@ Onboarding/exit templates create versioned task snapshots with explicit owners a
 Reports support employee status, attendance, leave, policy acknowledgements and approved hours with own/assigned/explicit aggregate scopes. Preview is limited to the selected employee and the real Admin’s authorized scope. Queued CSV exports recheck scope at request, processing and download, escape formula cells and expire after 24 hours. Restricted reasons, compensation and case content are omitted.
 
 Access administration edits only allowlisted HR grants and preserves unrelated permissions. It blocks self-elevation and removal or archiving of the last active HR access administrator. Archived enrollment or schedule records revoke HR abilities even when explicit grants remain stored. Audit views require an exact grant and expose safe metadata only.
+
+## Isolated VPS acceptance — 19 October 2026
+
+Application fix commit: `9b4201a` on `codex/hr-portal`. Reviewable draft: https://github.com/ghamaypepito/luvep/pull/1. No merge or production deployment has occurred.
+
+- All 13 HR migrations applied to a separate MySQL database copied from the live schema and migration journal only; no employee or business rows were copied.
+- All 12 browser scenarios have passing VPS results: the final full run passed 11 scenarios, and the remaining desktop/mobile scenario passed its focused rerun after the initial-load marketing-widget fix. These cover SSO/legacy cookies/remember-me/logout, main/HR clock and breaks, reminders, leave and DTR decisions/corrections, private documents, policies/cases, reports and preview authorization.
+- Separate synthetic Manager and Admin accounts each received an in-app notification and a rendered log email. Reprocessing did not duplicate delivery; private leave details were absent. No external email transport or staff recipient was used.
+- Local final HR suite: 128 tests / 679 assertions pass. MySQL concurrency: 3 / 26 pass. Full application suite: 1,165 tests / 5,310 assertions with the identical baseline 57 failures and 10 errors; no newly failing test names.
+- Build and changed-file formatting checks pass, with the existing frontend bundle/education warnings. The browser harness also refuses incomplete fixture setup.
+- Acceptance used a loopback PHP server and local HTTPS proxy over SSH, with synthetic data and sync queues. It does not establish production TLS, FPM, Redis worker or SMTP delivery readiness.
+
+The temporary test server, schema, database account and upload packages are removed after verification. Screenshot previews use synthetic employees. The normal production and existing staging deployments remain unchanged. Real enrollment, reviewer assignments, confidential grants and notification enablement are still pending the launch inputs and checks above.
