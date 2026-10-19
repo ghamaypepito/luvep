@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'index'])->name('requests');
+        Route::get('/requests/{case}', [\App\Http\Controllers\Hr\RequestController::class, 'show'])->name('requests.show');
+        Route::post('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'store'])->name('requests.store');
+        Route::post('/requests/{case}/reply', [\App\Http\Controllers\Hr\RequestController::class, 'reply'])->name('requests.reply');
+        Route::post('/requests/{case}/assign', [\App\Http\Controllers\Hr\RequestController::class, 'assign'])->name('requests.assign');
+        Route::post('/requests/{case}/close', [\App\Http\Controllers\Hr\RequestController::class, 'close'])->name('requests.close');
         Route::get('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'index'])->name('policies');
         Route::post('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.store');
         Route::post('/policies/{policy}/draft', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.draft');

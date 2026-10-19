@@ -81,3 +81,5 @@
 .hr-feedback{padding:14px 18px;margin-bottom:20px;border:1px solid #c4d3bb;border-radius:8px;background:#f0f5eb;color:#36582e;font-size:14px}.hr-feedback.hr-error{background:#fff5f1;border-color:#dfb6a9}
 
 .hr-policy-body{white-space:pre-wrap;line-height:1.8;max-width:78ch;padding:24px 0;border-top:1px solid var(--hr-line);overflow-wrap:anywhere}.hr-policy-report{margin-top:28px;padding-top:24px;border-top:1px solid var(--hr-line)}
+
+.hr-conversation{list-style:none;margin:28px 0;padding:0}.hr-conversation li{padding:22px 0;border-bottom:1px solid var(--hr-line)}.hr-conversation li>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:14px}.hr-conversation li>div>span{font-size:12px;color:var(--hr-muted)}.hr-conversation p{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}.hr-conversation .hr-internal-message{background:#faf7ed;padding:20px;border-left:3px solid #b1964f}

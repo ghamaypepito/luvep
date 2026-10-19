@@ -35,6 +35,16 @@ class HrNotificationRecipients
     {
         $employee = $this->employee($event);
         $ids = User::whereIn('role', ['admin', 'super_admin'])->pluck('id');
+        if ($event->subject instanceof \App\Models\HrRequest) {
+            $case = $event->subject;
+            $ids->push($employee?->user_id);
+            $assignee = User::find($case->assigned_user_id);
+            if ($assignee && app(\App\Policies\HrRequestPolicy::class)->manage($assignee, $case)) {
+                $ids->push($assignee->id);
+            }
+
+            return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u))->values();
+        }
         if ($employee) {
             $ids->push($employee->manager_user_id);
             if (str_starts_with($event->type, 'dtr.')) {
@@ -50,6 +60,9 @@ class HrNotificationRecipients
         $employee = $this->employee($event);
         $access = app(HrAccess::class);
         $path = 'notifications';
+        if ($event->subject instanceof \App\Models\HrRequest) {
+            return app(HrContext::class)->url('requests');
+        }
         if ($employee && str_starts_with($event->type, 'leave.')) {
             if ($user->id === $employee->user_id) {
                 $path = 'leave';

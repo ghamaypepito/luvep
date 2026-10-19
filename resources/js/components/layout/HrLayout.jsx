@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { LayoutDashboard, UserRound, UsersRound, LogOut, ArrowUpRight, Clock3, ClipboardCheck, CalendarDays, FolderLock, BookOpen } from 'lucide-react';
+import { LayoutDashboard, UserRound, UsersRound, LogOut, ArrowUpRight, Clock3, ClipboardCheck, CalendarDays, FolderLock, BookOpen, MessageSquareLock } from 'lucide-react';
 import NotificationBell from '../NotificationBell';
 import ClockWidget from '../hr/ClockWidget';
 import ProfileMenu from '../hr/ProfileMenu';
@@ -14,6 +14,7 @@ export default function HrLayout({ children }) {
     if (hr?.permissions?.['leave.review']) links.push(['/leave/review', 'Leave decisions', ClipboardCheck]);
     if (hr?.employee) links.push(['/dtr', 'My time records', Clock3]);
     if (hr?.permissions?.['dtr.review']) links.push(['/dtr/review', 'Time reviews', ClipboardCheck]);
+    links.push(['/requests', 'HR support', MessageSquareLock]);
     links.push(['/policies', 'Policies', BookOpen]);
     links.push(['/documents', 'Documents', FolderLock]);
     if (hr?.permissions?.people) links.push(['/people', 'People', UsersRound]);

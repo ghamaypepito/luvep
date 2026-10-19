@@ -14,7 +14,7 @@ return [
         'people', 'enroll', 'profile.view', 'profile.manage', 'preview',
         'leave.review', 'leave.fallback', 'leave.emergency', 'dtr.review', 'dtr.correct',
         'documents.manage', 'documents.medical', 'documents.compensation', 'documents.case',
-        'policies.publish', 'cases.manage', 'operations.manage', 'reports', 'access.manage', 'audit',
+        'policies.publish', 'cases.manage', 'cases.assigned', 'operations.manage', 'reports', 'access.manage', 'audit',
     ],
     'admin_defaults' => ['people', 'enroll', 'profile.view', 'profile.manage', 'preview'],
 ];
