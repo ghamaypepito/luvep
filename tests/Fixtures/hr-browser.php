@@ -10,8 +10,10 @@ if (getenv('HR_E2E') !== '1' || config('database.default') !== 'sqlite' || ! str
 Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
 $user = App\Models\User::create(['name' => 'Alex Rivera', 'email' => 'alex@example.test', 'password' => 'Browser-Test-123', 'role' => 'sales', 'is_active' => true]);
 $admin = App\Models\User::create(['name' => 'HR Administrator', 'email' => 'admin@example.test', 'password' => 'Browser-Test-123', 'role' => 'super_admin', 'is_active' => true]);
-$employee = App\Models\HrEmployee::create(['user_id' => $user->id, 'status' => 'active', 'department' => 'Operations', 'position' => 'Coordinator', 'manager_user_id' => $admin->id]);
+$employee = App\Models\HrEmployee::create(['user_id' => $user->id, 'status' => 'active', 'department' => 'Operations', 'position' => 'Coordinator', 'manager_user_id' => $admin->id, 'reviewer_user_id' => $admin->id]);
 App\Models\DtrSetting::create(['user_id' => $user->id, 'timezone' => 'Asia/Manila', 'sched_in' => '08:00', 'sched_out' => '17:00', 'schedule_type' => 'fixed', 'std_hours' => 8, 'is_complete' => true]);
+$second = App\Models\User::create(['name' => 'Sam Lee', 'email' => 'sam@example.test', 'password' => 'Browser-Test-123', 'role' => 'sales', 'is_active' => true]);
+App\Models\HrEmployee::create(['user_id' => $second->id, 'status' => 'active', 'department' => 'Operations', 'manager_user_id' => $admin->id, 'reviewer_user_id' => $admin->id]);
 $session = app('session')->driver();
 $session->start();
 $session->put(Illuminate\Support\Facades\Auth::guard()->getName(), $user->id);

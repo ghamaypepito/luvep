@@ -60,3 +60,11 @@ Rollback: disable HR and shared-session flags as needed, revert application code
 ## Deployment record
 
 Pending. No HR DNS, TLS, production migration or staff notification enablement has been performed by this implementation run.
+
+## Private documents, policies and support
+
+Personnel files use the dedicated `hr_private` disk at `storage/app/hr-private`, with no public URL or filesystem serving route. Keep it outside the public storage symlink and include it in encrypted backups. Only PDF/PNG/JPEG are accepted, with content MIME and filename agreement, a non-empty body and a 10 MiB limit. Downloads are authenticated attachments with `nosniff` and private/no-store headers. Versions retain original filename, hash and creator privately. A release applies to exactly one version; future uploads remain private. Revocation checks run on every download. Document archive removes self-service access while retaining authorized HR history.
+
+Published policy text is immutable and rendered as text. Drafts are restricted to policy publishers. Each employee acknowledges the exact published version displayed; a newer version needs another acknowledgement. The supplied private memo is not automatically published or committed as policy content.
+
+HR request subjects and message bodies are encrypted at rest. Employees see their own request and public replies, never internal notes, hidden-note activity counts or internal revisions. Ordinary administrators see generic triage metadata unless explicitly granted case access. `cases.manage` grants global HR case management; `cases.assigned` plus a current assignment grants only that case. Reassignment revokes the previous reviewer unless they independently hold global management. Internal notes do not send employee notifications. General line managers do not receive confidential-case content or notices unless assigned with the required permission. Request attachments are intentionally unavailable until associated through the private document workflow.

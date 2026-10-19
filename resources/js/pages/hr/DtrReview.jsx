@@ -1,9 +1,111 @@
-import { Head, useForm } from '@inertiajs/react';
-import { Errors, RecordDetails } from './Dtr';
+import { Head, useForm } from "@inertiajs/react";
+import { Errors, RecordDetails } from "./Dtr";
 function Review({ record, weekly = false }) {
-    const form = useForm({ version: weekly ? record.version : record.hr_version, decision: 'reviewed', comment: '' });
-    return <details className="hr-panel"><summary><strong>{record.employee_name}</strong> · {weekly ? `Week of ${record.week_start}` : record.work_date}</summary>{weekly ? <p>All included daily records have been reviewed. This confirms the employee’s weekly declaration.</p> : <RecordDetails entry={record} />}<a className="hr-button-secondary" href={`/dtr/report?employee=${record.employee_id}&${weekly ? `week=${record.week_start}` : `date=${record.work_date}`}`} target="_blank" rel="noreferrer">Open printable record</a><form className="hr-form" onSubmit={e => { e.preventDefault(); form.post(`/dtr/${weekly ? 'week/' : ''}${record.id}/review`, { preserveScroll: true }); }}><Errors errors={form.errors} /><label>Decision<select value={form.data.decision} onChange={e => form.setData('decision', e.target.value)}><option value="reviewed">Mark reviewed</option><option value="returned">Return for correction</option></select></label><label>Review comment<textarea value={form.data.comment} required={form.data.decision === 'returned'} maxLength={5000} onChange={e => form.setData('comment', e.target.value)} /></label><div><button className="hr-button" disabled={form.processing}>Save decision</button></div></form></details>;
+    const form = useForm({
+        version: weekly ? record.version : record.hr_version,
+        decision: "reviewed",
+        comment: "",
+    });
+    return (
+        <details className="hr-panel">
+            <summary>
+                <strong>{record.employee_name}</strong> ·{" "}
+                {weekly ? `Week of ${record.week_start}` : record.work_date}
+            </summary>
+            {weekly ? (
+                <p>
+                    All included daily records have been reviewed. This confirms
+                    the employee’s weekly declaration.
+                </p>
+            ) : (
+                <RecordDetails entry={record} />
+            )}
+            <a
+                className="hr-button-secondary"
+                href={`/dtr/report?employee=${record.employee_id}&${weekly ? `week=${record.week_start}` : `date=${record.work_date}`}`}
+                target="_blank"
+                rel="noreferrer"
+            >
+                Open printable record
+            </a>
+            <form
+                className="hr-form"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    form.post(
+                        `/dtr/${weekly ? "week/" : ""}${record.id}/review`,
+                        { preserveScroll: true },
+                    );
+                }}
+            >
+                <Errors errors={form.errors} />
+                <label>
+                    Decision
+                    <select
+                        value={form.data.decision}
+                        onChange={(e) =>
+                            form.setData("decision", e.target.value)
+                        }
+                    >
+                        <option value="reviewed">Mark reviewed</option>
+                        <option value="returned">Return for correction</option>
+                    </select>
+                </label>
+                <label>
+                    Review comment
+                    <textarea
+                        value={form.data.comment}
+                        required={form.data.decision === "returned"}
+                        maxLength={5000}
+                        onChange={(e) =>
+                            form.setData("comment", e.target.value)
+                        }
+                    />
+                </label>
+                <div>
+                    <button className="hr-button" disabled={form.processing}>
+                        Save decision
+                    </button>
+                </div>
+            </form>
+        </details>
+    );
 }
 export default function DtrReview({ entries, weeks }) {
-    return <><Head title="Time record reviews · Luvep" /><div className="hr-page-heading"><h1>Time record reviews</h1><p>Review attendance and work records for employees in your care.</p></div><h2 className="hr-section-title">Daily records · {entries.length}</h2>{entries.length ? entries.map(e => <Review key={`${e.id}:${e.hr_version}`} record={e} />) : <section className="hr-panel"><p>No daily records are waiting for your review.</p></section>}<h2 className="hr-section-title">Weekly declarations · {weeks.length}</h2>{weeks.length ? weeks.map(w => <Review key={`${w.id}:${w.version}`} record={w} weekly />) : <section className="hr-panel"><p>No weekly declarations are waiting for your review.</p></section>}</>;
+    return (
+        <>
+            <Head title="Time record reviews · Luvep" />
+            <div className="hr-page-heading">
+                <h1>Time record reviews</h1>
+                <p>
+                    Review attendance and work records for employees in your
+                    care.
+                </p>
+            </div>
+            <h2 className="hr-section-title">
+                Daily records · {entries.length}
+            </h2>
+            {entries.length ? (
+                entries.map((e) => (
+                    <Review key={`${e.id}:${e.hr_version}`} record={e} />
+                ))
+            ) : (
+                <section className="hr-panel">
+                    <p>No daily records are waiting for your review.</p>
+                </section>
+            )}
+            <h2 className="hr-section-title">
+                Weekly declarations · {weeks.length}
+            </h2>
+            {weeks.length ? (
+                weeks.map((w) => (
+                    <Review key={`${w.id}:${w.version}`} record={w} weekly />
+                ))
+            ) : (
+                <section className="hr-panel">
+                    <p>No weekly declarations are waiting for your review.</p>
+                </section>
+            )}
+        </>
+    );
 }
