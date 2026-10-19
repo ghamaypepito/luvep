@@ -63,6 +63,10 @@ class HrContext
             $abilities[$ability] = ! $preview && $actor && $access->allows($actor, $ability);
         }
 
+        if (! $preview && $actor && $access->internal($actor)) {
+            $abilities['dtr.review'] = $abilities['dtr.review'] || HrEmployee::where('reviewer_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
+        }
+
         return ['enabled' => (bool) config('hr.enabled'), 'url' => $this->url(), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
             'permissions' => $abilities, 'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
     }

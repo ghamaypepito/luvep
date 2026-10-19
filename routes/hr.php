@@ -9,6 +9,15 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/dtr/report', \App\Http\Controllers\Hr\DtrReportController::class)->name('dtr.report');
+        Route::get('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'index'])->name('dtr');
+        Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
+        Route::post('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'store'])->name('dtr.store');
+        Route::post('/dtr/week/sign', [\App\Http\Controllers\Hr\DtrController::class, 'signWeek'])->name('dtr.week.sign');
+        Route::post('/dtr/week/{week}/review', [\App\Http\Controllers\Hr\DtrController::class, 'reviewWeek'])->name('dtr.week.review');
+        Route::post('/dtr/{entry}/submit', [\App\Http\Controllers\Hr\DtrController::class, 'submit'])->name('dtr.submit');
+        Route::post('/dtr/{entry}/review', [\App\Http\Controllers\Hr\DtrController::class, 'review'])->name('dtr.review');
+        Route::post('/dtr/{entry}/correct', [\App\Http\Controllers\Hr\DtrController::class, 'correct'])->name('dtr.correct');
         Route::get('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'show'])->name('clock');
         Route::post('/clock', [\App\Http\Controllers\Hr\ClockController::class, 'store'])->name('clock.store');
         Route::get('/', DashboardController::class)->name('dashboard');

@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(replace: [\Illuminate\Session\Middleware\StartSession::class => \App\Http\Middleware\StartLuvepSharedSession::class], append: [
             \App\Http\Middleware\RestrictHrHost::class,
             \App\Http\Middleware\BlockHrPreviewWrites::class,
+            \App\Http\Middleware\ProtectHrLegacyDtr::class,
             HandleInertiaRequests::class,
             \App\Http\Middleware\EnsureAccountActive::class,
             \App\Http\Middleware\EnsureNotInMaintenance::class,

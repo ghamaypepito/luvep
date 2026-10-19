@@ -39,6 +39,9 @@ class HrAccess
         if ($ability === 'dtr.review' && $subject?->reviewer_user_id === $actor->id) {
             return $this->employee($actor) !== null;
         }
+        if ($ability === 'dtr.review' && $actor->isAdmin()) {
+            return true;
+        }
         if ($actor->isSuperAdmin()) {
             return true;
         }

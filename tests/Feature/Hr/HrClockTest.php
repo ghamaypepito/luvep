@@ -173,4 +173,19 @@ class HrClockTest extends TestCase
         $this->post('/dtr/time-out')->assertForbidden();
         $this->assertSame(0, HrShift::count());
     }
+
+    public function test_two_completed_shifts_on_one_date_share_one_dtr_record(): void
+    {
+        $e = $this->employee();
+        $this->at('2026-10-19 00:00');
+        $this->act($e, 'clock_in', 0);
+        $this->at('2026-10-19 01:00');
+        $this->act($e, 'clock_out', 1);
+        $this->at('2026-10-19 02:00');
+        $this->act($e, 'clock_in', 2);
+        $this->at('2026-10-19 03:00');
+        $this->act($e, 'clock_out', 3);
+        $this->assertSame(2, HrShift::count());
+        $this->assertSame(1, \App\Models\DtrEntry::count());
+    }
 }

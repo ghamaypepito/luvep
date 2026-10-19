@@ -73,11 +73,13 @@ class ClockService
                         $finish = $finish->addDay();
                     }
                 }
-                $entry = DtrEntry::firstOrNew(['user_id' => $employee->user_id, 'work_date' => $local->toDateString()]);
+                $entry = DtrEntry::where('user_id', $employee->user_id)->whereDate('work_date', $local->toDateString())->first()
+                    ?? new DtrEntry(['user_id' => $employee->user_id, 'work_date' => $local->toDateString()]);
                 if ($entry->exists && $entry->time_source !== 'live' && $entry->time_in) {
                     throw ValidationException::withMessages(['clock' => 'A manual time record already exists today. Ask HR to review it before starting a live shift.']);
                 }
-                $entry->forceFill(['time_source' => 'live', 'time_in' => $entry->time_in ?: $local->format('H:i'), 'time_out' => null])->save();
+                abort_unless(! $entry->exists || in_array($entry->hr_status, ['draft', 'returned', 'legacy'], true), 409, 'This DTR is locked. Ask for a reviewed correction.');
+                $entry->forceFill(['time_source' => 'live', 'hr_status' => 'draft', 'time_in' => $entry->time_in ?: $local->format('H:i'), 'time_out' => null])->save();
                 $shift = HrShift::create(['hr_employee_id' => $employee->id, 'work_date' => $local->toDateString(), 'timezone' => $setting->timezone,
                     'started_at' => $now, 'scheduled_end_at' => $finish?->utc(), 'schedule_snapshot' => $day, 'active_guard' => 1]);
             } else {

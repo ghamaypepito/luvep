@@ -13,6 +13,8 @@ class DtrEntry extends Model
     protected $casts = [
         'work_date' => 'date',
         'tasks' => 'array',
+        'hr_version' => 'integer',
+        'submitted_at' => 'datetime',
     ];
 
     public function user()
