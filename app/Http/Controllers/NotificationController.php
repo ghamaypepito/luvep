@@ -58,7 +58,7 @@ class NotificationController extends Controller
      */
     private function pageComponent($user): string
     {
-        if (request()->getHost() === config('hr.host')) {
+        if (request()->getHost() === config('hr.host') || str_starts_with(request()->route()?->getName() ?? '', 'hr.')) {
             return 'hr/Notifications';
         }
 

@@ -11,6 +11,10 @@ class StartLuvepSharedSession extends StartSession
 {
     public function handle($request, Closure $next)
     {
+        if (config('hr.enabled') && config('hr.portal_mode') && $request->getHost() === parse_url(config('hr.main_url'), PHP_URL_HOST)) {
+            return parent::handle($request, fn ($request) => app(AuthenticateSession::class)->handle($request, $next));
+        }
+
         if (! config('hr.enabled') || ! config('hr.shared_session') || ! in_array($request->getHost(), config('hr.session_hosts'), true)) {
             return parent::handle($request, $next);
         }

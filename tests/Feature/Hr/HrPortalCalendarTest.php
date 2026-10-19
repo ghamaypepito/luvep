@@ -20,6 +20,30 @@ class HrPortalCalendarTest extends TestCase
         $this->withoutVite();
     }
 
+    public function test_password_reset_revokes_main_site_hr_session_without_shared_cookie(): void
+    {
+        config(['hr.shared_session' => false]);
+        $user = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($user)->withSession(['password_hash_web' => 'obsolete'])->get('https://luvep.com/portal/hr/dashboard')->assertRedirect();
+        $this->assertGuest();
+    }
+
+    public function test_pending_manager_with_unrelated_grant_cannot_read_team_leave(): void
+    {
+        $manager = User::factory()->create(['role' => 'sales', 'module_permissions' => ['hr.documents.manage']]);
+        HrEmployee::create(['user_id' => $manager->id, 'status' => 'candidate']);
+        $user = User::factory()->create(['role' => 'sales']);
+        HrEmployee::create(['user_id' => $user->id, 'status' => 'active', 'manager_user_id' => $manager->id]);
+        DtrLeave::create(['user_id' => $user->id, 'type' => 'Annual Leave', 'status' => 'approved', 'start_date' => '2026-10-20', 'end_date' => '2026-10-21']);
+        $this->actingAs($manager)->get('https://luvep.com/portal/hr/calendar?date=2026-10-20')->assertOk()->assertInertia(fn (Assert $p) => $p->has('events', 0));
+    }
+
+    public function test_hr_notifications_keep_hr_layout_on_main_site(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($user)->get('https://luvep.com/portal/hr/notifications')->assertOk()->assertInertia(fn (Assert $p) => $p->component('hr/Notifications'));
+    }
+
     public function test_guest_login_retains_hr_destination(): void
     {
         $this->get('https://luvep.com/portal/hr/dashboard')->assertRedirect('https://luvep.com/login');

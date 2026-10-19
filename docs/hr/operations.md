@@ -103,3 +103,5 @@ Owner approved replacing the subdomain entry point with `https://luvep.com/porta
 The calendar shows authorized leave availability without reasons/types, own schedules/configured holidays, and scoped HR milestones without private notes. Employee access remains pending owner roster review. Admins can open People and enroll candidates before activation.
 
 Verification: 132 HR tests / 722 assertions pass; production frontend build passes; Chrome verifies direct login return, month/week/day calendar, mobile overflow, profile navigation, clock and break/resume. The preexisting build warnings remain.
+
+Predeployment review fixes: main-site mode validates the session password hash independently of shared cookies, pending managers with unrelated grants cannot read team calendar leave, and the main-site HR notification route retains its HR layout. Regression suite: 135 tests / 745 assertions pass. Fresh production database/application/config backup completed in a root-only server directory; SMTP connection/authentication succeeded without sending a test message. Redis queue and session services are configured.

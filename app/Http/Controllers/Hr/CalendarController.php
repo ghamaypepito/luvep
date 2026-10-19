@@ -37,7 +37,7 @@ class CalendarController extends Controller
         if (! $preview) {
             $scope = HrEmployee::where('status', 'active');
             if (! $access->allows($actor, 'leave.review') && ! $access->allows($actor, 'leave.fallback')) {
-                $scope->where('manager_user_id', $actor->id);
+                $scope->where('manager_user_id', ($employee || $actor->isAdmin()) ? $actor->id : 0);
             }
             $ids = $ids->merge($scope->pluck('user_id'))->unique();
         }

@@ -34,7 +34,7 @@ const env = {
     MAIL_MAILER: "log",
     SESSION_DRIVER: "file",
     HR_ENABLED: "true",
-    HR_SHARED_SESSION: "true",
+    HR_SHARED_SESSION: process.env.HR_SHARED_SESSION || "true",
     HR_HOST: "hr.luvep.test",
     HR_URL: "https://hr.luvep.test:8443",
     HR_MAIN_URL: "https://luvep.test:8443",
