@@ -15,6 +15,9 @@ class HrNotificationRecipients
     public function employee(HrEvent $event): ?HrEmployee
     {
         $subject = $event->subject;
+        if ($subject instanceof \App\Models\HrChecklistTask) {
+            return $subject->checklist->employee;
+        }
         if ($subject instanceof HrEmployee) {
             return $subject;
         }
@@ -43,16 +46,25 @@ class HrNotificationRecipients
                 $ids->push($assignee->id);
             }
 
-            return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u))->values();
+            return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u) && ($u->isAdmin() || app(HrAccess::class)->employee($u)))->values();
+        }
+        if ($event->subject instanceof \App\Models\HrChecklistTask) {
+            $owner = User::find($event->subject->owner_user_id);
+            if ($owner && app(ChecklistService::class)->eligibleOwner($owner)) {
+                $ids->push($owner->id);
+            }
         }
         if ($employee) {
             $ids->push($employee->manager_user_id);
             if (str_starts_with($event->type, 'dtr.')) {
                 $ids->push($employee->reviewer_user_id);
-            }$ids->push($employee->user_id);
+            }
+            if (! ($event->subject instanceof \App\Models\HrChecklistTask) || $event->subject->employee_visible || $event->subject->owner_user_id === $employee->user_id) {
+                $ids->push($employee->user_id);
+            }
         }
 
-        return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u))->values();
+        return User::whereIn('id', $ids->filter()->unique())->where('id', '!=', $event->actor_id)->get()->filter(fn ($u) => app(HrAccess::class)->internal($u) && ($u->isAdmin() || app(HrAccess::class)->employee($u)))->values();
     }
 
     public function link(HrEvent $event, User $user): string
@@ -60,6 +72,12 @@ class HrNotificationRecipients
         $employee = $this->employee($event);
         $access = app(HrAccess::class);
         $path = 'notifications';
+        if ($event->subject instanceof \App\Models\HrChecklistTask) {
+            return app(HrContext::class)->url('checklists');
+        }
+        if ($event->subject instanceof \App\Models\HrEquipment) {
+            return app(HrContext::class)->url('equipment');
+        }
         if ($event->subject instanceof \App\Models\HrRequest) {
             return app(HrContext::class)->url('requests');
         }

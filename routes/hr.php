@@ -9,6 +9,14 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/checklists', [\App\Http\Controllers\Hr\ChecklistController::class, 'index'])->name('checklists');
+        Route::post('/checklists', [\App\Http\Controllers\Hr\ChecklistController::class, 'start'])->name('checklists.start');
+        Route::post('/checklists/templates', [\App\Http\Controllers\Hr\ChecklistController::class, 'template'])->name('checklists.template.create');
+        Route::post('/checklists/templates/{template}', [\App\Http\Controllers\Hr\ChecklistController::class, 'template'])->name('checklists.template.update');
+        Route::post('/checklists/tasks/{task}/complete', [\App\Http\Controllers\Hr\ChecklistController::class, 'complete'])->name('checklists.complete');
+        Route::get('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'index'])->name('equipment');
+        Route::post('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'store'])->name('equipment.store');
+        Route::post('/equipment/{item}/return', [\App\Http\Controllers\Hr\EquipmentController::class, 'recordReturn'])->name('equipment.return');
         Route::get('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'index'])->name('requests');
         Route::get('/requests/{case}', [\App\Http\Controllers\Hr\RequestController::class, 'show'])->name('requests.show');
         Route::post('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'store'])->name('requests.store');

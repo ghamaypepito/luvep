@@ -11,6 +11,8 @@ import {
     FolderLock,
     BookOpen,
     MessageSquareLock,
+    ListChecks,
+    Laptop,
 } from "lucide-react";
 import NotificationBell from "../NotificationBell";
 import ClockWidget from "../hr/ClockWidget";
@@ -31,6 +33,8 @@ export default function HrLayout({ children }) {
     if (hr?.employee) links.push(["/dtr", "My time records", Clock3]);
     if (hr?.permissions?.["dtr.review"])
         links.push(["/dtr/review", "Time reviews", ClipboardCheck]);
+    links.push(["/checklists", "Onboarding & exits", ListChecks]);
+    links.push(["/equipment", "Equipment", Laptop]);
     links.push(["/requests", "HR support", MessageSquareLock]);
     links.push(["/policies", "Policies", BookOpen]);
     links.push(["/documents", "Documents", FolderLock]);
