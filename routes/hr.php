@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 $hrRoutes = function () {
     Route::middleware(['auth', EnsureHrAccess::class])->group(function () {
+        Route::get('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'index'])->name('policies');
+        Route::post('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.store');
+        Route::post('/policies/{policy}/draft', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.draft');
+        Route::post('/policies/{policy}/publish', [\App\Http\Controllers\Hr\PolicyController::class, 'publish'])->name('policies.publish');
+        Route::post('/policies/versions/{version}/acknowledge', [\App\Http\Controllers\Hr\PolicyController::class, 'acknowledge'])->name('policies.acknowledge');
+        Route::get('/policies/versions/{version}/acknowledgements', [\App\Http\Controllers\Hr\PolicyController::class, 'acknowledgements'])->name('policies.acknowledgements');
         Route::get('/documents', [\App\Http\Controllers\Hr\DocumentController::class, 'index'])->name('documents');
         Route::post('/documents', [\App\Http\Controllers\Hr\DocumentController::class, 'store'])->name('documents.store');
         Route::get('/documents/versions/{version}', [\App\Http\Controllers\Hr\DocumentController::class, 'download'])->name('documents.download');
