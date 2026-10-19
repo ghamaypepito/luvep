@@ -40,6 +40,9 @@ class RequestService
 
         return DB::transaction(function () use ($actor, $case, $body, $internal, $policy) {
             $case = $this->lock($case);
+            $actor = $actor->fresh();
+            abort_unless($actor && $policy->view($actor, $case), 404);
+            abort_if($internal && ! $policy->manage($actor, $case), 403);
             abort_unless($case->status !== 'closed', 409, 'This request is closed. Open a new request for further assistance.');
             $message = $case->messages()->create(['actor_id' => $actor->id, 'body' => $body, 'internal' => $internal, 'created_at' => now()]);
             $case->version++;
@@ -94,7 +97,7 @@ class RequestService
     {
         app(HrAudit::class)->record($actor, 'request.'.$action, $case, ['employee_id' => $case->hr_employee_id, 'version' => $case->version]);
         if ($action !== 'internal_note') {
-            app(HrEvents::class)->record('request.'.$action,$case,$actor,'request:'.$case->id.':'.$case->version.':'.$action);
+            app(HrEvents::class)->record('request.'.$action, $case, $actor, 'request:'.$case->id.':'.$case->version.':'.$action);
         }
     }
 }

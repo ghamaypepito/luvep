@@ -1,6 +1,6 @@
 # Luvep HR operations
 
-Status: local implementation in progress on `codex/hr-portal`. Nothing in this document claims a production deployment. HR defaults off. Do not enable real employee mail or upload real confidential files during local/staging verification.
+Status: Releases 1–3 are implemented on `codex/hr-portal`; independent review fixes and local verification are complete. Nothing in this document claims a production deployment. HR defaults off. Do not enable real employee mail or upload real confidential files during local/staging verification.
 
 ## Configuration
 
@@ -25,7 +25,9 @@ Clock actions use server UTC timestamps, employee-row locks, optimistic versions
 
 Both portals poll while visible and refresh on focus. Stale displays freeze after 30 seconds and disable actions pending refresh. Network-uncertain retries reuse the request ID. The break dialog restores after reload; closing the dialog keeps the paused banner and does not resume work. Clock-out is always manual.
 
-The shift reminder is claimed once across both portals/tabs in the final 15 minutes. A late wake-up uses the remaining minutes. No reminder after finish/clock-out; preview simulation never creates a claim.
+The shift reminder is claimed once across both portals/tabs in the final 15 minutes. A late wake-up uses the remaining minutes; dismissal leaves a subtle countdown until finish. No reminder after finish/clock-out; preview simulation never creates a claim.
+
+A completed workday cannot be restarted through Clock in; use an authorized, explained correction. A new local workday can start normally. Overnight records remain editable while the shift is open or during its local clock-out day.
 
 Daily DTR: draft → submitted → reviewed or returned. Submission includes an employee declaration. Returned records can be corrected and resubmitted. Closed clock corrections require the explicit attendance-correction grant and reason; before/after intervals remain in immutable review history. Changed daily records invalidate weekly sign-off. Historical rows remain historical and retain existing legacy report formats.
 
@@ -47,7 +49,7 @@ HR events and notification deliveries commit with the record. Initial queue disp
 
 ## Deployment checklist — still pending
 
-1. Finish all approved modules and independent final review. Fix findings and run complete regression, browser and MySQL checks.
+1. Local implementation and independent review fixes are complete. [Review and regression evidence](review-2026-10-19.md) records the checks and known baseline failures.
 2. Deploy additive schema/assets to staging using synthetic data and a mail sink. Verify employee journey and direct authorization checks.
 3. Confirm real roster, Department Heads, Operations reviewers and confidential grants. No guessed activation mappings.
 4. Verify Hostinger DNS-zone access (VPS access alone is insufficient), sibling-domain control and intended `hr` record.
@@ -68,3 +70,11 @@ Personnel files use the dedicated `hr_private` disk at `storage/app/hr-private`,
 Published policy text is immutable and rendered as text. Drafts are restricted to policy publishers. Each employee acknowledges the exact published version displayed; a newer version needs another acknowledgement. The supplied private memo is not automatically published or committed as policy content.
 
 HR request subjects and message bodies are encrypted at rest. Employees see their own request and public replies, never internal notes, hidden-note activity counts or internal revisions. Ordinary administrators see generic triage metadata unless explicitly granted case access. `cases.manage` grants global HR case management; `cases.assigned` plus a current assignment grants only that case. Reassignment revokes the previous reviewer unless they independently hold global management. Internal notes do not send employee notifications. General line managers do not receive confidential-case content or notices unless assigned with the required permission. Request attachments are intentionally unavailable until associated through the private document workflow.
+
+## People operations and reporting
+
+Onboarding/exit templates create versioned task snapshots with explicit owners and shared or private notes. Equipment must be returned before another assignment; issue/return history is retained. An access-removal checklist item records human completion and never silently disables an account. Milestones have explicit dates and owners; `hr:notify-due-work` runs hourly with stable event keys, so an unchanged overdue task does not repeatedly notify staff.
+
+Reports support employee status, attendance, leave, policy acknowledgements and approved hours with own/assigned/explicit aggregate scopes. Preview is limited to the selected employee and the real Admin’s authorized scope. Queued CSV exports recheck scope at request, processing and download, escape formula cells and expire after 24 hours. Restricted reasons, compensation and case content are omitted.
+
+Access administration edits only allowlisted HR grants and preserves unrelated permissions. It blocks self-elevation and removal or archiving of the last active HR access administrator. Archived enrollment or schedule records revoke HR abilities even when explicit grants remain stored. Audit views require an exact grant and expose safe metadata only.

@@ -13,6 +13,8 @@ import https from "node:https";
 import http from "node:http";
 
 const root = process.cwd();
+// Remote acceptance uses an SSH tunnel on the same loopback port; no public test listener.
+const remote = process.env.HR_REMOTE_BROWSER === "1";
 const scratch = resolve(".superpowers/sdd/2026-10-19-hr-release-1/browser");
 mkdirSync(scratch, { recursive: true });
 const temp = mkdtempSync(`${tmpdir()}/luvep-hr-e2e-`);
@@ -40,12 +42,14 @@ const env = {
     HR_NOTIFICATIONS_ENABLED: "false",
     HR_FIXTURE_FILE: `${scratch}/fixture.json`,
 };
-writeFileSync(env.DB_DATABASE, "");
-execFileSync(php, ["tests/Fixtures/hr-browser.php"], {
-    cwd: root,
-    env,
-    stdio: "inherit",
-});
+if (!remote) {
+    writeFileSync(env.DB_DATABASE, "");
+    execFileSync(php, ["tests/Fixtures/hr-browser.php"], {
+        cwd: root,
+        env,
+        stdio: "inherit",
+    });
+}
 if (!existsSync(`${scratch}/cert.pem`))
     execFileSync(
         "openssl",
@@ -68,21 +72,23 @@ if (!existsSync(`${scratch}/cert.pem`))
         ],
         { stdio: "ignore" },
     );
-const backend = spawn(
-    php,
-    [
-        "-d",
-        "default_socket_timeout=2",
-        "-d",
-        "memory_limit=512M",
-        "-S",
-        "127.0.0.1:8107",
-        "-t",
-        "public",
-        "tests/Fixtures/hr-router.php",
-    ],
-    { cwd: root, env, stdio: "ignore" },
-);
+const backend = remote
+    ? null
+    : spawn(
+          php,
+          [
+              "-d",
+              "default_socket_timeout=2",
+              "-d",
+              "memory_limit=512M",
+              "-S",
+              "127.0.0.1:8107",
+              "-t",
+              "public",
+              "tests/Fixtures/hr-router.php",
+          ],
+          { cwd: root, env, stdio: "ignore" },
+      );
 const proxy = https.createServer(
     {
         key: readFileSync(`${scratch}/key.pem`),
@@ -112,7 +118,7 @@ const proxy = https.createServer(
 proxy.listen(8443, "127.0.0.1");
 const close = () => {
     proxy.close();
-    backend.kill();
+    backend?.kill();
     process.exit(0);
 };
 process.on("SIGINT", close);

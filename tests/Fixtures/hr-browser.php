@@ -1,10 +1,12 @@
 <?php
 
-// Synthetic local-only browser fixtures. Never run against a deployed database.
+// Synthetic browser fixtures. Never run against an application database.
 require __DIR__.'/../../vendor/autoload.php';
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-if (getenv('HR_E2E') !== '1' || config('database.default') !== 'sqlite' || ! str_ends_with(config('hr.host'), '.test')) {
+$isolatedDatabase = config('database.default') === 'sqlite'
+    || (config('database.default') === 'mysql' && config('database.connections.mysql.database') === 'luvep_hr_acceptance_20261019');
+if (getenv('HR_E2E') !== '1' || ! $isolatedDatabase || ! str_ends_with(config('hr.host'), '.test') || config('app.env') !== 'local') {
     throw new RuntimeException('HR browser fixtures require the isolated local test environment.');
 }
 Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
@@ -20,10 +22,17 @@ App\Models\DtrSetting::create(['user_id' => $journey->id, 'timezone' => 'Asia/Ma
 $day = now('Asia/Manila')->subDays(7)->toDateString();
 $entry = App\Models\DtrEntry::create(['user_id' => $journey->id, 'work_date' => $day, 'time_in' => '08:00', 'time_out' => '17:00', 'tasks' => []]);
 $entry->forceFill(['hr_status' => 'returned', 'time_source' => 'live', 'hr_version' => 1])->save();
-$shift = App\Models\HrShift::create(['hr_employee_id' => $je->id, 'work_date' => $day, 'timezone' => 'Asia/Manila', 'started_at' => Carbon\CarbonImmutable::parse($day.' 08:00', 'Asia/Manila')->utc(), 'ended_at' => Carbon\CarbonImmutable::parse($day.' 17:00', 'Asia/Manila')->utc()]);
+$shift = App\Models\HrShift::create(['hr_employee_id' => $je->id, 'work_date' => $day, 'timezone' => 'Asia/Manila', 'active_guard' => null, 'started_at' => Carbon\CarbonImmutable::parse($day.' 08:00', 'Asia/Manila')->utc(), 'ended_at' => Carbon\CarbonImmutable::parse($day.' 17:00', 'Asia/Manila')->utc()]);
 $shift->breaks()->create(['started_at' => Carbon\CarbonImmutable::parse($day.' 12:00', 'Asia/Manila')->utc(), 'ended_at' => Carbon\CarbonImmutable::parse($day.' 12:30', 'Asia/Manila')->utc()]);
 $template = app(App\Services\Hr\ChecklistService::class)->saveTemplate($admin, ['name' => 'Welcome checklist', 'kind' => 'onboarding', 'version' => 0, 'tasks' => [['title' => 'Confirm your welcome pack', 'kind' => 'general', 'owner_user_id' => $journey->id, 'employee_visible' => true, 'note' => 'Read your introduction to the team.', 'private_note' => 'PRIVATE ONBOARDING NOTE']]]);
 app(App\Services\Hr\ChecklistService::class)->start($admin, $je, $template, now()->addWeek()->toDateString());
+$retry = App\Models\User::create(['name' => 'Clock Retry Tester', 'email' => 'retry@example.test', 'password' => 'Browser-Test-123', 'role' => 'sales', 'is_active' => true]);
+App\Models\HrEmployee::create(['user_id' => $retry->id, 'status' => 'active', 'manager_user_id' => $admin->id, 'reviewer_user_id' => $admin->id]);
+App\Models\DtrSetting::create(['user_id' => $retry->id, 'timezone' => 'Asia/Manila', 'sched_in' => '08:00', 'sched_out' => '17:00', 'is_complete' => true, 'schedule_type' => 'fixed']);
+$reminder = App\Models\User::create(['name' => 'Reminder Tester', 'email' => 'reminder@example.test', 'password' => 'Browser-Test-123', 'role' => 'sales', 'is_active' => true]);
+$re = App\Models\HrEmployee::create(['user_id' => $reminder->id, 'status' => 'active', 'manager_user_id' => $admin->id, 'reviewer_user_id' => $admin->id]);
+App\Models\DtrSetting::create(['user_id' => $reminder->id, 'timezone' => 'Asia/Manila', 'sched_in' => '08:00', 'sched_out' => '17:00', 'is_complete' => true, 'schedule_type' => 'fixed']);
+App\Models\HrShift::create(['hr_employee_id' => $re->id, 'work_date' => now('Asia/Manila')->toDateString(), 'timezone' => 'Asia/Manila', 'started_at' => now()->subHours(7), 'scheduled_end_at' => now()->addMinutes(14), 'active_guard' => 1]);
 $session = app('session')->driver();
 $session->start();
 $session->put(Illuminate\Support\Facades\Auth::guard()->getName(), $user->id);

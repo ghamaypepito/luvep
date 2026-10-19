@@ -9,7 +9,12 @@ class HrAccess
 {
     public function internal(User $user): bool
     {
-        return $user->is_active && ! $user->trashed() && in_array($user->role, config('hr.internal_roles'), true);
+        if (! $user->is_active || $user->trashed() || ! in_array($user->role, config('hr.internal_roles'), true)) {
+            return false;
+        }
+        $enrollment = HrEmployee::where('user_id', $user->id)->first();
+
+        return ! $enrollment || ($enrollment->status !== 'archived' && ! $enrollment->schedule?->archived_at);
     }
 
     public function employee(User $user): ?HrEmployee

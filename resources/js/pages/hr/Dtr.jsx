@@ -129,7 +129,8 @@ function Editor({ entry, locked }) {
             <p>
                 Working time: <strong>{duration(entry.working_seconds)}</strong>{" "}
                 · Breaks: {duration(entry.break_seconds)}. Record actual work
-                periods; split tasks around breaks.
+                periods; split tasks around breaks. Minute entries at a clock or
+                break boundary use its recorded seconds.
             </p>
             <form
                 className="hr-form hr-form-wide"
@@ -175,6 +176,7 @@ function Editor({ entry, locked }) {
                                             : "Finished"}
                                         <input
                                             type="time"
+                                            step="1"
                                             value={task[key]}
                                             onChange={(e) =>
                                                 updateTask(
@@ -415,11 +417,7 @@ export default function Dtr({ entries, weeks, today }) {
                         <Editor
                             key={`${entry.id}:${entry.hr_version}`}
                             entry={entry}
-                            locked={
-                                !!hr.preview ||
-                                (entry.work_date !== today &&
-                                    entry.hr_status !== "returned")
-                            }
+                            locked={!!hr.preview || !entry.can_edit}
                         />
                     </>
                 ) : (

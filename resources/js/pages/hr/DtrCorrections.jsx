@@ -35,7 +35,8 @@ function Editor({ record }) {
                             ended_at: b.ended_at + "Z",
                         })),
                     })),
-                })).post(`/dtr/${record.id}/correct`, { preserveScroll: true });
+                }));
+                f.post(`/dtr/${record.id}/correct`, { preserveScroll: true });
             }}
         >
             <Errors errors={f.errors} />

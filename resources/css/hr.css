@@ -930,3 +930,5 @@
 }
 
 .hr-permission-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}.hr-permission-grid label{display:flex;align-items:flex-start;gap:10px}.hr-permission-grid input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin-top:2px}.hr-permission-grid small{display:block;color:var(--hr-muted,#647064)}
+
+@media (min-width: 901px) { .hr-sidebar {position:sticky;top:0;height:100vh;padding:24px 18px;}.hr-sidebar nav{overflow-y:auto;min-height:0;gap:3px;}.hr-sidebar nav a{padding:10px 12px;font-size:14px;}.hr-sidebar nav a svg{flex-shrink:0;}.hr-logo{margin-bottom:24px;}.hr-sidebar-footer{padding-top:22px;gap:14px;flex-shrink:0;} }

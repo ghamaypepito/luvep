@@ -174,18 +174,18 @@ class HrClockTest extends TestCase
         $this->assertSame(0, HrShift::count());
     }
 
-    public function test_two_completed_shifts_on_one_date_share_one_dtr_record(): void
+    public function test_completed_shifts_on_separate_workdays_have_separate_dtr_records(): void
     {
         $e = $this->employee();
         $this->at('2026-10-19 00:00');
         $this->act($e, 'clock_in', 0);
         $this->at('2026-10-19 01:00');
         $this->act($e, 'clock_out', 1);
-        $this->at('2026-10-19 02:00');
+        $this->at('2026-10-20 02:00');
         $this->act($e, 'clock_in', 2);
-        $this->at('2026-10-19 03:00');
+        $this->at('2026-10-20 03:00');
         $this->act($e, 'clock_out', 3);
         $this->assertSame(2, HrShift::count());
-        $this->assertSame(1, \App\Models\DtrEntry::count());
+        $this->assertSame(2, \App\Models\DtrEntry::count());
     }
 }

@@ -11,6 +11,7 @@ export default function EmployeeSetup({
         employee
             ? {
                   version: employee.version,
+                  apply_default_hours: false,
                   status: employee.status,
                   employee_number: employee.employee_number || "",
                   department: employee.department || "",
@@ -203,6 +204,24 @@ export default function EmployeeSetup({
                                 {field("sched_in", "Scheduled start", "time")}
                                 {field("sched_out", "Scheduled finish", "time")}
                             </div>
+                            <label className="hr-checkbox">
+                                <input
+                                    type="checkbox"
+                                    checked={form.data.apply_default_hours}
+                                    onChange={(e) =>
+                                        form.setData(
+                                            "apply_default_hours",
+                                            e.target.checked,
+                                        )
+                                    }
+                                />
+                                Apply the default start and finish times to
+                                every working day
+                            </label>
+                            <p>
+                                Existing daily hours are preserved unless this
+                                is selected.
+                            </p>
                             <fieldset>
                                 <legend>Working days</legend>
                                 <div className="hr-day-picker">

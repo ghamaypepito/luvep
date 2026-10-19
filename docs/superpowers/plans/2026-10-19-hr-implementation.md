@@ -60,10 +60,10 @@ The user explicitly approved both notification channels. No actual staff mail is
 
 - [x] Complete the independent local clone at `/Users/ghameey/Documents/ChatGPT/luvep` and create `codex/hr-portal`; verify origin and clean status before editing.
 - [x] Store the approved spec and plans on the feature branch. Never push planning commits to `main` because it deploys automatically.
-- [ ] Provision local PHP 8.3 and Composer 2; neither is currently available. Docker is installed but its daemon is not running, so do not assume Docker is the test environment.
-- [ ] Install locked Composer/npm dependencies. Use a disposable local `.env` from `.env.example`, SQLite and log/array mail only; never copy the production `.env`.
-- [ ] Run `composer test` and save the named baseline failures and exit status. Repository notes mention existing failures; do not attribute them to this branch without comparing.
-- [ ] Run focused DTR/auth/profile tests and `npm run build` to establish their actual baseline. Do not silently stop at the narrower tests.
+- [x] Provisioned local PHP 8.3 and Composer 2. Verification uses the PHP runtime directly.
+- [x] Install locked Composer/npm dependencies. Use a disposable local `.env` from `.env.example`, SQLite and log/array mail only; never copy the production `.env`.
+- [x] Ran the full PHPUnit suite and saved the named baseline failures and exit status. Baseline: 1,036 tests, 57 failures, 10 errors; final: 1,164 tests with the identical 67 failing/error test names.
+- [x] Ran focused HR/auth/profile verification and `npm run build`; full-suite comparison is recorded separately.
 
 ## Common test/commit cycle
 
@@ -80,10 +80,10 @@ Each task below follows: write the specified failing behavior tests, run them an
 
 ## Plan review
 
-The design is approved. This implementation plan awaits review and an execution-method choice. Recommended: Native execution in this chat, because the shared authentication, legacy DTR and permission interfaces are tightly coupled; one implementer can keep those changes consistent. Obtain an independent whole-branch review before staging promotion.
+The user approved Native execution in this chat with one independent final review. All three releases are implemented on `codex/hr-portal`. The independent review is complete and its findings have regression-tested fixes; see [review evidence](../../hr/review-2026-10-19.md). Production rollout remains pending DNS/TLS, roster/permission confirmation and the live deployment checks in [operations](../../hr/operations.md).
 
 ## Self-review record
 
 Reviewed against the approved design on 19 October 2026. Release 1 covers host routing, account/profile fields, employee eligibility, avatar preview, SSO, leave/emergency decisions, attendance/corrections, DTR/sign-offs, calendar, notifications and interface states. Release 2 covers document classification/version/release, policies/acknowledgements and private HR cases. Release 3 covers onboarding/exits, equipment, milestones, scoped exports, permissions and audit. Each release includes direct-access tests and staged verification.
 
-Reconciled actor/subject preview semantics and shared HrAccess/HrEvents interfaces across all three plans. Corrected the shared-session middleware filename and added explicit correction/emergency interfaces. Verified existing DTR view/test paths, Laravel/React dependencies and Playwright test directory against the cloned repository. Planning checks are complete; application tests have not run and no product implementation is claimed.
+Reconciled actor/subject preview semantics and shared HrAccess/HrEvents interfaces across all three plans. Corrected the shared-session middleware filename and added explicit correction/emergency interfaces. Verified existing DTR view/test paths, Laravel/React dependencies and Playwright test directory against the cloned repository. Planning checks and local implementation verification are complete. Deployment verification is tracked separately and is not yet claimed.

@@ -15,6 +15,14 @@ test("employee submits DTR and leave, receives decisions, completes onboarding a
     test.setTimeout(90000);
     await login(page, "taylor@example.test");
     await page.goto(`${hr}/dtr`);
+    const workDate = (
+        await page
+            .getByRole("combobox", { name: "Date", exact: true })
+            .locator("option:checked")
+            .innerText()
+    )
+        .trim()
+        .slice(0, 10);
     await page.getByLabel("Work location", { exact: true }).fill("Office");
     await page.getByRole("button", { name: "Add task", exact: true }).click();
     await page
@@ -22,10 +30,12 @@ test("employee submits DTR and leave, receives decisions, completes onboarding a
         .fill("Complete employee orientation");
     await page.getByLabel("Started", { exact: true }).fill("08:00");
     await page.getByLabel("Finished", { exact: true }).fill("09:00");
-    await page.getByLabel("Status", { exact: true }).selectOption("done");
+    await page
+        .getByRole("combobox", { name: "Status", exact: true })
+        .selectOption("done");
     await page.getByRole("button", { name: "Save draft", exact: true }).click();
     await expect(
-        page.getByText("Time record saved.", { exact: true }),
+        page.getByRole("status").filter({ hasText: "Time record saved." }),
     ).toBeVisible();
     await page
         .getByLabel(
@@ -50,7 +60,9 @@ test("employee submits DTR and leave, receives decisions, completes onboarding a
     ).toHaveCount(0);
     await page.reload();
     await expect(
-        page.getByLabel("Date", { exact: true }).locator("option:checked"),
+        page
+            .getByRole("combobox", { name: "Date", exact: true })
+            .locator("option:checked"),
     ).toContainText("reviewed");
     await page.goto(`${hr}/leave`);
     const d = new Date();
@@ -137,6 +149,36 @@ test("employee submits DTR and leave, receives decisions, completes onboarding a
         page.getByRole("heading", { name: "First month check-in" }),
     ).toBeVisible();
     await expect(page.getByText("PRIVATE MILESTONE NOTE")).not.toBeVisible();
+    await ap.goto(`${hr}/dtr/corrections`);
+    await ap
+        .getByRole("combobox", { name: "Employee", exact: true })
+        .selectOption({ label: "Taylor Morgan" });
+    await ap.getByLabel("Work date", { exact: true }).fill(workDate);
+    await ap.getByRole("button", { name: "Find record", exact: true }).click();
+    const oldFinish = await ap
+        .getByLabel("Clock out (UTC)", { exact: true })
+        .inputValue();
+    await ap
+        .getByLabel("Clock out (UTC)", { exact: true })
+        .fill(oldFinish.slice(0, 11) + "09:05");
+    await ap
+        .getByLabel("Reason for correction", { exact: true })
+        .fill("Reviewed five minutes of closing work.");
+    await ap
+        .getByRole("button", {
+            name: "Save correction and return DTR",
+            exact: true,
+        })
+        .click();
+    await expect(
+        ap.getByRole("status").filter({ hasText: "Time record saved." }),
+    ).toBeVisible();
+    await page.goto(`${hr}/dtr`);
+    await expect(
+        page
+            .getByRole("combobox", { name: "Date", exact: true })
+            .locator("option:checked"),
+    ).toContainText("returned");
     await ac.close();
 });
 test("desktop and mobile portal visual review and administrative pages", async ({
@@ -176,6 +218,7 @@ test("desktop and mobile portal visual review and administrative pages", async (
     });
     await page.goto(`${hr}/`);
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await page.waitForURL((u) => u.pathname.includes("login"));
     await login(page, "taylor@example.test");
     await page.goto(hr);
     await page.screenshot({
@@ -183,13 +226,61 @@ test("desktop and mobile portal visual review and administrative pages", async (
         fullPage: true,
     });
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page.locator(".hr-app")).toHaveCount(1);
+    await expect(
+        page.getByRole("navigation", { name: "HR navigation" }),
+    ).toHaveCount(1);
     await page.screenshot({
         path: "/private/tmp/luvep-hr-employee-mobile.png",
-        fullPage: true,
+        fullPage: false,
     });
     expect(
         await page.evaluate(
             () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
     ).toBe(true);
+});
+
+test("finish reminder updates, stays subtle after dismissal, and expires", async ({
+    page,
+}) => {
+    await login(page, "reminder@example.test");
+    await expect(
+        page.getByText("Your shift finishes soon", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss shift reminder" }).click();
+    await expect(
+        page.getByText(/Scheduled finish in \d+ minutes/),
+    ).toBeVisible();
+    let remaining = 60;
+    await page.route("**/hr/clock", async (route) => {
+        if (route.request().method() !== "GET") {
+            await route.continue();
+            return;
+        }
+        const response = await route.fetch({
+            url: "https://127.0.0.1:8443/hr/clock",
+            headers: { ...route.request().headers(), host: "luvep.test:8443" },
+        });
+        const data = await response.json();
+        const target = data.state || data;
+        target.server_now = new Date(
+            Date.parse(target.scheduled_end_at) - remaining * 1000,
+        ).toISOString();
+        await route.fulfill({ response, json: data });
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(
+        page.getByText(
+            "Scheduled finish in 1 minute. Remember to clock out when you finish.",
+            { exact: true },
+        ),
+    ).toBeVisible();
+    remaining = -10;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByText(/Scheduled finish in/)).not.toBeVisible();
+    await expect(
+        page.getByText("Your shift finishes soon", { exact: true }),
+    ).not.toBeVisible();
 });

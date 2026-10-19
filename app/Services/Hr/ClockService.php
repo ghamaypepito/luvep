@@ -32,9 +32,16 @@ class ClockService
         $now = CarbonImmutable::instance(now('UTC'));
         $fresh = $employee->fresh();
         $shift = HrShift::with('breaks')->where('hr_employee_id', $employee->id)->latest('id')->first();
+        $today = $now->setTimezone($employee->schedule?->timezone ?? 'UTC')->toDateString();
+        if ($shift?->ended_at && $shift->work_date !== $today && $shift->ended_at->setTimezone($shift->timezone)->toDateString() !== $today) {
+            $shift = null;
+        }
+        $completedToday = $shift?->ended_at !== null && $shift->work_date === $today;
         $break = $shift?->breaks->first(fn ($b) => $b->ended_at === null);
 
         return ['status' => ! $shift || $shift->ended_at ? 'off_shift' : ($break ? 'on_break' : 'working'),
+            'reminder_claimed' => $shift && DB::table('hr_shift_reminders')->where('hr_shift_id', $shift->id)->exists(),
+            'can_clock_in' => ! $completedToday && (! $shift || $shift->ended_at), 'completed_today' => $completedToday,
             'version' => (int) $fresh->clock_version, 'shift_id' => $shift?->id, 'work_date' => $shift?->work_date,
             'started_at' => $shift?->started_at?->toISOString(), 'ended_at' => $shift?->ended_at?->toISOString(),
             'break_started_at' => $break?->started_at?->toISOString(), 'server_now' => $now->toISOString(),
@@ -65,6 +72,7 @@ class ClockService
                     throw ValidationException::withMessages(['clock' => 'Ask HR to complete your schedule before clocking in.']);
                 }
                 $local = $now->setTimezone($setting->timezone);
+                abort_if(HrShift::where('hr_employee_id', $employee->id)->whereDate('work_date', $local->toDateString())->whereNotNull('ended_at')->exists(), 409, 'This workday is complete. Ask an authorized reviewer for a clock correction.');
                 $day = $setting->scheduleForDate($local->toDateString());
                 $finish = null;
                 if ($setting->schedule_type !== 'flexi' && $day['working'] && $day['out']) {

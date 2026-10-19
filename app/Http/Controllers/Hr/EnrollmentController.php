@@ -49,9 +49,13 @@ class EnrollmentController extends Controller
     public function update(Request $request, HrEmployee $employee)
     {
         $this->authorizeSetup($request, 'profile.manage');
-        $data = $request->validate(['version' => 'required|integer|min:0', 'status' => 'required|in:candidate,active,archived', 'employee_number' => ['nullable', 'string', 'max:80', Rule::unique('hr_employees', 'employee_number')->ignore($employee->id)], 'department' => 'nullable|string|max:160', 'position' => 'nullable|string|max:160', 'office' => 'nullable|string|max:160', 'employment_type' => 'nullable|string|max:100', 'employment_start' => 'nullable|date_format:Y-m-d', 'employment_end' => 'nullable|date_format:Y-m-d|after_or_equal:employment_start', 'manager_user_id' => 'nullable|integer', 'reviewer_user_id' => 'nullable|integer', 'timezone' => ['nullable', Rule::in(timezone_identifiers_list())], 'team' => 'nullable|in:Philippines,New Zealand', 'schedule_type' => 'nullable|in:fixed,flexi', 'sched_in' => 'nullable|date_format:H:i', 'sched_out' => 'nullable|date_format:H:i', 'working_days' => 'nullable|array|min:1', 'working_days.*' => Rule::in(DtrSetting::WEEK_DAYS), 'role' => 'prohibited', 'module_permissions' => 'prohibited', 'user_id' => 'prohibited', 'emergency_contact' => 'prohibited']);
+        $data = $request->validate(['version' => 'required|integer|min:0', 'status' => 'required|in:candidate,active,archived', 'employee_number' => ['nullable', 'string', 'max:80', Rule::unique('hr_employees', 'employee_number')->ignore($employee->id)], 'department' => 'nullable|string|max:160', 'position' => 'nullable|string|max:160', 'office' => 'nullable|string|max:160', 'employment_type' => 'nullable|string|max:100', 'employment_start' => 'nullable|date_format:Y-m-d', 'employment_end' => 'nullable|date_format:Y-m-d|after_or_equal:employment_start', 'manager_user_id' => 'nullable|integer', 'reviewer_user_id' => 'nullable|integer', 'timezone' => ['nullable', Rule::in(timezone_identifiers_list())], 'team' => 'nullable|in:Philippines,New Zealand', 'schedule_type' => 'nullable|in:fixed,flexi', 'sched_in' => 'nullable|date_format:H:i', 'sched_out' => 'nullable|date_format:H:i', 'apply_default_hours' => 'sometimes|boolean', 'working_days' => 'nullable|array|min:1', 'working_days.*' => Rule::in(DtrSetting::WEEK_DAYS), 'role' => 'prohibited', 'module_permissions' => 'prohibited', 'user_id' => 'prohibited', 'emergency_contact' => 'prohibited']);
         $employee = DB::transaction(function () use ($request, $employee, $data) {
+            $accessAccounts = $data['status'] === 'archived' ? User::orderBy('id')->lockForUpdate()->get() : collect();
             $employee = HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            if ($data['status'] === 'archived' && app(HrAccess::class)->allows($employee->user, 'access.manage')) {
+                abort_unless($accessAccounts->contains(fn ($u) => $u->id !== $employee->user_id && app(HrAccess::class)->allows($u, 'access.manage')), 409, 'Keep another active HR access administrator before archiving this account.');
+            }
             abort_unless($employee->version === (int) $data['version'], 409, 'This employee record changed. Refresh before saving.');
             foreach (['manager_user_id', 'reviewer_user_id'] as $key) {
                 if (! empty($data[$key])) {
@@ -66,7 +70,11 @@ class EnrollmentController extends Controller
             $scheduleKeys = ['timezone', 'team', 'schedule_type', 'sched_in', 'sched_out'];
             $schedule = array_intersect_key($data, array_flip($scheduleKeys));
             if (isset($data['working_days'])) {
-                $schedule['weekly_schedule'] = collect(DtrSetting::WEEK_DAYS)->mapWithKeys(fn ($day) => [$day => ['on' => in_array($day, $data['working_days'], true), 'in' => $data['sched_in'] ?? $setting?->sched_in, 'out' => $data['sched_out'] ?? $setting?->sched_out]])->all();
+                $schedule['weekly_schedule'] = collect(DtrSetting::WEEK_DAYS)->mapWithKeys(function ($day) use ($data, $setting) {
+                    $previous = ($data['apply_default_hours'] ?? false) ? [] : ($setting?->weekly_schedule[$day] ?? []);
+
+                    return [$day => ['on' => in_array($day, $data['working_days'], true), 'in' => $previous['in'] ?? $data['sched_in'] ?? $setting?->sched_in, 'out' => $previous['out'] ?? $data['sched_out'] ?? $setting?->sched_out]];
+                })->all();
             }
             if ($schedule) {
                 $setting ??= new DtrSetting(['user_id' => $employee->user_id]);
@@ -74,7 +82,7 @@ class EnrollmentController extends Controller
                 $setting->is_complete = (bool) ($setting->timezone && $setting->team && $setting->schedule_type && ($setting->schedule_type === 'flexi' || ($setting->sched_in && $setting->sched_out)));
                 $setting->save();
             }
-            $fields = array_diff_key($data, array_flip([...$scheduleKeys, 'working_days', 'version']));
+            $fields = array_diff_key($data, array_flip([...$scheduleKeys, 'working_days', 'apply_default_hours', 'version']));
             $employee->fill($fields);
             if ($employee->status === 'active' && (! $setting?->is_complete || ! $employee->manager_user_id || ! $employee->reviewer_user_id)) {
                 throw ValidationException::withMessages(['status' => 'Complete the schedule and assign a Department Head and DTR reviewer before activation.']);

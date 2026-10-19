@@ -108,7 +108,8 @@ export default function Leave({ leaves, types, manager, today }) {
             notified_at: data.notified_at
                 ? new Date(data.notified_at).toISOString()
                 : null,
-        })).post("/leave", {
+        }));
+        form.post("/leave", {
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();

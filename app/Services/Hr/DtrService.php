@@ -41,9 +41,27 @@ class DtrService
         }
 
         return [...$entry->only(['id', 'time_in', 'time_out', 'tasks', 'remarks', 'hr_status', 'hr_version', 'work_location', 'meetings', 'people_assisted', 'blockers', 'tomorrow', 'declared_name', 'submitted_at']),
+            'can_edit' => $this->canEditDraft($entry),
             'review_comment' => HrDtrReview::where('dtr_entry_id', $entry->id)->latest('id')->value('comment'),
             'work_date' => $entry->work_date->toDateString(), 'working_seconds' => $seconds, 'break_seconds' => $break,
             'task_seconds' => (int) collect($entry->tasks ?? [])->sum('seconds'), 'time_source' => $entry->time_source];
+    }
+
+    public function canEditDraft(DtrEntry $entry): bool
+    {
+        if (! in_array($entry->hr_status, ['draft', 'returned'], true)) {
+            return false;
+        }
+        if ($entry->hr_status === 'returned') {
+            return true;
+        }
+        $setting = DtrSetting::where('user_id', $entry->user_id)->first();
+        $localNow = CarbonImmutable::instance(now($setting?->timezone ?? 'UTC'));
+        if ($entry->work_date->toDateString() === $localNow->toDateString()) {
+            return true;
+        }
+
+        return $entry->time_source === 'live' && HrShift::whereHas('employee', fn ($q) => $q->where('user_id', $entry->user_id))->whereDate('work_date', $entry->work_date)->where(fn ($q) => $q->whereNull('ended_at')->orWhereBetween('ended_at', [$localNow->startOfDay()->utc(), $localNow->utc()]))->exists();
     }
 
     public function saveDraft(HrEmployee $employee, array $validated): DtrEntry
@@ -55,7 +73,7 @@ class DtrService
             'work_location' => ['nullable', 'string', 'max:120'], 'tasks' => ['present', 'array', 'max:200'],
             'tasks.*.task' => ['required', 'string', 'max:2000'], 'tasks.*.status' => ['required', Rule::in(['done', 'in_progress', 'carried_over', 'todo'])],
             'tasks.*.category' => ['nullable', Rule::in(['client', 'admin', 'meeting', 'training', 'other'])], 'tasks.*.reference' => ['nullable', 'string', 'max:250'],
-            'tasks.*.start' => ['nullable', 'date_format:H:i'], 'tasks.*.end' => ['nullable', 'date_format:H:i'],
+            'tasks.*.start' => ['nullable', 'date_format:H:i,H:i:s'], 'tasks.*.end' => ['nullable', 'date_format:H:i,H:i:s'],
             'meetings' => ['nullable', 'integer', 'min:0', 'max:10000'], 'people_assisted' => ['nullable', 'integer', 'min:0', 'max:10000'],
             'blockers' => ['nullable', 'string', 'max:10000'], 'tomorrow' => ['nullable', 'string', 'max:10000'], 'remarks' => ['nullable', 'string', 'max:10000'],
         ])->validate();
@@ -66,8 +84,8 @@ class DtrService
             abort_unless((int) $entry->hr_version === (int) $data['expected_version'], 409, 'This record changed. Refresh before saving.');
             abort_unless(! $entry->exists || in_array($entry->hr_status, ['draft', 'returned'], true), 409, 'This record is locked. Request a reviewed correction.');
             $today = now($employee->schedule?->timezone ?? 'UTC')->toDateString();
-            if ($data['work_date'] !== $today && $entry->hr_status !== 'returned') {
-                throw ValidationException::withMessages(['work_date' => 'Only today or a returned record can be edited.']);
+            if ($entry->exists && ! $this->canEditDraft($entry) || ! $entry->exists && $data['work_date'] !== $today) {
+                throw ValidationException::withMessages(['work_date' => 'Only current-day records, the current overnight shift or returned records can be edited.']);
             }
             $data['tasks'] = $this->tasks($entry, $data['tasks']);
             unset($data['expected_version'], $data['work_date']);
@@ -266,29 +284,49 @@ class DtrService
             if (empty($task['start']) || empty($task['end'])) {
                 throw ValidationException::withMessages(['tasks' => 'Enter actual start and end times for work performed.']);
             }
-            $from = CarbonImmutable::parse($entry->work_date->toDateString().' '.$task['start'], $timezone)->utc();
-            $to = CarbonImmutable::parse($entry->work_date->toDateString().' '.$task['end'], $timezone)->utc();
-            if ($to->lessThanOrEqualTo($from)) {
-                $to = $to->addDay();
-            }
             $fits = false;
             foreach ($shifts as $shift) {
-                $f = $from;
-                $t = $to;
-                if ($f->lessThan($shift->started_at) && $shift->ended_at && $shift->started_at->setTimezone($timezone)->toDateString() !== $shift->ended_at->setTimezone($timezone)->toDateString()) {
-                    $f = $f->addDay();
-                    $t = $t->addDay();
-                }
+                // Resolve calendar rollover in the recorded shift timezone before converting to UTC.
+                $zone = $shift->timezone;
+                $date = $entry->work_date->toDateString();
+                $localFrom = CarbonImmutable::parse($date.' '.$task['start'], $zone);
                 $end = $shift->ended_at ?? CarbonImmutable::instance(now('UTC'));
-                if ($f->lessThan($shift->started_at) || $t->greaterThan($end)) {
-                    continue;
+                if ($localFrom->utc()->startOfMinute()->lessThan($shift->started_at->startOfMinute()) && $shift->started_at->setTimezone($zone)->toDateString() !== $end->setTimezone($zone)->toDateString()) {
+                    $localFrom = CarbonImmutable::parse($localFrom->addDay()->toDateString().' '.$task['start'], $zone);
                 }
-                $overlaps = $shift->breaks->contains(fn ($b) => $f->lessThan($b->ended_at ?? $end) && $t->greaterThan($b->started_at));
-                if (! $overlaps) {
-                    $fits = true;
-                    $from = $f;
-                    $to = $t;
-                    break;
+                $localTo = CarbonImmutable::parse($localFrom->toDateString().' '.$task['end'], $zone);
+                if ($localTo->lessThanOrEqualTo($localFrom)) {
+                    $localTo = CarbonImmutable::parse($localFrom->addDay()->toDateString().' '.$task['end'], $zone);
+                }
+                $segments = [];
+                $cursor = $shift->started_at;
+                foreach ($shift->breaks->sortBy('started_at') as $pause) {
+                    $breakStart = $pause->started_at->min($end);
+                    $breakEnd = ($pause->ended_at ?? $end)->min($end);
+                    if ($breakStart->greaterThan($cursor)) {
+                        $segments[] = [$cursor, $breakStart];
+                    }
+                    $cursor = $cursor->max($breakEnd);
+                }
+                if ($cursor->lessThan($end)) {
+                    $segments[] = [$cursor, $end];
+                }
+                foreach ($segments as [$segmentStart, $segmentEnd]) {
+                    $f = $localFrom->utc();
+                    $t = $localTo->utc();
+                    // Minute entries at a recorded boundary use its exact instant; never bridge a break.
+                    if (strlen($task['start']) === 5 && $f->startOfMinute()->equalTo($segmentStart->startOfMinute())) {
+                        $f = $segmentStart;
+                    }
+                    if (strlen($task['end']) === 5 && $t->startOfMinute()->equalTo($segmentEnd->startOfMinute())) {
+                        $t = $segmentEnd;
+                    }
+                    if ($f->greaterThanOrEqualTo($segmentStart) && $t->lessThanOrEqualTo($segmentEnd) && $t->greaterThan($f)) {
+                        $fits = true;
+                        $from = $f;
+                        $to = $t;
+                        break 2;
+                    }
                 }
             }
             if (! $fits) {

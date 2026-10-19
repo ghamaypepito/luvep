@@ -38,7 +38,9 @@ test("clock and breaks remain consistent across both portals and reload", async 
     await expect(page.getByText("Working", { exact: true })).toBeVisible();
     page.once("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "Clock out", exact: true }).click();
-    await expect(page.getByText("Off shift", { exact: true })).toBeVisible();
+    await expect(
+        page.getByText("Shift complete", { exact: true }),
+    ).toBeVisible();
     await page
         .getByRole("link", { name: "My time records", exact: true })
         .click();
@@ -83,7 +85,7 @@ test("failed clock actions show feedback and another tab refreshes the break sta
     page,
     context,
 }) => {
-    await login(page);
+    await login(page, "retry@example.test");
     await page.goto(hr);
     await page.route("**/clock", (route) =>
         route.request().method() === "POST" ? route.abort() : route.continue(),
@@ -109,7 +111,9 @@ test("failed clock actions show feedback and another tab refreshes the break sta
     await page.getByRole("button", { name: "I’m back · resume work" }).click();
     page.once("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "Clock out", exact: true }).click();
-    await expect(page.getByText("Off shift", { exact: true })).toBeVisible();
+    await expect(
+        page.getByText("Shift complete", { exact: true }),
+    ).toBeVisible();
     await other.close();
 });
 
@@ -141,11 +145,9 @@ test("private documents, exact policy versions and HR replies remain scoped", as
     await expect(
         page.getByRole("heading", { name: "Synthetic agreement" }),
     ).toBeVisible();
-    const doc = page
-        .locator("section.hr-panel")
-        .filter({
-            has: page.getByRole("heading", { name: "Synthetic agreement" }),
-        });
+    const doc = page.locator("section.hr-panel").filter({
+        has: page.getByRole("heading", { name: "Synthetic agreement" }),
+    });
     const download = await doc
         .getByRole("link", { name: "Download", exact: true })
         .getAttribute("href");
@@ -173,21 +175,17 @@ test("private documents, exact policy versions and HR replies remain scoped", as
     ).not.toBeVisible();
     await page.goto(`${hr}/policies`);
     await page.getByText("Create a policy draft", { exact: true }).click();
-    const create = page
-        .locator("details")
-        .filter({
-            has: page.getByText("Create a policy draft", { exact: true }),
-        });
+    const create = page.locator("details").filter({
+        has: page.getByText("Create a policy draft", { exact: true }),
+    });
     await create.getByLabel("Policy title").fill("Synthetic workplace policy");
     await create.getByLabel("Policy text").fill("First published policy text.");
     await create.getByRole("button", { name: "Save draft" }).click();
-    const draft = page
-        .locator("details")
-        .filter({
-            has: page.getByText("Edit draft · Synthetic workplace policy", {
-                exact: true,
-            }),
-        });
+    const draft = page.locator("details").filter({
+        has: page.getByText("Edit draft · Synthetic workplace policy", {
+            exact: true,
+        }),
+    });
     await draft.locator("summary").click();
     page.once("dialog", (d) => d.accept());
     await draft.getByRole("button", { name: "Publish new version" }).click();

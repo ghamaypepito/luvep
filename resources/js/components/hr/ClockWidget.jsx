@@ -38,7 +38,9 @@ function Attendance({ hr }) {
                                 ? {
                                       working: "Working",
                                       on_break: "On break",
-                                      off_shift: "Off shift",
+                                      off_shift: state.completed_today
+                                          ? "Shift complete"
+                                          : "Off shift",
                                   }[state.status]
                                 : "Loading your clock…"}
                         </strong>
@@ -68,7 +70,7 @@ function Attendance({ hr }) {
                         {state?.status === "off_shift" ? (
                             <button
                                 className="hr-button"
-                                disabled={disabled}
+                                disabled={disabled || !state.can_clock_in}
                                 onClick={() => transition("clock_in")}
                             >
                                 Clock in
@@ -109,6 +111,12 @@ function Attendance({ hr }) {
                     </div>
                 )}
             </div>
+            {state?.completed_today && (
+                <p className="hr-clock-paused">
+                    Your shift is complete. Open My time records to finish your
+                    DTR, or ask HR for a clock correction.
+                </p>
+            )}
             {state?.status === "on_break" && (
                 <p className="hr-clock-paused">Work time is paused.</p>
             )}
