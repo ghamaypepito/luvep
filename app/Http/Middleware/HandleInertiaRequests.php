@@ -35,8 +35,18 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if (config('hr.enabled') && str_starts_with($request->route()?->getName() ?? '', 'hr.')) {
+            $context = app(\App\Services\Hr\HrContext::class);
+            $hr = $context->props($request);
+            $user = $hr['preview'] ? $context->subject($request)->user : $request->user();
+
+            return [...parent::share($request), 'auth' => ['user' => $user?->only(['id', 'name', 'email', 'avatar_url']), 'modules' => [], 'portals' => [], 'can_manage_modules' => false],
+                'notifications' => ['unread_count' => $hr['preview'] ? 0 : ($request->user()?->unreadNotifications()->count() ?? 0)], 'hr' => $hr, 'flash' => ['success' => $request->session()->get('success'), 'error' => $request->session()->get('error')]];
+        }
+
         return [
             ...parent::share($request),
+            'hr' => fn () => config('hr.enabled') && $request->user() ? app(\App\Services\Hr\HrContext::class)->props($request) : null,
             'auth' => [
                 'user' => $request->user(),
                 // Drives the topbar AI button + lead health badge. True only

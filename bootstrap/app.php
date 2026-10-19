@@ -19,7 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
             '/stripe/webhook',
             '/webhook/zernio',
         ]);
-        $middleware->web(append: [
+        $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\RestrictHrHost::class);
+        $middleware->web(replace: [\Illuminate\Session\Middleware\StartSession::class => \App\Http\Middleware\StartLuvepSharedSession::class], append: [
+            \App\Http\Middleware\RestrictHrHost::class,
+            \App\Http\Middleware\BlockHrPreviewWrites::class,
+            \App\Http\Middleware\ProtectHrLegacyDtr::class,
             HandleInertiaRequests::class,
             \App\Http\Middleware\EnsureAccountActive::class,
             \App\Http\Middleware\EnsureNotInMaintenance::class,

@@ -16,7 +16,7 @@ class NotificationFormatter
 {
     /**
      * @param  array{id?:string,type?:string,data?:array,read_at?:mixed,created_at?:mixed}  $notification
-     *         A serialized notification (or an array with `type` short name + `data`).
+     *                                                                                                     A serialized notification (or an array with `type` short name + `data`).
      * @return array{icon:string,color:string,title:string,body:string,url:?string,type:string}
      */
     public static function format(array $notification): array
@@ -30,73 +30,74 @@ class NotificationFormatter
         $url = $data['link'] ?? $data['url'] ?? null;
 
         $meta = match ($type) {
+            'HrActionRequired' => ['icon' => 'Bell', 'color' => 'emerald', 'title' => $data['title'] ?? 'Luvep HR update'],
             'VisaTypePriceChanged' => [
-                'icon'  => 'DollarSign',
+                'icon' => 'DollarSign',
                 'color' => 'amber',
                 'title' => $data['title'] ?? 'Visa pricing updated',
             ],
             'LeadAssignedToYou' => [
-                'icon'  => 'UserPlus',
+                'icon' => 'UserPlus',
                 'color' => 'blue',
                 'title' => $data['title'] ?? 'Lead assigned to you',
             ],
             'DocumentSubmittedForReview' => [
-                'icon'  => 'FileText',
+                'icon' => 'FileText',
                 'color' => 'emerald',
                 'title' => $data['title'] ?? 'Document submitted for review',
             ],
             'LeadInfoUpdated' => [
-                'icon'  => 'UserPen',
+                'icon' => 'UserPen',
                 'color' => 'blue',
                 'title' => $data['title'] ?? 'Lead updated their details',
             ],
             'LeadConvertedToDepartment' => [
-                'icon'  => 'ArrowRightLeft',
+                'icon' => 'ArrowRightLeft',
                 'color' => 'blue',
                 'title' => $data['title'] ?? 'New department lead',
             ],
             'NewRegistrationReceived' => [
-                'icon'  => 'UserPlus',
+                'icon' => 'UserPlus',
                 'color' => 'emerald',
                 'title' => $data['title'] ?? 'New registration',
             ],
             'TaskAssigned' => [
-                'icon'  => 'CheckSquare',
+                'icon' => 'CheckSquare',
                 'color' => 'amber',
                 'title' => $data['title'] ?? 'New task assigned to you',
             ],
             'TicketSubmitted' => [
-                'icon'  => 'Ticket',
+                'icon' => 'Ticket',
                 'color' => 'amber',
                 'title' => $data['title'] ?? 'New system request',
             ],
             'TicketUpdated' => [
-                'icon'  => 'Ticket',
+                'icon' => 'Ticket',
                 'color' => 'blue',
                 'title' => $data['title'] ?? 'Your request was updated',
             ],
             'AiCriticalLeadAlert' => [
-                'icon'  => 'AlertTriangle',
+                'icon' => 'AlertTriangle',
                 'color' => 'red',
                 'title' => $data['title'] ?? 'AI flagged a lead as critical',
             ],
             'AiCriticalCaseAlert' => [
-                'icon'  => 'AlertTriangle',
+                'icon' => 'AlertTriangle',
                 'color' => 'red',
                 'title' => $data['title'] ?? 'AI flagged a case as critical',
             ],
             'AgreementSigned' => [
-                'icon'  => 'FileSignature',
+                'icon' => 'FileSignature',
                 'color' => 'emerald',
                 'title' => $data['title'] ?? 'Agreement signed',
             ],
             'AgreementSignedNotification' => [
-                'icon'  => 'FileSignature',
+                'icon' => 'FileSignature',
                 'color' => 'emerald',
                 'title' => $data['title'] ?? 'Agreement signed',
             ],
             default => [
-                'icon'  => 'Bell',
+                'icon' => 'Bell',
                 'color' => 'gray',
                 // Fall back to a humanized class name as the title.
                 'title' => $data['title'] ?? self::humanize($type),
@@ -108,12 +109,12 @@ class NotificationFormatter
         $body = $data['body'] ?? self::fallbackBody($data);
 
         return [
-            'type'  => $type,
-            'icon'  => $meta['icon'],
+            'type' => $type,
+            'icon' => $meta['icon'],
             'color' => $meta['color'],
             'title' => $meta['title'],
-            'body'  => $body,
-            'url'   => $url,
+            'body' => $body,
+            'url' => $url,
         ];
     }
 

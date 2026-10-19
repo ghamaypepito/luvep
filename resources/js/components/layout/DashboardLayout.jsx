@@ -1,3 +1,6 @@
+import ProfileMenu from '../hr/ProfileMenu';
+import PreviewBanner from '../hr/PreviewBanner';
+import '../../../css/hr.css';
 import { Link, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound } from "lucide-react";
@@ -24,6 +27,7 @@ const portalIcon = (key) => {
     const Icon = PORTAL_ICONS[key] || LayoutGrid;
     return <Icon size={20} />;
 };
+import ClockWidget from "@/components/hr/ClockWidget";
 import NotificationBell from "@/components/NotificationBell";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import RequestTicketButton from "@/components/RequestTicketButton";
@@ -52,6 +56,7 @@ export default function DashboardLayout({
     settingsHref = null,
     footerNav = [],
 }) {
+    const { hr } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { url, props } = usePage();
     const user = props.auth?.user;
@@ -76,6 +81,7 @@ export default function DashboardLayout({
     // "Portals" group when the user can reach more than one portal.
     const navWithPortals = [
         ...nav,
+        ...(hr?.enabled && (hr?.employee || Object.values(hr?.permissions || {}).some(Boolean)) ? [{name: "HR Portal", href: "/portal/hr/dashboard", icon: <LayoutGrid size={20} />}]: []),
         ...(moduleExtras.length > 0 ? [{ section: true, name: "Tools" }, ...moduleExtras] : []),
         ...(portals.length > 1
             ? [{
@@ -439,6 +445,7 @@ export default function DashboardLayout({
                                 <p className="text-sm font-semibold text-gray-900">{user?.name || "User"}</p>
                                 {user?.role && <p className="text-[11px] text-gray-500 capitalize">{user.role}</p>}
                             </div>
+                            {hr?.enabled && (hr?.employee || hr?.permissions?.preview) ? <ProfileMenu /> : (
                             <div
                                 className={`flex items-center justify-center w-9 h-9 rounded-full overflow-hidden ${accent} text-white font-bold text-sm shadow-md ring-2 ring-white`}
                             >
@@ -446,10 +453,12 @@ export default function DashboardLayout({
                                     {user?.name?.charAt(0)?.toUpperCase() || "U"}
                                 </AvatarPhoto>
                             </div>
+                            )}
                         </div>
                     </div>
                 </header>
 
+                <PreviewBanner />
                 {/* Content */}
                 <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-2">
                     {/* Cross-portal admin banner — shown when an admin user is viewing a department portal. */}
@@ -465,6 +474,7 @@ export default function DashboardLayout({
                         </div>
                     )}
                     <h1 className="text-2xl font-bold text-gray-900 lg:hidden mb-6 tracking-tight">{getPageTitle()}</h1>
+                    <ClockWidget />
                     {children}
                 </main>
             </div>

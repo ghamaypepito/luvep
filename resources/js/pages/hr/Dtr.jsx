@@ -1,0 +1,511 @@
+import { hrPath } from "@/lib/hrPath";
+import { Head, useForm, usePage, router } from "@inertiajs/react";
+import { useState, useEffect } from "react";
+export const duration = (seconds) =>
+    `${Math.floor((seconds || 0) / 3600)}h ${Math.floor(((seconds || 0) % 3600) / 60)}m`;
+export function Errors({ errors }) {
+    return (
+        Object.keys(errors).length > 0 && (
+            <div className="hr-error" role="alert">
+                {Object.entries(errors).map(([key, value]) => (
+                    <p key={key}>{value}</p>
+                ))}
+            </div>
+        )
+    );
+}
+export function RecordDetails({ entry }) {
+    return (
+        <>
+            <dl className="hr-profile-grid">
+                {[
+                    [
+                        "Clock in / out",
+                        `${entry.time_in || "—"} / ${entry.time_out || "—"}`,
+                    ],
+                    ["Working time", duration(entry.working_seconds)],
+                    ["Breaks", duration(entry.break_seconds)],
+                    ["Task time", duration(entry.task_seconds)],
+                    ["Work location", entry.work_location || "—"],
+                    [
+                        "Meetings / people assisted",
+                        `${entry.meetings ?? 0} / ${entry.people_assisted ?? 0}`,
+                    ],
+                ].map(([label, value]) => (
+                    <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                    </div>
+                ))}
+            </dl>
+            <div className="hr-table-wrap">
+                <table>
+                    <caption className="sr-only">Tasks</caption>
+                    <thead>
+                        <tr>
+                            <th>Task</th>
+                            <th>Time</th>
+                            <th>Category / reference</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {(entry.tasks || []).map((task, index) => (
+                            <tr key={index}>
+                                <td>{task.task || task.description}</td>
+                                <td>
+                                    {task.start || "—"} – {task.end || "—"}
+                                </td>
+                                <td>
+                                    {task.category || "—"} /{" "}
+                                    {task.reference || "—"}
+                                </td>
+                                <td>{task.status?.replaceAll("_", " ")}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {[
+                ["Blockers", entry.blockers],
+                ["Tomorrow", entry.tomorrow],
+                ["Notes", entry.remarks],
+            ].map(
+                ([label, text]) =>
+                    text && (
+                        <p key={label}>
+                            <strong>{label}: </strong>
+                            {text}
+                        </p>
+                    ),
+            )}
+            {entry.submitted_at && (
+                <p>
+                    Declared by {entry.declared_name} ·{" "}
+                    {new Date(entry.submitted_at).toLocaleString()}
+                </p>
+            )}
+        </>
+    );
+}
+function Editor({ entry, locked }) {
+    const form = useForm({
+        work_date: entry.work_date,
+        expected_version: entry.hr_version,
+        work_location: entry.work_location || "",
+        tasks: (entry.tasks || []).map((t) => ({
+            task: t.task || "",
+            start: t.start || "",
+            end: t.end || "",
+            category: t.category || "other",
+            reference: t.reference || "",
+            status: t.status || "todo",
+        })),
+        meetings: entry.meetings ?? 0,
+        people_assisted: entry.people_assisted ?? 0,
+        blockers: entry.blockers || "",
+        tomorrow: entry.tomorrow || "",
+        remarks: entry.remarks || "",
+    });
+    const declaration = useForm({
+        version: entry.hr_version,
+        declaration: false,
+    });
+    const editable = !locked && ["draft", "returned"].includes(entry.hr_status);
+    const updateTask = (index, key, value) =>
+        form.setData(
+            "tasks",
+            form.data.tasks.map((t, i) =>
+                i === index ? { ...t, [key]: value } : t,
+            ),
+        );
+    if (!editable) return <RecordDetails entry={entry} />;
+    return (
+        <>
+            {entry.review_comment && (
+                <p role="status">
+                    <strong>Reviewer feedback:</strong> {entry.review_comment}
+                </p>
+            )}
+            <p>
+                Working time: <strong>{duration(entry.working_seconds)}</strong>{" "}
+                · Breaks: {duration(entry.break_seconds)}. Record actual work
+                periods; split tasks around breaks. Minute entries at a clock or
+                break boundary use its recorded seconds.
+            </p>
+            <form
+                className="hr-form hr-form-wide"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    form.post(hrPath("/dtr"), { preserveScroll: true });
+                }}
+            >
+                <Errors errors={form.errors} />
+                <label>
+                    Work location
+                    <input
+                        value={form.data.work_location}
+                        maxLength={120}
+                        onChange={(e) =>
+                            form.setData("work_location", e.target.value)
+                        }
+                    />
+                </label>
+                <fieldset disabled={form.processing}>
+                    <legend>Tasks</legend>
+                    {form.data.tasks.map((task, index) => (
+                        <div className="hr-task-editor" key={index}>
+                            <label>
+                                Task {index + 1}
+                                <textarea
+                                    value={task.task}
+                                    maxLength={2000}
+                                    onChange={(e) =>
+                                        updateTask(
+                                            index,
+                                            "task",
+                                            e.target.value,
+                                        )
+                                    }
+                                />
+                            </label>
+                            <div className="hr-field-grid">
+                                {["start", "end"].map((key) => (
+                                    <label key={key}>
+                                        {key === "start"
+                                            ? "Started"
+                                            : "Finished"}
+                                        <input
+                                            type="time"
+                                            step="1"
+                                            value={task[key]}
+                                            onChange={(e) =>
+                                                updateTask(
+                                                    index,
+                                                    key,
+                                                    e.target.value,
+                                                )
+                                            }
+                                        />
+                                    </label>
+                                ))}
+                                <label>
+                                    Category
+                                    <select
+                                        value={task.category}
+                                        onChange={(e) =>
+                                            updateTask(
+                                                index,
+                                                "category",
+                                                e.target.value,
+                                            )
+                                        }
+                                    >
+                                        {[
+                                            "client",
+                                            "admin",
+                                            "meeting",
+                                            "training",
+                                            "other",
+                                        ].map((v) => (
+                                            <option key={v}>{v}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label>
+                                    Status
+                                    <select
+                                        value={task.status}
+                                        onChange={(e) =>
+                                            updateTask(
+                                                index,
+                                                "status",
+                                                e.target.value,
+                                            )
+                                        }
+                                    >
+                                        {[
+                                            "todo",
+                                            "in_progress",
+                                            "done",
+                                            "carried_over",
+                                        ].map((v) => (
+                                            <option key={v} value={v}>
+                                                {v.replaceAll("_", " ")}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <label>
+                                Client or reference
+                                <input
+                                    value={task.reference}
+                                    maxLength={250}
+                                    onChange={(e) =>
+                                        updateTask(
+                                            index,
+                                            "reference",
+                                            e.target.value,
+                                        )
+                                    }
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                className="hr-button-secondary"
+                                onClick={() =>
+                                    form.setData(
+                                        "tasks",
+                                        form.data.tasks.filter(
+                                            (_, i) => i !== index,
+                                        ),
+                                    )
+                                }
+                            >
+                                Remove task {index + 1}
+                            </button>
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        className="hr-button-secondary"
+                        onClick={() =>
+                            form.setData("tasks", [
+                                ...form.data.tasks,
+                                {
+                                    task: "",
+                                    start: "",
+                                    end: "",
+                                    category: "other",
+                                    reference: "",
+                                    status: "todo",
+                                },
+                            ])
+                        }
+                    >
+                        Add task
+                    </button>
+                </fieldset>
+                <div className="hr-field-grid">
+                    {[
+                        ["meetings", "Meetings"],
+                        ["people_assisted", "People assisted"],
+                    ].map(([key, label]) => (
+                        <label key={key}>
+                            {label}
+                            <input
+                                type="number"
+                                min="0"
+                                max="10000"
+                                value={form.data[key]}
+                                onChange={(e) =>
+                                    form.setData(key, e.target.value)
+                                }
+                            />
+                        </label>
+                    ))}
+                </div>
+                {[
+                    ["blockers", "Blockers or support needed"],
+                    ["tomorrow", "Plans for tomorrow"],
+                    ["remarks", "Additional notes"],
+                ].map(([key, label]) => (
+                    <label key={key}>
+                        {label}
+                        <textarea
+                            value={form.data[key]}
+                            maxLength={10000}
+                            onChange={(e) => form.setData(key, e.target.value)}
+                        />
+                    </label>
+                ))}
+                <div>
+                    <button className="hr-button" disabled={form.processing}>
+                        {form.processing ? "Saving…" : "Save draft"}
+                    </button>
+                </div>
+            </form>
+            <form
+                className="hr-form"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    declaration.post(hrPath(`/dtr/${entry.id}/submit`), {
+                        preserveScroll: true,
+                    });
+                }}
+            >
+                <Errors errors={declaration.errors} />
+                <label className="hr-checkbox">
+                    <input
+                        type="checkbox"
+                        checked={declaration.data.declaration}
+                        onChange={(e) =>
+                            declaration.setData("declaration", e.target.checked)
+                        }
+                    />
+                    I confirm this record accurately reflects my work and
+                    attendance.
+                </label>
+                <p>
+                    Save all changes before submitting. Submitted records are
+                    locked for review.
+                </p>
+                <div>
+                    <button
+                        className="hr-button-secondary"
+                        disabled={
+                            form.isDirty ||
+                            form.processing ||
+                            declaration.processing ||
+                            !declaration.data.declaration
+                        }
+                    >
+                        Submit for review
+                    </button>
+                </div>
+            </form>
+        </>
+    );
+}
+export default function Dtr({ entries, weeks, today }) {
+    const { hr } = usePage().props;
+    useEffect(() => {
+        const changed = () => router.reload({ only: ["entries", "today"] });
+        window.addEventListener("hr-clock-changed", changed);
+        return () => window.removeEventListener("hr-clock-changed", changed);
+    }, []);
+    const [selected, select] = useState(entries[0]?.id);
+    const entry = entries.find((e) => e.id === selected) || entries[0];
+    const week = useForm({ week_start: "", declaration: false });
+    return (
+        <>
+            <Head title="My time records · Luvep" />
+            <div className="hr-page-heading">
+                <h1>My time records</h1>
+                <p>Your attendance, work and review history in one place.</p>
+            </div>
+            <section className="hr-panel">
+                <div className="hr-section-bar">
+                    <h2>Daily record</h2>
+                    <label className="hr-select-label">
+                        Date
+                        <select
+                            value={entry?.id || ""}
+                            onChange={(e) => select(Number(e.target.value))}
+                        >
+                            {entries.map((e) => (
+                                <option key={e.id} value={e.id}>
+                                    {e.work_date} · {e.hr_status}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                {entry ? (
+                    <>
+                        <div className="hr-section-bar">
+                            <span className="hr-status">{entry.hr_status}</span>
+                            <a
+                                className="hr-button-secondary"
+                                href={hrPath(`/dtr/report?date=${entry.work_date}`)}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                Print daily record
+                            </a>
+                        </div>
+                        <Editor
+                            key={`${entry.id}:${entry.hr_version}`}
+                            entry={entry}
+                            locked={!!hr.preview || !entry.can_edit}
+                        />
+                    </>
+                ) : (
+                    <p>
+                        No time records yet. Clock in to begin your first
+                        working day.
+                    </p>
+                )}
+            </section>
+            <section className="hr-panel">
+                <h2>Weekly declaration</h2>
+                <p>
+                    Submit a completed week after your daily records have been
+                    reviewed.
+                </p>
+                {!hr.preview && (
+                    <form
+                        className="hr-form"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            week.post(hrPath("/dtr/week/sign"), {
+                                preserveScroll: true,
+                            });
+                        }}
+                    >
+                        <Errors errors={week.errors} />
+                        <label>
+                            Week beginning (Monday)
+                            <input
+                                type="date"
+                                required
+                                value={week.data.week_start}
+                                onChange={(e) =>
+                                    week.setData("week_start", e.target.value)
+                                }
+                            />
+                        </label>
+                        <label className="hr-checkbox">
+                            <input
+                                type="checkbox"
+                                checked={week.data.declaration}
+                                onChange={(e) =>
+                                    week.setData(
+                                        "declaration",
+                                        e.target.checked,
+                                    )
+                                }
+                            />
+                            I confirm the daily records for this week are
+                            complete and accurate.
+                        </label>
+                        <div>
+                            <button
+                                className="hr-button"
+                                disabled={
+                                    week.processing || !week.data.declaration
+                                }
+                            >
+                                Submit weekly record
+                            </button>
+                        </div>
+                    </form>
+                )}
+                <ul className="hr-employee-list">
+                    {weeks.map((w) => (
+                        <li key={w.id}>
+                            <div>
+                                <strong>Week of {w.week_start}</strong>
+                                <p>
+                                    {w.status}
+                                    {w.review_comment
+                                        ? ` · ${w.review_comment}`
+                                        : ""}
+                                </p>
+                            </div>
+                            <a
+                                className="hr-button-secondary"
+                                href={hrPath(`/dtr/report?week=${w.week_start}`)}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                Print week
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </section>
+        </>
+    );
+}

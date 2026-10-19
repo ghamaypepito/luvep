@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { Toaster } from 'sonner';
 import '../css/app.css';
 
+import HrLayout from './components/layout/HrLayout';
 import AdminLayout from './components/layout/AdminLayout';
 import SalesLayout from './components/layout/SalesLayout';
 import EducationLayout from './components/layout/EducationLayout';
@@ -62,7 +63,9 @@ createInertiaApp({
     // resolve to AdminLayout through RoleLayout).
     const ROLE_CHROME_PAGES = ['admin/PortalInvitations'];
 
-    if (ROLE_CHROME_PAGES.includes(name)) {
+    if (name.startsWith('hr/')) {
+      page.default.layout = page.default.layout || ((page) => <HrLayout>{page}</HrLayout>);
+    } else if (ROLE_CHROME_PAGES.includes(name)) {
       page.default.layout = page.default.layout || ((page) => <RoleLayout>{page}</RoleLayout>);
     } else if (name.startsWith('admin/')) {
       page.default.layout = page.default.layout || ((page) => <AdminLayout>{page}</AdminLayout>);
@@ -86,8 +89,12 @@ createInertiaApp({
       <>
         <App {...props} />
         <FlashToaster />
-        <FloatingContact />
-        <MobileStickyCTA />
+        {!props.initialPage.component.startsWith('hr/') && (
+          <>
+            <FloatingContact />
+            <MobileStickyCTA />
+          </>
+        )}
         <ConfirmHost />
         <Toaster position="top-right" richColors closeButton />
       </>

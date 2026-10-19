@@ -14,6 +14,7 @@ export default function FloatingContact() {
 
     // Public site only — kill switch on internal surfaces.
     const isInternal =
+        page?.component?.startsWith("hr/") ||
         url.startsWith("/admin") ||
         url.startsWith("/portal") ||
         url.startsWith("/login");
