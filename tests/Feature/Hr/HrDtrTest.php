@@ -226,9 +226,20 @@ class HrDtrTest extends TestCase
         [$e,,$entry] = $this->fixture();
         $service = app(DtrService::class);
         $data = $this->data($entry);
-        $service->saveDraft($e,$data);
-        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr',$data)->assertStatus(409);
-        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/correct',['version' => 1, 'reason' => 'Changed', 'intervals' => [['shift_id' => 1]]])->assertForbidden();
-        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/review',['version' => 1, 'decision' => 'reviewed'])->assertForbidden();
+        $service->saveDraft($e, $data);
+        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr', $data)->assertStatus(409);
+        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/correct', ['version' => 1, 'reason' => 'Changed', 'intervals' => [['shift_id' => 1]]])->assertForbidden();
+        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/review', ['version' => 1, 'decision' => 'reviewed'])->assertForbidden();
+    }
+
+    public function test_correction_editor_requires_explicit_grant_and_closed_live_record(): void
+    {
+        [$e,$reviewer,$entry] = $this->fixture();
+        $url = 'https://hr.luvep.com/dtr/corrections?employee_id='.$e->id.'&date=2026-10-19';
+        $this->withoutVite();
+        $this->actingAs($reviewer)->get($url)->assertForbidden();
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $this->actingAs($admin)->get($url)->assertOk()->assertInertia(fn (\Inertia\Testing\AssertableInertia $p) => $p->has('record.shifts', 1)->where('record.employee_name', $e->user->name));
+        $this->withSession(['hr_preview_employee_id' => $e->id])->get($url)->assertForbidden();
     }
 }

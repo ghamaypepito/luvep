@@ -33,6 +33,8 @@ export default function HrLayout({ children }) {
     if (hr?.employee) links.push(["/dtr", "My time records", Clock3]);
     if (hr?.permissions?.["dtr.review"])
         links.push(["/dtr/review", "Time reviews", ClipboardCheck]);
+    if (hr?.permissions?.["dtr.correct"])
+        links.push(["/dtr/corrections", "Time corrections", Clock3]);
     links.push(["/checklists", "Onboarding & exits", ListChecks]);
     links.push(["/reports", "Reports", ClipboardCheck]);
     links.push(["/milestones", "Milestones", CalendarDays]);

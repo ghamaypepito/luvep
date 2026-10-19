@@ -59,6 +59,7 @@ $hrRoutes = function () {
         Route::post('/leave/{leave}/cancel', [\App\Http\Controllers\Hr\LeaveController::class, 'cancel'])->name('leave.cancel');
         Route::get('/dtr/report', \App\Http\Controllers\Hr\DtrReportController::class)->name('dtr.report');
         Route::get('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'index'])->name('dtr');
+        Route::get('/dtr/corrections', [\App\Http\Controllers\Hr\DtrController::class, 'corrections'])->name('dtr.corrections');
         Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
         Route::post('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'store'])->name('dtr.store');
         Route::post('/dtr/week/sign', [\App\Http\Controllers\Hr\DtrController::class, 'signWeek'])->name('dtr.week.sign');

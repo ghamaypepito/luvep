@@ -42,6 +42,25 @@ class DtrController extends Controller
         return $this->result($request, app(DtrService::class)->review($request->user(), $entry, $data['decision'], $data['comment'] ?? '', (int) $data['version']));
     }
 
+    public function corrections(Request $request)
+    {
+        abort_if(app(HrContext::class)->isPreview($request), 403);
+        abort_unless(app(HrAccess::class)->allows($request->user(), 'dtr.correct'), 403);
+        $filters = $request->validate(['employee_id' => 'nullable|integer|exists:hr_employees,id', 'date' => 'nullable|date_format:Y-m-d']);
+        $employees = HrEmployee::with('user')->get()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name]);
+        $record = null;
+        if (! empty($filters['employee_id']) && ! empty($filters['date'])) {
+            $employee = HrEmployee::findOrFail($filters['employee_id']);
+            $entry = DtrEntry::where('user_id', $employee->user_id)->whereDate('work_date', $filters['date'])->first();
+            if ($entry) {
+                $shifts = \App\Models\HrShift::with('breaks')->where('hr_employee_id', $employee->id)->whereDate('work_date', $filters['date'])->orderBy('started_at')->get();
+                $record = [...app(DtrService::class)->row($entry), 'employee_name' => $employee->user->name, 'timezone' => $employee->schedule?->timezone ?? 'UTC', 'can_correct' => $shifts->isNotEmpty() && ! $shifts->contains(fn ($s) => ! $s->ended_at), 'shifts' => $shifts->map(fn ($s) => ['shift_id' => $s->id, 'started_at' => $s->started_at->utc()->format('Y-m-d\TH:i:s'), 'ended_at' => $s->ended_at?->utc()->format('Y-m-d\TH:i:s'), 'breaks' => $s->breaks->map(fn ($b) => ['started_at' => $b->started_at->utc()->format('Y-m-d\TH:i:s'), 'ended_at' => $b->ended_at?->utc()->format('Y-m-d\TH:i:s')])])];
+            }
+        }
+
+        return Inertia::render('hr/DtrCorrections', compact('employees', 'record', 'filters'));
+    }
+
     public function correct(Request $request, DtrEntry $entry)
     {
         $data = $request->validate(['version' => 'required|integer|min:0', 'reason' => 'required|string|max:5000', 'intervals' => 'required|array|min:1']);
