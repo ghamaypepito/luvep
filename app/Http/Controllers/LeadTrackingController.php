@@ -119,7 +119,7 @@ class LeadTrackingController extends Controller
                 : $this->buildTimeline($lead),
             // Immigration cases get the visa-type-specific checklist.
             // General leads / students ALWAYS get the general Document Checklist
-            // (the 16 required docs), regardless of any inz_visa_type they may
+            // (the education intake documents), regardless of any inz_visa_type they may
             // carry — the registration form's "Visa applying for" is just an
             // interest field for staff and must not connect the tracker to an
             // immigration visa's checklist. Only a real immigration case
@@ -686,7 +686,7 @@ class LeadTrackingController extends Controller
         abort_unless($doc->source === LeadDocument::SOURCE_UPLOAD, 403);
 
         // Respect the staff tracker-visibility toggle.
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
 
         $disk = $this->resolveUploadDisk($doc->file_path);
@@ -889,7 +889,7 @@ class LeadTrackingController extends Controller
         // Files uploaded against a checklist item staff have hidden from the
         // tracker are excluded here too, so hiding an item also hides any
         // file already attached to it.
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
         return $lead->documents()
             ->orderByDesc('created_at')
@@ -933,7 +933,7 @@ class LeadTrackingController extends Controller
      */
     private function sharedDocuments(Lead $lead, string $code): array
     {
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         $labels = \App\Services\Immigration\EngagementDocumentGenerator::DOCS;
 
         return $lead->documents()
@@ -1011,7 +1011,7 @@ class LeadTrackingController extends Controller
         abort_unless($isShared, 403);
 
         // Respect the same tracker-visibility toggle staff use elsewhere.
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
 
         abort_unless($doc->file_path && Storage::disk('local')->exists($doc->file_path), 404);
@@ -1377,7 +1377,7 @@ class LeadTrackingController extends Controller
      */
     private function universalTopItems(Lead $lead, $docsByKey): array
     {
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         // The Information Form is "Student Visa Information Form" for student
         // visas, plain "Visa Information Form" everywhere else.
         $isStudent = str_contains(strtolower((string) $lead->inz_visa_type), 'student');
@@ -1454,11 +1454,11 @@ class LeadTrackingController extends Controller
             ->get()
             ->groupBy('checklist_key');
 
-        $items = is_array($visa->checklist_items) ? $visa->checklist_items : [];
+        $items = app(\App\Services\Immigration\CaseChecklistService::class)->consolidateAliases($lead, is_array($visa->checklist_items) ? $visa->checklist_items : []);
 
         // Drop any checklist items staff have hidden from the tracker for
         // this specific case.
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         if (! empty($hidden)) {
             $items = collect($items)
                 ->reject(fn ($it) => in_array($it['key'] ?? null, $hidden, true))
@@ -1468,7 +1468,7 @@ class LeadTrackingController extends Controller
 
         $decorated = collect($items)->map(function ($item) use ($docsByKey) {
             $key = $item['key'] ?? null;
-            $docs = $key ? ($docsByKey->get($key) ?? collect()) : collect();
+            $docs = collect(array_merge([$key], $item['aliases'] ?? []))->flatMap(fn ($uploadKey) => $docsByKey->get($uploadKey) ?? collect());
 
             // Status is whichever the "best" doc landed on:
             //   Approved > Submitted/UnderReview > Rejected > none.
@@ -1485,6 +1485,7 @@ class LeadTrackingController extends Controller
 
             return [
                 'key' => $key,
+                'aliases' => $item['aliases'] ?? [],
                 'label' => $item['label'] ?? '',
                 // Section heading. Null for visas saved before Section became
                 // its own field — the tracker then falls back to splitting a
@@ -1560,16 +1561,20 @@ class LeadTrackingController extends Controller
     {
         // Only the client-facing sections, and only those (drops the internal
         // immigration/financial sections that made the list balloon to 50+).
-        $sections = collect(config('lead_document_checklist.sections', []))
-            ->filter(fn ($s) => in_array($s['section'] ?? null, self::TRACKER_SECTIONS, true))
-            ->all();
+        $sections = $lead->is_immigration_case
+            ? collect(config('lead_document_checklist.sections', []))
+                ->filter(fn ($s) => in_array($s['section'] ?? null, self::TRACKER_SECTIONS, true))->all()
+            : config('lead_document_checklist.education_sections', []);
+        $sectionOrder = $lead->is_immigration_case
+            ? self::TRACKER_SECTIONS
+            : array_column($sections, 'section');
 
         $docsByKey = $lead->documents()
             ->whereNotNull('checklist_key')
             ->get()
             ->groupBy('checklist_key');
 
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
         // Staff-set per-item status (leads.document_checklist JSON) — the same
         // status shown on the staff Documents tab. When set, the tracker shows
@@ -1641,7 +1646,7 @@ class LeadTrackingController extends Controller
         }
         // Any custom folder that isn't one of the standard four gets appended
         // to the section order so it renders after them, in order.
-        $extraSections = array_values(array_diff(array_keys($customSections), self::TRACKER_SECTIONS));
+        $extraSections = array_values(array_diff(array_keys($customSections), $sectionOrder));
 
         $requiredCount = collect($decorated)->where('required', true)->count();
         $submittedCount = collect($decorated)
@@ -1675,8 +1680,8 @@ class LeadTrackingController extends Controller
             // unaffected. Same list that scopes which sections show above; the
             // per-lead "Additional Documents" section is appended when present.
             'section_order' => empty($extraSections)
-                ? self::TRACKER_SECTIONS
-                : array_merge(self::TRACKER_SECTIONS, $extraSections),
+                ? $sectionOrder
+                : array_merge($sectionOrder, $extraSections),
             'totals' => [
                 'required' => $requiredCount,
                 'submitted' => $submittedCount,

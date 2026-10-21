@@ -705,7 +705,7 @@ class LeadPortalController extends Controller
      */
     private function sharedDocumentsFor(Lead $lead): array
     {
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
         return $lead->documents()
             ->where('status', LeadDocument::STATUS_STAFF_SHARED)

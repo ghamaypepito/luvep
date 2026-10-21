@@ -16,12 +16,28 @@ use Illuminate\Support\Facades\Storage;
  */
 class LeadNoteController extends Controller
 {
+    private function authorizeLead(Request $request, $leadId): Lead
+    {
+        $lead = Lead::findOrFail($leadId);
+        $user = $request->user();
+        $ownerId = match ($user?->role) {
+            'agent' => $user->id,
+            'sub_agent' => $user->parent_agent_id,
+            default => null,
+        };
+        $ownsReferral = $ownerId !== null && (int) $lead->agent_id === (int) $ownerId;
+        abort_unless($user && ($ownsReferral || \App\Support\LeadAccess::canView($user, $lead)), 403);
+
+        return $lead;
+    }
+
     /**
      * List notes for a lead, newest first. Used by the kanban edit modal
      * to surface existing internal notes alongside the stage picker.
      */
     public function index(Request $request, $leadId)
     {
+        $this->authorizeLead($request, $leadId);
         try {
             $lead = Lead::findOrFail($leadId);
 
@@ -32,6 +48,7 @@ class LeadNoteController extends Controller
                 ->map(fn ($n) => [
                     'id'          => $n->id,
                     'body'        => $n->body,
+                    'programs'    => $n->programs ?? [],
                     'kind'        => $n->kind,
                     'pinned'      => (bool) $n->pinned,
                     'author_name' => $n->author_name,
@@ -49,11 +66,14 @@ class LeadNoteController extends Controller
 
     public function store(Request $request, $leadId)
     {
+        $this->authorizeLead($request, $leadId);
         $validated = $request->validate([
             'body'                => 'required|string|max:2000',
+            'programs' => 'nullable|array|max:50',
+            'programs.*' => 'required|string|max:255|distinct|exists:programs,title',
             'pinned'              => 'nullable|boolean',
             // Reply to another note (threaded internal notes).
-            'parent_id'           => 'nullable|integer|exists:lead_notes,id',
+            'parent_id'           => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_notes', 'id')->where('lead_id', $leadId)],
             // Media attachments — images or PDFs, stored on the private disk.
             'files'               => 'nullable|array|max:6',
             'files.*'             => 'file|mimes:pdf,jpg,jpeg,png,webp,gif,heic|max:10240',
@@ -91,6 +111,8 @@ class LeadNoteController extends Controller
                 'author_name'         => $user?->name,
                 'author_role'         => $user?->role,
                 'body'                => $validated['body'],
+                // Snapshot catalogue titles so historical notes retain their meaning.
+                'programs'            => $validated['programs'] ?? [],
                 'attachments'         => $attachments ?: null,
                 'pinned'              => (bool) ($validated['pinned'] ?? false),
                 'kind'                => $validated['kind'] ?? 'general',
@@ -114,6 +136,7 @@ class LeadNoteController extends Controller
      */
     public function attachment(Request $request, $leadId, $noteId, $index)
     {
+        $this->authorizeLead($request, $leadId);
         $note = LeadNote::where('lead_id', $leadId)->findOrFail($noteId);
         $att = ($note->attachments ?? [])[(int) $index] ?? null;
         abort_unless($att && ! empty($att['path']) && Storage::disk('local')->exists($att['path']), 404);
@@ -130,6 +153,7 @@ class LeadNoteController extends Controller
 
     public function update(Request $request, $leadId, $noteId)
     {
+        $this->authorizeLead($request, $leadId);
         $validated = $request->validate([
             'body'   => 'sometimes|string|max:2000',
             'pinned' => 'sometimes|boolean',
@@ -161,6 +185,7 @@ class LeadNoteController extends Controller
 
     public function destroy(Request $request, $leadId, $noteId)
     {
+        $this->authorizeLead($request, $leadId);
         try {
             $note = LeadNote::where('lead_id', $leadId)->findOrFail($noteId);
             $user = Auth::user();

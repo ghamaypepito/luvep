@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
+import NoteProgramPicker, { NotePrograms } from '@/components/leads/NoteProgramPicker';
 import BulkEmailModal from "@/components/sales/BulkEmailModal";
 import Avatar from "@/components/ui/Avatar";
 import { getJson } from "@/lib/http";
@@ -2043,6 +2044,7 @@ function NoteLine({ note, goalChipClass }) {
                 <span className="ml-auto text-[10px] text-gray-400 whitespace-nowrap">{note.created_at ? fmtDateShort(note.created_at) : ""}</span>
             </div>
 
+            <NotePrograms programs={note.programs} />
             {/* Kind-specific captures */}
             {(note.kind === "pre_screen" && note.pre_screened_by) && (
                 <div className="mb-1.5">
@@ -2114,6 +2116,8 @@ const NOTE_KINDS = [
     { k: "goal_setting", label: "Goal-setting" },
 ];
 function AddNoteInline({ leadId, portalBase, staffOptions = [], onSaved }) {
+    const { programs = [], programOptions = [] } = usePage().props;
+    const [notePrograms, setNotePrograms] = useState([]);
     const [open, setOpen] = useState(false);
     const [kind, setKind] = useState("general");
     const [body, setBody] = useState("");
@@ -2133,13 +2137,14 @@ function AddNoteInline({ leadId, portalBase, staffOptions = [], onSaved }) {
         el.style.height = `${el.scrollHeight}px`;
     }, [body, open]);
 
-    const reset = () => { setKind("general"); setBody(""); setPreBy(""); setGoalStatus(""); setGoalBy(""); };
+    const reset = () => { setKind("general"); setBody(""); setPreBy(""); setGoalStatus(""); setGoalBy(""); setNotePrograms([]); };
 
     const submit = () => {
         if (!body.trim()) return;
         setSaving(true);
         router.post(`${portalBase}/leads/${leadId}/notes`, {
             body: body.trim(),
+            programs: notePrograms,
             kind,
             pre_screened_by:     kind === "pre_screen"   ? (preBy || null) : null,
             goal_setting_status: kind === "goal_setting" ? (goalStatus || null) : null,
@@ -2204,6 +2209,7 @@ function AddNoteInline({ leadId, portalBase, staffOptions = [], onSaved }) {
                 </div>
             )}
 
+            <NoteProgramPicker options={programs.length ? programs : programOptions} value={notePrograms} onChange={setNotePrograms} />
             <textarea
                 ref={textareaRef}
                 value={body}
@@ -2636,6 +2642,7 @@ function EditLeadModal({ lead, portalBase, statuses = [], staffOptions = [], age
                                         <div className="space-y-2 mt-3">
                                             {data.notes.map((n) => (
                                                 <div key={n.id} className="rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-2">
+                                                    <NotePrograms programs={n.programs} />
                                                     <p className="text-xs text-gray-700">{n.body}</p>
                                                     <p className="text-[10px] text-gray-400 mt-1">{n.author_name} · {fmtDateShort(n.created_at)}</p>
                                                 </div>

@@ -1478,6 +1478,10 @@ class ImmigrationController extends Controller
     public function declineVisa(\Illuminate\Http\Request $request, $id)
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
+        $user = auth()->user();
+        abort_unless(\App\Support\LeadAccess::canView($user, $lead)
+            || ($user->role === 'agent' && $lead->agent_id === $user->id), 403);
+
 
         $data = $request->validate([
             'note' => ['nullable', 'string', 'max:2000'],
@@ -1530,21 +1534,27 @@ class ImmigrationController extends Controller
         // any) is available securely in their portal, not attached.
         if (! empty($data['notify']) && $lead->email) {
             try {
-                $name = trim((string) $lead->first_name) ?: 'there';
-                $lines = ["Dear {$name},", '', 'We are writing with an update on your visa application. Immigration New Zealand has declined the application.'];
-                if (! empty($data['note'])) {
+                $sentConfiguredClient = app(\App\Services\EmailAutomationService::class)->fire(
+                    'immigration.stage.decline_visa', $lead,
+                    ['stage' => $stage, 'status_detail' => $data['note'] ?? ''],
+                );
+                if (! $sentConfiguredClient) {
+                    $name = trim((string) $lead->first_name) ?: 'there';
+                    $lines = ["Dear {$name},", '', 'We are writing with an update on your visa application. Immigration New Zealand has declined the application.'];
+                    if (! empty($data['note'])) {
+                        $lines[] = '';
+                        $lines[] = $data['note'];
+                    }
+                    if ($doc) {
+                        $lines[] = '';
+                        $lines[] = 'A related document has been shared to your client portal, where you can view it securely.';
+                    }
                     $lines[] = '';
-                    $lines[] = $data['note'];
+                    $lines[] = 'Please contact us if you would like to discuss the next steps.';
+                    $body = nl2br(e(implode("\n", $lines)));
+                    app(\App\Services\CommunicationService::class)
+                        ->sendRaw('email', $lead, 'An update on your visa application', $body);
                 }
-                if ($doc) {
-                    $lines[] = '';
-                    $lines[] = 'A related document has been shared to your client portal, where you can view it securely.';
-                }
-                $lines[] = '';
-                $lines[] = 'Please contact us if you would like to discuss the next steps.';
-                $body = nl2br(e(implode("\n", $lines)));
-                app(\App\Services\CommunicationService::class)
-                    ->sendRaw('email', $lead, 'An update on your visa application', $body);
             } catch (\Throwable $e) {
                 Log::warning('Decline email failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
             }
@@ -4220,7 +4230,9 @@ class ImmigrationController extends Controller
 
     public function reports(Request $request)
     {
-        // ── Date range (default: last 2 weeks) ───────────────────────────
+        abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
+
+        // ── Date range (default: this week) ───────────────────────────
         [$preset, $from, $to] = $this->resolveReportRange($request);
         $now = now();
         $rangeDays = max(1, (int) $from->diffInDays($to) + 1);
@@ -4320,6 +4332,35 @@ class ImmigrationController extends Controller
         };
         $inCase = fn () => Lead::immigrationCase();
 
+        // Endorsements are dated events, not the case's current adviser name.
+        // Count each case once using its latest recorded endorsement in this period.
+        $liaEndorsements = $inCase()->whereNotNull('stage_history')
+            ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])
+            ->map(function ($case) use ($from, $to) {
+                $dates = collect($case->stage_history ?? [])->filter(fn ($event) =>
+                    ($event['department'] ?? null) === 'immigration'
+                    && ($event['stage'] ?? null) === 'Endorsed'
+                    && ! empty($event['at']))->map(function ($event) {
+                        try {
+                            return \Illuminate\Support\Carbon::parse($event['at']);
+                        } catch (\Throwable) {
+                            return null;
+                        }
+                    })->filter(fn ($date) => $date && $date->betweenIncluded($from, $to));
+                $date = $dates->sortByDesc(fn ($date) => $date->timestamp)->first();
+                if (! $date) {
+                    return null;
+                }
+
+                return [
+                    'id' => $case->id,
+                    'name' => trim("{$case->first_name} {$case->last_name}") ?: 'Case',
+                    'visa' => $case->inz_visa_type,
+                    'assignee' => $case->immigration_assignee,
+                    'date' => $date->toIso8601String(),
+                ];
+            })->filter()->sortByDesc('date')->values();
+
         // Pipeline position — mostly current snapshots (new_clients is in-window).
         // "For quotation" = the pricing/invoice stage; "on hold" is omitted.
         $pipeline = [
@@ -4327,8 +4368,7 @@ class ImmigrationController extends Controller
             'in_progress' => $inCase()->whereNotIn('immigration_stage', array_merge($withInzStages, $terminalStages))
                 ->where(fn ($q) => $q->whereNotNull('immigration_stage'))->count(),
             'for_quotation' => $count('For Agreement & Invoice'),
-            'endorsed_dev' => $inCase()->where('immigration_assignee', 'Dev')->count(),
-            'endorsed_hendry' => $inCase()->where('immigration_assignee', 'Hendry')->count(),
+            'endorsed_lia' => $liaEndorsements->count(),
             'agreements_sent' => $count('Agreement Sent'),
             'with_inz' => $count($withInzStages),
             'pre_lodgement' => [
@@ -4342,7 +4382,7 @@ class ImmigrationController extends Controller
         $namedIntake = [
             'new_clients' => $named($inCase()->whereBetween('immigration_converted_at', [$from, $to])->orderBy('immigration_converted_at'), 'immigration_converted_at'),
             'agreements_issued' => $named($inCase()->where('immigration_stage', 'Agreement Sent')->whereBetween('stage_updated_at', [$from, $to])),
-            'endorsed_dev' => $named($inCase()->where('immigration_assignee', 'Dev')->whereBetween('stage_updated_at', [$from, $to])),
+            'endorsed_lia' => $liaEndorsements,
             'engagement_signed' => $named($inCase()->where('immigration_stage', 'Agreement Signed')->whereBetween('stage_updated_at', [$from, $to])),
         ];
 
@@ -4357,6 +4397,7 @@ class ImmigrationController extends Controller
         $outcomes = [
             'approved' => $named($inCase()->where('immigration_stage', 'Approved Visa')->whereBetween('stage_updated_at', [$from, $to])),
             'interim' => $named($inCase()->where('immigration_stage', 'Interim Visa Issued')->whereBetween('stage_updated_at', [$from, $to])),
+            'rfis' => $named($inCase()->where('immigration_stage', 'Request for Information')->whereBetween('stage_updated_at', [$from, $to])),
             'declined' => $named($inCase()->where('immigration_stage', 'Decline Visa')->whereBetween('stage_updated_at', [$from, $to])),
             'with_inz_breakdown' => collect($withInzStages)
                 // Include the named cases per state so the report can reveal WHO
@@ -4420,6 +4461,8 @@ class ImmigrationController extends Controller
      */
     public function saveReportNote(Request $request)
     {
+        abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
+
         $data = $request->validate([
             'note_key' => ['required', 'string', 'starts_with:imm_report_note:', 'max:120'],
             'note' => ['nullable', 'string', 'max:4000'],
@@ -4431,7 +4474,7 @@ class ImmigrationController extends Controller
     }
 
     /**
-     * Resolve the report window from the request. Default is the last 14 days.
+     * Resolve the report window from the request. Default is this week.
      * Presets: two_weeks | this_month | last_month | quarter | custom(from,to).
      *
      * @return array{0: string, 1: \Illuminate\Support\Carbon, 2: \Illuminate\Support\Carbon}
@@ -4439,7 +4482,7 @@ class ImmigrationController extends Controller
     private function resolveReportRange(Request $request): array
     {
         $now = now();
-        $preset = $request->input('preset', 'two_weeks');
+        $preset = $request->input('preset', 'this_week');
         if (! in_array($preset, ['today', 'this_week', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
             $preset = 'two_weeks';
         }

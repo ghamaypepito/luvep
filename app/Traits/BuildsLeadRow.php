@@ -172,6 +172,7 @@ trait BuildsLeadRow
                     'id' => $n->id,
                     'kind' => $n->kind ?: 'general',
                     'body' => $n->body,
+                    'programs' => $n->programs ?? [],
                     'author_name' => $n->author_name ?: 'Unknown',
                     'author_role' => $n->author_role,
                     'pinned' => (bool) $n->pinned,
@@ -209,7 +210,8 @@ trait BuildsLeadRow
         }
 
         $hidden = is_array($l->hidden_track_documents) ? $l->hidden_track_documents : [];
-        $visible = $allChecklistIds->reject(fn ($k) => in_array($k, $hidden, true));
+        $visible = $allChecklistIds->reject(fn ($k) => in_array($k, $hidden, true)
+            || (! $l->is_immigration_case && $k === 'agree.proposal'));
 
         $submittedKeys = ($l->relationLoaded('documents') ? $l->documents : $l->documents()->get(['id', 'lead_id', 'checklist_key', 'status']))
             ->whereNotNull('checklist_key')

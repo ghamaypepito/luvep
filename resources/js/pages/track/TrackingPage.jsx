@@ -1569,18 +1569,19 @@ function DocumentsHubTab({
         const map = new Map();
         for (const d of documents) {
             if (! d.checklist_key) continue;
-            if (! map.has(d.checklist_key)) map.set(d.checklist_key, []);
-            map.get(d.checklist_key).push(d);
+            const key = checklist.find((item) => item.aliases?.includes(d.checklist_key))?.key || d.checklist_key;
+            if (! map.has(key)) map.set(key, []);
+            map.get(key).push(d);
         }
         for (const arr of map.values()) {
             arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         }
         return map;
-    }, [documents]);
+    }, [documents, checklist]);
 
     // Set of keys that belong to the checklist — used to split uploaded docs
     // into "belongs to a checklist item" vs "other".
-    const checklistKeySet = useMemo(() => new Set(checklist.map((it) => it.key)), [checklist]);
+    const checklistKeySet = useMemo(() => new Set(checklist.flatMap((it) => [it.key, ...(it.aliases || [])])), [checklist]);
 
     // Build a requirement row from a checklist item, attaching its uploaded
     // file (if any) so the row stays put + shows the file after upload.
@@ -1787,10 +1788,8 @@ function DocumentsHubTab({
                 )}
             </DocsSection>
 
-            {/* SECTION 3 (last) — uploaded files that don't map to any
-                checklist item. Hidden on the general education tracker so
-                only the four requirement sections show. */}
-            {! sectionOrder && counts.other > 0 && (
+            {/* Preserve historical uploads even when the active checklist changes. */}
+            {counts.other > 0 && (
                 <DocsSection
                     title="Other documents"
                     eyebrow="Uploads"

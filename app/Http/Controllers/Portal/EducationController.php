@@ -673,7 +673,9 @@ class EducationController extends Controller
         $movedToImmigrationStage = array_key_exists('education_stage', $data)
             && in_array($data['education_stage'], Lead::EDUCATION_STAGES_IMMIGRATION, true);
 
-        if ($movedToImmigrationStage && ! $lead->is_immigration_case) {
+        $becameImmigrationCase = $movedToImmigrationStage && ! $lead->is_immigration_case;
+        if ($becameImmigrationCase) {
+            abort_unless(\App\Support\LeadAccess::canView($request->user(), $lead), 403);
             $lead->is_immigration_case = true;
             $lead->immigration_converted_at = now();
             $lead->immigration_converted_by = auth()->id();
@@ -690,6 +692,13 @@ class EducationController extends Controller
         // was cleared here, which dropped them off Education entirely.)
 
         $lead->save();
+
+        if ($becameImmigrationCase) {
+            app(\App\Services\EmailAutomationService::class)->fire('immigration.education.handoff', $lead, [
+                'visa_type' => $lead->inz_visa_type ?? '',
+            ]);
+        }
+
 
         return back();
     }

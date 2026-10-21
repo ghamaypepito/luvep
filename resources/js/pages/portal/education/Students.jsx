@@ -261,11 +261,19 @@ const englishStageClass = (s) => ENGLISH_STAGE_STYLES[s] || "bg-gray-100 text-gr
 const IMMIGRATION_STAGES = [
     "For Assessment",
     "Endorsed",
+    "Agreement Sent",
+    "Agreement Signed",
+    "For Agreement & Invoice",
+    "Invoice Paid",
+    "Request to Lodge",
     "Visa Lodged",
+    "Interim Visa Issued",
     "Request for Information",
+    "RFI Responded",
     "Approved in Principle",
     "Approved Visa",
     "Decline Visa",
+    "Withdrawn",
 ];
 
 // Named people who can own a lead at an English / Immigration stage
@@ -614,24 +622,25 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
         // at right now. Builds one row per canonical stage even if zero
         // so the bar layout stays the same shape across renders. Also
         // computes a "Not started" bucket for students with no stage yet.
-        const tally = (stages, field) => {
+        const tally = (stages, field, department) => {
             const counts = Object.fromEntries(stages.map((s) => [s, 0]));
             let notStarted = 0;
-            for (const s of students) {
+            const members = students.filter((s) => departmentsOf(s).has(department));
+            for (const s of members) {
                 const v = s[field];
                 if (v && counts[v] !== undefined) counts[v]++;
                 else if (! v) notStarted++;
             }
-            return { counts, notStarted };
+            return { counts, notStarted, total: members.length };
         };
 
         return {
             total,
             withPlan,
             pendingDocs,
-            education:   tally(EDUCATION_STAGES,   "education_stage"),
-            english:     tally(ENGLISH_STAGES,     "english_stage"),
-            immigration: tally(IMMIGRATION_STAGES, "immigration_stage"),
+            education:   tally(EDUCATION_STAGES,   "education_stage", "education"),
+            english:     tally(ENGLISH_STAGES,     "english_stage", "english"),
+            immigration: tally(IMMIGRATION_STAGES, "immigration_stage", "immigration"),
         };
     }, [students]);
 
@@ -651,7 +660,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
             </div>
 
             {/* Stage distribution — small line graph for Education only. */}
-            <StageDistribution stats={stats} students={students} />
+            <StageDistribution stats={stats} students={students} department={view} />
 
             {/* Toolbar — tabs + filter pills + sort + search, mirroring the
                 sales-portal Leads toolbar so the two surfaces feel paired. */}
@@ -1547,17 +1556,17 @@ const EDUCATION_STAGE_HEX = {
 const educationStageHex = (s) => EDUCATION_STAGE_HEX[s] || "#9ca3af";
 
 // Small line graph showing how many students sit at each Education
-// stage. Single track only — English / Immigration counts surface via
-// the per-row chips and the Journey panel instead.
-function StageDistribution({ stats, students }) {
+// stage for the selected department, using the same membership as its tab.
+function StageDistribution({ stats, students, department }) {
     if (students.length === 0) return null;
 
-    const stages    = EDUCATION_STAGES;
-    const counts    = stats.education.counts;
+    const label = { education: "Education", english: "English", immigration: "Immigration" }[department];
+    const stages = { education: EDUCATION_STAGES, english: ENGLISH_STAGES, immigration: IMMIGRATION_STAGES }[department];
+    const counts = stats[department].counts;
     const data      = stages.map((s) => counts[s] || 0);
     const peak      = Math.max(1, ...data);
     const placed    = data.reduce((sum, n) => sum + n, 0);
-    const unstaged  = stats.education.notStarted;
+    const unstaged  = stats[department].notStarted;
 
     // SVG dimensions — viewBox units. Compact sparkline-style chart;
     // the rotated stage labels eat the bottom band. Extra horizontal
@@ -1590,10 +1599,10 @@ function StageDistribution({ stats, students }) {
                     </div>
                     <div>
                         <h2 className="text-[12px] font-bold uppercase tracking-wider text-gray-800">
-                            Education stage distribution
+                            {label} stage distribution
                         </h2>
                         <p className="text-[10.5px] text-gray-500 mt-0.5">
-                            {placed} placed · {unstaged} unstaged · {students.length} total
+                            {placed} placed · {unstaged} unstaged · {stats[department].total} total
                         </p>
                     </div>
                 </div>
@@ -1609,7 +1618,7 @@ function StageDistribution({ stats, students }) {
                     className="w-full"
                     style={{ maxHeight: 160 }}
                     role="img"
-                    aria-label="Line graph of student count per Education stage"
+                    aria-label={`Line graph of student count per ${label} stage`}
                 >
                     {/* Soft horizontal gridlines (4 evenly-spaced bands). */}
                     {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
