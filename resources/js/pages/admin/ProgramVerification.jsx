@@ -32,9 +32,10 @@ const fmtDateTime = (iso) => iso
 
 export default function ProgramVerification({
     proposals = [], counts = { pending: 0, verified: 0, approved_today: 0 },
-    programs = [], schools = [], leadBase = "/admin",
+    programs = [], schools = [], leadBase = "/admin", selectedStatus = "pending", pagination = {},
 }) {
-    const [filter, setFilter] = useState("pending"); // pending | verified | approved
+    const filter = selectedStatus;
+    const setFilter = (status) => router.get(window.location.pathname, { status }, { preserveScroll: true });
     const [activeId, setActiveId] = useState(proposals[0]?.id ?? null);
 
     const list = useMemo(() => proposals.filter((p) => {
@@ -68,13 +69,20 @@ export default function ProgramVerification({
                     <div className="grid grid-cols-3 gap-2">
                         <FilterStat active={filter === "pending"} onClick={() => setFilter("pending")} value={counts.pending} label="Pending" />
                         <FilterStat active={filter === "verified"} onClick={() => setFilter("verified")} value={counts.verified} label="Verified" />
-                        <FilterStat active={filter === "approved"} onClick={() => setFilter("approved")} value={counts.approved_today} label="Approved" />
+                        <FilterStat active={filter === "approved"} onClick={() => setFilter("approved")} value={counts.approved ?? 0} label="Approved" />
                     </div>
 
                     <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">Oldest first</span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">Recently updated first</span>
                     </div>
 
+                    <div className="flex items-center justify-between text-xs text-gray-600 px-1">
+                        <span>{pagination.total ?? list.length} proposals · Page {pagination.current_page ?? 1} of {pagination.last_page ?? 1}</span>
+                        <div className="flex gap-3">
+                            {pagination.prev_url && <Link href={pagination.prev_url} preserveScroll className="underline">Previous</Link>}
+                            {pagination.next_url && <Link href={pagination.next_url} preserveScroll className="underline">Next</Link>}
+                        </div>
+                    </div>
                     <div className="space-y-2 max-h-[calc(100vh-230px)] overflow-y-auto pr-1">
                         {list.length === 0 ? (
                             <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-gray-400">

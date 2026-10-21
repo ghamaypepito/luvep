@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Lead;
-use App\Models\LeadDocument;
 use App\Models\Program;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -25,20 +24,19 @@ class ProgramVerificationController extends Controller
 
     public function index(Request $request)
     {
-        // Every proposal that is under review OR was actioned today (so the
-        // "verified / approved today" columns and filters have rows to show).
-        $todayStart = now()->startOfDay()->toIso8601String();
-        $leads = Lead::query()
-            ->whereNotNull('proposed_program_ids')
-            ->where(function ($q) use ($todayStart) {
-                $q->whereIn('proposal_review->status', ['pending', 'verified'])
-                    ->orWhere('proposal_review->approved_at', '>=', $todayStart)
-                    ->orWhere('proposal_review->verified_at', '>=', $todayStart);
-            })
-            ->orderByDesc('updated_at')
-            ->limit(300)
+        $data = $request->validate(['status' => 'nullable|in:pending,verified,approved', 'page' => 'nullable|integer|min:1']);
+        $status = $data['status'] ?? 'pending';
+        $base = Lead::query()->whereNotNull('proposed_program_ids');
+        $counts = [];
+        foreach (['pending', 'verified', 'approved'] as $state) {
+            $counts[$state] = (clone $base)->where('proposal_review->status', $state)->count();
+        }
+        $counts['approved_today'] = (clone $base)->where('proposal_review->approved_at', '>=', now()->startOfDay()->toIso8601String())->count();
+        $page = (clone $base)->where('proposal_review->status', $status)
+            ->orderByDesc('updated_at')->orderByDesc('id')
             ->with(['documents:id,lead_id,checklist_key,status', 'agent:id,name'])
-            ->get();
+            ->paginate(50)->withQueryString();
+        $leads = $page->getCollection();
 
         // Resolve every program + staff name referenced, in two queries.
         $allIds = $leads->flatMap(fn ($l) => is_array($l->proposed_program_ids) ? $l->proposed_program_ids : [])
@@ -54,27 +52,17 @@ class ProgramVerificationController extends Controller
 
         $userIds = $leads->flatMap(function (Lead $l) {
             $r = is_array($l->proposal_review) ? $l->proposal_review : [];
+
             return [$r['submitted_by'] ?? null, $r['verified_by'] ?? null, $r['approved_by'] ?? null];
         })->filter()->unique()->values();
         $userNames = User::whereIn('id', $userIds)->pluck('name', 'id');
 
-        $counts = ['pending' => 0, 'verified' => 0, 'approved_today' => 0];
-
-        $rows = $leads->map(function (Lead $l) use ($programs, $userNames, &$counts) {
+        $rows = $leads->map(function (Lead $l) use ($programs, $userNames) {
             $ids = is_array($l->proposed_program_ids) ? array_map('intval', $l->proposed_program_ids) : [];
             $reasons = is_array($l->proposed_program_reasons) ? $l->proposed_program_reasons : [];
             $meta = is_array($l->proposed_program_meta) ? $l->proposed_program_meta : [];
             $review = is_array($l->proposal_review) ? $l->proposal_review : [];
             $status = $review['status'] ?? 'pending';
-
-            if ($status === 'pending') {
-                $counts['pending']++;
-            } elseif ($status === 'verified') {
-                $counts['verified']++;
-            }
-            if (! empty($review['approved_at']) && $review['approved_at'] >= now()->startOfDay()->toIso8601String()) {
-                $counts['approved_today']++;
-            }
 
             $progRows = collect($ids)
                 ->map(fn ($id) => $programs->get($id))
@@ -167,6 +155,8 @@ class ProgramVerificationController extends Controller
         return inertia($component, [
             'proposals' => $rows,
             'counts' => $counts,
+            'selectedStatus' => $status,
+            'pagination' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total(), 'prev_url' => $page->previousPageUrl(), 'next_url' => $page->nextPageUrl()],
             'programs' => $catalogue,
             'schools' => \App\Models\School::orderBy('name')->pluck('name')->values(),
             'leadBase' => $isEducation ? '/portal/education' : '/admin',
