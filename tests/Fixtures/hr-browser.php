@@ -42,3 +42,6 @@ $name = config('session.cookie');
 $value = Illuminate\Cookie\CookieValuePrefix::create($name, app('encrypter')->getKey()).$session->getId();
 file_put_contents(getenv('HR_FIXTURE_FILE'), json_encode(['employeeId' => $employee->id, 'legacyCookie' => ['name' => $name, 'value' => app('encrypter')->encrypt($value, false)]]));
 chmod(getenv('HR_FIXTURE_FILE'), 0600);
+
+$commentLead = App\Models\Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Comment client']);
+App\Models\LeadTask::create(['lead_id' => $commentLead->id, 'title' => 'Comment CSRF regression', 'created_by' => $admin->id, 'assignee_id' => $admin->id, 'department' => 'admin']);

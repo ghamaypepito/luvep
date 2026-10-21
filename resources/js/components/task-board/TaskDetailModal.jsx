@@ -1,3 +1,4 @@
+import { postTaskComment } from "@/lib/taskComments";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -703,10 +704,6 @@ function SubLabel({ icon, children }) {
 // same /api/tasks/{id}/comments endpoints the kanban-card popover
 // uses (CommentsPopover.jsx), so the count and content stay in sync.
 function CommentsTab({ taskId, comments, setComments, loadingComments, currentUser }) {
-    const { props } = usePage();
-    const csrf = props?.csrf || (typeof document !== "undefined"
-        ? document.querySelector('meta[name="csrf-token"]')?.getAttribute("content")
-        : null);
 
     const [body, setBody]       = useState("");
     const [sending, setSending] = useState(false);
@@ -717,19 +714,7 @@ function CommentsTab({ taskId, comments, setComments, loadingComments, currentUs
         if (! text || sending) return;
         setSending(true);
         try {
-            const res = await fetch(`/api/tasks/${taskId}/comments`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    "X-CSRF-TOKEN": csrf || "",
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-                credentials: "same-origin",
-                body: JSON.stringify({ body: text }),
-            });
-            if (! res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
+            const data = await postTaskComment(taskId, text);
             setComments((prev) => [...prev, data.comment]);
             setBody("");
         } catch {
