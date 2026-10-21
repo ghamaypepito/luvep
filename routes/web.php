@@ -1558,6 +1558,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/cases/{id}/outcome', [$imm, 'recordOutcome']);
             Route::post('/cases/{id}/rfi/analyze', [$imm, 'analyzeRfi']);
             Route::post('/cases/{id}/rfi', [$imm, 'requestForInformation']);
+            Route::post('/cases/{id}/medical', [$imm, 'requestForMedical']);
             Route::post('/cases/{id}/visa', [$imm, 'updateCaseVisa']);
             Route::post('/cases/{id}/priority', [$imm, 'updateCasePriority']);
             Route::post('/cases/{id}/handoff', [$imm, 'handoff']);
@@ -1920,6 +1921,7 @@ Route::middleware(['auth'])->group(function () {
             // configured RFI stage automation (PDFs attached to the email).
             Route::post('/cases/{id}/rfi/analyze', [ImmigrationController::class, 'analyzeRfi'])->name('cases.rfi.analyze');
             Route::post('/cases/{id}/rfi', [ImmigrationController::class, 'requestForInformation'])->name('cases.rfi');
+            Route::post('/cases/{id}/medical', [ImmigrationController::class, 'requestForMedical'])->name('cases.medical');
             // Inline visa-type update from the Cases table.
             Route::post('/cases/{id}/visa', [ImmigrationController::class, 'updateCaseVisa'])->name('cases.visa');
             // Inline priority update from the Cases table's expanded row.
@@ -1936,6 +1938,8 @@ Route::middleware(['auth'])->group(function () {
             // Edit the applicant's personal details from the Case Profile "Personal" tab.
             Route::post('/cases/{lead}/personal', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updatePersonal'])
                 ->name('cases.personal');
+            Route::post('/cases/{lead}/assessment-invitation', [\App\Http\Controllers\Immigration\CaseAssessmentInvitationController::class, 'store'])
+                ->name('cases.assessment-invitation');
             // On-demand AI note (OpenRouter) on what's missing from the assessment.
             Route::get('/cases/{lead}/assessment-ai-note', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'assessmentAiNote'])
                 ->name('cases.assessment-ai-note');

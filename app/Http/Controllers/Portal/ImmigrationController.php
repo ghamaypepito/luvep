@@ -1235,6 +1235,12 @@ class ImmigrationController extends Controller
      */
     public function storeCase(\Illuminate\Http\Request $request)
     {
+        if ($request->input('immigration_stage') === 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
+
         $data = $request->validate([
             'first_name' => 'required|string|max:80',
             'middle_name' => 'nullable|string|max:80',
@@ -1306,6 +1312,12 @@ class ImmigrationController extends Controller
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
 
+        if ($request->input('immigration_stage') === 'Request for Medical' && $lead->immigration_stage !== 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
+
         $data = $request->validate([
             'first_name' => 'required|string|max:80',
             'middle_name' => 'nullable|string|max:80',
@@ -1361,6 +1373,12 @@ class ImmigrationController extends Controller
     public function updateCaseStage(\Illuminate\Http\Request $request, $id)
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
+
+        if ($request->input('immigration_stage') === 'Request for Medical' && $lead->immigration_stage !== 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
 
         $data = $request->validate([
             'immigration_stage' => ['nullable', \Illuminate\Validation\Rule::in(Lead::IMMIGRATION_STAGES)],
@@ -1698,144 +1716,213 @@ class ImmigrationController extends Controller
 
     public function requestForInformation(\Illuminate\Http\Request $request, $id)
     {
+        return $this->recordInzRequest($request, $id, false);
+    }
+
+    public function requestForMedical(\Illuminate\Http\Request $request, $id)
+    {
+        abort_unless(in_array(auth()->user()->role, ['admin', 'super_admin', 'immigration', 'immigration_manager', 'immigration_adviser'], true), 403);
+        if ($request->boolean('retry_notification')) {
+            $lead = Lead::immigrationCase()->findOrFail($id);
+            $entry = collect($lead->stage_history ?? [])->last(fn ($entry) => ($entry['stage'] ?? null) === 'Request for Medical');
+            abort_unless($entry && ! empty($entry['medical_document_ids']), 422, 'No saved medical notice to send.');
+            $attachments = $lead->documents()->whereIn('id', $entry['medical_document_ids'])
+                ->where('source_variant', 'medical')->get()->map(fn ($doc) => ['path' => $doc->file_path, 'name' => $doc->original_name])->all();
+            abort_unless(count($attachments) === count($entry['medical_document_ids']), 422, 'The saved medical notice is no longer available.');
+            return $this->notifyMedicalRequest($lead, $attachments)
+                ? back()->with('success', 'Medical request notification queued.')
+                : back()->withErrors(['notification' => 'The request is saved, but the email could not be queued. Check the client email and active Request for Medical template, then retry notification.']);
+        }
+
+        return $this->recordInzRequest($request, $id, true);
+    }
+
+    private function notifyMedicalRequest(Lead $lead, array $attachments): bool
+    {
+        $result = app(\App\Services\CommunicationService::class)->sendTemplated(
+            'request_for_medical', $lead,
+            ['medical_deadline' => $lead->medical_deadline?->format('j M Y')],
+            'immigration', null, $attachments,
+        );
+
+        return in_array($result['email']?->status, [\App\Models\MessageLog::STATUS_QUEUED, \App\Models\MessageLog::STATUS_SENT], true);
+    }
+
+    private function recordInzRequest(\Illuminate\Http\Request $request, $id, bool $medical)
+    {
         $lead = Lead::immigrationCase()->findOrFail($id);
+        $user = auth()->user();
+        abort_unless(\App\Support\LeadAccess::canView($user, $lead)
+            || ($user->role === 'agent' && $lead->agent_id === $user->id), 403);
 
         $data = $request->validate([
             'deadline' => ['required', 'date'],
             'note' => ['nullable', 'string', 'max:2000'],
-            'documents' => ['nullable', 'array', 'max:20'],
+            'documents' => [$medical ? 'required' : 'nullable', 'array', $medical ? 'min:1' : 'min:0', 'max:20'],
             'documents.*' => ['file', 'mimes:pdf', 'max:10240'],
             'notify' => ['nullable', 'boolean'],
             // The documents INZ asked for, confirmed by staff from the AI-extracted
             // list in the modal. Each becomes a LeadDocumentRequest the client
             // uploads against — origin 'rfi' groups them under "Request Information".
-            'requested_documents' => ['nullable', 'array', 'max:25'],
+            'requested_documents' => [$medical ? 'prohibited' : 'nullable', 'array', 'max:25'],
             'requested_documents.*.label' => ['required', 'string', 'max:120'],
             'requested_documents.*.description' => ['nullable', 'string', 'max:500'],
             'requested_documents.*.required' => ['nullable', 'boolean'],
         ]);
 
-        $stage = 'Request for Information';
+        $stage = $medical ? 'Request for Medical' : 'Request for Information';
+        $deadlineKey = $medical ? 'medical_deadline' : 'rfi_deadline';
         $note = trim((string) ($data['note'] ?? ''));
         $deadline = \Illuminate\Support\Carbon::parse($data['deadline'])->startOfDay();
 
-        // Set the stage (chain jump when on the process chain, else legacy write).
-        $steps = app(\App\Services\Immigration\CaseStepService::class);
-        $movedViaChain = $steps->hasChain($lead) && $steps->jumpToStage($lead, $stage, auth()->user());
-        if (! $movedViaChain && ($lead->immigration_stage ?? null) !== $stage) {
-            $lead->immigration_stage = $stage;
-            $lead->stage_updated_at = now();
-            $lead->stage_updated_by = auth()->id();
-            $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
-        }
-
-        // Store the deadline ON the RFI stage-history entry (both stage paths push
-        // one) rather than a new column — the leads god table is at its row-size
-        // limit. `$lead->rfi_deadline` reads it back. If the case was already on
-        // this stage (no fresh entry), push one so the deadline has a home.
-        $history = $lead->stage_history ?? [];
-        $idx = null;
-        for ($i = count($history) - 1; $i >= 0; $i--) {
-            if (($history[$i]['stage'] ?? null) === $stage) {
-                $idx = $i;
-                break;
+        $storedPaths = [];
+        $documentIds = [];
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            // Set the stage (chain jump when on the process chain, else legacy write).
+            $steps = app(\App\Services\Immigration\CaseStepService::class);
+            $movedViaChain = $steps->hasChain($lead) && $steps->jumpToStage($lead, $stage, auth()->user());
+            if (! $movedViaChain && ($lead->immigration_stage ?? null) !== $stage) {
+                $lead->immigration_stage = $stage;
+                $lead->stage_updated_at = now();
+                $lead->stage_updated_by = auth()->id();
+                $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
             }
-        }
-        if ($idx === null) {
-            $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
-            $history = $lead->stage_history;
-            $idx = count($history) - 1;
-        }
-        $history[$idx]['rfi_deadline'] = $deadline->toDateString();
-        $lead->stage_history = $history;
-        $lead->save();
 
-        // Store each RFI PDF (StaffShared so it shows on the Documents tab and the
-        // client portal), and collect them as email attachments.
-        $attachments = [];
-        foreach ((array) $request->file('documents', []) as $file) {
-            if (! $file instanceof \Illuminate\Http\UploadedFile) {
-                continue;
+            // Store the deadline ON the RFI stage-history entry (both stage paths push
+            // one) rather than a new column — the leads god table is at its row-size
+            // limit. `$lead->rfi_deadline` reads it back. If the case was already on
+            // this stage (no fresh entry), push one so the deadline has a home.
+            $history = $lead->stage_history ?? [];
+            $idx = null;
+            for ($i = count($history) - 1; $i >= 0; $i--) {
+                if (($history[$i]['stage'] ?? null) === $stage) {
+                    $idx = $i;
+                    break;
+                }
             }
-            $path = $file->store("lead-documents/{$lead->id}", 'local');
-            $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
-            \App\Models\LeadDocument::create([
+            if ($idx === null) {
+                $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
+                $history = $lead->stage_history;
+                $idx = count($history) - 1;
+            }
+            $history[$idx][$deadlineKey] = $deadline->toDateString();
+            $lead->stage_history = $history;
+            $lead->save();
+
+            // Store each RFI PDF (StaffShared so it shows on the Documents tab and the
+            // client portal), and collect them as email attachments.
+            $attachments = [];
+            foreach ((array) $request->file('documents', []) as $file) {
+                if (! $file instanceof \Illuminate\Http\UploadedFile) {
+                    continue;
+                }
+                $path = $file->store("lead-documents/{$lead->id}", 'local');
+                if (! $path) {
+                    throw new \RuntimeException('Could not store the INZ notice.');
+                }
+                $storedPaths[] = $path;
+                $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
+                $document = \App\Models\LeadDocument::create([
+                    'lead_id' => $lead->id,
+                    // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
+                    // kept as a shared doc (checklist_key null), NOT the client's
+                    // upload. The client responds via the "Request Information Form"
+                    // upload slot, whose files ARE keyed 'rfi'.
+                    'checklist_key' => null,
+                    'original_name' => $name,
+                    'file_path' => $path,
+                    'mime' => $file->getClientMimeType(),
+                    'size' => $file->getSize(),
+                    'source' => 'upload',
+                    'source_variant' => $medical ? 'medical' : 'rfi',
+                    'status' => \App\Models\LeadDocument::STATUS_STAFF_SHARED,
+                    'uploaded_by' => auth()->id(),
+                    'note' => $note ?: null,
+                ]);
+                $attachments[] = ['path' => $path, 'name' => $name];
+                $documentIds[] = $document->id;
+            }
+
+            // The documents INZ asked for — staff confirmed these from the AI-read
+            // list in the modal. Each becomes a request the client uploads against
+            // (origin 'rfi' groups them under "Request Information" on the Documents
+            // tab and the client portal). Deduped by label against existing RFI
+            // requests so re-opening the modal doesn't create duplicates.
+            $requestedLabels = [];
+            $existingRfi = $lead->documentRequests()->where('origin', 'rfi')
+                ->pluck('label')->map(fn ($l) => mb_strtolower(trim((string) $l)))->all();
+            foreach ((array) ($data['requested_documents'] ?? []) as $item) {
+                $label = trim((string) ($item['label'] ?? ''));
+                if ($label === '' || in_array(mb_strtolower($label), $existingRfi, true)) {
+                    continue;
+                }
+                $existingRfi[] = mb_strtolower($label);
+                \App\Models\LeadDocumentRequest::create([
+                    'lead_id' => $lead->id,
+                    'label' => $label,
+                    'description' => trim((string) ($item['description'] ?? '')) ?: null,
+                    'required' => array_key_exists('required', $item) ? (bool) $item['required'] : true,
+                    'origin' => 'rfi',
+                    'requested_by' => auth()->id(),
+                    'requested_at' => now(),
+                ]);
+                $requestedLabels[] = $label;
+            }
+
+            // Record the note (with the deadline) on the case timeline.
+            $user = auth()->user();
+            \App\Models\LeadNote::create([
                 'lead_id' => $lead->id,
-                // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
-                // kept as a shared doc (checklist_key null), NOT the client's
-                // upload. The client responds via the "Request Information Form"
-                // upload slot, whose files ARE keyed 'rfi'.
-                'checklist_key' => null,
-                'original_name' => $name,
-                'file_path' => $path,
-                'mime' => $file->getClientMimeType(),
-                'size' => $file->getSize(),
-                'source' => 'upload',
-                'source_variant' => 'rfi',
-                'status' => \App\Models\LeadDocument::STATUS_STAFF_SHARED,
-                'uploaded_by' => auth()->id(),
-                'note' => $note ?: null,
+                'user_id' => $user?->id,
+                'author_name' => $user?->name,
+                'author_role' => $user?->role,
+                'kind' => 'note',
+                'body' => "Stage → {$stage} (respond by {$deadline->format('j M Y')})".($note !== '' ? ": {$note}" : ''),
             ]);
-            $attachments[] = ['path' => $path, 'name' => $name];
-        }
 
-        // The documents INZ asked for — staff confirmed these from the AI-read
-        // list in the modal. Each becomes a request the client uploads against
-        // (origin 'rfi' groups them under "Request Information" on the Documents
-        // tab and the client portal). Deduped by label against existing RFI
-        // requests so re-opening the modal doesn't create duplicates.
-        $requestedLabels = [];
-        $existingRfi = $lead->documentRequests()->where('origin', 'rfi')
-            ->pluck('label')->map(fn ($l) => mb_strtolower(trim((string) $l)))->all();
-        foreach ((array) ($data['requested_documents'] ?? []) as $item) {
-            $label = trim((string) ($item['label'] ?? ''));
-            if ($label === '' || in_array(mb_strtolower($label), $existingRfi, true)) {
-                continue;
+            if ($medical) {
+                $history[$idx]['medical_document_ids'] = $documentIds;
+                $lead->stage_history = $history;
+                $lead->save();
             }
-            $existingRfi[] = mb_strtolower($label);
-            \App\Models\LeadDocumentRequest::create([
-                'lead_id' => $lead->id,
-                'label' => $label,
-                'description' => trim((string) ($item['description'] ?? '')) ?: null,
-                'required' => array_key_exists('required', $item) ? (bool) $item['required'] : true,
-                'origin' => 'rfi',
-                'requested_by' => auth()->id(),
-                'requested_at' => now(),
-            ]);
-            $requestedLabels[] = $label;
+            \Illuminate\Support\Facades\DB::commit();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            foreach ($storedPaths as $path) {
+                try {
+                    \Illuminate\Support\Facades\Storage::disk('local')->delete($path);
+                } catch (\Throwable $cleanupError) {
+                    \Illuminate\Support\Facades\Log::warning('INZ notice cleanup failed', ['lead_id' => $lead->id]);
+                }
+            }
+            throw $e;
         }
-
-        // Record the note (with the deadline) on the case timeline.
-        $user = auth()->user();
-        \App\Models\LeadNote::create([
-            'lead_id' => $lead->id,
-            'user_id' => $user?->id,
-            'author_name' => $user?->name,
-            'author_role' => $user?->role,
-            'kind' => 'note',
-            'body' => "Stage → {$stage} (respond by {$deadline->format('j M Y')})".($note !== '' ? ": {$note}" : ''),
-        ]);
 
         // Email via the configured RFI automation. {{rfi_deadline}} + the PDFs are
         // passed through; skipped when the "notify" toggle is off.
+        $notificationFailed = false;
         if (! empty($data['notify'])) {
-            app(\App\Services\EmailAutomationService::class)->fire(
-                'immigration.stage.'.\Illuminate\Support\Str::slug($stage, '_'),
-                $lead,
-                [
-                    'stage' => $stage,
-                    'status_detail' => $note,
-                    'rfi_deadline' => $deadline->format('j M Y'),
-                    // {{document_list}} lets the RFI template spell out exactly
-                    // what the client must upload; blank when none were extracted.
-                    'document_list' => implode(', ', $requestedLabels),
-                ],
-                $attachments,
-            );
+            if ($medical) {
+                $notificationFailed = ! $this->notifyMedicalRequest($lead, $attachments);
+            } else {
+                app(\App\Services\EmailAutomationService::class)->fire(
+                    'immigration.stage.'.\Illuminate\Support\Str::slug($stage, '_'),
+                    $lead,
+                    ['stage' => $stage, 'status_detail' => $note,
+                        'rfi_deadline' => $deadline->format('j M Y'),
+                        'document_list' => implode(', ', $requestedLabels)],
+                    $attachments,
+                );
+            }
         }
 
         $lead->recordStaffActivity("Moved to {$stage} (respond by {$deadline->format('j M Y')})".($attachments ? ' + '.count($attachments).' document(s)' : ''));
         \App\Jobs\EvaluateCaseFindings::dispatch($lead->id);
+
+        if ($notificationFailed) {
+            return back()->withErrors(['notification' => 'The request is saved, but the email could not be queued. Check the client email and active Request for Medical template, then retry notification.']);
+        }
 
         return back()->with('success', "Case moved to {$stage}.");
     }
@@ -4238,10 +4325,10 @@ class ImmigrationController extends Controller
         $rangeDays = max(1, (int) $from->diffInDays($to) + 1);
 
         // Stage groupings (based on the case's current immigration_stage).
-        $awaitingStages = ['Visa Lodged', 'Request for Information', 'Approved in Principle'];
-        $lodgedStages = ['Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
-        $endorsedStages = ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
-        $engagedStages = ['Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $awaitingStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
+        $lodgedStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $endorsedStages = ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $engagedStages = ['Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
         $terminalStages = ['Approved Visa', 'Decline Visa'];
 
         $count = fn ($stages) => Lead::immigrationCase()->whereIn('immigration_stage', (array) $stages)->count();
@@ -4316,7 +4403,7 @@ class ImmigrationController extends Controller
         // ─────────────────────────────────────────────────────────────────
         // Weekly management report (the slide-deck format).
         // ─────────────────────────────────────────────────────────────────
-        $withInzStages = ['Visa Lodged', 'Interim Visa Issued', 'Request for Information', 'Approved in Principle'];
+        $withInzStages = ['Visa Lodged', 'Interim Visa Issued', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
 
         // Named-detail rows. Pass which date column labels the row.
         $named = function ($query, string $dateField = 'stage_updated_at') {

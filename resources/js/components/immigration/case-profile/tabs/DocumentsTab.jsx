@@ -256,7 +256,9 @@ export default function DocumentsTab({
             kind:     "orphan",
             key:      `orphan-${d.id}`,
             label:    d.original_name,
-            category: isDecline
+            category: variant === "medical"
+                ? "Request for Medical"
+                : isDecline
                 ? "Visa outcome"
                 : isInvoice
                     ? "Invoices"
@@ -552,6 +554,11 @@ export default function DocumentsTab({
                                                         <span className="text-[11px] font-semibold text-gray-400">
                                                             {secApproved}/{secTotal}
                                                         </span>
+                                                        {category === "Request for Medical" && lead.medical_deadline && (
+                                                            <span className="text-[11px] font-medium text-amber-700 inline-flex items-center gap-1">
+                                                                <Calendar size={11} /> Due {formatDate(lead.medical_deadline)}
+                                                            </span>
+                                                        )}
                                                         {category === "Request Information" && lead.rfi_deadline && (
                                                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 ml-1">
                                                                 <Calendar size={11} /> Due {formatDate(lead.rfi_deadline)}
@@ -585,7 +592,7 @@ export default function DocumentsTab({
                                             />
                                         ))}
                                         {! collapsed && sectionRfiReqs.map((req) => (
-                                            <RfiRequestTableRow key={`rfireq-${req.id}`} req={req} leadId={lead.id} />
+                                            <RfiRequestTableRow key={`rfireq-${req.id}`} req={req} leadId={lead.id} caseStaff={caseStaff} threadsByDoc={threadsByDoc} />
                                         ))}
                                     </Fragment>
                                 );
@@ -2098,7 +2105,7 @@ function RequestRow({ req, leadId }) {
 // inside the "Request Information" checklist table — so the letter and the
 // documents it asks for sit together. Shows the client's uploaded file once it
 // arrives, else an "awaiting" state; staff can re-send the reminder or withdraw.
-function RfiRequestTableRow({ req, leadId }) {
+function RfiRequestTableRow({ req, leadId, caseStaff = [], threadsByDoc = new Map() }) {
     const pageUrl = usePage().url || "";
     const doc = req.latest_document || null;
     const [busy, setBusy] = useState(false);
@@ -2270,7 +2277,7 @@ function RfiRequestTableRow({ req, leadId }) {
                 />
             )}
             {previewDoc && (
-                <DocPreviewModal doc={previewDoc} label={req.label} leadId={leadId} onClose={() => setPreviewDoc(null)} />
+                <DocPreviewModal doc={previewDoc} label={req.label} leadId={leadId} caseStaff={caseStaff} threads={threadsByDoc.get(previewDoc.id) || []} onClose={() => setPreviewDoc(null)} />
             )}
         </tr>
     );

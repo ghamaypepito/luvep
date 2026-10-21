@@ -2145,6 +2145,7 @@ class LeadDocumentController extends Controller
                 // RFI response deadline (if the case is in Request for Information)
                 // — shown on the client's Documents page so they know the due date.
                 'rfi_deadline' => optional($lead->rfi_deadline)->toDateString(),
+                'medical_deadline' => optional($lead->medical_deadline)->toDateString(),
             ],
             'requests' => $requests,
             'shared_by_staff' => $sharedByStaff,
