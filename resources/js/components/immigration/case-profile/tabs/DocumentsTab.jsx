@@ -172,14 +172,14 @@ export default function DocumentsTab({
     // Build a checklist-keyed map of uploaded documents (latest wins per key).
     // Orphans (no matching checklist entry) get collected separately.
     const items = checklist.items || [];
-    const knownKeys = new Set(items.map((i) => i.key));
+    const knownKeys = new Set(items.flatMap((i) => [i.key, ...(i.aliases || [])]));
 
     // A checklist key can hold several files (the client can "Upload another"
     // without replacing the first), so keep the full list per key, oldest first.
     const docsByKey = useMemo(() => {
         const map = new Map();
         for (const d of documents) {
-            const key = d.checklist_key;
+            const key = items.find((item) => item.aliases?.includes(d.checklist_key))?.key || d.checklist_key;
             if (! key) continue;
             if (! map.has(key)) map.set(key, []);
             map.get(key).push(d);
@@ -188,7 +188,7 @@ export default function DocumentsTab({
             arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         }
         return map;
-    }, [documents]);
+    }, [documents, items]);
 
     // The "Request Information Form" row displays INZ's RFI letter(s) that the
     // adviser attached (source_variant 'rfi'). The client responds through the

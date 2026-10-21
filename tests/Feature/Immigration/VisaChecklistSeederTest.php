@@ -27,11 +27,11 @@ class VisaChecklistSeederTest extends TestCase
      * were removed and now live on the lead row itself.
      */
     private const EXPECTED_COUNTS = [
-        'WORK_AEWV'       => 17,
-        'STUDENT'         => 32,
+        'WORK_AEWV' => 17,
+        'STUDENT' => 32,
         'POST_STUDY_WORK' => 16,
-        'PARTNER_WORK'    => 23,
-        'PARTNER_RES'     => 21,
+        'PARTNER_WORK' => 22,
+        'PARTNER_RES' => 22,
     ];
 
     protected function setUp(): void
@@ -43,16 +43,34 @@ class VisaChecklistSeederTest extends TestCase
         // we can verify the fail-soft skip path.
         foreach (array_keys(self::EXPECTED_COUNTS) as $code) {
             VisaType::create([
-                'code'                          => $code,
-                'name'                          => "Test {$code}",
-                'category'                      => 'Test',
-                'short_description'             => 'Test',
-                'consultation_price_nzd'        => 200.00,
+                'code' => $code,
+                'name' => "Test {$code}",
+                'category' => 'Test',
+                'short_description' => 'Test',
+                'consultation_price_nzd' => 200.00,
                 'consultation_duration_minutes' => 30,
-                'estimated_minutes'             => 10,
-                'icon'                          => 'Globe',
-                'active'                        => true,
+                'estimated_minutes' => 10,
+                'icon' => 'Globe',
+                'active' => true,
             ]);
+        }
+    }
+
+    public function test_student_template_keeps_one_applicant_employment_certificate_in_financial_documents(): void
+    {
+        $items = collect((new VisaChecklistSeeder)->templates()['student']['items']);
+        $coe = $items->where('key', 'certificate_of_employment');
+        $this->assertCount(1, $coe);
+        $this->assertSame('Financial Documents (Applicant)', $coe->first()['category']);
+    }
+
+    public function test_partnership_templates_include_one_sponsor_passport_without_duplicate_sponsor_visas(): void
+    {
+        $templates = (new VisaChecklistSeeder)->templates();
+        foreach (['partner_work', 'partner_res'] as $key) {
+            $items = collect($templates[$key]['items']);
+            $this->assertCount(1, $items->where('key', 'sponsor_passport'));
+            $this->assertCount(1, $items->filter(fn ($item) => in_array($item['key'], ['sponsor_nz_visa', 'sponsor_visa'])));
         }
     }
 
@@ -66,7 +84,7 @@ class VisaChecklistSeederTest extends TestCase
             $this->assertCount(
                 $expected,
                 $visa->checklist_items,
-                "Wrong item count for {$code} — got " . count($visa->checklist_items) . ", expected {$expected}"
+                "Wrong item count for {$code} — got ".count($visa->checklist_items).", expected {$expected}"
             );
         }
 
@@ -118,34 +136,17 @@ class VisaChecklistSeederTest extends TestCase
         $this->assertIsBool($first['required']);
     }
 
-    public function test_labels_embed_section_in_canonical_section_dot_name_shape(): void
+    public function test_student_sections_use_separate_category_fields(): void
     {
         $this->seed(VisaChecklistSeeder::class);
-
-        $visa = VisaType::where('code', 'STUDENT')->firstOrFail();
-        $sections = collect($visa->checklist_items)
-            ->map(fn ($item) => explode(' · ', $item['label'], 2)[0])
-            ->unique()
-            ->values()
-            ->all();
-
-        // The Student Visa checklist groups items into these named sections
-        // after the documents-only strip. The picker UI reads them by
-        // splitting on " · ". (The previous "Personal & Contact" section
-        // was entirely data — its items live on the lead row now.)
-        $this->assertContains('Identity', $sections);
-        $this->assertContains('Admission', $sections);
-        $this->assertContains('Financial', $sections);
-        $this->assertContains('Sponsor (if applicable)', $sections);
-        $this->assertNotContains('Personal & Contact', $sections, 'Personal & Contact section should be empty after documents-only strip.');
-
-        // No item should ever lack the separator.
-        foreach ($visa->checklist_items as $item) {
-            $this->assertStringContainsString(
-                ' · ',
-                $item['label'],
-                "Label '{$item['label']}' is missing the section separator."
-            );
+        $items = collect(VisaType::where('code', 'STUDENT')->firstOrFail()->checklist_items);
+        $sections = $items->pluck('category')->unique()->all();
+        $this->assertContains('Applicant Documents', $sections);
+        $this->assertContains('Financial Documents (Applicant)', $sections);
+        $this->assertContains('Sponsor Documents (if sponsored)', $sections);
+        foreach ($items as $item) {
+            $this->assertNotEmpty($item['category']);
+            $this->assertNotEmpty($item['label']);
         }
     }
 

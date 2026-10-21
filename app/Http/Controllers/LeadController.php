@@ -1364,6 +1364,7 @@ class LeadController extends Controller
             ->map(fn ($n) => [
                 'id' => $n->id,
                 'body' => $n->body,
+                'programs' => $n->programs ?? [],
                 'author_name' => $n->author_name ?: 'Unknown',
                 'author_role' => $n->author_role ?: 'staff',
                 'user_id' => $n->user_id,
@@ -1475,7 +1476,8 @@ class LeadController extends Controller
         // They have no `checklist_key`, so the Documents tab surfaces them
         // as a separate list at the bottom instead of losing them.
         $documentOrphans = \App\Models\LeadDocument::where('lead_id', $lead->id)
-            ->whereNull('checklist_key')
+            ->where(fn ($query) => $query->whereNull('checklist_key')
+                ->when(! $lead->is_immigration_case, fn ($query) => $query->orWhere('checklist_key', 'agree.proposal')))
             ->with('uploader:id,name')
             ->orderByDesc('created_at')
             ->get()
@@ -2433,6 +2435,7 @@ class LeadController extends Controller
             'notes' => $lead->notes->map(fn ($n) => [
                 'id' => $n->id,
                 'body' => $n->body,
+                'programs' => $n->programs ?? [],
                 'author_name' => $n->author_name ?: 'Unknown',
                 'kind' => $n->kind ?: 'general',
                 'created_at' => optional($n->created_at)->toIso8601String(),
@@ -2976,8 +2979,10 @@ class LeadController extends Controller
 
     public function convertToCase($id)
     {
+        $lead = Lead::findOrFail($id);
+        abort_unless(\App\Support\LeadAccess::canView(auth()->user(), $lead), 403);
+
         try {
-            $lead = Lead::findOrFail($id);
             if ($lead->is_immigration_case) {
                 return back()->with('error', 'Already an immigration case.');
             }
@@ -2990,7 +2995,7 @@ class LeadController extends Controller
 
             // Configurable email automation — a no-op unless an admin enabled a
             // message for this event (client welcome and/or staff notice).
-            app(\App\Services\EmailAutomationService::class)->fire('immigration.case.converted', $lead, [
+            app(\App\Services\EmailAutomationService::class)->fire($lead->is_student ? 'immigration.education.handoff' : 'immigration.case.converted', $lead, [
                 'visa_type' => $lead->inz_visa_type ?? '',
             ]);
 

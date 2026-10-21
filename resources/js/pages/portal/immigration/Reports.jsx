@@ -35,7 +35,7 @@ const stageColor = (stage) =>
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : "");
 
 export default function ImmigrationReports({
-    range = { preset: "two_weeks", label: "Last 2 weeks" },
+    range = { preset: "this_week", label: "This week" },
     pipeline = {}, namedIntake = {}, submissions = {}, outcomes = {}, conclusion = {},
     activity = {}, stageDistribution = [], totalCases = 0, trend = [], ytd = {},
     generated_at, generated_by,
@@ -93,8 +93,7 @@ export default function ImmigrationReports({
                 <StatCard icon={<UserPlus size={16} />} value={pipeline.new_clients ?? 0} label="New clients" hint="Opened this period" />
                 <StatCard icon={<ActivityIcon size={16} />} value={pipeline.in_progress ?? 0} label="In progress" hint="Active, pre-INZ" />
                 <StatCard icon={<FileText size={16} />} value={pipeline.for_quotation ?? 0} label="For quotation" hint="Awaiting pricing / invoice" />
-                <StatCard icon={<BadgeCheck size={16} />} value={pipeline.endorsed_dev ?? 0} label="Endorsed for assessment" hint="With Dev" />
-                <StatCard icon={<Send size={16} />} value={pipeline.endorsed_hendry ?? 0} label="Endorsed to Hendry" hint="With Hendry" />
+                <StatCard icon={<BadgeCheck size={16} />} value={pipeline.endorsed_lia ?? 0} label="Endorsed to LIA" hint="Recorded this period" />
                 <StatCard icon={<Handshake size={16} />} value={pipeline.agreements_sent ?? 0} label="Agreements sent" hint="Awaiting signature" />
                 <StatCard icon={<Clock size={16} />} value={pipeline.with_inz ?? 0} label="With INZ" hint="Awaiting decision" tone="dark" />
                 <StatCard icon={<Inbox size={16} />} value={pool.total} label="Pre-lodgement pool" hint={`${pool.paid} paid · ${pool.awaiting} awaiting`} />
@@ -111,7 +110,7 @@ export default function ImmigrationReports({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <NamedCard icon={<UserPlus size={17} />} title="New client records" count={(namedIntake.new_clients || []).length} meta="opened this period" items={namedIntake.new_clients} showDate />
                 <NamedCard icon={<Send size={17} />} title="Agreements issued" count={(namedIntake.agreements_issued || []).length} meta="in this period" items={namedIntake.agreements_issued} showDate />
-                <NamedCard icon={<BadgeCheck size={17} />} title="Endorsed to Dev" count={(namedIntake.endorsed_dev || []).length} meta="in this period" items={namedIntake.endorsed_dev} showDate />
+                <NamedCard icon={<BadgeCheck size={17} />} title="Endorsed to LIA" count={(namedIntake.endorsed_lia || []).length} meta="in this period" items={namedIntake.endorsed_lia} showDate />
                 <NamedCard icon={<Handshake size={17} />} title="Engagement signed" count={(namedIntake.engagement_signed || []).length} meta="in this period" items={namedIntake.engagement_signed} showDate />
             </div>
 
@@ -127,9 +126,10 @@ export default function ImmigrationReports({
 
             {/* ── 04 · Decision outcomes ─────────────────────────────────── */}
             <DeckHeader n="04" eyebrow="Updates and reporting" title="Decision outcomes" />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <OutcomeCard icon={<Award size={18} />} value={(outcomes.approved || []).length} label="Visas approved" items={outcomes.approved} hint={outcomes.approved?.length ? outcomes.approved.map((o) => o.visa).filter(Boolean).slice(0, 2).join(", ") : "None in the period"} tone="emerald" />
                 <OutcomeCard icon={<Clock size={18} />} value={(outcomes.interim || []).length} label="Interim visa granted" items={outcomes.interim} hint={outcomes.interim?.[0]?.visa || "—"} tone="teal" />
+                <OutcomeCard icon={<HelpCircle size={18} />} value={(outcomes.rfis || []).length} label="Request for Information (RFI)" items={outcomes.rfis} hint="Requested this period" tone="teal" />
                 <OutcomeCard icon={<Ban size={18} />} value={(outcomes.declined || []).length} label="Visa declined" items={outcomes.declined} align="right" hint={outcomes.declined?.[0]?.visa || "—"} tone="rose" />
             </div>
             <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
@@ -381,7 +381,13 @@ function OutcomeCard({ icon, value, label, hint, items = [], align = "left", ton
                 <p className={`text-3xl font-bold tabular-nums mt-3 ${zero ? "text-gray-400" : map.text}`}>{zero ? "None" : value}</p>
                 <p className="text-[13px] font-bold text-gray-800 mt-0.5">{label}</p>
                 {hint && <p className="text-[11px] text-gray-400 mt-0.5 truncate" title={hint}>{hint}</p>}
-                {has && <p className="text-[10px] text-gray-300 mt-1.5">Hover to see who</p>}
+                {has && <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                    {items.map((item) => <li key={item.id} className="text-xs text-gray-700">
+                        <span className="font-semibold">{item.name}</span>
+                        {item.visa && <span className="block text-gray-500">{item.visa}</span>}
+                        {item.date && <span className="block text-gray-400">{fmtDate(item.date)}</span>}
+                    </li>)}
+                </ul>}
             </div>
         </HoverNames>
     );

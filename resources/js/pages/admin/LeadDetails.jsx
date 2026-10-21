@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
+import NoteProgramPicker, { NotePrograms } from '@/components/leads/NoteProgramPicker';
 import AiRecordAssistant from '@/components/ai/AiRecordAssistant';
 import {
     ArrowLeft, User, BookOpen, DollarSign, GraduationCap,
@@ -1071,7 +1072,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div className="lg:col-span-2">
-                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} />
+                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} />
                         </div>
                         <JourneyPanel
                             lead={backendLead}
@@ -1114,7 +1115,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                 {/* Notes and tasks side by side — the two things staff act on. */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} />
+                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} />
                     <TasksPanel leadId={backendLead.id} tasks={tasks} staffOptions={staffOptions} currentUser={currentUser} />
                 </div>
 
@@ -4235,7 +4236,8 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
             ? CHECKLIST
             : ['personal', 'academic', 'agreements']
                 .map((k) => CHECKLIST.find((s) => s.key === k))
-                .filter(Boolean);
+                .filter(Boolean)
+                .map((section) => ({ ...section, items: section.items.filter((item) => item.id !== 'agree.proposal') }));
 
         // Per-lead ad-hoc documents (leads.custom_documents) drop into the
         // folder staff chose — this lead only. Each is a custom.* item so
@@ -5356,7 +5358,8 @@ const GOAL_STATUS_OPTS = ['Consultation Done', 'For Proposal', 'Proposal Sent', 
 // dropdown filtered to roles that legitimately pre-screen leads.
 const PRESCREEN_ROLES = ['sales', 'education', 'admin'];
 
-function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
+function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOptions = [] }) {
+    const [notePrograms, setNotePrograms] = useState([]);
     const writeBase = useWriteBase();
     const [body, setBody] = useState('');
     const [pinned, setPinned] = useState(false);
@@ -5384,7 +5387,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
     useEffect(() => { grow(editRef.current); }, [editBody, editingId]);
 
     const reset = () => {
-        setBody(''); setPinned(false); setKind('general');
+        setBody(''); setPinned(false); setKind('general'); setNotePrograms([]);
         setPreScreenedBy(''); setPreScreenMode(''); setPreScreenDate('');
         setGoalStatus(''); setGoalBy('');
     };
@@ -5395,6 +5398,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
         setSubmitting(true);
         const payload = {
             body: body.trim(),
+            programs: notePrograms,
             pinned,
             kind,
             pre_screened_by:     kind === 'pre_screen'   ? (preScreenedBy || null) : null,
@@ -5569,6 +5573,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                     </div>
                 )}
 
+                <NoteProgramPicker options={programOptions} value={notePrograms} onChange={setNotePrograms} />
                 <textarea
                     ref={composeRef}
                     value={body}
@@ -5628,6 +5633,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                                     <span className="text-[10px] text-gray-400 whitespace-nowrap">{fmt(n.created_at)}</span>
                                 </div>
 
+                                <NotePrograms programs={n.programs} />
                                 {/* Kind-specific meta — pre-screener name,
                                     mode, date, goal status + assigned staff,
                                     rendered as small chips above the body. */}

@@ -188,7 +188,7 @@ class VisaChecklistSeeder extends Seeder
                 'Official academic transcript from your previous school.', true, 'TOR'),
             $this->item('pte_ielts_result', $applicant, 'PTE / IELTS Result',
                 'Your English test result (PTE Academic, IELTS, or accepted equivalent).', true, 'PTE'),
-            $this->item('certificate_of_employment', $applicant, 'Certificate of Employment',
+            $this->item('certificate_of_employment', $financial, 'Certificate of Employment',
                 'Certificate confirming your employment history, role and dates.', true, 'COE'),
             $this->item('offer_of_place', $applicant, 'Offer of Place',
                 'Offer of Place from your NZ institution.', true, 'OOP'),
@@ -292,6 +292,8 @@ class VisaChecklistSeeder extends Seeder
         $evidence = 'Genuine & Stable Partnership Evidence';
 
         return [
+            $this->item('sponsor_passport', 'Sponsor Documents', 'Passport of Sponsor',
+                "Copy of the supporting partner's passport.", true, 'PPT', '(of sponsor)'),
             // ── 01–09 · Applicant & Sponsorship Documents ────────────────
             $this->item('visa_information_form', $main, 'Visa Information Form',
                 'The completed and signed Immigration NZ family/partner information form.', true, 'VIF'),
@@ -345,6 +347,8 @@ class VisaChecklistSeeder extends Seeder
     private function partnershipOfResident(): array
     {
         return [
+            $this->item('sponsor_passport', 'Sponsor Documents', 'Passport of Sponsor',
+                "Copy of the supporting partner's passport.", true, 'PPT', '(of sponsor)'),
             $this->item('passport_pdf', 'Identity', 'Passport (PDF)',
                 'Clear colour scan of your current, valid passport in PDF format.'),
             $this->item('passport_bio_page', 'Identity', 'Passport biographical page',

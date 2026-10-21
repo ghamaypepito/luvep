@@ -2474,6 +2474,8 @@ class LeadDocumentController extends Controller
         // Lead users can only download files tied to their own lead record.
         if ($user->isLead()) {
             abort_unless($user->lead_id === $doc->lead_id, 403);
+            $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
+            abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
         }
 
         // Build 12 phase 4 — a staff member opening a case document is passive
@@ -2627,7 +2629,15 @@ class LeadDocumentController extends Controller
             is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : []
         )));
 
-        foreach ($data['checklist_keys'] as $key) {
+        $keys = $data['checklist_keys'];
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        foreach ($checklist->forCase($lead) as $item) {
+            $itemKeys = $checklist->itemKeys($item);
+            if (array_intersect($keys, $itemKeys)) {
+                $keys = array_merge($keys, $itemKeys);
+            }
+        }
+        foreach (array_unique($keys) as $key) {
             if ($data['hidden']) {
                 if (! in_array($key, $hidden, true)) {
                     $hidden[] = $key;
