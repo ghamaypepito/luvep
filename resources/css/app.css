@@ -119,3 +119,21 @@ body {
     height: 0;
     pointer-events: none;
 }
+
+/* Flowbite's unlayered inset utilities can override responsive Tailwind rules.
+   Keep the shared assistant anchored explicitly, above its bottom-right launcher. */
+#ep-assistant-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    width: auto;
+    height: auto;
+}
+@media (min-width: 640px) {
+    #ep-assistant-panel {
+        inset: auto 20px 88px auto;
+        width: min(440px, calc(100vw - 40px));
+        height: min(640px, calc(100dvh - 112px));
+        border-radius: 16px;
+    }
+}

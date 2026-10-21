@@ -79,7 +79,7 @@ export function DockSession() {
         </button>
         <section ref={panel} id="ep-assistant-panel" role="dialog" aria-label="EP Assistant chat" tabIndex={-1}
             hidden={!open} onKeyDown={handleKeyDown}
-            className={`${open ? 'flex' : 'hidden'} fixed inset-0 z-50 flex-col bg-white shadow-2xl outline-none sm:inset-auto sm:right-5 sm:bottom-5 sm:w-[440px] sm:h-[min(720px,calc(100dvh-40px))] sm:rounded-2xl border border-gray-200 overflow-hidden`}>
+            className={`${open ? 'flex' : 'hidden'} flex-col bg-white shadow-2xl outline-none border border-gray-200 overflow-hidden`}>
             <div className="flex items-center justify-between bg-[#193c34] px-4 py-3 text-white shrink-0">
                 <span className="text-sm font-semibold">EP Assistant</span>
                 <div className="flex gap-1">
