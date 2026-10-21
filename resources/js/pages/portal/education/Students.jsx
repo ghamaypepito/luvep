@@ -1218,8 +1218,9 @@ function StudentDashboardPanel({ student: s }) {
                     {/* Row 1 — academic */}
                     <ReadOnlyField icon={BookOpen}  label="Program"     value={s.program ? `${s.program}${s.level ? ` · ${s.level}` : ""}` : null} />
                     <ReadOnlyField icon={School}    label="School"      value={schoolDisplay} />
-                    <ReadOnlyField icon={Calendar}  label="Intake"      value={fmtIntake(s.intake)} />
+                    <ReadOnlyField icon={Calendar}  label="Planned intake" value={fmtIntake(s.intake)} />
                     <ReadOnlyField icon={Languages} label="PTE / IELTS" value={englishTest} />
+                    <ReadOnlyField icon={Calendar} label="Actual course start" value={fmtIntake(s.actual_course_started_on)} />
 
                     {/* Row 2 — operations */}
                     <EditableField leadId={s.id} fieldKey="payment" icon={CreditCard} label="Payment" value={s.payment} placeholder="e.g. PhP 150,000" />

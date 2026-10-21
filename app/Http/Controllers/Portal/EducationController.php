@@ -393,6 +393,7 @@ class EducationController extends Controller
                         'program_schools' => optional($plan)->program_schools,
                         'level' => optional($plan)->qualification_level,
                         'intake' => optional($plan)->preferred_intake,
+                        'actual_course_started_on' => $l->education_notes['actual_course_started_on'] ?? null,
                         'english_test' => optional($plan)->english_test_type,
                         'english_test_taken' => (bool) optional($plan)->english_test_taken,
                         'english_test_score' => optional($plan)->score_overall,
@@ -766,6 +767,7 @@ class EducationController extends Controller
             if ($lead->immigration_stage) {
                 $lead->pushStageHistory('immigration', $lead->immigration_stage, $lead->immigration_assignee);
             }
+            $this->mergeCourseStartDate($lead, $data);
             $lead->save();
 
             if (! empty($data['program_text']) || ! empty($data['intake']) || ! empty($data['english_test'])) {
@@ -921,6 +923,7 @@ class EducationController extends Controller
             if (empty($lead->date_of_engagement)) {
                 $lead->date_of_engagement = $data['date_of_engagement'] ?? now()->toDateString();
             }
+            $this->mergeCourseStartDate($lead, $data);
             $lead->save();
 
             // Study plan — reuse the existing one if the lead already has study
@@ -1012,6 +1015,7 @@ class EducationController extends Controller
                 $lead->stage_updated_by = auth()->id();
             }
 
+            $this->mergeCourseStartDate($lead, $data);
             $lead->save();
 
             // Update or create the primary study plan row.
@@ -1073,6 +1077,16 @@ class EducationController extends Controller
         }
     }
 
+    private function mergeCourseStartDate(Lead $lead, array $data): void
+    {
+        if (! array_key_exists('actual_course_started_on', $data)) {
+            return;
+        }
+        $notes = $lead->education_notes ?? [];
+        $notes['actual_course_started_on'] = $data['actual_course_started_on'];
+        $lead->education_notes = $notes;
+    }
+
     private function validateStudentPayload(\Illuminate\Http\Request $request, ?int $leadId = null): array
     {
         return $request->validate([
@@ -1093,6 +1107,7 @@ class EducationController extends Controller
             'english_assignee' => ['nullable', \Illuminate\Validation\Rule::in(Lead::ENGLISH_STAGE_ASSIGNEES)],
             'immigration_assignee' => ['nullable', \Illuminate\Validation\Rule::in(Lead::IMMIGRATION_STAGE_ASSIGNEES)],
             'date_of_engagement' => 'nullable|date',
+            'actual_course_started_on' => 'nullable|date_format:Y-m-d',
             'program_text' => 'nullable|string|max:1000',
             'school_id' => 'nullable|integer|exists:schools,id',
             // One or more school names joined by " · " — the de-duplicated union
