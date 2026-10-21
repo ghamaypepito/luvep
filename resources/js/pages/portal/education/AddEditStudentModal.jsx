@@ -103,7 +103,7 @@ const blankForm = () => ({
     department: "education", stage: "", assignee: "",
     date_of_engagement: "",
     program_text: "", internal_note: "",
-    payment: "", intake: "", school_id: "", school_text: "",
+    payment: "", intake: "", actual_course_started_on: "", school_id: "", school_text: "",
     coop: "", oop: "", english_test: "",
 });
 
@@ -189,6 +189,7 @@ export default function AddEditStudentModal({
             internal_note:   student.comments                           ?? "",
             payment:         student.payment                            ?? "",
             intake:          student.intake                             ?? "",
+            actual_course_started_on: student.actual_course_started_on      ?? "",
             school_id:       student.school_id                          ?? "",
             // Multi-school text; fall back to the legacy single school name.
             school_text:     student.school || student.school_name || "",
@@ -321,6 +322,7 @@ export default function AddEditStudentModal({
             english_assignee:     department === "english"     ? (assignee || null) : null,
             immigration_assignee: department === "immigration" ? (assignee || null) : null,
             date_of_engagement:   form.date_of_engagement || null,
+            actual_course_started_on: form.actual_course_started_on || null,
         };
 
         // Per-program schools (aligned with program_text order) drive everything:
@@ -625,8 +627,11 @@ export default function AddEditStudentModal({
                                 />
                                 <p className="mt-1 text-[10.5px] text-gray-400">Auto-filled from each program's catalogue school when it has one — type to set or change any.</p>
                             </div>
-                            <Field label="Intake" hint="Intake start date · optional">
-                                <input type="date" value={form.intake} onChange={set("intake")} className={ICls} />
+                            <Field label="Planned intake" hint="Scheduled course start · optional">
+                                <input type="date" aria-label="Planned intake" value={form.intake} onChange={set("intake")} className={ICls} />
+                            </Field>
+                            <Field label="Actual course start date" hint="When the student started · optional">
+                                <input type="date" aria-label="Actual course start date" value={form.actual_course_started_on} onChange={set("actual_course_started_on")} className={ICls} />
                             </Field>
                         </div>
                     </Section>
