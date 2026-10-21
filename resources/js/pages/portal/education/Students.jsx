@@ -60,7 +60,15 @@ function RowMenu({ items = [] }) {
         if (!open || !triggerRef.current) return;
         const place = () => {
             const r = triggerRef.current.getBoundingClientRect();
-            setCoords({ top: r.bottom + 6, left: r.right - 220 });
+            const menu = menuRef.current;
+            const height = menu?.getBoundingClientRect().height ?? 0;
+            const width = menu?.getBoundingClientRect().width ?? 220;
+            const below = r.bottom + 6;
+            const top = below + height <= window.innerHeight - 8 ? below : r.top - height - 6;
+            setCoords({
+                top: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
+                left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)),
+            });
         };
         place();
         const onScroll = () => place();
@@ -113,6 +121,9 @@ function RowMenu({ items = [] }) {
                         top: coords.top,
                         left: Math.max(8, coords.left),
                         width: 220,
+                        maxWidth: "calc(100vw - 16px)",
+                        maxHeight: "calc(100vh - 16px)",
+                        overflowY: "auto",
                     }}
                     className="z-[60] bg-white rounded-xl shadow-2xl border border-gray-100 py-1.5"
                 >

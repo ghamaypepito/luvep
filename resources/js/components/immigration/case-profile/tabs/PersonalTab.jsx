@@ -5,6 +5,7 @@ import { Save, ClipboardList, Eye, Download, FileText, Sparkles, Loader2, CheckC
 
 const xsrf = () => decodeURIComponent((document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || "");
 import { ASSESSMENT_SECTIONS, formatAssessmentValue } from "@/data/assessmentSections";
+import SendAssessmentButton from "../SendAssessmentButton";
 import PhoneField from "@/components/PhoneField";
 import { immBase } from "@/lib/caseRoutes";
 
@@ -311,7 +312,8 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
             <div className="max-w-4xl text-center py-10 border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
                 <ClipboardList size={26} className="mx-auto text-gray-300" />
                 <p className="mt-2 text-sm font-semibold text-gray-700">No visa assessment on file</p>
-                <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">This case was created without a public visa-interest submission, so there's no assessment to display.</p>
+                <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">Request an assessment linked to this case. Clients without portal access need administrator approval first.</p>
+                <div className="mt-4"><SendAssessmentButton leadId={lead.id} /></div>
             </div>
         )}
       </div>
@@ -427,12 +429,13 @@ function AssessmentSubmission({ intake, leadId, completeness = null }) {
                     </h3>
                     <p className="text-[12px] text-gray-500 mt-1">
                         {VISA_LABEL[type] || type}
-                        {submitted && <span> · submitted {submitted}</span>}
+                        {submitted && <span> · {data.status === "Draft" ? "draft created" : "submitted"} {submitted}</span>}
                         {data.intake_id && <span className="ml-2 font-mono text-gray-400">{data.intake_id}</span>}
                     </p>
                 </div>
                 {data.id && (
                     <div className="flex items-center gap-1.5 flex-wrap">
+                        <SendAssessmentButton leadId={leadId} />
                         <a href={`${base}/preview`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 text-[11px] font-semibold hover:bg-gray-50">
                             <Eye size={12} /> Preview
                         </a>

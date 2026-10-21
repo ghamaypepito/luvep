@@ -102,6 +102,7 @@ class Lead extends Model
         // RFI/outcome — order matters, the list is used as a forward-only
         // rank by CaseStepService::deriveStage().
         'Interim Visa Issued',
+        'Request for Medical',
         'Request for Information',
         // The adviser has responded to INZ's RFI — case is back with INZ
         // awaiting a decision.
@@ -262,6 +263,17 @@ class Lead extends Model
      * table is already at InnoDB's row-size limit. Read-only; write it through
      * that action, which annotates the stage entry.
      */
+    public function getMedicalDeadlineAttribute(): ?\Illuminate\Support\Carbon
+    {
+        foreach (array_reverse($this->stage_history ?? []) as $entry) {
+            if (($entry['stage'] ?? null) === 'Request for Medical' && ! empty($entry['medical_deadline'])) {
+                return \Illuminate\Support\Carbon::parse($entry['medical_deadline']);
+            }
+        }
+
+        return null;
+    }
+
     public function getRfiDeadlineAttribute(): ?\Illuminate\Support\Carbon
     {
         foreach (array_reverse($this->stage_history ?? []) as $entry) {

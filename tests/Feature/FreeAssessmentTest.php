@@ -477,6 +477,7 @@ class FreeAssessmentTest extends TestCase
 
     public function test_passport_pdf_upload(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
 
         $payload = $this->fullPayload();
@@ -488,12 +489,14 @@ class FreeAssessmentTest extends TestCase
 
         $lead = Lead::latest()->first();
         $this->assertNotNull($lead->passport_path);
-        Storage::disk('public')->assertExists($lead->passport_path);
+        Storage::disk('local')->assertExists($lead->passport_path);
+        Storage::disk('public')->assertMissing($lead->passport_path);
     }
 
     public function test_enrolment_uploads_create_checklist_documents(): void
     {
         Storage::fake('local');
+        Storage::fake('public');
 
         $payload = $this->fullPayload();
         $payload['cv_files'] = [UploadedFile::fake()->create('cv.pdf', 200, 'application/pdf')];
@@ -513,6 +516,9 @@ class FreeAssessmentTest extends TestCase
             ->all();
 
         $this->assertContains('acad.cv', $keys);
+        $cv = \App\Models\LeadDocument::where('lead_id', $lead->id)->where('checklist_key', 'acad.cv')->sole();
+        Storage::disk('local')->assertExists($cv->file_path);
+        Storage::disk('public')->assertMissing($cv->file_path);
         $this->assertContains('pers.passport', $keys);
         $this->assertContains('acad.degree_diploma', $keys);
         $this->assertContains('acad.transcript', $keys);

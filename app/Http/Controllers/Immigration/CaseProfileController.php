@@ -1655,6 +1655,7 @@ class CaseProfileController extends Controller
             // RFI response deadline (stored on the RFI stage-history entry) —
             // shown on the Documents tab's Request Information section.
             'rfi_deadline' => optional($lead->rfi_deadline)->format('Y-m-d'),
+            'medical_deadline' => optional($lead->medical_deadline)->format('Y-m-d'),
             'inz_visa_type' => $lead->inz_visa_type,
             'inz_reference' => $lead->inz_reference,
             'inz_client_number' => $lead->inz_client_number,

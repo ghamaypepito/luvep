@@ -51,24 +51,38 @@ const COUNTRIES = [
 
 const flag = (iso) => iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
-export default function PhoneField({ value = "", onChange, error, placeholder = "Phone number" }) {
-    // Derive the country + national number from the stored value once.
-    const initial = useMemo(() => {
-        const v = (value || "").trim();
-        if (v.startsWith("+")) {
-            const sorted = [...COUNTRIES].sort((a, b) => b.d.length - a.d.length);
-            const match = sorted.find((c) => v.startsWith("+" + c.d));
-            if (match) return { country: match, number: v.slice(("+" + match.d).length).trim() };
-        }
-        return { country: COUNTRIES[0], number: v.replace(/^\+/, "") };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+const INTERNATIONAL = { n: "International", iso: "", d: "" };
+const COUNTRY_PREFIXES = [...COUNTRIES].sort((a, b) => b.d.length - a.d.length);
+function parsePhone(value) {
+    const raw = (value || "").trim();
+    if (raw.startsWith("+")) {
+        const digits = raw.replace(/\D/g, "");
+        const match = COUNTRY_PREFIXES.find((c) => digits.startsWith(c.d));
+        if (match) return { country: match, number: digits.slice(match.d.length) };
+        // No prefix guessing: retain the full international number when its
+        // country is absent from the convenience list.
+        return { country: INTERNATIONAL, number: `+${digits}` };
+    }
+    return { country: COUNTRIES[0], number: raw };
+}
 
+export default function PhoneField({ value = "", onChange, error, placeholder = "Phone number" }) {
+    const initial = useMemo(() => parsePhone(value), []);
     const [country, setCountry] = useState(initial.country);
     const [number, setNumber] = useState(initial.number);
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState("");
     const ref = useRef(null);
+    const lastEmitted = useRef(null);
+
+    useEffect(() => {
+        // Parent form draft loads/resets must update the visible input. Keep
+        // local country selection when the parent merely echoes our change.
+        if (value === lastEmitted.current) return;
+        const parsed = parsePhone(value);
+        setCountry(parsed.country);
+        setNumber(parsed.number);
+    }, [value]);
 
     useEffect(() => {
         const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -76,11 +90,11 @@ export default function PhoneField({ value = "", onChange, error, placeholder = 
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
-    // E.164: a full international number is at most 15 digits (country code +
-    // national). Cap the national part accordingly, with a sensible floor.
-    const maxDigits = Math.max(6, 15 - country.d.length);
-
-    const emit = (c, n) => onChange(`+${c.d} ${n}`.trim());
+    const emit = (c, n) => {
+        const next = !n || n === "+" ? "" : c.d ? `+${c.d} ${n}` : n;
+        lastEmitted.current = next;
+        onChange(next);
+    };
 
     const filtered = COUNTRIES.filter((c) => {
         const s = q.trim().toLowerCase();
@@ -92,24 +106,35 @@ export default function PhoneField({ value = "", onChange, error, placeholder = 
             <div className={`flex items-center border-b transition-colors ${error ? "border-red-500" : "border-gray-200"} focus-within:border-[#009688]`}>
                 <button
                     type="button"
+                    aria-label={country.d ? `Country code +${country.d}` : "International"}
                     onClick={() => setOpen((o) => !o)}
                     className="flex items-center gap-1.5 pr-2.5 py-3 text-[#282728] flex-shrink-0"
                 >
-                    <span className="text-lg leading-none">{flag(country.iso)}</span>
-                    <span className="text-sm font-medium">+{country.d}</span>
+                    <span className="text-lg leading-none">{country.iso ? flag(country.iso) : "🌐"}</span>
+                    <span className="text-sm font-medium">{country.d ? `+${country.d}` : "International"}</span>
                     <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
                 </button>
                 <input
                     type="tel"
-                    inputMode="numeric"
+                    inputMode="tel"
                     value={number}
-                    maxLength={maxDigits}
                     onChange={(e) => {
-                        // Digits only, capped so the full number stays within the
-                        // 15-digit E.164 limit (total = country code + national).
-                        const n = e.target.value.replace(/\D/g, "").slice(0, maxDigits);
+                        // Parse an international paste before limiting digits. A
+                        // native maxLength would truncate spaces and the prefix
+                        // before this handler can recover the national number.
+                        const raw = e.target.value.trim();
+                        const digits = raw.replace(/\D/g, "");
+                        const matched = raw.startsWith("+")
+                            ? COUNTRY_PREFIXES.find((c) => digits.startsWith(c.d))
+                            : null;
+                        const selected = raw.startsWith("+") ? (matched || INTERNATIONAL) : country;
+                        const national = matched ? digits.slice(matched.d.length) : digits;
+                        const n = selected.d
+                            ? national.slice(0, 15 - selected.d.length)
+                            : (raw ? `+${digits.slice(0, 15)}` : "");
+                        setCountry(selected);
                         setNumber(n);
-                        emit(country, n);
+                        emit(selected, n);
                     }}
                     placeholder={placeholder}
                     className="flex-1 min-w-0 bg-transparent py-3 text-[#282728] outline-none"
@@ -136,7 +161,7 @@ export default function PhoneField({ value = "", onChange, error, placeholder = 
                         <button
                             key={c.iso}
                             type="button"
-                            onClick={() => { const n = number.slice(0, Math.max(6, 15 - c.d.length)); setCountry(c); setNumber(n); emit(c, n); setOpen(false); setQ(""); }}
+                            onClick={() => { const n = country.d ? number.slice(0, 15 - c.d.length) : ""; setCountry(c); setNumber(n); emit(c, n); setOpen(false); setQ(""); }}
                             className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-gray-50 ${c.iso === country.iso ? "bg-[#009688]/5" : ""}`}
                         >
                             <span className="text-lg leading-none">{flag(c.iso)}</span>
