@@ -1,3 +1,5 @@
+import { useState } from "react";
+import TicketConversation from "@/components/TicketConversation";
 import { Head } from "@inertiajs/react";
 import { Ticket, MessageSquare } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
@@ -18,8 +20,9 @@ const CAT_LABEL = { change: "Change", feature: "Feature", bug: "Bug", other: "Ot
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const titleCase = (s) => (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export default function MyTickets({ tickets = { data: [], links: [] }, counts = {} }) {
+export default function MyTickets({ tickets = { data: [], links: [] }, counts = {}, filters = {} }) {
     const rows = tickets?.data ?? [];
+    const [expanded, setExpanded] = useState(null);
 
     return (
         <div className="space-y-6 max-w-4xl mx-auto">
@@ -38,6 +41,7 @@ export default function MyTickets({ tickets = { data: [], links: [] }, counts = 
                 <RequestTicketButton />
             </header>
 
+            <nav className="flex gap-4 text-sm" aria-label="Ticket views"><a href="/portal/tickets" className={(filters.tab ?? "active") === "active" ? "font-semibold underline" : "text-gray-500"}>Active tickets</a><a href="/portal/tickets?tab=archived" className={filters.tab === "archived" ? "font-semibold underline" : "text-gray-500"}>Archive</a></nav>
             {rows.length === 0 ? (
                 <div className="bg-white rounded-3xl border border-gray-50 shadow-sm px-6 py-16 text-center">
                     <Ticket className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -81,6 +85,9 @@ export default function MyTickets({ tickets = { data: [], links: [] }, counts = 
                                     </div>
                                 )}
 
+                                <p className="mt-3 text-xs text-gray-500">Owner: {t.assignee || "Unassigned"}{t.archived_at ? " · Archived" : ""}</p>
+                                <div className="mt-3 flex flex-wrap gap-4 text-sm"><button className="text-blue-700 underline" aria-expanded={expanded === t.id} onClick={() => setExpanded(expanded === t.id ? null : t.id)}>{expanded === t.id ? "Hide conversation" : "Open conversation"}</button>{t.resolution_report && <a className="text-blue-700 underline" href={`/system-tickets/${t.id}/resolution`}>Download resolution report</a>}</div>
+                                {expanded === t.id && <div className="mt-4 border-t pt-4"><TicketConversation ticket={t} /></div>}
                                 <div className="mt-3 flex items-center justify-between text-[11px] text-gray-400">
                                     <span className="tabular-nums">{t.ticket_ref}</span>
                                     <span>Raised {fmt(t.created_at)}{t.resolved_at ? ` · closed ${fmt(t.resolved_at)}` : ""}</span>

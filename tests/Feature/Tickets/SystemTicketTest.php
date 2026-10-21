@@ -139,6 +139,8 @@ class SystemTicketTest extends TestCase
         $ticket = SystemTicket::create($this->payload(['submitted_by' => $sales->id, 'department' => 'sales']));
         $admin = User::factory()->create(['role' => 'admin']);
 
+        $ticket->update(['resolution_report' => array_fill_keys(['issue_summary', 'root_cause', 'resolution', 'verification', 'documentation_summary'], 'Verified resolution')]);
+
         $this->actingAs($admin)->post("/admin/system-tickets/{$ticket->id}", ['status' => 'done']);
 
         $ticket->refresh();
