@@ -29,6 +29,7 @@ return [
     */
 
     'disks' => [
+        'tenant_private' => ['driver' => 'local', 'root' => storage_path('app/private/tenant-documents'), 'visibility' => 'private', 'serve' => false, 'throw' => true],
         'hr_private' => ['driver' => 'local', 'root' => storage_path('app/hr-private'), 'visibility' => 'private', 'serve' => false, 'throw' => true],
 
         'local' => [

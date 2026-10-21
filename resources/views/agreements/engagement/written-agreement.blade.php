@@ -9,7 +9,7 @@
     <div class="clause"><span class="n">1.1</span> This Agreement is made between:</div>
     <table class="data">
         <tr><td class="label">Name</td><td>D Immigration Consultancy Limited T/A ePathways Migration</td></tr>
-        <tr><td class="label">Address</td><td>4/15L Mercari Way, Albany, Auckland 0632, New Zealand</td></tr>
+        <tr><td class="label">Address</td><td>15 Mercari Way, Albany, Auckland 0632, New Zealand</td></tr>
         <tr><td class="label">Phone</td><td>{{ $contact['phone'] }}</td></tr>
         <tr><td class="label">Email</td><td>{{ $contact['email'] }}</td></tr>
     </table>

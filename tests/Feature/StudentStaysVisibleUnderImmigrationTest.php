@@ -34,6 +34,22 @@ class StudentStaysVisibleUnderImmigrationTest extends TestCase
         $lead->refresh();
         $this->assertTrue((bool) $lead->is_immigration_case, 'promoted to immigration case');
         $this->assertTrue((bool) $lead->is_student, 'still a student — stays visible under Education');
+        $this->assertSame('Student Visa', $lead->inz_visa_type);
+    }
+
+    public function test_handoff_preserves_an_existing_visa_and_denies_unrelated_portal_roles(): void
+    {
+        $lead = Lead::create(['first_name' => 'Existing', 'last_name' => 'Visa', 'is_student' => true, 'inz_visa_type' => 'Partner Visa']);
+        foreach (['lead', 'agent'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]))
+                ->post("/portal/education/students/{$lead->id}/dashboard-field", ['education_stage' => 'Endorsed to Immigration'])
+                ->assertForbidden();
+        }
+        $this->assertFalse($lead->fresh()->is_immigration_case);
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->post("/portal/education/students/{$lead->id}/dashboard-field", ['education_stage' => 'Endorsed to Immigration'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('Partner Visa', $lead->fresh()->inz_visa_type);
     }
 
     public function test_dual_lead_is_returned_by_the_students_query(): void

@@ -293,8 +293,9 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                                     </button>
                                     {open && (
                                         <div className="mt-3 ml-11 rounded-xl bg-gray-50 border border-gray-100 p-3.5">
-                                            {/^\s*<(!doctype|html|p|div|table|h[1-6]|span|br)\b/i.test(m.body || "")
-                                                ? <div className="text-sm text-gray-700 break-words [&_a]:text-blue-600 [&_p]:my-2" dangerouslySetInnerHTML={{ __html: m.body }} />
+                                            {!inbound && /^\s*<(!doctype|html|p|div|table|h[1-6]|span|br)\b/i.test(m.body || "")
+                                                ? <iframe title={m.subject || "Email message"} sandbox="" referrerPolicy="no-referrer"
+                                                    srcDoc={m.body} className="w-full min-h-[280px] rounded-lg border-0 bg-white" />
                                                 : <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{stripQuoteMarkers(m.body)}</p>}
                                             {m.error && (
                                                 <p className="mt-2 text-xs text-rose-600 flex items-center gap-1.5">
