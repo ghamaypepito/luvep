@@ -293,13 +293,14 @@ class TaskController extends Controller
     }
 
     /**
-     * List comments on a task, oldest first. Read access matches the wider
-     * staff group (any logged-in portal user can view).
+     * List comments on a task, oldest first, for its participants.
      */
     public function comments(Request $request, int $id)
     {
+        $task = LeadTask::findOrFail($id);
+        $this->authorizeComments($request->user(), $task);
+
         try {
-            $task = LeadTask::findOrFail($id);
 
             $rows = $task->comments()
                 ->with('author:id,name,avatar_path')
@@ -326,6 +327,7 @@ class TaskController extends Controller
     public function storeComment(Request $request, int $id)
     {
         $task = LeadTask::findOrFail($id);
+        $this->authorizeComments($request->user(), $task);
 
         $validated = $request->validate([
             'body' => 'required|string|max:5000',
@@ -352,6 +354,23 @@ class TaskController extends Controller
 
             return response()->json(['error' => 'Could not add comment.'], 500);
         }
+    }
+
+    private function authorizeComments(User $user, LeadTask $task): void
+    {
+        // Portal grants do not turn an external account into internal staff.
+        abort_unless($user->is_active && ($user->isAdmin() || in_array($user->role, [
+            'sales', 'education', 'english', 'immigration', 'immigration_manager',
+            'immigration_adviser', 'accommodation', 'finance',
+        ], true)), 403);
+
+        abort_unless(
+            $user->isAdmin()
+                || (int) $task->created_by === (int) $user->id
+                || in_array((int) $user->id, $task->allAssigneeIds(), true),
+            403,
+            'You do not have permission to access comments on this task.'
+        );
     }
 
     /**

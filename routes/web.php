@@ -1798,6 +1798,7 @@ Route::middleware(['auth'])->group(function () {
         });
 
         Route::middleware('portal:immigration')->prefix('immigration')->name('portal.immigration.')->group(function () {
+            Route::post('/leads', [ImmigrationController::class, 'storeLead'])->name('leads.store');
             Route::get('/dashboard', [ImmigrationController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [ImmigrationController::class, 'leads'])->name('leads');
             Route::get('/leads/proposals-agreements', [SalesController::class, 'proposalsAgreementsPage'])->name('leads.proposals-agreements');

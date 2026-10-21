@@ -21,6 +21,7 @@ use Illuminate\Validation\Rule;
 
 class ImmigrationController extends Controller
 {
+    use \App\Traits\CreatesDashboardLead;
     use BuildsLeadRow;
 
     private const LEAD_STATUSES = Lead::STAGES;
@@ -190,6 +191,8 @@ class ImmigrationController extends Controller
             return inertia($page, [
                 'portal' => $portal,
                 'statuses' => self::LEAD_STATUSES,
+                'staffOptions' => $this->dashboardStaff(array_merge(['sales', 'education', 'admin', 'super_admin', 'immigration'], User::IMMIGRATION_ROLES)),
+                'programs' => \App\Models\Program::orderBy('title')->pluck('title')->filter()->values(),
                 // Pipeline only — converted leads (cases) move to the Cases page.
                 'leads' => Lead::inLeadPipeline()
                     ->with([
@@ -214,6 +217,25 @@ class ImmigrationController extends Controller
             return inertia($page, [
                 'portal' => $portal, 'statuses' => self::LEAD_STATUSES, 'leads' => collect(),
             ]);
+        }
+    }
+
+    /** Create a lead from the immigration dashboard's shared Add Lead form. */
+    public function storeLead(Request $request)
+    {
+        $validated = $request->validate(
+            $this->dashboardLeadRules(self::LEAD_STATUSES) + $this->dashboardDocumentRules()
+        );
+
+        try {
+            $lead = $this->createDashboardLead($validated);
+            $this->storeDashboardLeadDocuments($lead, $request);
+
+            return back()->with('success', "Lead {$lead->lead_id} added.");
+        } catch (\Throwable $e) {
+            Log::error('Immigration add-lead failed', ['error' => $e->getMessage()]);
+
+            return back()->with('error', 'Could not add that lead. Please try again.');
         }
     }
 

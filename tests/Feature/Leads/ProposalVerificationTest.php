@@ -84,6 +84,63 @@ class ProposalVerificationTest extends TestCase
         $this->assertSame('pending', $lead->proposalStatus());
     }
 
+    public function test_education_reviewer_with_proposal_grant_can_approve_from_own_portal(): void
+    {
+        Mail::fake();
+        $reviewer = User::factory()->create([
+            'role' => 'education',
+            'module_permissions' => ['program_verification.proposal'],
+        ]);
+        $program = $this->program('Bachelor of Accounting');
+        $lead = Lead::create([
+            'first_name' => 'Proposal', 'last_name' => 'Applicant',
+            'email' => 'proposal@example.test',
+            'proposed_program_ids' => [$program->id],
+            'proposal_review' => ['status' => 'pending'],
+        ]);
+
+        $this->actingAs($reviewer)->get('/program-verification')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('portal/education/ProgramVerification')
+                ->where('leadBase', '/portal/education')
+                ->where('proposals.0.id', $lead->id));
+
+        $this->from('/program-verification')->post("/program-verification/{$lead->id}/approve", [
+            'verify_all' => true, 'send_email' => false,
+        ])->assertRedirect('/program-verification');
+
+        $lead->refresh();
+        $this->assertSame('approved', $lead->proposalStatus());
+        $this->assertTrue($lead->proposalIsLive());
+        $this->assertSame($reviewer->id, $lead->proposal_review['verified_by']);
+        $this->assertSame($reviewer->id, $lead->proposal_review['approved_by']);
+        $this->assertSame('verified', $lead->proposed_program_meta[$program->id]['status']);
+        $this->assertTrue($lead->proposed_program_meta[$program->id]['fee_confirmed']);
+        Mail::assertNothingSent();
+    }
+
+    public function test_education_staff_without_proposal_grant_cannot_verify_or_approve(): void
+    {
+        Mail::fake();
+        $program = $this->program('Bachelor of Accounting');
+        $lead = Lead::create([
+            'first_name' => 'Proposal', 'last_name' => 'Applicant',
+            'proposed_program_ids' => [$program->id],
+            'proposal_review' => ['status' => 'pending'],
+        ]);
+
+        foreach ([[], ['program_verification.consultancy']] as $grants) {
+            $staff = User::factory()->create(['role' => 'education', 'module_permissions' => $grants]);
+            $this->actingAs($staff)->post("/program-verification/{$lead->id}/verify")->assertForbidden();
+            $this->post("/program-verification/{$lead->id}/approve", [
+                'verify_all' => true, 'send_email' => false,
+            ])->assertForbidden();
+            $this->assertSame(['status' => 'pending'], $lead->fresh()->proposal_review);
+        }
+        Mail::assertNothingSent();
+    }
+
     public function test_module_is_gated(): void
     {
         $this->program('X');
