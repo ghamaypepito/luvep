@@ -467,6 +467,9 @@ Route::middleware(['auth'])->group(function () {
 
     // System request tickets — any staff member can raise one (leads are
     // blocked inside the controller).
+    Route::get('/system-tickets/{ticket}/conversation', [\App\Http\Controllers\TicketConversationController::class, 'show']);
+    Route::post('/system-tickets/{ticket}/messages', [\App\Http\Controllers\TicketConversationController::class, 'storeMessage'])->middleware('throttle:30,1');
+    Route::get('/system-tickets/{ticket}/resolution', [\App\Http\Controllers\TicketConversationController::class, 'downloadResolution']);
     Route::post('/tickets', [\App\Http\Controllers\SystemTicketController::class, 'store'])->name('tickets.store');
     // Screenshot stream — auth-gated to admins + the ticket's own submitter
     // inside the controller (the files live on the private disk).
@@ -730,6 +733,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/admin/email/replies/{leadId}/reply', [\App\Http\Controllers\EmailReplyController::class, 'reply'])->name('admin.email.replies.reply');
 
         // System request tickets — admin + super-admin triage board.
+        Route::get('/admin/system-tickets/analytics', \App\Http\Controllers\TicketAnalyticsController::class);
+        Route::get('/admin/system-tickets/documentation', [\App\Http\Controllers\TicketConversationController::class, 'documentation']);
+        Route::post('/admin/system-tickets/{ticket}/resolution', [\App\Http\Controllers\TicketConversationController::class, 'saveResolution']);
+        Route::post('/admin/system-tickets/{ticket}/publish', [\App\Http\Controllers\TicketConversationController::class, 'publishDocumentation']);
         Route::get('/admin/system-tickets', [\App\Http\Controllers\SystemTicketController::class, 'adminIndex'])->name('admin.system-tickets');
         Route::post('/admin/system-tickets/{id}', [\App\Http\Controllers\SystemTicketController::class, 'adminUpdate'])->name('admin.system-tickets.update');
 

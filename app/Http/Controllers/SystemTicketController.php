@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\SystemTicket;
+use App\Models\SystemTicketEvent;
 use App\Models\User;
 use App\Notifications\TicketSubmitted;
 use App\Notifications\TicketUpdated;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -20,7 +22,7 @@ class SystemTicketController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403, 'Only staff can submit tickets.');
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403, 'Only staff can submit tickets.');
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:160'],
@@ -38,6 +40,8 @@ class SystemTicketController extends Controller
             'category' => $data['category'],
             'priority' => $data['priority'] ?? 'normal',
             'status' => 'open',
+            'tracking_started_at' => now(),
+            'waiting_on' => 'support',
             'submitted_by' => $user->id,
             'department' => $user->role,
         ]);
@@ -52,7 +56,10 @@ class SystemTicketController extends Controller
             $ticket->update(['images' => $paths]);
         }
 
-        $recipients = User::whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->get();
+        SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $user->id, 'kind' => 'created', 'to_status' => 'open', 'created_at' => now()]);
+        Notification::route('mail', 'support@luvep.com')->notify(new \App\Notifications\SupportTicketCreated($ticket));
+
+        $recipients = User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->get();
         if ($recipients->isNotEmpty()) {
             Notification::send($recipients, new TicketSubmitted($ticket, $user->name));
         }
@@ -69,7 +76,7 @@ class SystemTicketController extends Controller
     public function myTickets(Request $request)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403, 'Only staff can view tickets.');
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403, 'Only staff can view tickets.');
 
         if (in_array($user->role, [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN], true)) {
             return redirect('/admin/system-tickets');
@@ -78,14 +85,16 @@ class SystemTicketController extends Controller
         $mine = SystemTicket::where('submitted_by', $user->id);
 
         $tickets = (clone $mine)
-            ->with('resolver:id,name')
+            ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->with(['resolver:id,name', 'assignee:id,name'])
             ->orderByRaw("CASE WHEN status IN ('done','declined') THEN 1 ELSE 0 END")
             ->orderByDesc('created_at')
-            ->paginate(15)
+            ->paginate(15)->withQueryString()
             ->through(fn (SystemTicket $t) => $this->serialize($t));
 
         return inertia($this->myTicketsPage($user), [
             'tickets' => $tickets,
+            'filters' => ['tab' => $request->query('tab', 'active')],
             'counts' => [
                 'open' => (clone $mine)->open()->count(),
                 'total' => (clone $mine)->count(),
@@ -118,7 +127,8 @@ class SystemTicketController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $base = SystemTicket::query()
-            ->with(['submitter:id,name,role', 'resolver:id,name'])
+            ->with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
+            ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($status && in_array($status, SystemTicket::STATUSES, true), fn ($q) => $q->where('status', $status))
             ->when($dept, fn ($q) => $q->where('department', $dept))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
@@ -135,7 +145,8 @@ class SystemTicketController extends Controller
 
         return inertia('admin/SystemTickets', [
             'tickets' => $tickets,
-            'filters' => ['status' => $status, 'department' => $dept, 'search' => $search],
+            'assignees' => User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->orderBy('name')->get(['id', 'name']),
+            'filters' => ['tab' => $request->query('tab', 'active'), 'status' => $status, 'department' => $dept, 'search' => $search],
             'meta' => [
                 'categories' => SystemTicket::CATEGORIES,
                 'priorities' => SystemTicket::PRIORITIES,
@@ -147,20 +158,49 @@ class SystemTicketController extends Controller
 
     public function adminUpdate(Request $request, $id)
     {
-        $ticket = SystemTicket::findOrFail($id);
-
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
         $data = $request->validate([
             'status' => ['required', Rule::in(SystemTicket::STATUSES)],
             'admin_response' => ['nullable', 'string', 'max:5000'],
+            'assigned_to' => ['nullable', Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN]))],
+            'waiting_on' => ['nullable', Rule::in(['support', 'requester', 'external'])],
+            'topic' => ['nullable', 'string', 'max:100'],
+            'response_target_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
         ]);
+        $ticket = DB::transaction(function () use ($id, $request, $data) {
+            $ticket = SystemTicket::whereKey($id)->lockForUpdate()->firstOrFail();
+            abort_if($ticket->archived_at, 422, 'Archived tickets are read-only.');
+            $oldStatus = $ticket->status;
+            if ($data['status'] === 'done' && $oldStatus !== 'done') {
+                foreach (['issue_summary', 'root_cause', 'resolution', 'verification', 'documentation_summary'] as $field) {
+                    if (! trim($ticket->resolution_report[$field] ?? '')) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'Complete and save the resolution report before marking Done.']);
+                    }
+                }
+            }
+            $event = fn ($kind, $metadata = []) => SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $request->user()->id, 'kind' => $kind, 'from_status' => $oldStatus, 'to_status' => $data['status'], 'metadata' => $metadata, 'created_at' => now()]);
+            if ($oldStatus !== $data['status']) {
+                $event('status_changed');
+                $data['resolved_at'] = in_array($data['status'], ['done', 'declined']) ? now() : null;
+                $data['resolved_by'] = in_array($data['status'], ['done', 'declined']) ? $request->user()->id : null;
+                if ($data['status'] !== 'done') {
+                    $data['archived_at'] = null;
+                }
+            }
+            if (array_key_exists('assigned_to', $data) && (string) $data['assigned_to'] !== (string) $ticket->assigned_to) {
+                $event('assigned', ['from' => $ticket->assigned_to, 'to' => $data['assigned_to']]);
+                $data['assigned_at'] = $ticket->assigned_at ?: ($data['assigned_to'] ? now() : null);
+            }
+            if (array_key_exists('waiting_on', $data) && $data['waiting_on'] !== $ticket->waiting_on) {
+                $event('waiting_changed', ['from' => $ticket->waiting_on, 'to' => $data['waiting_on']]);
+            }
+            if (isset($data['admin_response']) && trim($data['admin_response']) !== '' && $data['admin_response'] !== $ticket->admin_response) {
+                \App\Models\SystemTicketMessage::create(['ticket_id' => $ticket->id, 'user_id' => $request->user()->id, 'body' => $data['admin_response'], 'is_support' => true]);
+            }
+            $ticket->fill($data)->save();
 
-        $resolved = in_array($data['status'], ['done', 'declined'], true);
-        $ticket->update([
-            'status' => $data['status'],
-            'admin_response' => $data['admin_response'] ?? $ticket->admin_response,
-            'resolved_by' => $resolved ? $request->user()->id : null,
-            'resolved_at' => $resolved ? now() : null,
-        ]);
+            return $ticket;
+        });
 
         // Tell the department who raised it.
         if ($ticket->submitter) {
@@ -178,7 +218,7 @@ class SystemTicketController extends Controller
     public function image(Request $request, int $id, int $index)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403);
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403);
 
         $ticket = SystemTicket::findOrFail($id);
         abort_unless(
@@ -195,6 +235,14 @@ class SystemTicketController extends Controller
     private function serialize(SystemTicket $t): array
     {
         return [
+            'assigned_to' => $t->assigned_to,
+            'assignee' => $t->assignee?->name,
+            'waiting_on' => $t->waiting_on,
+            'topic' => $t->topic,
+            'archived_at' => $t->archived_at?->toIso8601String(),
+            'tracking_started_at' => $t->tracking_started_at?->toIso8601String(),
+            'resolution_report' => $t->resolution_report,
+            'response_target_hours' => $t->response_target_hours,
             'id' => $t->id,
             'ticket_ref' => $t->ticket_ref,
             'title' => $t->title,
