@@ -45,3 +45,6 @@ chmod(getenv('HR_FIXTURE_FILE'), 0600);
 
 $commentLead = App\Models\Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Comment client']);
 App\Models\LeadTask::create(['lead_id' => $commentLead->id, 'title' => 'Comment CSRF regression', 'created_by' => $admin->id, 'assignee_id' => $admin->id, 'department' => 'admin']);
+
+$ageLead = App\Models\Lead::create(['first_name' => 'Age', 'last_name' => 'Verification']);
+$ageLead->forceFill(['age' => 37])->save();

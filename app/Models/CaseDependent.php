@@ -78,7 +78,20 @@ class CaseDependent extends Model
     /** "First Last" (or a placeholder) — never a guessed value. */
     public function fullName(): string
     {
-        return trim("{$this->first_name} {$this->family_name}") ?: 'Unnamed dependant';
+        $name = trim("{$this->first_name} {$this->family_name}");
+        if ($name === '' && $this->canReadLinkedCase()) {
+            // The case-linked form permits an empty local identity snapshot.
+            $name = trim("{$this->linkedLead->first_name} {$this->linkedLead->last_name}");
+        }
+
+        return $name ?: 'Unnamed dependant';
+    }
+
+    /** Apply the recruiting agent's row scope before following a case link. */
+    public function canReadLinkedCase(): bool
+    {
+        return $this->linked_lead_id && $this->linkedLead?->is_immigration_case
+            && (auth()->user()?->role !== 'agent' || $this->linkedLead->agent_id === auth()->id());
     }
 
     /**
@@ -93,7 +106,7 @@ class CaseDependent extends Model
         // Tied to the child's OWN case: read that case's live visa checklist +
         // the documents the child submitted there (read-through the link), so the
         // parent sees exactly what the child uploaded on their own case.
-        if ($this->linked_lead_id && $this->linkedLead) {
+        if ($this->canReadLinkedCase()) {
             return $this->linkedCaseChecklist($this->linkedLead);
         }
 

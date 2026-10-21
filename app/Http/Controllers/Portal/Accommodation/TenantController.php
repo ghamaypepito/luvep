@@ -41,6 +41,7 @@ class TenantController extends Controller
 
     public function show(Tenant $tenant)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         $tenant->load('property');
         $tenant->property?->makeVisible(['code', 'address']);
 
@@ -52,6 +53,7 @@ class TenantController extends Controller
 
         return inertia('portal/accommodation/TenantDetail', [
             'tenant' => $tenant,
+            'documents' => $tenant->documents()->latest()->get(['id', 'tenant_id', 'name', 'category', 'size', 'created_at']),
             'historical' => $historical,
             'properties' => $this->propertyOptions(), // for the "move" modal
         ]);

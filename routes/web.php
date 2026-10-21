@@ -2126,6 +2126,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/tenants/{tenant}/move', [TenantController::class, 'moveToProperty'])->name('tenants.move');
             Route::patch('/tenants/{tenant}/archive', [TenantController::class, 'archive'])->name('tenants.archive');
             Route::patch('/tenants/{tenant}/restore', [TenantController::class, 'restore'])->name('tenants.restore')->withTrashed();
+            Route::post('/tenants/{tenant}/documents', [\App\Http\Controllers\Portal\Accommodation\TenantDocumentController::class, 'store'])->name('tenants.documents.store');
+            Route::get('/tenants/{tenant}/documents/{document}', [\App\Http\Controllers\Portal\Accommodation\TenantDocumentController::class, 'download'])->name('tenants.documents.download');
             Route::resource('tenants', TenantController::class);
 
             // Onboarding pipeline (EOI submissions). Route NAMES stay

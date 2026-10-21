@@ -54,7 +54,7 @@ function Modal({ title, onClose, children }) {
 const FIELD = "w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
 const LABEL = "block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5";
 
-export default function TenantDetail({ tenant, historical = [], properties = [] }) {
+export default function TenantDetail({ tenant, historical = [], properties = [], documents = [] }) {
     const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null); // notice | vacate | renew | move
     const isVacated = tenant.current_status === "vacated";
@@ -189,7 +189,7 @@ export default function TenantDetail({ tenant, historical = [], properties = [] 
 
             {tab === "rent" && <Placeholder icon={<Receipt size={40} />} title="Rent payments coming soon" text="Rent payment history will appear here once the Rent & Utilities module is built." />}
             {tab === "comms" && <Placeholder icon={<MessageSquare size={40} />} title="Communication log coming soon" text="Email and message log will appear here once the Communication module is built." />}
-            {tab === "docs" && <Placeholder icon={<ClipboardCheck size={40} />} title="Document uploads coming soon" text="For now, use the document toggles on the Overview tab." />}
+            {tab === "docs" && <TenantDocuments tenant={tenant} documents={documents} />}
             {tab === "activity" && <Placeholder icon={<Activity size={40} />} title="Activity log coming soon" text="Status changes, contract updates and notes will be shown here once the audit presentation layer is built." />}
 
             {modal === "notice" && <NoticeModal tenant={tenant} onClose={() => setModal(null)} />}
@@ -306,5 +306,46 @@ function ModalActions({ processing, onClose, label, danger = false }) {
                 {processing ? "Saving…" : label}
             </button>
         </div>
+    );
+}
+
+
+function TenantDocuments({ tenant, documents }) {
+    const form = useForm({ category: "passport", file: null });
+    const [fileKey, setFileKey] = useState(0);
+    const categories = { passport: "Passport / ID", tenancy_agreement: "Tenancy agreement", inspection_report: "Inspection report", other: "Other" };
+    const upload = (event) => {
+        event.preventDefault();
+        form.post(`/portal/accommodation/tenants/${tenant.id}/documents`, {
+            forceFormData: true, preserveScroll: true,
+            onSuccess: () => { form.reset("file"); setFileKey((key) => key + 1); },
+        });
+    };
+    return (
+        <Card title="Tenant documents" icon={<ClipboardCheck size={18} />}>
+            <p className="mb-4 text-sm text-gray-500">Upload files for this tenancy. Existing Google Drive status toggles remain separate from these uploads.</p>
+            <form onSubmit={upload} className="mb-6 space-y-3">
+                <label className={LABEL} htmlFor="tenant-doc-category">Document type</label>
+                <select id="tenant-doc-category" className={FIELD} value={form.data.category} onChange={(event) => form.setData("category", event.target.value)}>
+                    {Object.entries(categories).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                {form.errors.category && <p role="alert" className="text-sm text-red-600">{form.errors.category}</p>}
+                <label className={LABEL} htmlFor="tenant-doc-file">File (PDF, JPG, PNG, Word; up to 10 MB)</label>
+                <input key={fileKey} id="tenant-doc-file" type="file" required accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className={FIELD} onChange={(event) => form.setData("file", event.target.files?.[0] ?? null)} />
+                {form.errors.file && <p role="alert" className="text-sm text-red-600">{form.errors.file}</p>}
+                {form.progress && <p className="text-sm text-gray-500">Uploading {form.progress.percentage}%</p>}
+                <button type="submit" disabled={form.processing || !form.data.file} className="rounded-xl bg-[#1F5A8B] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{form.processing ? "Uploading…" : "Upload document"}</button>
+            </form>
+            {documents.length === 0 ? <p className="text-sm text-gray-500">No documents uploaded for this tenancy yet.</p> : (
+                <ul className="divide-y divide-gray-100">
+                    {documents.map((document) => (
+                        <li key={document.id} className="flex items-center justify-between gap-4 py-3">
+                            <div className="min-w-0"><p className="break-words text-sm font-medium text-gray-900">{document.name}</p><p className="text-xs text-gray-500">{categories[document.category]} · {Math.ceil(document.size / 1024)} KB · {fmtDate(document.created_at)}</p></div>
+                            <a href={`/portal/accommodation/tenants/${tenant.id}/documents/${document.id}`} className="text-sm font-semibold text-[#1F5A8B]">Download</a>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </Card>
     );
 }

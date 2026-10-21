@@ -426,6 +426,11 @@ class CaseProfileController extends Controller
             ->with(['documents' => fn ($q) => $q->orderByDesc('created_at'), 'linkedLead', 'visaType'])
             ->orderBy('created_at')
             ->get()
+            // Old links can predate target validation. Do not serialize their
+            // copied identity or linked documents to another recruiting agent.
+            ->filter(fn (\App\Models\CaseDependent $d) => auth()->user()?->role !== 'agent'
+                || ! $d->linked_lead_id || $d->canReadLinkedCase())
+            ->values()
             ->map(fn (\App\Models\CaseDependent $d) => array_merge([
                 'id' => $d->id,
                 'relationship' => $d->relationship,
@@ -452,7 +457,12 @@ class CaseProfileController extends Controller
     {
         return [
             'relationship' => ['required', \Illuminate\Validation\Rule::in(\App\Models\CaseDependent::RELATIONSHIPS)],
-            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')],
+            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')->where(function ($query) {
+                $query->where('is_immigration_case', true);
+                if (auth()->user()?->role === 'agent') {
+                    $query->where('agent_id', auth()->id());
+                }
+            })],
             'visa_type_id' => ['nullable', \Illuminate\Validation\Rule::exists('visa_types', 'id')],
             'first_name' => 'nullable|string|max:120',
             'family_name' => 'nullable|string|max:120',

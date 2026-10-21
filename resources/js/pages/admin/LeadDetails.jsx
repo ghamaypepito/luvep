@@ -4012,7 +4012,9 @@ function ChecklistRow({ item, lead, entry, files = [], onSave, hidden = false, o
                                     className="inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                     <Eye size={12} /> View
                                 </button>
-                                <LeadDocFileMenu doc={f} leadId={lead.id} checklistKey={item.id} />
+                                <LeadDocFileMenu doc={f} leadId={lead.id} checklistKey={item.id}
+                                    basePath={`${writeBase}/leads`} canDelete canReject={Boolean(currentUser?.is_admin)}
+                                    only={['lead', 'checklistFiles', 'documentOrphans']} />
                             </div>
                         </div>
                     ))}

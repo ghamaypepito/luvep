@@ -679,6 +679,10 @@ class EducationController extends Controller
             $lead->immigration_converted_by = auth()->id();
         }
 
+        if ($movedToImmigrationStage && ! filled($lead->inz_visa_type)) {
+            $lead->inz_visa_type = 'Student Visa';
+        }
+
         // A student handed to Immigration STAYS a student — the same person is
         // legitimately under both departments, so is_student is preserved. They
         // remain visible on the Students screen's Education tab (they are still a

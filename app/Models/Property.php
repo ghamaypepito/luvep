@@ -23,12 +23,15 @@ class Property extends Model
      * bathrooms. Bond + advance stay visible in both modes.
      */
     public const RENTAL_MODE_PER_ROOM = 'per_room';
+
     public const RENTAL_MODE_WHOLE = 'whole_property';
+
     public const RENTAL_MODES = [self::RENTAL_MODE_PER_ROOM, self::RENTAL_MODE_WHOLE];
 
     /** Owner/PM payout cadences. */
     public const PAYMENT_SCHEDULES = [
-        'Every Friday', 'Every Tuesday', 'Every Monday',
+        'Every Monday', 'Every Tuesday', 'Every Wednesday', 'Every Thursday',
+        'Every Friday', 'Every Saturday', 'Every Sunday', 'Fortnightly',
         'Fortnight Friday', 'Auto Monday', 'Manual',
     ];
 
