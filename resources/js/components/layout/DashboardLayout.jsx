@@ -210,7 +210,7 @@ export default function DashboardLayout({
                 <div className="px-3 pt-2 pb-1">
                     <Link
                         href="/assistant"
-                        onClick={() => setSidebarOpen(false)}
+                        onClick={(event) => { event.preventDefault(); setSidebarOpen(false); window.dispatchEvent(new CustomEvent("ep-assistant-open")); }}
                         title="EP AI Assistant"
                         className={`group flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
                             isPathMatch("/assistant")

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { Toaster } from 'sonner';
 import '../css/app.css';
 
+import AssistantDock from './components/ai/AssistantDock';
 import FlashToaster from './components/ui/FlashToaster';
 import FloatingContact from './components/ui/FloatingContact';
 import MobileStickyCTA from './components/ui/MobileStickyCTA';
@@ -78,6 +79,7 @@ createInertiaApp({
       <>
         <App {...props} />
         <FlashToaster />
+        <AssistantDock initialPage={props.initialPage} />
         {!props.initialPage.component.startsWith('hr/') && (
           <>
             <FloatingContact />
