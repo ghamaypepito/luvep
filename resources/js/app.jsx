@@ -31,7 +31,20 @@ const pages = import.meta.glob('./pages/**/*.jsx');
 createInertiaApp({
   resolve: async name => {
     const loadPage = pages[`./pages/${name}.jsx`];
-    const page = loadPage ? await loadPage() : null;
+    // Start the layout alongside the page; neither depends on the other's download.
+    const ROLE_CHROME_PAGES = ['admin/PortalInvitations'];
+    let loadLayout;
+    if (name.startsWith('hr/')) loadLayout = () => import('./components/layout/HrLayout');
+    else if (ROLE_CHROME_PAGES.includes(name) || name.startsWith('ai/')) loadLayout = () => import('./components/layout/RoleLayout');
+    else if (name.startsWith('admin/')) loadLayout = () => import('./components/layout/AdminLayout');
+    else {
+      const match = Object.keys(PORTAL_LAYOUTS).find(prefix => name.startsWith(prefix));
+      loadLayout = match ? PORTAL_LAYOUTS[match] : null;
+    }
+    const [page, layout] = await Promise.all([
+      loadPage ? loadPage() : null,
+      loadPage && loadLayout ? loadLayout() : null,
+    ]);
 
     // Defensive: if the page module isn't in the glob (typo in the
     // controller's inertia() name, or stale browser bundle from before
@@ -51,24 +64,8 @@ createInertiaApp({
     // Management must keep the user's OWN sidebar, not switch to the admin
     // chrome — so they adopt the signed-in user's role layout (admins still
     // resolve to AdminLayout through RoleLayout).
-    const ROLE_CHROME_PAGES = ['admin/PortalInvitations'];
-
-    if (!page.default.layout) {
-      let loadLayout;
-      if (name.startsWith('hr/')) {
-        loadLayout = () => import('./components/layout/HrLayout');
-      } else if (ROLE_CHROME_PAGES.includes(name) || name.startsWith('ai/')) {
-        loadLayout = () => import('./components/layout/RoleLayout');
-      } else if (name.startsWith('admin/')) {
-        loadLayout = () => import('./components/layout/AdminLayout');
-      } else {
-        const match = Object.keys(PORTAL_LAYOUTS).find(prefix => name.startsWith(prefix));
-        loadLayout = match ? PORTAL_LAYOUTS[match] : null;
-      }
-      if (loadLayout) {
-        const { default: Layout } = await loadLayout();
-        page.default.layout = page => <Layout>{page}</Layout>;
-      }
+    if (!page.default.layout && layout) {
+      page.default.layout = page => <layout.default>{page}</layout.default>;
     }
 
     return page;

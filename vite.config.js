@@ -5,7 +5,17 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
     // Preserve the existing global stylesheet while splitting page JavaScript.
-    build: { cssCodeSplit: false },
+    build: {
+        cssCodeSplit: false,
+        rollupOptions: {
+            output: {
+                // Avoid dozens of tiny icon requests on a cold portal load.
+                manualChunks(id) {
+                    if (id.includes('/node_modules/lucide-react/')) return 'icons';
+                },
+            },
+        },
+    },
     optimizeDeps: {
         include: ["swiper"],
     },
