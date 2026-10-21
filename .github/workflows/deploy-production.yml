@@ -44,6 +44,9 @@ jobs:
       - name: Build frontend assets
         run: npm run build
 
+      - name: Install browser for deployment verification
+        run: npx playwright install --with-deps chromium
+
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -104,3 +107,7 @@ jobs:
         run: |
           curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/
           curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/activities
+
+      - name: Verify frontend renders in browser
+        timeout-minutes: 4
+        run: node scripts/verify-live-frontend.mjs

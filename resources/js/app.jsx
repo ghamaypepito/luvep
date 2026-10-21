@@ -2,6 +2,7 @@ import './bootstrap';
 
 import { createInertiaApp } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
+import { useEffect } from 'react';
 import { Toaster } from 'sonner';
 import '../css/app.css';
 
@@ -27,6 +28,11 @@ const PORTAL_LAYOUTS = {
 };
 
 const pages = import.meta.glob('./pages/**/*.jsx');
+
+function StartupReady() {
+  useEffect(() => { window.luvepStartup?.ready(); }, []);
+  return null;
+}
 
 createInertiaApp({
   resolve: async name => {
@@ -72,7 +78,12 @@ createInertiaApp({
 
   },
   setup({ el, App, props }) {
-    createRoot(el).render(
+    createRoot(el, {
+      onUncaughtError(error) {
+        console.error(error);
+        window.luvepStartup?.fail();
+      },
+    }).render(
       <>
         <App {...props} />
         <FlashToaster />
@@ -85,7 +96,11 @@ createInertiaApp({
         )}
         <ConfirmHost />
         <Toaster position="top-right" richColors closeButton />
+        <StartupReady />
       </>
     )
   },
-})
+}).catch((error) => {
+  console.error(error);
+  window.luvepStartup?.fail();
+});

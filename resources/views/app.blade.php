@@ -48,6 +48,8 @@
         <script type="application/ld+json">{!! json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) !!}</script>
     @endforeach
 
+    @include('partials.startup-recovery-head')
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,6 +62,7 @@
 </head>
 
 <body>
+    @include('partials.startup-recovery-body')
     @inertia
 </body>
 
