@@ -62,3 +62,14 @@ test('reopening a record preserves its draft; expansion cannot discard it',()=>r
  await p.getByRole('alert').filter({hasText:'Could not open'}).waitFor();
  assert.equal(await p.getByRole('textbox').inputValue(),'Keep this draft');
 }));
+
+test('desktop chat opens above the launcher in the lower-right corner',()=>run(async p=>{
+ await p.getByRole('button',{name:'Open EP Assistant',exact:true}).click();
+ const box=await p.getByRole('dialog').boundingBox();
+ const launcher=await p.getByRole('button',{name:'Open EP Assistant',exact:true}).boundingBox();
+ assert.equal(box.width,440);
+ assert.ok(Math.abs(box.x+box.width-(1280-20))<1,`right edge ${box.x+box.width}`);
+ assert.ok(box.y+box.height<=launcher.y-10,`chat bottom ${box.y+box.height} overlaps launcher at ${launcher.y}`);
+ assert.ok(box.y>=16,'chat fits below viewport top');
+ await p.screenshot({path:'/private/tmp/assistant-desktop-position.png'});
+}));
