@@ -62,3 +62,10 @@ Independent review found visit_id=0 could skip lookup and produce500. Reproduced
 - Tests\Feature\Tracker\AgreementSigningTest::test_agreement_does_not_show_on_tracker_when_draft
 - Tests\Feature\Tracker\AgreementSigningTest::test_agreement_shows_on_tracker_when_sent
 - Tests\Feature\Tracker\AgreementSigningTest::test_agreement_does_not_show_when_voided
+
+## Production release
+Code `2420161` deployed as17 scoped files after live-hash preflight, preserving route customizations. Backup `/home/deploy/education-rsvp-editor-backups/20261025-073528` includes source and the previous registration table schema. Ran only migration `2026_10_25_070000_link_education_registrations_to_visits`; no event seed, existing schedule, staff-recipient or cron changes. Dedicated media folders use the existing www-data worker group; configured server limits already support5MB photos.
+
+Rolled-back live checks passed: content image upload served200; edited content rendered; content changes created no attendee notices; new schedule appeared in registration's school options; selected-event snapshot matched trusted catalogue data; TBC registration stored no invented date/time; replay survived event cancellation; new lead assigned Emma (id2); recipients remained ids2/7; verified RSVP journey linked. Mail, queue and notifications faked, unexpected HTTP prevented except a separate public image GET. Original content restored, temporary media and all verification event/RSVP/lead records removed. Existing user records untouched.
+
+Live manager refreshed without discarding unsaved edits. Proof screenshot `education-rsvp-preview/live-content-editor.png` contains only the editor, excluding private attendance data. Draft PR15 retains the release and existing full-site source-drift caution.
