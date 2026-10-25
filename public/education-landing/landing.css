@@ -125,3 +125,11 @@ html{color-scheme:light dark;background:light-dark(#f4f6f5,#101214)}body{margin:
 
 #ep-education .ep-contact-phone{margin:24px 0 0;color:var(--ep-muted);font-size:13px}#ep-education .ep-contact-phone a{color:var(--ep-accent)}@media(prefers-color-scheme:dark){#ep-education .ep-brand-mark{filter:brightness(0) invert(1)}}
 #ep-education[data-theme] .ep-shortcuts{padding-top:20px}
+
+/* Keep the public navigation together; the form remains the main action. */
+#ep-education[data-theme] .ep-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+#ep-education[data-theme] .ep-header-actions button,#ep-education[data-theme] .ep-header-actions .ep-link-button{font-size:12px;min-height:44px;padding:10px 14px;white-space:nowrap}
+#ep-education[data-theme] .ep-header-actions .ep-site-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:10px 6px;font-size:12px;line-height:1.4;white-space:nowrap;box-sizing:border-box}
+#ep-education[data-theme] .ep-external-arrow{display:block;width:15px;height:15px;flex-shrink:0}
+#ep-education[data-theme] .ep-intro{margin:0;padding:20px 28px;color:var(--ep-muted);font-size:12px;line-height:1.5}
+@media(max-width:650px){#ep-education[data-theme] .ep-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 12px;padding:16px 18px}#ep-education[data-theme] .ep-header-actions{display:contents}#ep-education[data-theme] .ep-head>.ep-brand{grid-column:1;grid-row:1;gap:8px}#ep-education[data-theme] .ep-head .ep-brand-mark{width:54px;height:40px;padding:4px}#ep-education[data-theme] .ep-head .ep-brand>span{font-size:11px;padding-left:8px}#ep-education[data-theme] .ep-header-actions .ep-site-link{grid-column:2;grid-row:1;justify-self:end;padding:8px 0;font-size:11px}#ep-education[data-theme] .ep-header-actions>button{grid-column:1;grid-row:2}#ep-education[data-theme] .ep-header-login{grid-column:2;grid-row:2}#ep-education[data-theme] .ep-header-actions>button,#ep-education[data-theme] .ep-header-login{min-width:0;width:100%;padding:10px 8px;font-size:12px}#ep-education[data-theme] .ep-intro{padding:18px}}

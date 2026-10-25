@@ -1,7 +1,13 @@
 <div id="ep-education" data-theme="system">
- <header class="ep-head"><div class="ep-brand"><img class="ep-brand-mark" src="/education-landing/ep-logo.png" alt="EP logo"><span>Education</span></div><a class="ep-site-link" href="{{ url('/') }}">Visit website ↗</a></header>
-
-<div class="ep-shortcuts"><span>Your New Zealand chapter starts here.</span><div><button type="button" data-screen-open="contact">Contact an adviser</button><a class="ep-link-button" href="{{ url('/login') }}">Applicant login ↗</a></div></div>
+ <header class="ep-head">
+  <div class="ep-brand"><img class="ep-brand-mark" src="/education-landing/ep-logo.png" alt="EP logo"><span>Education</span></div>
+  <nav class="ep-header-actions" aria-label="Education navigation">
+   <a class="ep-site-link" href="{{ url('/') }}"><span>Visit website</span><svg class="ep-external-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+   <button type="button" data-screen-open="contact">Contact an adviser</button>
+   <a class="ep-link-button ep-header-login" href="{{ url('/login') }}"><span>Applicant login</span><svg class="ep-external-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+  </nav>
+ </header>
+ <p class="ep-intro">Your New Zealand chapter starts here.</p>
  <section id="ep-landing">
   <div class="ep-layout">
    <aside class="ep-story"><img class="ep-study-photo" src="/education-landing/students.jpg" alt="Three students studying together outdoors"><span class="ep-kicker">YOUR NEW ZEALAND CHAPTER</span><div class="ep-story-copy"><span class="ep-kicker">STUDY. GROW. BEGIN AGAIN.</span><h1>A big future.<br>A little<br><em>first step.</em></h1><p>Meet our team at your school and explore your next chapter in New Zealand.</p></div><div class="ep-event"><i data-lucide="graduation-cap" aria-hidden="true"></i><strong>Your New Zealand journey</strong><span>School visits, events and next steps</span><span>One place to begin</span></div></aside>
