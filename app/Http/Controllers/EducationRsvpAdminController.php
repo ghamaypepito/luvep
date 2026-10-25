@@ -22,10 +22,11 @@ class EducationRsvpAdminController extends Controller
         if ($request->header('X-Inertia')) {
             return \Inertia\Inertia::location(route('education.rsvps.manage', $request->query()));
         }
-        $filter = $request->validate(['kind' => ['nullable', Rule::in(['school', 'partnership'])], 'email' => 'nullable|email:rfc|max:254', 'visit_id' => 'nullable|integer|exists:education_visits,id']);
-        $rsvps = EducationRsvp::with('visit')->when($filter['visit_id'] ?? null, fn ($q, $id) => $q->where('education_visit_id', $id))->when($filter['kind'] ?? null, fn ($q, $kind) => $q->whereHas('visit', fn ($v) => $v->where('kind', $kind)))->when($filter['email'] ?? null, fn ($q, $email) => $q->where('email', strtolower(trim($email))))->latest()->paginate(50)->withQueryString();
+        $attendance = app(\App\Services\EducationAttendance::class);
+        $attendanceContext = $attendance->context($request);
+        $rsvps = $attendance->query($attendanceContext['attendanceFilters'])->latest('id')->paginate(50)->withQueryString()->fragment('attendance');
 
-        return response()->view('education.rsvp-admin', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp-admin', $attendanceContext + ['attendanceFolders' => \App\Models\EducationRsvpFolder::with('lists')->orderBy('name')->get(), 'page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
     }
 
     public function content(Request $request, string $section)
