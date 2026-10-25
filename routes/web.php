@@ -171,6 +171,8 @@ Route::get('/booking/payment/success', [\App\Http\Controllers\PaymentController:
 Route::get('/booking/payment/cancel/{booking}', [\App\Http\Controllers\PaymentController::class, 'cancel'])->name('booking.payment.cancel');
 Route::post('/stripe/webhook', [\App\Http\Controllers\PaymentController::class, 'webhook'])->name('stripe.webhook');
 
+require __DIR__.'/education-public.php';
+
 Route::get('/education-journey', function () {
     // Published programmes (title/slug/image) so the "Best 10 Green List"
     // carousel can match its curated cards to real programme records and

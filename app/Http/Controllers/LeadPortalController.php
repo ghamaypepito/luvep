@@ -1137,7 +1137,7 @@ class LeadPortalController extends Controller
     /** Full chronological history of the lead's interactions. */
     private function submissionsTimeline(Lead $lead): array
     {
-        $items = collect();
+        $items = collect(app(\App\Services\EducationRsvpWorkflow::class)->history($lead));
 
         // Free Assessment — implied by lead_id prefix or source tag.
         if (str_starts_with((string) $lead->lead_id, 'FA-') || $lead->source === 'free-assessment') {
