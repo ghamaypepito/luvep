@@ -89,6 +89,8 @@ Schedule::command('tasks:overdue-digest')
 
 Schedule::command('hr:dispatch-notifications')->everyMinute()->withoutOverlapping();
 
+Schedule::command('education:dispatch-registration-outreach')->everyMinute()->withoutOverlapping();
+
 Schedule::command('hr:notify-due-work')->hourly()->withoutOverlapping();
 
 Schedule::command('hr:expire-exports')->hourly()->withoutOverlapping();
