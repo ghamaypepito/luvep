@@ -1,0 +1,9 @@
+(()=>{'use strict';
+for(const input of document.querySelectorAll('input[data-preview]')){let objectUrl;input.addEventListener('change',()=>{const image=document.getElementById(input.dataset.preview);if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=null;const file=input.files?.[0];if(file&&['image/jpeg','image/png','image/webp'].includes(file.type)){objectUrl=URL.createObjectURL(file);image.src=objectUrl;}else image.src=image.dataset.original;});}
+for(const link of document.querySelectorAll('[data-open]'))link.addEventListener('click',()=>{const target=document.getElementById(link.dataset.open);if(target instanceof HTMLDetailsElement)target.open=true;});
+function openHash(){const id=location.hash.slice(1);if(!id)return;const target=document.getElementById(id);if(target instanceof HTMLDetailsElement)target.open=true;}
+openHash();window.addEventListener('hashchange',openHash);
+for(const form of document.querySelectorAll('form[data-save]'))form.addEventListener('submit',()=>{if(!form.checkValidity())return;const button=form.querySelector('button[type=submit]');if(button){button.dataset.label=button.textContent;button.textContent='Saving…';button.disabled=true;}});
+window.addEventListener('pageshow',()=>{for(const button of document.querySelectorAll('button[data-label]')){button.textContent=button.dataset.label;button.disabled=false;}});
+const links=Array.from(document.querySelectorAll('.section-nav a'));if('IntersectionObserver'in window){const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){for(const link of links){if(link.hash==='#'+entry.target.id)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');}}},{rootMargin:'-10% 0px -65% 0px'});for(const section of document.querySelectorAll('.manager-section'))observer.observe(section);}
+})();

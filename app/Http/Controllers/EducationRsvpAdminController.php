@@ -22,22 +22,61 @@ class EducationRsvpAdminController extends Controller
         if ($request->header('X-Inertia')) {
             return \Inertia\Inertia::location(route('education.rsvps.manage', $request->query()));
         }
-        $filter = $request->validate(['kind' => ['nullable', Rule::in(['school', 'partnership'])], 'email' => 'nullable|email:rfc|max:254']);
-        $rsvps = EducationRsvp::with('visit')->when($filter['kind'] ?? null, fn ($q, $kind) => $q->whereHas('visit', fn ($v) => $v->where('kind', $kind)))->when($filter['email'] ?? null, fn ($q, $email) => $q->where('email', strtolower(trim($email))))->latest()->paginate(50)->withQueryString();
+        $filter = $request->validate(['kind' => ['nullable', Rule::in(['school', 'partnership'])], 'email' => 'nullable|email:rfc|max:254', 'visit_id' => 'nullable|integer|exists:education_visits,id']);
+        $rsvps = EducationRsvp::with('visit')->when($filter['visit_id'] ?? null, fn ($q, $id) => $q->where('education_visit_id', $id))->when($filter['kind'] ?? null, fn ($q, $kind) => $q->whereHas('visit', fn ($v) => $v->where('kind', $kind)))->when($filter['email'] ?? null, fn ($q, $email) => $q->where('email', strtolower(trim($email))))->latest()->paginate(50)->withQueryString();
 
-        return response()->view('education.rsvp-admin', ['visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp-admin', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function content(Request $request, string $section)
+    {
+        app(\App\Services\EducationRsvpContent::class)->save($request, $section);
+
+        return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', 'Page section saved and published.')->with('open_content', $section);
+    }
+
+    private function scheduleRules(Request $request, bool $creating = false): array
+    {
+        return [
+            'school' => [$creating ? 'required' : 'sometimes', 'required', 'string', 'max:180'],
+            'activity' => [$creating ? 'required' : 'sometimes', 'required', 'string', 'max:180'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'mode' => [$creating ? 'required' : 'sometimes', Rule::in(['in_person', 'online'])],
+            'event_date' => [Rule::requiredIf($request->boolean('schedule_confirmed')), 'nullable', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
+            'event_time' => 'nullable|date_format:H:i',
+            'timezone' => ['required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
+            'location' => 'nullable|string|max:255', 'schedule_confirmed' => 'required|boolean',
+            'status' => ['required', Rule::in($creating ? ['open', 'closed'] : ['open', 'closed', 'cancelled'])],
+        ];
+    }
+
+    public function create(Request $request)
+    {
+        $d = $request->validate($this->scheduleRules($request, true));
+        $d['school'] = preg_replace('/\s+/u', ' ', trim($d['school']));
+        $d['activity'] = trim($d['activity']);
+        $visit = DB::transaction(function () use ($d) {
+            $existing = EducationVisit::whereRaw('LOWER(TRIM(school)) = ?', [mb_strtolower($d['school'])])->whereNotNull('logo_path')->latest('id')->first();
+            if ($existing) {
+                $d['school'] = $existing->school;
+            }
+            $v = EducationVisit::create($d + ['slug' => \Illuminate\Support\Str::limit(\Illuminate\Support\Str::slug($d['school']), 180, '').'-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(10)), 'kind' => 'school', 'logo_path' => $existing?->logo_path, 'schedule_version' => $d['schedule_confirmed'] ? 1 : 0]);
+            ActivityLog::record('education.rsvp.schedule_created', ['portal' => 'education', 'properties' => ['visit_id' => $v->id], 'description' => 'Added Education event schedule']);
+
+            return $v;
+        });
+
+        return $request->expectsJson() ? response()->json(['ok' => true, 'id' => $visit->id], 201) : redirect()->route('education.rsvps.manage')->with('status', 'Schedule added. It is available in programme registration'.($visit->status === 'open' ? ' and on the RSVP page.' : '.'))->with('open_visit', $visit->id);
     }
 
     public function update(Request $request, EducationVisit $visit)
     {
-        $d = $request->validate(['event_date' => 'nullable|date_format:Y-m-d', 'event_time' => 'nullable|date_format:H:i', 'timezone' => ['required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])], 'location' => 'nullable|string|max:255', 'schedule_confirmed' => 'required|boolean', 'status' => ['required', Rule::in(['open', 'cancelled', 'closed'])]]);
-        if ($d['schedule_confirmed'] && ! ($d['event_date'] ?? null)) {
-            return response()->json(['message' => 'Choose a confirmed date first.'], 422);
-        }DB::transaction(function () use ($d, $visit) {
+        $d = $request->validate($this->scheduleRules($request));
+        DB::transaction(function () use ($d, $visit) {
             $v = EducationVisit::whereKey($visit->id)->lockForUpdate()->firstOrFail();
             $v->fill($d);
             if ($v->isDirty()) {
-                if ($v->isDirty(['event_date', 'event_time', 'timezone', 'location', 'schedule_confirmed']) || ($v->isDirty('status') && in_array('cancelled', [$v->status, $v->getOriginal('status')], true))) {
+                if ($v->isDirty(['event_date', 'event_time', 'timezone', 'location', 'schedule_confirmed', 'city', 'mode']) || ($v->isDirty('status') && in_array('cancelled', [$v->status, $v->getOriginal('status')], true))) {
                     $v->schedule_version++;
                 }
                 $v->save();
@@ -45,7 +84,7 @@ class EducationRsvpAdminController extends Controller
             }
         });
 
-        return $request->expectsJson() ? response()->json(['ok' => true]) : back()->with('status', 'Schedule saved. Confirmed changes will be sent to verified RSVP contacts.');
+        return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', 'Schedule saved. Confirmed changes will be sent to verified RSVP contacts.')->with('open_visit', $visit->id);
     }
 
     public function attendance(Request $request, EducationRsvp $rsvp)
@@ -76,7 +115,7 @@ class EducationRsvpAdminController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['ok' => true, 'logo' => $url])
-            : redirect()->route('education.rsvps.manage')->with('status', 'School logo updated. It is now shown on the public RSVP page.');
+            : redirect()->route('education.rsvps.manage')->with('status', 'School logo updated. It is now shown on the public RSVP page.')->with('open_visit', $visit->id);
     }
 
     public function slack(Request $request)

@@ -14,6 +14,8 @@ Route::post('/education/rsvp/recognize', [\App\Http\Controllers\EducationRsvpCon
 Route::get('/education/rsvp/verify/{rsvp:public_id}', [\App\Http\Controllers\EducationRsvpController::class, 'verify'])->middleware(['signed', 'throttle:30,1'])->name('education.rsvp.verify');
 Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::get('/portal/education/rsvps', [\App\Http\Controllers\EducationRsvpAdminController::class, 'index'])->name('education.rsvps.manage');
+    Route::post('/portal/education/rsvps/content/{section}', [\App\Http\Controllers\EducationRsvpAdminController::class, 'content']);
+    Route::post('/portal/education/rsvp-visits', [\App\Http\Controllers\EducationRsvpAdminController::class, 'create']);
     Route::put('/portal/education/rsvp-visits/{visit}', [\App\Http\Controllers\EducationRsvpAdminController::class, 'update']);
     Route::post('/portal/education/rsvp-visits/{visit}/logo', [\App\Http\Controllers\EducationRsvpAdminController::class, 'logo']);
     Route::put('/portal/education/rsvps/{rsvp}/attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'attendance']);

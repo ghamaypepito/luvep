@@ -15,7 +15,7 @@ class EducationRsvpController extends Controller
 {
     public function show(Request $request)
     {
-        return response()->view('education.rsvp', ['visits' => EducationVisit::where('status', 'open')->orderBy('id')->get()->map->publicData()->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'visits' => EducationVisit::where('status', 'open')->orderBy('id')->get()->map->publicData()->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
     }
 
     public function catalogue()

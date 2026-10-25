@@ -19,8 +19,13 @@ class EducationEventRegistration extends Model
         return $this->belongsTo(Lead::class);
     }
 
+    public function visit(): BelongsTo
+    {
+        return $this->belongsTo(EducationVisit::class, 'education_visit_id');
+    }
+
     public function eventSummary(): string
     {
-        return $this->event_name.' · '.$this->event_date->format('j M Y').' · '.date('g:i A', strtotime($this->event_time)).' · '.$this->event_timezone;
+        return $this->event_name.' · '.($this->event_date ? $this->event_date->format('j M Y') : 'Date to be confirmed').' · '.($this->event_time ? date('g:i A', strtotime($this->event_time)) : 'Time to be confirmed').' · '.$this->event_timezone;
     }
 }

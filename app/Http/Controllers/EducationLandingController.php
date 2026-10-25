@@ -23,26 +23,33 @@ class EducationLandingController extends Controller
 
     public function show(Request $request)
     {
-        return response()->view('education.landing', ['contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS])
+        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS])
             ->header('Cache-Control', 'private, no-store');
     }
 
     public function store(Request $request, LeadIntakeService $intake)
     {
+        $managed = $request->filled('visit_id');
         $data = $request->validate([
+            'visit_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'submission_id' => ['required', 'uuid'], 'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'], 'email' => ['required', 'email:rfc', 'max:255'],
             'phone' => ['required', 'string', 'min:7', 'max:40'], 'goal' => ['required', Rule::in(self::GOALS)],
-            'event_name' => ['required', 'string', 'max:180'], 'event_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
-            'event_hour' => ['required', 'integer', 'between:1,12'], 'event_minute' => ['required', 'integer', 'between:0,59'],
-            'event_period' => ['required', Rule::in(['AM', 'PM'])], 'event_timezone' => ['required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
-            'country' => ['required', 'string', 'max:100'], 'school' => ['required', 'string', 'max:180'],
+            'event_name' => [Rule::excludeIf($managed), 'required', 'string', 'max:180'], 'event_date' => [Rule::excludeIf($managed), 'required', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
+            'event_hour' => [Rule::excludeIf($managed), 'required', 'integer', 'between:1,12'], 'event_minute' => [Rule::excludeIf($managed), 'required', 'integer', 'between:0,59'],
+            'event_period' => [Rule::excludeIf($managed), 'required', Rule::in(['AM', 'PM'])], 'event_timezone' => [Rule::excludeIf($managed), 'required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
+            'country' => ['required', 'string', 'max:100'], 'school' => [Rule::excludeIf($managed), 'required', 'string', 'max:180'],
             'planning_timeline' => ['required', Rule::in(self::TIMELINES)], 'education_level' => ['required', Rule::in(self::LEVELS)],
             'consent' => ['required', 'accepted'], 'website' => ['nullable', 'string', 'max:0'],
         ]);
         $data['email'] = mb_strtolower(trim($data['email']));
         foreach (['first_name', 'last_name', 'event_name', 'country', 'school', 'phone'] as $field) {
-            $data[$field] = trim($data[$field]);
+            if (isset($data[$field])) {
+                $data[$field] = trim($data[$field]);
+            }
+        }
+        if ($managed) {
+            $data['visit_id'] = (int) $data['visit_id'];
         }
         $fingerprint = hash('sha256', json_encode(collect($data)->except(['submission_id', 'website', 'consent'])->sortKeys()->all()));
 
@@ -55,23 +62,34 @@ class EducationLandingController extends Controller
                     app(\App\Services\EducationRegistrationDelivery::class)->deliver($prior);
                 }
 
-                return response()->json(['ok' => true]);
+                return response()->json(['ok' => true, 'event_summary' => $prior->eventSummary()]);
             }
             $rateKey = 'education-email:'.hash('sha256', $data['email']);
             $registration = Cache::lock('education-email-lock:'.hash('sha256', $data['email']), 15)->block(5, function () use ($data, $fingerprint, $intake, $request, $rateKey) {
                 abort_if(RateLimiter::tooManyAttempts($rateKey, 3), 429, 'Please wait before sending another registration.');
                 $result = DB::transaction(function () use ($data, $fingerprint, $intake, $request) {
+                    if (! empty($data['visit_id'])) {
+                        $visit = \App\Models\EducationVisit::whereKey($data['visit_id'])->where('status', '!=', 'cancelled')->lockForUpdate()->first();
+                        if (! $visit) {
+                            throw \Illuminate\Validation\ValidationException::withMessages(['visit_id' => 'This schedule is no longer available. Choose another event.']);
+                        }
+                        $details = $visit->publicData();
+                        $time = $details['time'] ? \Illuminate\Support\Carbon::parse($details['time']) : null;
+                        $data = array_merge($data, ['school' => $visit->school, 'event_name' => $visit->activity, 'event_date' => $details['date'], 'event_hour' => $time ? (int) $time->format('g') : null, 'event_minute' => $time ? (int) $time->format('i') : null, 'event_period' => $time?->format('A'), 'event_timezone' => $visit->timezone]);
+                    }
+
                     $existing = Lead::whereRaw('LOWER(email) = ?', [$data['email']])->exists();
                     // Country of origin is retained on this registration, not guessed into residence/citizenship.
                     $lead = $intake->ingest('education-school-event', collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), $request);
                     if (! $existing && ($owner = $this->owner())) {
                         $lead->update(['assigned_to' => $owner->id]);
                     }
-                    $hour = ((int) $data['event_hour'] % 12) + ($data['event_period'] === 'PM' ? 12 : 0);
+                    $hour = isset($data['event_hour']) ? ((int) $data['event_hour'] % 12) + ($data['event_period'] === 'PM' ? 12 : 0) : null;
                     $registration = EducationEventRegistration::create([
+                        'education_visit_id' => $data['visit_id'] ?? null, 'event_match_status' => ! empty($data['visit_id']) ? 'matched' : 'pending',
                         'submission_id' => $data['submission_id'], 'lead_id' => $lead->id, 'payload_hash' => $fingerprint,
                         'event_name' => $data['event_name'], 'event_date' => $data['event_date'],
-                        'event_time' => sprintf('%02d:%02d', $hour, $data['event_minute']), 'event_timezone' => $data['event_timezone'],
+                        'event_time' => $hour !== null ? sprintf('%02d:%02d', $hour, $data['event_minute']) : null, 'event_timezone' => $data['event_timezone'],
                         'country' => $data['country'], 'school' => $data['school'], 'goal' => $data['goal'],
                         'planning_timeline' => $data['planning_timeline'], 'education_level' => $data['education_level'],
                         'contact_details' => collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), 'consented_at' => now(),
@@ -82,7 +100,7 @@ class EducationLandingController extends Controller
                     }
                     $lead->notes()->create([
                         'author_name' => 'Education event registration', 'author_role' => 'system', 'kind' => 'note',
-                        'body' => "School event registration #{$registration->id}\n".$registration->eventSummary()."\nCountry of origin: {$data['country']}\nSchool / university: {$data['school']}\nGoal: {$data['goal']}\nStudy timeline: {$data['planning_timeline']}\nContact consent received. Event details awaiting team confirmation.",
+                        'body' => "School event registration #{$registration->id}\n".$registration->eventSummary()."\nCountry of origin: {$data['country']}\nSchool / university: {$data['school']}\nGoal: {$data['goal']}\nStudy timeline: {$data['planning_timeline']}\nContact consent received.".(! empty($data['visit_id']) ? ' Event selected from the Education schedule.' : ' Event details awaiting team confirmation.'),
                     ]);
 
                     return $registration;
@@ -94,7 +112,7 @@ class EducationLandingController extends Controller
             $request->session()->put('education_registration', $registration->submission_id);
             app(\App\Services\EducationRegistrationDelivery::class)->deliver($registration);
 
-            return response()->json(['ok' => true], 201);
+            return response()->json(['ok' => true, 'event_summary' => $registration->eventSummary()], 201);
         });
     }
 
