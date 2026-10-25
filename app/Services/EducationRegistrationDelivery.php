@@ -18,6 +18,7 @@ class EducationRegistrationDelivery
     {
         Cache::lock('education-delivery:'.$registration->id, 30)->block(5, function () use ($registration) {
             $r = $registration->fresh();
+            app(\App\Services\EducationRsvpWorkflow::class)->queueRegistration($r);
             $log = $r->welcome_log_id ? MessageLog::find($r->welcome_log_id) : null;
             if (! $log || $log->status === MessageLog::STATUS_FAILED) {
                 try {

@@ -96,3 +96,5 @@ Schedule::command('hr:notify-due-work')->hourly()->withoutOverlapping();
 Schedule::command('hr:expire-exports')->hourly()->withoutOverlapping();
 
 Schedule::command('tickets:archive')->dailyAt('02:00')->timezone('Asia/Manila')->withoutOverlapping();
+
+\Illuminate\Support\Facades\Schedule::command('education:dispatch-rsvps')->everyMinute()->withoutOverlapping();

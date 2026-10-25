@@ -8,6 +8,16 @@
   const error = q('#ep-error');
   const landing = q('#ep-landing');
   const success = q('#ep-success');
+  let recognitionTimer, recognitionController;
+  async function recognizeRsvp() {
+    recognitionController?.abort();
+    const notice=q('#ep-returning-rsvp'); notice.hidden=true;
+    const first=q('#ep-first').value.trim(),last=q('#ep-last').value.trim(),email=q('#ep-email').value.trim();
+    if(!first||!last||!email||!q('#ep-email').validity.valid)return;
+    const snapshot=first+' '+last+'\n'+email; recognitionController=new AbortController();
+    try {const response=await fetch('/education/rsvp/recognize',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},body:JSON.stringify({full_name:first+' '+last,email}),signal:recognitionController.signal});if(!response.ok)return;const result=await response.json();if(result.recognized&&snapshot===q('#ep-first').value.trim()+' '+q('#ep-last').value.trim()+'\n'+q('#ep-email').value.trim()){notice.textContent='Welcome back, '+first+'. Your verified RSVP can be linked to your journey.';notice.hidden=false;}}catch{}
+  }
+  for(const id of ['#ep-first','#ep-last','#ep-email'])q(id).addEventListener('input',()=>{q('#ep-returning-rsvp').hidden=true;clearTimeout(recognitionTimer);recognitionTimer=setTimeout(recognizeRsvp,500);});
   let step = 0;
   let submitted = false;
   let busy = false;
