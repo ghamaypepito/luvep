@@ -15,6 +15,7 @@ Route::get('/education/rsvp/verify/{rsvp:public_id}', [\App\Http\Controllers\Edu
 Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::get('/portal/education/rsvps', [\App\Http\Controllers\EducationRsvpAdminController::class, 'index'])->name('education.rsvps.manage');
     Route::put('/portal/education/rsvp-visits/{visit}', [\App\Http\Controllers\EducationRsvpAdminController::class, 'update']);
+    Route::post('/portal/education/rsvp-visits/{visit}/logo', [\App\Http\Controllers\EducationRsvpAdminController::class, 'logo']);
     Route::put('/portal/education/rsvps/{rsvp}/attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'attendance']);
     Route::post('/portal/education/rsvps/slack', [\App\Http\Controllers\EducationRsvpAdminController::class, 'slack']);
 });

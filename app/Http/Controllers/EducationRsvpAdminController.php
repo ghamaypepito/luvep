@@ -11,6 +11,7 @@ use App\Services\ProgramSlackNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -18,6 +19,9 @@ class EducationRsvpAdminController extends Controller
 {
     public function index(Request $request)
     {
+        if ($request->header('X-Inertia')) {
+            return \Inertia\Inertia::location(route('education.rsvps.manage', $request->query()));
+        }
         $filter = $request->validate(['kind' => ['nullable', Rule::in(['school', 'partnership'])], 'email' => 'nullable|email:rfc|max:254']);
         $rsvps = EducationRsvp::with('visit')->when($filter['kind'] ?? null, fn ($q, $kind) => $q->whereHas('visit', fn ($v) => $v->where('kind', $kind)))->when($filter['email'] ?? null, fn ($q, $email) => $q->where('email', strtolower(trim($email))))->latest()->paginate(50)->withQueryString();
 
@@ -51,6 +55,28 @@ class EducationRsvpAdminController extends Controller
         ActivityLog::record('education.rsvp.attendance_updated', ['portal' => 'education', 'properties' => ['rsvp_id' => $rsvp->id, 'status' => $d['attendance_status']]]);
 
         return back()->with('status', 'Attendance updated.');
+    }
+
+    public function logo(Request $request, EducationVisit $visit)
+    {
+        $request->validate(['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:max_width=4096,max_height=4096']]);
+        $path = $request->file('logo')->store('education/school-logos/'.$visit->id, 'public');
+        abort_unless($path, 500, 'The logo could not be saved. Please try again.');
+        $url = Storage::disk('public')->url($path);
+
+        try {
+            DB::transaction(function () use ($visit, $url) {
+                EducationVisit::whereKey($visit->id)->lockForUpdate()->firstOrFail()->update(['logo_path' => $url]);
+                ActivityLog::record('education.rsvp.logo_updated', ['portal' => 'education', 'properties' => ['visit_id' => $visit->id], 'description' => 'Updated Education school logo']);
+            });
+        } catch (\Throwable $e) {
+            Storage::disk('public')->delete($path);
+            throw $e;
+        }
+
+        return $request->expectsJson()
+            ? response()->json(['ok' => true, 'logo' => $url])
+            : redirect()->route('education.rsvps.manage')->with('status', 'School logo updated. It is now shown on the public RSVP page.');
     }
 
     public function slack(Request $request)
