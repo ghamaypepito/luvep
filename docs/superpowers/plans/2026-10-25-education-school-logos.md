@@ -13,3 +13,8 @@ Verification: first observe failing upload/publish/permissions/validation tests,
 - A real local browser upload replaced Brokenshire's logo and the event-list image loaded from public storage. All seven rows had no horizontal overflow; missing logos retained name badges. Mechanical design scan returned no findings.
 - Also corrected the standalone manager's Inertia handoff after sign-in. A current-asset request reproduced the invalid HTML response (200), then returned the required full-page location response (409) after the fix.
 - Focused regressions: 37 tests / 208 assertions passed, four existing PHP8.5 PDO constant deprecations. JavaScript syntax, Pint and whitespace checks passed. The broader suite's previously documented baseline failures are unchanged; this scoped patch did not rerun the full suite.
+
+## Live release
+Deployed code `8c45600` with a preflight check against the existing live files, seven scoped file updates and preserved route customizations. Backup: `/home/deploy/education-school-logo-backups/20261025-065346`. No migration, event seed, notification setting or cron changes.
+
+A rolled-back production upload verified the public image response (200), logo in public markup and upload controls for all schools. Schedule revision/outreach count stayed unchanged. Original school data restored and temporary upload removed. Dedicated public upload directory is writable by the existing www-data worker group. Live browser: seven school marks and no row overflow. Proof saved in education-rsvp-preview/live-school-logos.png.
