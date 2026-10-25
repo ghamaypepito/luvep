@@ -64,3 +64,14 @@ Full suite (512MB memory limit): 1306 tests, 6766 assertions, 3 errors and 51 fa
 ## Review and release checks
 
 Independent review identified closed-intake communication suppression and cross-channel backlog starvation. Both were reproduced with failing regression tests, fixed and confirmed resolved by the reviewer. The Slack sender was explicitly approved by the user, created with only incoming-webhook permission, and stored encrypted for #general. Release smoke checks are recorded below when complete.
+
+## Production release — 25 October 2026
+
+- Code release `64bec4e`, targeted file deployment; backup `/home/deploy/education-rsvp-backups/20261025-062516`. Only the new RSVP migration ran. Existing registration and cron preserved; separate RSVP dispatcher installed.
+- `/education/rsvp` and `/education/register` return 200; protected manager redirects guests (302); RSVP JS and email JPEG return 200. Catalogue contains seven events, all TBC, no private proposed dates.
+- Rolled-back live check with Mail/Notification/HTTP/Queue faked: RSVP saved and created no programme lead; all fake outreach completed; later programme registration created New Leads pipeline assigned to Emma (id2), linked verified journey history and retained configured recipients ids2/7. Education manager rendered. Zero unconfirmed reminders, zero verification contacts/leads remained after rollback.
+- Dedicated webhook-only app `A0CC05EU389` installed in workspace `T0CAUU9KLSE`; encrypted sender configured for #general `C0CAUU9RAQJ`. One clearly labelled connection setup message accepted by Slack. No fake candidate messages sent. No credential in repository or release archive; restricted temporary credential file removed.
+- Runtime check: seven unconfirmed events, Slack configured/checked, zero failed RSVP queue jobs. Browser live school selection changes the photograph and opens name/email/optional-contact form. Returning welcome text verified locally after following signed email proof.
+- PR #15 updated and remains draft. Reconcile existing live source drift before any normal full-site merge/deploy.
+
+Participant SMTP delivery was faked during production data verification; the release reuses the portal’s configured mail transport and queue. The live Slack connection was checked separately with a real setup notice.

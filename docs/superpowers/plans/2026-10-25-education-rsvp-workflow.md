@@ -20,7 +20,7 @@ Preserve /education/register and unrelated live code. RSVP creates no lead/accou
 - [x] Run focused regression suite and full suite once; compare existing failures by name.
 - [x] Obtain independent review. Fix and regression-test closed-intake communications and Slack backlog starvation; reviewer confirmed both resolved.
 - [x] Create explicitly approved webhook-only Slack app for #general and store sender encrypted in production.
-- [ ] Commit/push and update PR #15 around the final implementation.
-- [ ] Back up live files, run only additive RSVP migration, deploy targeted files/patches, seed and add scoped cron.
-- [ ] Verify live public/staff routes, rolled-back production RSVP/registration routing and actual Slack connection.
-- [ ] Show final live page and report URLs, date-confirmation requirement and validation limits.
+- [x] Commit/push and update PR #15 around the final implementation.
+- [x] Back up live files, run only additive RSVP migration, deploy targeted files/patches, seed and add scoped cron.
+- [x] Verify live public/staff routes, rolled-back production RSVP/registration routing and actual Slack connection.
+- [x] Show final live page and report URLs, date-confirmation requirement and validation limits.
