@@ -15,6 +15,8 @@ Route::get('/education/rsvp/verify/{rsvp:public_id}', [\App\Http\Controllers\Edu
 Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::get('/portal/education/rsvps', [\App\Http\Controllers\EducationRsvpAdminController::class, 'index'])->name('education.rsvps.manage');
     Route::get('/portal/education/rsvps/export', [\App\Http\Controllers\EducationAttendanceController::class, 'export'])->name('education.rsvps.export');
+    Route::post('/portal/education/rsvps/group-members', [\App\Http\Controllers\EducationAttendanceGroupController::class, 'store']);
+    Route::delete('/portal/education/rsvps/folders/{folder}/members/{rsvp}', [\App\Http\Controllers\EducationAttendanceGroupController::class, 'destroy']);
     Route::post('/portal/education/rsvps/folders', [\App\Http\Controllers\EducationAttendanceController::class, 'folder']);
     Route::post('/portal/education/rsvps/lists', [\App\Http\Controllers\EducationAttendanceController::class, 'save']);
     Route::post('/portal/education/rsvps/content/{section}', [\App\Http\Controllers\EducationRsvpAdminController::class, 'content']);

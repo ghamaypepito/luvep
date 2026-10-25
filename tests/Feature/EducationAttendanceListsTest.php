@@ -141,4 +141,70 @@ class EducationAttendanceListsTest extends TestCase
         EducationRsvp::insert($rows);
         $this->getJson('/portal/education/rsvps/export?format=pdf')->assertUnprocessable()->assertJsonValidationErrors('export');
     }
+
+    public function test_selected_attendees_can_join_multiple_groups_without_duplication_and_export_by_group(): void
+    {
+        $v = $this->visit('Alpha College', 'alpha');
+        $one = $this->rsvp($v, 'Grouped Student One');
+        $two = $this->rsvp($v, 'Grouped Student Two');
+        $other = $this->rsvp($v, 'Unselected Student');
+        $this->staff();
+        $folder = \App\Models\EducationRsvpFolder::first();
+        $second = \App\Models\EducationRsvpFolder::create(['name' => 'Follow up']);
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $folder->id, 'rsvp_ids' => [$one->id, $two->id]])->assertOk()->assertJsonPath('added', 2);
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $folder->id, 'rsvp_ids' => [$one->id, $two->id]])->assertOk()->assertJsonPath('added', 0);
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $second->id, 'rsvp_ids' => [$one->id]])->assertOk()->assertJsonPath('added', 1);
+        $this->assertDatabaseCount('education_rsvp_folder_members', 3);
+        $this->get('/portal/education/rsvps?folder_id='.$folder->id)->assertViewHas('rsvps', fn ($rows) => $rows->total() === 2);
+        $csv = $this->get('/portal/education/rsvps/export?format=csv&folder_id='.$folder->id)->assertOk()->streamedContent();
+        $this->assertStringContainsString('Grouped Student One', $csv);
+        $this->assertStringContainsString('Grouped Student Two', $csv);
+        $this->assertStringNotContainsString('Unselected Student', $csv);
+        $pdf = $this->get('/portal/education/rsvps/export?format=pdf&folder_id='.$second->id)->assertOk();
+        $text = (new \Smalot\PdfParser\Parser)->parseContent($pdf->getContent())->getText();
+        $this->assertStringContainsString('Grouped Student One', $text);
+        $this->assertStringNotContainsString('Grouped Student Two', $text);
+        $this->assertDatabaseCount('leads', 0);
+        $this->assertDatabaseCount('education_outreach', 0);
+    }
+
+    public function test_group_saved_list_tracks_membership_and_removal_preserves_attendance(): void
+    {
+        $v = $this->visit('Alpha College', 'alpha');
+        $one = $this->rsvp($v, 'First Member', 'attended');
+        $two = $this->rsvp($v, 'Second Member');
+        $lead = \App\Models\Lead::create(['lead_id' => 'GROUP-PRESERVE', 'first_name' => 'First', 'last_name' => 'Member', 'email' => $one->email, 'status' => 'Contact Attempted']);
+        $one->update(['lead_id' => $lead->id, 'verified_at' => now(), 'linked_at' => now()]);
+        $historyBefore = app(\App\Services\EducationRsvpWorkflow::class)->history($lead);
+        $this->assertCount(1, $historyBefore);
+        $this->staff();
+        $folder = \App\Models\EducationRsvpFolder::first();
+        $list = $this->postJson('/portal/education/rsvps/lists', ['save_mode' => 'new', 'name' => 'My group', 'folder_id' => $folder->id, 'filters' => ['folder_id' => $folder->id]])->assertCreated()->json('id');
+        $this->get('/portal/education/rsvps?list_id='.$list)->assertViewHas('rsvps', fn ($rows) => $rows->total() === 0);
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $folder->id, 'rsvp_ids' => [$one->id, $two->id]])->assertOk();
+        $this->get('/portal/education/rsvps?list_id='.$list)->assertViewHas('rsvps', fn ($rows) => $rows->total() === 2);
+        $this->deleteJson('/portal/education/rsvps/folders/'.$folder->id.'/members/'.$one->id)->assertOk();
+        $this->get('/portal/education/rsvps?list_id='.$list)->assertViewHas('rsvps', fn ($rows) => $rows->total() === 1);
+        $this->assertDatabaseHas('education_rsvps', ['id' => $one->id, 'attendance_status' => 'attended']);
+        $this->assertDatabaseCount('education_rsvps', 2);
+        $this->assertEquals($lead->id, $one->fresh()->lead_id);
+        $this->assertSame('Contact Attempted', $lead->fresh()->status);
+        $this->assertSame($historyBefore, app(\App\Services\EducationRsvpWorkflow::class)->history($lead));
+    }
+
+    public function test_manual_group_batches_are_atomic_validated_and_role_restricted(): void
+    {
+        $v = $this->visit('Alpha College', 'alpha');
+        $one = $this->rsvp($v, 'Selected Student');
+        $folder = \App\Models\EducationRsvpFolder::first();
+        $params = ['folder_id' => $folder->id, 'rsvp_ids' => [$one->id]];
+        $this->postJson('/portal/education/rsvps/group-members', $params)->assertUnauthorized();
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->postJson('/portal/education/rsvps/group-members', $params)->assertForbidden();
+        $this->deleteJson('/portal/education/rsvps/folders/'.$folder->id.'/members/'.$one->id)->assertForbidden();
+        $this->staff();
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $folder->id, 'rsvp_ids' => [$one->id, 99999]])->assertUnprocessable();
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => $folder->id, 'rsvp_ids' => []])->assertUnprocessable();
+        $this->postJson('/portal/education/rsvps/group-members', ['folder_id' => 99999, 'rsvp_ids' => [$one->id]])->assertUnprocessable();
+        $this->assertDatabaseCount('education_rsvp_folder_members', 0);
+    }
 }

@@ -59,7 +59,12 @@ class EducationAttendanceController extends Controller
         ActivityLog::record('education.rsvp.attendance_exported', ['portal' => 'education', 'properties' => ['format' => $d['format'], 'row_count' => $count, 'filter_keys' => array_keys($filters)]]);
         $headers = ['Cache-Control' => 'private, no-store, max-age=0', 'X-Content-Type-Options' => 'nosniff'];
         if ($d['format'] === 'pdf') {
-            $response = Pdf::loadView('education.attendance-pdf', ['rows' => $query->latest('id')->get(), 'filters' => $filters, 'generated' => $generated])->setPaper('a4', 'landscape')->setOption('isRemoteEnabled', false)->download($filename);
+            $displayFilters = $filters;
+            if (isset($displayFilters['folder_id'])) {
+                $displayFilters['folder_group'] = EducationRsvpFolder::find($displayFilters['folder_id'])?->name ?? 'Unavailable group';
+                unset($displayFilters['folder_id']);
+            }
+            $response = Pdf::loadView('education.attendance-pdf', ['rows' => $query->latest('id')->get(), 'filters' => $displayFilters, 'generated' => $generated])->setPaper('a4', 'landscape')->setOption('isRemoteEnabled', false)->download($filename);
             foreach ($headers as $key => $value) {
                 $response->headers->set($key, $value);
             }

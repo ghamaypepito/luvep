@@ -24,9 +24,9 @@ class EducationRsvpAdminController extends Controller
         }
         $attendance = app(\App\Services\EducationAttendance::class);
         $attendanceContext = $attendance->context($request);
-        $rsvps = $attendance->query($attendanceContext['attendanceFilters'])->latest('id')->paginate(50)->withQueryString()->fragment('attendance');
+        $rsvps = $attendance->query($attendanceContext['attendanceFilters'])->with('folders:id,name')->latest('id')->paginate(50)->withQueryString()->fragment('attendance');
 
-        return response()->view('education.rsvp-admin', $attendanceContext + ['attendanceFolders' => \App\Models\EducationRsvpFolder::with('lists')->orderBy('name')->get(), 'page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp-admin', $attendanceContext + ['attendanceFolders' => \App\Models\EducationRsvpFolder::with('lists')->withCount('rsvps')->orderBy('name')->get(), 'page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
     }
 
     public function content(Request $request, string $section)
