@@ -1122,4 +1122,9 @@ class Lead extends Model
     {
         return $this->belongsTo(EventSession::class);
     }
+
+    public function educationEventRegistrations()
+    {
+        return $this->hasMany(\App\Models\EducationEventRegistration::class);
+    }
 }
