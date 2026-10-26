@@ -2,31 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, User, Bot, Loader2, ArrowRight } from 'lucide-react';
 
-// n8n Chat Trigger webhook — replaces the old Laravel /api/chat (Gemini)
-// pipeline. The workflow owns its own LLM, prompts and memory; we just
-// forward the user message + a stable sessionId so the workflow can keep
-// per-visitor conversation history.
-const N8N_CHAT_WEBHOOK = 'https://support-ep.app.n8n.cloud/webhook/74e66977-8daf-4b54-8a49-2079a22dea70/chat';
-const SESSION_KEY = 'epathways_chat_session';
+// Both chat surfaces use Luvep's server-side Claude connector.
+const CHAT_ENDPOINT = '/api/chat';
 const MESSAGES_KEY = 'epathways_chat_messages';
 const WELCOME_MESSAGE = {
     role: 'assistant',
     content: 'Hi, I\'m Pathy — your EP guide. How can I help you navigate your New Zealand journey today?',
 };
-
-function getChatSessionId() {
-    try {
-        let id = window.localStorage.getItem(SESSION_KEY);
-        if (!id) {
-            id = 'ses-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
-            window.localStorage.setItem(SESSION_KEY, id);
-        }
-        return id;
-    } catch {
-        // Storage blocked (private mode) — fall back to a per-page id.
-        return 'ses-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
-    }
-}
 
 // Load the persisted message log. Survives Inertia page navigations (the
 // ChatBot remounts on every page) so the conversation doesn't reset when
@@ -49,8 +31,8 @@ function saveMessages(messages) {
     } catch { /* storage blocked — ignore */ }
 }
 
-// Pull the assistant reply out of whatever the n8n workflow returns.
-// Different "Respond to Webhook" / "AI Agent" node configurations end up
+// Pull the assistant reply from the local API response.
+// Accept the server reply shape and tolerate older stored responses that end up
 // shaped differently, so check the common keys then fall back to JSON.
 function extractAssistantReply(data) {
     if (data == null) return null;
@@ -68,7 +50,7 @@ function extractAssistantReply(data) {
 }
 
 // The chat widget renders plain text — it does NOT do Markdown. Even though
-// the n8n prompt tells the model to skip Markdown, models slip sometimes and
+// instructions request plain text, models can still emit Markdown and
 // the visible result ("**bold**", "* item") looks broken. This defensively
 // strips the common Markdown symbols so the reader sees clean text. Bullet
 // `* ` at line starts is converted to `- ` to keep list semantics.
@@ -129,18 +111,18 @@ const ChatBot = ({ isOpen, onClose }) => {
         setIsLoading(true);
 
         try {
-            const res = await fetch(N8N_CHAT_WEBHOOK, {
+            const res = await fetch(CHAT_ENDPOINT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({
-                    action: 'sendMessage',
-                    sessionId: getChatSessionId(),
-                    chatInput: currentInput,
+                    message: currentInput,
+                    history: messages.filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-12).map(m => ({role: m.role, content: m.content.slice(0, 2000)})),
                 }),
             });
 
             if (!res.ok) {
-                throw new Error(`n8n webhook returned ${res.status}`);
+                const failure = await res.json().catch(() => ({}));
+                throw new Error(failure.message || (res.status === 429 ? 'Too many messages. Please wait a minute and try again.' : 'Pathy is unavailable. Please contact EP through /booking.'));
             }
 
             const raw = await res.text();
@@ -156,7 +138,7 @@ const ChatBot = ({ isOpen, onClose }) => {
             console.error('Chat error:', error);
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: 'I apologize, but I am having trouble connecting right now. Please try again or book a consultation if you need immediate help.',
+                content: error.message || 'Pathy is unavailable. Please contact EP through /booking.',
             }]);
         } finally {
             setIsLoading(false);
@@ -193,7 +175,7 @@ const ChatBot = ({ isOpen, onClose }) => {
                             </div>
                             <div>
                                 <h3 className="text-white font-black text-sm tracking-tight">Pathy</h3>
-                                <p className="text-[10px] text-white/50 font-medium tracking-wider">Your EP Guide.</p>
+                                <p className="text-[10px] text-white/50 font-medium tracking-wider">Your EP guide · AI assistant</p>
                             </div>
                         </div>
                         <button 

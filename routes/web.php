@@ -532,6 +532,13 @@ Route::middleware(['auth'])->group(function () {
     // `portal:super_admin` is exact-role (see User::canAccessPortal), so
     // plain admins do NOT see this surface.
     Route::middleware('portal:super_admin')->group(function () {
+        Route::get('/admin/marketing-connectors', [\App\Http\Controllers\Admin\GhlConnectorController::class, 'index']);
+        Route::post('/admin/marketing-connectors', [\App\Http\Controllers\Admin\GhlConnectorController::class, 'update']);
+        Route::post('/admin/marketing-connectors/test', [\App\Http\Controllers\Admin\GhlConnectorController::class, 'test'])->middleware('throttle:5,1');
+        Route::get('/admin/ai-connectors', [\App\Http\Controllers\Admin\ClaudeConnectorController::class, 'index']);
+        Route::post('/admin/ai-connectors', [\App\Http\Controllers\Admin\ClaudeConnectorController::class, 'update']);
+        Route::post('/admin/ai-connectors/test', [\App\Http\Controllers\Admin\ClaudeConnectorController::class, 'test'])->middleware('throttle:5,1');
+
         Route::get('/admin/super-dashboard', [SuperAdminDashboardController::class, 'dashboard'])
             ->name('admin.super-dashboard');
 
@@ -758,7 +765,23 @@ Route::middleware(['auth'])->group(function () {
         // entry redirects to /social/compose so the sidebar link always lands
         // on a usable screen.
         Route::get('/social', fn () => redirect('/social/compose'))->name('social');
-        Route::get('/social/compose', fn () => inertia('admin/social/Compose'))->name('social.compose');
+        Route::get('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'index'])->middleware('throttle:15,1');
+        Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');
+        Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
+        Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
+        Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
+        Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
+        Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');
+        Route::post('/social/marketing/posts/{id}/changes', [\App\Http\Controllers\Admin\MarketingPostController::class, 'changes'])->middleware('throttle:15,1');
+        Route::post('/social/marketing/posts/{id}/schedule', [\App\Http\Controllers\Admin\MarketingPostController::class, 'schedule'])->middleware('throttle:15,1');
+        Route::get('/social/ghl/accounts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'accounts'])->middleware('throttle:30,1');
+        Route::get('/social/ghl/posts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'posts'])->middleware('throttle:30,1');
+        Route::get('/social/ghl/insights', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'insights'])->middleware('throttle:30,1');
+        Route::get('/social/compose', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'index'])->name('social.compose');
+        Route::get('/social/workspace-test/v1/{path}', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'asset'])->where('path', '.*');
+        Route::post('/social/workspace-test/ai/caption', \App\Http\Controllers\Admin\SocialCaptionController::class)->middleware('throttle:5,1');
+        Route::post('/social/workspace-test/ai/layout', [\App\Http\Controllers\Admin\SocialCaptionController::class, 'layout'])->middleware('throttle:5,1');
+        Route::get('/social/compose/legacy', fn () => inertia('admin/social/Compose'))->name('social.compose.legacy');
         Route::get('/social/scheduled', fn () => inertia('admin/social/Scheduled'))->name('social.scheduled');
         Route::get('/social/inbox', fn () => inertia('admin/social/Inbox'))->name('social.inbox');
         Route::get('/social/ads', fn () => inertia('admin/social/Ads'))->name('social.ads');
@@ -775,11 +798,11 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/list-variants', [App\Http\Controllers\AiAdsWebhookController::class, 'listVariants'])->name('list-variants');
             Route::post('/update-variant', [App\Http\Controllers\AiAdsWebhookController::class, 'updateVariant'])->name('update-variant');
             Route::post('/reject-variant', [App\Http\Controllers\AiAdsWebhookController::class, 'rejectVariant'])->name('reject-variant');
-            Route::post('/approve-variant', [App\Http\Controllers\AiAdsWebhookController::class, 'approveVariant'])->name('approve-variant');
+            Route::post('/approve-variant', [App\Http\Controllers\AiAdsWebhookController::class, 'approveVariant'])->middleware(\App\Http\Middleware\RequireSavedMarketingApproval::class)->name('approve-variant');
             Route::get('/list-scheduled', [App\Http\Controllers\AiAdsWebhookController::class, 'listScheduled'])->name('list-scheduled');
-            Route::post('/reschedule', [App\Http\Controllers\AiAdsWebhookController::class, 'reschedule'])->name('reschedule');
+            Route::post('/reschedule', [App\Http\Controllers\AiAdsWebhookController::class, 'reschedule'])->middleware(\App\Http\Middleware\RequireSavedMarketingApproval::class)->name('reschedule');
             Route::post('/cancel-post', [App\Http\Controllers\AiAdsWebhookController::class, 'cancelPost'])->name('cancel-post');
-            Route::post('/quick-post', [App\Http\Controllers\AiAdsWebhookController::class, 'quickPost'])->name('quick-post');
+            Route::post('/quick-post', [App\Http\Controllers\AiAdsWebhookController::class, 'quickPost'])->middleware(\App\Http\Middleware\RequireSavedMarketingApproval::class)->name('quick-post');
             Route::get('/list-accounts', [App\Http\Controllers\AiAdsWebhookController::class, 'listAccounts'])->name('list-accounts');
             Route::post('/start-oauth', [App\Http\Controllers\AiAdsWebhookController::class, 'startOauth'])->name('start-oauth');
             Route::post('/disconnect', [App\Http\Controllers\AiAdsWebhookController::class, 'disconnectAccount'])->name('disconnect');
@@ -2299,3 +2322,5 @@ Route::middleware(['auth'])->group(function () {
 if (app()->environment('local') && file_exists(__DIR__.'/dev-previews.php')) {
     require __DIR__.'/dev-previews.php';
 }
+
+Route::get('/social/marketing/media/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'sharedMedia'])->middleware('signed')->name('marketing.media.shared');

@@ -13,7 +13,7 @@ class SettingController extends Controller
      * or `tracker.enabled` here would take a public surface down with no
      * confirmation or context. Both live on the super-admin Maintenance page.
      */
-    private const MANAGED_ELSEWHERE = ['maintenance.', 'tracker.'];
+    private const MANAGED_ELSEWHERE = ['maintenance.', 'tracker.', 'claude_connector.', 'ghl_connector.'];
 
     /**
      * Admin index — lists every settings row grouped by `group`.
@@ -47,13 +47,14 @@ class SettingController extends Controller
         ]);
 
         foreach ($payload['values'] as $key => $value) {
-            // Never writable from here — see MANAGED_ELSEWHERE.
-            if (array_filter(self::MANAGED_ELSEWHERE, fn ($p) => str_starts_with($key, $p))) {
+            $existing = Setting::query()->where('key', $key)->first();
+            if (! $existing) {
                 continue;
             }
 
-            $existing = Setting::query()->where('key', $key)->first();
-            if (! $existing) {
+            // Inspect the stored key, not the request alias: production SQL
+            // comparisons can ignore case and accents.
+            if (array_filter(self::MANAGED_ELSEWHERE, fn ($prefix) => str_starts_with(strtolower($existing->key), $prefix))) {
                 continue;
             }
 
@@ -63,7 +64,7 @@ class SettingController extends Controller
                 continue;
             }
 
-            Setting::set($key, $value);
+            Setting::set($existing->key, $value);
         }
 
         return back()->with('success', 'Settings updated.');

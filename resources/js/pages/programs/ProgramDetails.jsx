@@ -1,3 +1,4 @@
+import { hasProgramCost } from '@/utils/programCosts.mjs';
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Check, ChevronRight, ArrowLeft } from 'react-feather';
@@ -26,7 +27,7 @@ export default function ProgramDetails({ program }) {
         : (program?.tuition_fee
             ? [{ label: '', amount: program.tuition_fee, notes: program.tuition_fee_notes }]
             : [])
-    ).filter(r => (r.label && String(r.label).trim()) || r.amount || (r.notes && String(r.notes).trim()));
+    ).filter(row => hasProgramCost(row.amount));
     const fmt = (val) => {
         if (val === null || val === undefined || val === '') return '—';
         const n = Number(val);
@@ -275,35 +276,35 @@ export default function ProgramDetails({ program }) {
                         </div>
 
                         {/* Cost Card */}
-                        <div className="bg-[#282728] text-white rounded-2xl p-8 lg:p-10 shadow-2xl">
+                        {[program?.insurance_fee, program?.visa_processing_fee, program?.living_expense, program?.accommodation].some(hasProgramCost) && (<div className="bg-[#282728] text-white rounded-2xl p-8 lg:p-10 shadow-2xl">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-y-10 gap-x-8">
-                                <div>
+                                {hasProgramCost(program?.insurance_fee) && (<div>
                                     <div className="flex items-baseline gap-2 mb-1">
                                         <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                         <h4 className="text-2xl font-bold tabular-nums">{fmt(program?.insurance_fee)}</h4>
                                     </div>
                                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">Insurance (indicative)</p>
-                                </div>
-                                <div>
+                                </div>)}
+                                {hasProgramCost(program?.visa_processing_fee) && (<div>
                                     <div className="flex items-baseline gap-2 mb-1">
                                         <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                         <h4 className="text-2xl font-bold tabular-nums">{fmt(program?.visa_processing_fee)}</h4>
                                     </div>
                                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">Visa Processing Fee</p>
-                                </div>
-                                <div>
+                                </div>)}
+                                {hasProgramCost(program?.living_expense) && (<div>
                                     <div className="flex items-baseline gap-2 mb-1">
                                         <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                         <h4 className="text-2xl font-bold tabular-nums">{fmt(program?.living_expense)}</h4>
                                     </div>
                                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">Living Expense (one year)</p>
-                                </div>
-                                <div>
+                                </div>)}
+                                {hasProgramCost(program?.accommodation) && (<div>
                                     <h4 className="text-xl font-bold mb-1">{program?.accommodation || '—'}</h4>
                                     <p className="text-[10px] text-gray-500 uppercase tracking-wider">Accommodation (single occupancy)</p>
-                                </div>
+                                </div>)}
                             </div>
-                        </div>
+                        </div>)}
                     </div>
                 </div>
 
