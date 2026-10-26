@@ -140,7 +140,7 @@ export default function AdminLayout({ children }) {
     // Slip the Super Dashboard link in at the top for super-admins; Module
     // Management + Maintenance sit at the bottom with the system controls.
     const baseNav = isSuperAdmin
-        ? [SUPER_ADMIN_NAV, ...ADMIN_NAV, SUPER_ADMIN_MODULE_NAV, SUPER_ADMIN_MAINTENANCE_NAV]
+        ? [SUPER_ADMIN_NAV, ...ADMIN_NAV, { name: "AI Connectors", href: "/admin/ai-connectors", icon: <KeyRound size={20} /> }, SUPER_ADMIN_MODULE_NAV, SUPER_ADMIN_MAINTENANCE_NAV]
         : ADMIN_NAV;
     // Hide any restricted-module items the user hasn't been granted. No-op for
     // the current nav (nothing is gated yet) — ready for future modules.

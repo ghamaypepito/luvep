@@ -1,0 +1,6 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
+const source=fs.readFileSync(path.join(__dirname,'../../resources/social-workspace/ghl-live.js'),'utf8').split('\n');
+const elements={'#cal-prev':{},'#cal-next':{}};
+const ctx={Date,plannerDate:new Date(2026,9,26,12),plannerMode:'month',dateKey:d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),$:id=>elements[id],renderPlanner:()=>{}};
+vm.createContext(ctx);vm.runInContext(source.find(line=>line.startsWith('function ghlRange')),ctx);vm.runInContext(source.find(line=>line.startsWith('for(const [id,offset]')),ctx);
+assert.equal(ctx.ghlRange().from,'2026-09-28');assert.equal(ctx.ghlRange().to,'2026-11-08');ctx.plannerMode='week';assert.equal(ctx.ghlRange().from,'2026-10-26');assert.equal(ctx.ghlRange().to,'2026-11-01');ctx.plannerMode='list';assert.equal(ctx.ghlRange().from,'2026-10-01');assert.equal(ctx.ghlRange().to,'2026-10-31');elements['#cal-next'].onclick();assert.equal(ctx.ghlRange().from,'2026-11-01');assert.equal(ctx.ghlRange().to,'2026-11-30');elements['#cal-prev'].onclick();assert.equal(ctx.ghlRange().from,'2026-10-01');ctx.plannerDate=new Date(2028,1,15,12);assert.equal(ctx.ghlRange().to,'2028-02-29');console.log('GHL month/week/list and period-navigation regressions passed.');

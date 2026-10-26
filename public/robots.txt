@@ -23,6 +23,7 @@ Disallow: /engagement/
 Disallow: /agreement/
 Disallow: /pre-tenancy/
 Disallow: /apply/
+Disallow: /application/
 
 # Transactional funnels (payment, booking management, assessment tokens)
 Disallow: /assessment/

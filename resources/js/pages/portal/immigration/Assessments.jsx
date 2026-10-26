@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import {
-    ChevronRight, ChevronDown, ClipboardCheck, FileEdit, Globe, Send, Search,
+    ChevronRight, ChevronLeft, ChevronDown, ClipboardCheck, FileEdit, Globe, Send, Search,
     Users, Briefcase, GraduationCap, Plane, Heart,
     Check, FileText, UserCheck, ArrowRightCircle, AlertTriangle,
     X, Mail, Phone, ExternalLink, Loader2, MessageCircle, User, Trash2,
@@ -85,6 +85,66 @@ const isRecent = (iso) => !! iso && Date.now() - new Date(iso).getTime() < 86400
 
 const initials = (name = "") =>
     name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "—";
+
+// ── Pre-screening (potential-client vetting) ────────────────────────────────
+export const PRE_STATUS = {
+    new:          { label: "New",          cls: "bg-slate-100 text-slate-600 border-slate-200" },
+    consultation: { label: "Consultation", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+    consent:      { label: "Agreement",    cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    eligible:     { label: "Eligible",     cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    converted:    { label: "Converted",    cls: "bg-green-50 text-green-700 border-green-200" },
+    declined:     { label: "Declined",     cls: "bg-slate-100 text-slate-400 border-slate-200" },
+};
+
+// Small pre-screening strip shown in the assessment detail: the stage, the
+// private /application link, and the context-appropriate vetting actions.
+// Eligible = flag as a potential client; Convert (the existing footer button) =
+// make an official case.
+export function PreScreenBar({ i }) {
+    const p = i?.pre_screen;
+    if (!p) return null;
+    const base = `/portal/immigration/pre-screening/${p.token}`;
+    const act = (path, data) => router.post(`${base}/${path}`, data || {}, { preserveScroll: true });
+    const st = PRE_STATUS[p.status] || PRE_STATUS.new;
+    const terminal = p.status === "converted" || p.status === "declined";
+    const copyLink = () => {
+        try { navigator.clipboard.writeText(window.location.origin + i.application_link); toast.success("Application link copied"); }
+        catch { toast.error("Couldn't copy"); }
+    };
+    const Btn = ({ onClick, children, primary }) => (
+        <button type="button" onClick={onClick}
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border ${primary ? "bg-[#009688] text-white border-[#009688] hover:bg-[#00796b]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
+            {children}
+        </button>
+    );
+
+    return (
+        <div className="px-6 py-2.5 border-t border-gray-100 bg-[#f7faf8]">
+            <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">Pre-screen</span>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                {i.application_link && (
+                    <button type="button" onClick={copyLink} className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#009688]">
+                        <ExternalLink size={12} /> Copy application link
+                    </button>
+                )}
+                {!terminal && (
+                    <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                        {! p.consent_sent && <Btn onClick={() => act("consent-sent")}>Send agreement</Btn>}
+                        {p.consent_sent && ! p.consent_ack && <Btn onClick={() => act("consent-ack")}>Client acknowledged</Btn>}
+                        {! p.skipped && ! p.gate_passed && (
+                            <Btn onClick={() => { const r = window.prompt("Reason to skip the consultation/agreement steps?"); if (r) act("skip", { reason: r }); }}>Skip steps</Btn>
+                        )}
+                        {p.status !== "eligible" && p.gate_passed && <Btn primary onClick={() => act("eligible")}>Mark eligible</Btn>}
+                        {p.status === "eligible" && <span className="text-[11px] text-emerald-600 font-semibold">Eligible ✓ potential client</span>}
+                        <Btn onClick={() => { const r = window.prompt("Reason for declining?"); if (r) act("decline", { reason: r }); }}>Decline</Btn>
+                    </div>
+                )}
+                {terminal && p.status === "declined" && <span className="text-[11px] text-gray-400">Declined{p.decline_reason ? ` · ${p.decline_reason}` : ""}</span>}
+            </div>
+        </div>
+    );
+}
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
@@ -475,6 +535,11 @@ function IntakeRow({ intake: i, expanded = false, onToggle }) {
                             <span className="text-[10.5px] text-gray-500 tabular-nums">
                                 {stage === "draft" ? `Saved ${timeAgo(i.saved_at || i.created_at)}` : timeAgo(i.created_at)}
                             </span>
+                            {i.pre_screen?.status && i.pre_screen.status !== "new" && (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${(PRE_STATUS[i.pre_screen.status] || PRE_STATUS.new).cls}`}>
+                                    {(PRE_STATUS[i.pre_screen.status] || PRE_STATUS.new).label}
+                                </span>
+                            )}
                         </div>
                     );
                 })()}
@@ -511,7 +576,13 @@ function IntakeRow({ intake: i, expanded = false, onToggle }) {
                     )}
                     <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); openModal(); }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            // Open the full pre-screening profile page. Fall back to
+                            // the inline modal only if the row has no pre-screen token.
+                            if (i.pre_screen?.token) router.visit(`/portal/immigration/assessments/profile/${i.pre_screen.token}`);
+                            else openModal();
+                        }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-white bg-gray-900 hover:bg-black transition-colors"
                     >
                         Open <ChevronRight size={10} />
@@ -595,7 +666,7 @@ function assessCsrf() {
 // Applicant review modal: LEFT = the submitted visa-assessment form in an
 // official, sectioned layout — the AI runs automatically and highlights the
 // fields it flags (red/amber). RIGHT = the adviser's panel: notes + actions.
-export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote }) {
+export function IntakeViewModal({ intake: i, data: providedData, loading: providedLoading, onClose, notesOverride, onPostNote, asPage = false, chromeless = false }) {
     const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "long", year: "numeric" }) : "");
 
     // Self-fetch the payload when the parent didn't pre-load it — lets the case
@@ -644,11 +715,13 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const notesBase = `/portal/immigration/assessments/${i.visa_type}/${i.id}/notes`;
 
     // Lock the page behind the modal so scrolling a pane doesn't scroll the list.
+    // Skipped in page mode — there's no list underneath to isolate.
     useEffect(() => {
+        if (asPage) return;
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         return () => { document.body.style.overflow = prev; };
-    }, []);
+    }, [asPage]);
 
     // Adopt the review + notes. When a caller supplies its own notes (e.g. the
     // case profile's VIF-row thread), those win over the assessment notes.
@@ -776,8 +849,20 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-            <div className="w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div
+            className={asPage ? "" : "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"}
+            onClick={asPage ? undefined : onClose}
+        >
+            <div
+                className={chromeless
+                    ? "w-full rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-visible"
+                    : asPage
+                        ? "w-full h-[calc(100vh-6.5rem)] min-h-[560px] rounded-2xl bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden"
+                        : "w-[94vw] max-w-[1440px] h-[92vh] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden"}
+                onClick={asPage ? undefined : (e) => e.stopPropagation()}
+            >
+                {!chromeless && (
+                <>
                 {/* Header — progress ring, gap / blocker badges, official export */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-start gap-4">
                     <div className="relative flex-shrink-0" style={{ width: 56, height: 56 }}>
@@ -818,9 +903,15 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50" title="Official Visa Information Form (PDF)"><FileText size={14} /> PDF</a>
                         <a href={`/portal/immigration/intakes/${i.visa_type}/${i.id}/word`}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50" title="Official Visa Information Form (Word)"><FileText size={14} /> Word</a>
-                        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 ml-1"><X size={18} /></button>
+                        {asPage ? (
+                            <button type="button" onClick={onClose} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 ml-1"><ChevronLeft size={14} /> Back</button>
+                        ) : (
+                            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 ml-1"><X size={18} /></button>
+                        )}
                     </div>
                 </div>
+                </>
+                )}
 
                 {/* Body — readiness workspace: section nav · gaps · notes/docs */}
                 {loading ? (
@@ -828,9 +919,9 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         <Loader2 size={18} className="animate-spin" /> Loading submission…
                     </div>
                 ) : (
-                <div className="flex-1 min-h-0 flex overflow-hidden">
+                <div className={chromeless ? "flex" : "flex-1 min-h-0 flex overflow-hidden"}>
                     {/* LEFT rail — form-section nav + completeness */}
-                    <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-gray-100 overflow-y-auto p-4 gap-4">
+                    <aside className={`hidden md:flex flex-col w-56 flex-shrink-0 border-r border-gray-100 p-4 gap-4 ${chromeless ? "self-start sticky top-4" : "overflow-y-auto"}`}>
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Form sections</p>
                             <nav className="space-y-0.5">
@@ -855,7 +946,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </aside>
 
                     {/* CENTER — blockers + section field cards */}
-                    <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain p-6 bg-gray-100 space-y-5">
+                    <div className={`flex-1 min-w-0 p-6 bg-gray-100 space-y-5 ${chromeless ? "" : "overflow-y-auto overscroll-contain"}`}>
                         {sections.length === 0 ? (
                             <div className="text-center py-14">
                                 <FileText size={24} className="mx-auto text-gray-300" />
@@ -948,7 +1039,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </div>
 
                     {/* RIGHT rail — notes & activity / documents */}
-                    <aside className="hidden lg:flex flex-col w-[340px] flex-shrink-0 border-l border-gray-100 overflow-hidden">
+                    <aside className={`hidden lg:flex flex-col w-[340px] flex-shrink-0 border-l border-gray-100 overflow-hidden ${chromeless ? "self-start sticky top-4 h-[72vh]" : ""}`}>
                         <div className="flex items-center gap-4 px-4 pt-3 border-b border-gray-100">
                             <button type="button" onClick={() => setRightTab("notes")} className={`pb-2 text-[12.5px] font-bold border-b-2 -mb-px ${rightTab === "notes" ? "border-[#009688] text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>Notes &amp; activity</button>
                             <button type="button" onClick={() => setRightTab("docs")} className={`pb-2 text-[12.5px] font-bold border-b-2 -mb-px ${rightTab === "docs" ? "border-[#009688] text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>Documents{docCount ? ` (${docCount})` : ""}</button>
@@ -993,17 +1084,25 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         ) : (
                             <div className="flex-1 overflow-y-auto p-4 space-y-2">
                                 {(data?.documents || []).length > 0 ? (
-                                    data.documents.map((doc, k) => (
-                                        <a key={k} href={doc.url} target="_blank" rel="noreferrer"
-                                            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 hover:border-[#009688] hover:bg-gray-50 transition-colors">
-                                            <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#009688]/10 text-[#00796b] flex items-center justify-center"><FileText size={15} /></span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-[12.5px] font-semibold text-gray-800 truncate">{doc.label}</span>
-                                                {doc.ext && <span className="block text-[10.5px] text-gray-400">{doc.ext}</span>}
-                                            </span>
-                                            <ExternalLink size={13} className="text-gray-400 flex-shrink-0" />
-                                        </a>
-                                    ))
+                                    data.documents.map((doc, k) => {
+                                        const isImg = doc.is_image || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(doc.label || "") || /\.(jpe?g|png|gif|webp|bmp|heic)(\?|$)/i.test(doc.url || "");
+                                        const meta = [doc.ext, doc.status].filter(Boolean).join(" · ");
+                                        return (
+                                            <a key={k} href={doc.url} target="_blank" rel="noreferrer"
+                                                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-2.5 hover:border-[#009688] hover:bg-gray-50 transition-colors">
+                                                <span className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+                                                    {isImg
+                                                        ? <img src={doc.url} alt={doc.label} loading="lazy" className="w-full h-full object-cover" />
+                                                        : <FileText size={16} className="text-[#00796b]" />}
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-[12.5px] font-semibold text-gray-800 truncate">{doc.label}</span>
+                                                    {meta && <span className="block text-[10.5px] text-gray-400 truncate">{meta}</span>}
+                                                </span>
+                                                <ExternalLink size={13} className="text-gray-400 flex-shrink-0" />
+                                            </a>
+                                        );
+                                    })
                                 ) : (
                                     <p className="text-center text-[12px] text-gray-400 pt-6">No documents uploaded.</p>
                                 )}
@@ -1012,6 +1111,11 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     </aside>
                 </div>
                 )}
+
+                {!chromeless && (
+                <>
+                {/* Pre-screening (potential-client vetting) strip. */}
+                <PreScreenBar i={i} />
 
                 {/* Footer — indicative note + primary actions. */}
                 <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
@@ -1029,6 +1133,8 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50">Done</button>
                     </div>
                 </div>
+                </>
+                )}
             </div>
 
             <ConfirmModal

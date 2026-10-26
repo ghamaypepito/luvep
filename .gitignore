@@ -45,3 +45,5 @@ prod-db-latest.sql.gz
 
 # Local .env backups — never commit (contain secrets)
 .env.bak*
+
+/resources/social-workspace/exports/

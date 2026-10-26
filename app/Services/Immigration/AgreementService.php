@@ -32,38 +32,51 @@ use Illuminate\Support\Str;
  */
 class AgreementService
 {
-    public function __construct(protected PdfGenerator $pdf)
-    {
-    }
+    public function __construct(protected PdfGenerator $pdf) {}
 
     /**
      * Generate a draft agreement: render template, persist PDF, save row.
+     *
+     * Two modes:
+     *  - Template: pass an AgreementTemplate; its body ({{vars}}) is rendered
+     *    and its required_variables enforced (the original behaviour).
+     *  - Free body: pass $overrideBody (staff-typed HTML, e.g. the blank
+     *    "initial agreement") with $template = null. The body is still run
+     *    through renderTemplate() so any {{first_name}} placeholders fill, but
+     *    no required-variable check applies and no template row is referenced.
      */
-    public function generate(Lead $lead, AgreementTemplate $template, array $extraVariables = []): Agreement
+    public function generate(Lead $lead, ?AgreementTemplate $template = null, array $extraVariables = [], ?string $overrideBody = null, ?string $overrideTitle = null): Agreement
     {
-        $variables = $this->resolveVariables($lead, $extraVariables);
-
-        $missing = $this->findMissingRequired($template, $variables);
-        if (! empty($missing)) {
-            throw new MissingAgreementVariablesException($missing);
+        if ($overrideBody === null && ! $template) {
+            throw new \InvalidArgumentException('generate() needs either a template or an override body.');
         }
 
-        $rendered = $this->renderTemplate($template->body, $variables);
+        $variables = $this->resolveVariables($lead, $extraVariables);
+
+        if ($template && $overrideBody === null) {
+            $missing = $this->findMissingRequired($template, $variables);
+            if (! empty($missing)) {
+                throw new MissingAgreementVariablesException($missing);
+            }
+        }
+
+        $title = $overrideTitle ?? $template?->name ?? 'Engagement Agreement';
+        $rendered = $this->renderTemplate($overrideBody ?? $template->body, $variables);
 
         $pdfPath = $this->pdf->renderToFile(
-            $this->wrapInHtmlShell($rendered, $template->name),
-            "agreements/{$lead->id}/" . now()->format('Y-m-d_His') . '-' . Str::random(6) . '.pdf'
+            $this->wrapInHtmlShell($rendered, $title),
+            "agreements/{$lead->id}/".now()->format('Y-m-d_His').'-'.Str::random(6).'.pdf'
         );
 
         return Agreement::create([
-            'lead_id'               => $lead->id,
-            'agreement_template_id' => $template->id,
-            'generated_by_user_id'  => Auth::id(),
-            'title'                 => $template->name,
-            'content_rendered'      => $rendered,
-            'pdf_path'              => $pdfPath,
-            'status'                => Agreement::STATUS_DRAFT,
-            'variables_used'        => $variables,
+            'lead_id' => $lead->id,
+            'agreement_template_id' => $template?->id,
+            'generated_by_user_id' => Auth::id(),
+            'title' => $title,
+            'content_rendered' => $rendered,
+            'pdf_path' => $pdfPath,
+            'status' => Agreement::STATUS_DRAFT,
+            'variables_used' => $variables,
         ]);
     }
 
@@ -90,7 +103,7 @@ class AgreementService
         if (empty($agreement->tracker_signing_token)) {
             $agreement->tracker_signing_token = Str::random(48);
         }
-        $agreement->status  = Agreement::STATUS_SENT;
+        $agreement->status = Agreement::STATUS_SENT;
         $agreement->sent_at = now();
         $agreement->save();
 
@@ -120,16 +133,17 @@ class AgreementService
     public function resolveVariables(Lead $lead, array $extras = []): array
     {
         $auto = [
-            'client_name'      => trim(($lead->first_name ?? '') . ' ' . ($lead->last_name ?? '')) ?: 'Client',
-            'client_email'     => $lead->email ?? '',
-            'client_phone'     => $lead->phone ?? '',
-            'visa_type'        => $lead->inz_visa_type ?? 'Visa application',
-            'agreement_date'   => now()->format('d F Y'),
-            'consultant_name'  => Auth::user()->name ?? 'Consultant',
+            'client_name' => trim(($lead->first_name ?? '').' '.($lead->last_name ?? '')) ?: 'Client',
+            'client_email' => $lead->email ?? '',
+            'client_phone' => $lead->phone ?? '',
+            'visa_type' => $lead->inz_visa_type ?? 'Visa application',
+            'agreement_date' => now()->format('d F Y'),
+            'consultant_name' => Auth::user()->name ?? 'Consultant',
             'consultancy_name' => config('app.name', 'ePathways Limited'),
         ];
 
         $filtered = array_filter($extras, fn ($v) => $v !== null && $v !== '');
+
         return array_merge($auto, $filtered);
     }
 
@@ -142,6 +156,7 @@ class AgreementService
     {
         return preg_replace_callback('/\{\{\s*(\w+)\s*\}\}/', function ($match) use ($variables) {
             $key = $match[1];
+
             return array_key_exists($key, $variables) && $variables[$key] !== ''
                 ? (string) $variables[$key]
                 : "[{$key} not provided]";
@@ -154,6 +169,7 @@ class AgreementService
     public function findMissingRequired(AgreementTemplate $template, array $variables): array
     {
         $required = $template->required_variables ?? [];
+
         return array_values(array_filter(
             $required,
             fn ($key) => ! isset($variables[$key]) || $variables[$key] === '' || $variables[$key] === null
@@ -167,7 +183,7 @@ class AgreementService
     protected function wrapInHtmlShell(string $content, string $title): string
     {
         return View::make('agreements.pdf-shell', [
-            'title'   => $title,
+            'title' => $title,
             'content' => $content,
         ])->render();
     }
