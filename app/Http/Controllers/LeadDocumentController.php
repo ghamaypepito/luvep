@@ -927,7 +927,7 @@ class LeadDocumentController extends Controller
                         });
 
                     $doc = app(\App\Services\Immigration\InvoiceGenerator::class)
-                        ->generate($lead, $this->invoiceOptionsFromEngagement($overrides));
+                        ->generate($lead, array_merge($this->invoiceOptionsFromEngagement($overrides), $this->planInvoiceAdjustments($lead)));
                 } else {
                     $doc = $generator->generate($lead, $t, $overrides);
                 }
@@ -1222,6 +1222,28 @@ class LeadDocumentController extends Controller
      * bundled invoice is priced off the same tier / location / GST as the
      * agreement, and a manual agreement fee flows into the service-fee line.
      */
+    /**
+     * Discount + admin fee for the invoice, taken from the case's live
+     * installment plan (the authoritative onboarding money). Empty when there
+     * is no plan, so a plain case invoice is unaffected. InvoiceGenerator adds
+     * the negative discount line + the admin-fee line from these keys.
+     *
+     * @return array{discount_amount?: float, admin_fee?: float}
+     */
+    private function planInvoiceAdjustments(Lead $lead): array
+    {
+        $svc = app(\App\Services\Immigration\InstallmentPlanService::class);
+        $plan = $svc->summary($svc->activeFor($lead));
+        if (! $plan) {
+            return [];
+        }
+
+        return [
+            'discount_amount' => (float) $plan['discount_amount'],
+            'admin_fee' => (float) $plan['admin_fee'],
+        ];
+    }
+
     private function invoiceOptionsFromEngagement(array $overrides): array
     {
         $o = [];

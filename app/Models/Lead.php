@@ -439,6 +439,10 @@ class Lead extends Model
         // Full dated timeline of every department status change — drives the
         // Pipeline "when did this status happen" view. See recordStageChange().
         'stage_history',
+        // INZ-style sub-status tracker for the Visa Lodge / Visa Outcome stages
+        // (activities + per-activity status history). JSON so it never touches
+        // the leads row-size limit. See App\Services\Immigration\VisaProgressService.
+        'visa_progress',
 
         // ── Wide profile-info build — columns surfaced by the
         //    LeadController::updatePersonal allow-list and rendered
@@ -528,6 +532,7 @@ class Lead extends Model
         'last_activity_at' => 'datetime',
         'owner_since' => 'datetime',
         'stage_history' => 'array',
+        'visa_progress' => 'array',
         'last_seen_at' => 'datetime',
         'is_student' => 'boolean',
         'student_converted_at' => 'datetime',
@@ -553,9 +558,11 @@ class Lead extends Model
         // Encrypted at rest — Crypt::decryptString runs on read,
         // Crypt::encryptString on write. Existing plain-text passport
         // numbers were re-encrypted by the migration.
-        // Fail-soft: a value encrypted under a previous APP_KEY returns null
-        // (logged) instead of throwing a DecryptException that would blank the
-        // whole cases list when serialising every case's passport number.
+        // SafeEncrypted (not plain 'encrypted'): still encrypts on write, but on
+        // read a value that can't be decrypted — e.g. encrypted under a previous
+        // APP_KEY — degrades to null (logged) instead of throwing a
+        // DecryptException ("The MAC is invalid") that would blank the whole
+        // cases list when serialising every case's passport number.
         'passport_number' => \App\Casts\SafeEncrypted::class,
         'current_nz_visa_number' => \App\Casts\SafeEncrypted::class,
         // Booleans (mirrors migration column types).

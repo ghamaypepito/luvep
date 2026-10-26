@@ -19,7 +19,7 @@ class VisaTypePriceHistory extends Model
     ];
 
     protected $casts = [
-        'changed_at'    => 'datetime',
+        'changed_at' => 'datetime',
         'old_price_nzd' => 'decimal:2',
         'new_price_nzd' => 'decimal:2',
     ];

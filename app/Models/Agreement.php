@@ -19,11 +19,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Agreement extends Model
 {
-    public const STATUS_DRAFT   = 'draft';
-    public const STATUS_SENT    = 'sent';
-    public const STATUS_VIEWED  = 'viewed';
-    public const STATUS_SIGNED  = 'signed';
-    public const STATUS_VOIDED  = 'voided';
+    public const STATUS_DRAFT = 'draft';
+
+    public const STATUS_SENT = 'sent';
+
+    public const STATUS_VIEWED = 'viewed';
+
+    public const STATUS_SIGNED = 'signed';
+
+    public const STATUS_VOIDED = 'voided';
+
     public const STATUS_EXPIRED = 'expired';
 
     protected $fillable = [
@@ -44,13 +49,17 @@ class Agreement extends Model
         'signed_pdf_path',
         'variables_used',
         'tracker_signing_token',
+        'sign_reminded_at',
+        'choose_reminded_at',
     ];
 
     protected $casts = [
-        'sent_at'         => 'datetime',
-        'viewed_at'       => 'datetime',
-        'signed_at'       => 'datetime',
-        'variables_used'  => 'array',
+        'sent_at' => 'datetime',
+        'viewed_at' => 'datetime',
+        'signed_at' => 'datetime',
+        'sign_reminded_at' => 'datetime',
+        'choose_reminded_at' => 'datetime',
+        'variables_used' => 'array',
     ];
 
     public function lead(): BelongsTo

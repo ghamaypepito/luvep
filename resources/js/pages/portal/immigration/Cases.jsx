@@ -96,6 +96,17 @@ const STAGE_CHIP = {
 const stageChipClass = (stage) =>
     STAGE_CHIP[stage] || 'bg-gray-100 text-gray-500 border-gray-200 border-dashed';
 
+// INZ visa sub-status (Visa Lodged → outcome) — compact dot + label for the
+// row/collapse badge. Mirrors the Stages tab colours.
+const SUBSTATUS_DOT = {
+    not_started: 'bg-slate-300', in_progress: 'bg-blue-500', info_requested: 'bg-amber-500',
+    completed: 'bg-green-500', not_applicable: 'bg-slate-700',
+};
+const SUBSTATUS_LABEL = {
+    not_started: 'Not started', in_progress: 'In progress', info_requested: 'Info requested',
+    completed: 'Completed', not_applicable: 'N/A',
+};
+
 /**
  * The Cases list is split into four tabs that follow the case through the
  * pipeline. Between them they cover every immigration stage, so a case
@@ -1098,6 +1109,15 @@ function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, isE
                         onToggle={onStageMenuToggle}
                         onClose={onStageMenuClose}
                     />
+                    {/* INZ visa sub-status badge — the case's current activity. */}
+                    {c.visa_progress?.current && (
+                        <div className="mt-1.5 flex items-center gap-1.5" title={`INZ progress: ${c.visa_progress.completed}/${c.visa_progress.total} activities complete`}>
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${SUBSTATUS_DOT[c.visa_progress.current.status] || 'bg-slate-300'}`} />
+                            <span className="text-[10px] font-medium text-gray-500 truncate max-w-[150px]">
+                                {c.visa_progress.current.label} · {SUBSTATUS_LABEL[c.visa_progress.current.status] || c.visa_progress.current.status}
+                            </span>
+                        </div>
+                    )}
                 </td>
 
                 {/* Visa picker (inline inz_visa_type edit) */}
@@ -1464,6 +1484,19 @@ function CaseDetail({ c, readOnly = false }) {
                 expander rather than the column itself so the row stays
                 compact. */}
             <DetailField label="Endorsed by" value={c.endorsed_by} />
+            {/* INZ visa sub-status — current activity + progress, links to the
+                Stages tab where the full tracker + history lives. */}
+            {c.visa_progress?.current && (
+                <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">INZ progress</p>
+                    <a href={`/portal/immigration/cases/${c.id}/profile?tab=stages`}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-[#009688]">
+                        <span className={`w-2 h-2 rounded-full ${SUBSTATUS_DOT[c.visa_progress.current.status] || 'bg-slate-300'}`} />
+                        {c.visa_progress.current.label} · {SUBSTATUS_LABEL[c.visa_progress.current.status] || c.visa_progress.current.status}
+                        <span className="text-gray-400">({c.visa_progress.completed}/{c.visa_progress.total})</span>
+                    </a>
+                </div>
+            )}
         </div>
     );
 }

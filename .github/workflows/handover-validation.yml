@@ -1,0 +1,50 @@
+name: Validate Luvep integration
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [codex/integrate-final-handover]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, bcmath, curl, sqlite3, pdo_sqlite, zip, gd, intl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci
+      - run: npm run build
+      - name: Configure isolated test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Run release regressions
+        run: >-
+          php -d memory_limit=1G vendor/bin/phpunit
+          tests/Feature/Ai tests/Feature/Marketing tests/Feature/Social tests/Feature/Finance
+          tests/Feature/Immigration/HandoverRegressionTest.php
+          tests/Feature/Immigration/PotentialCaseTest.php
+          tests/Feature/Immigration/RecreateAssessmentTest.php
+          tests/Feature/Immigration/VisaProgressTest.php
+          tests/Feature/Immigration/StaffNoticeCcBccTest.php
+          tests/Feature/Immigration/AutomationCcAgentTest.php
+          tests/Feature/VisaIntakeSubmitSmokeTest.php
+      - name: Verify workspace interactions and installation
+        run: |
+          node tests/Frontend/brief-references.cjs
+          node tests/Frontend/marketing-workflow-save.cjs
+          node tests/Frontend/ghl-calendar.cjs
+          node tests/Frontend/ghl-post-media.cjs
+          node tests/Frontend/workspace-install.cjs

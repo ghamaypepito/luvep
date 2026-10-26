@@ -2,7 +2,7 @@ import { useState } from "react";
 import { router } from "@inertiajs/react";
 import { toast } from "sonner";
 import {
-    DollarSign, Receipt, Plus, Trash2, CheckCircle2, AlertCircle, UserPlus, Save, Eye, FileDown,
+    DollarSign, Receipt, Plus, Trash2, CheckCircle2, AlertCircle, UserPlus, Save, Eye, FileDown, Calendar,
 } from "lucide-react";
 import { immBase } from "@/lib/caseRoutes";
 
@@ -131,7 +131,158 @@ export default function FinancialsTab({ lead, financials = { record: null, payme
 
             {/* Payment ledger */}
             <PaymentLedger leadId={lead.id} payments={financials.payments || []} fmt={fmt} owed={t.owed} />
+
+            {/* Installment schedule (pay later) — which scheduled payments are paid */}
+            <PaymentSchedule
+                leadId={lead.id}
+                plan={financials.installment_plan}
+                config={financials.installment_config}
+                defaults={{ professional: Math.max(0, (Number(t.payable) || 0) - (Number(r.inz_fee) || 0)), inz: r.inz_fee }}
+                fmt={fmt}
+            />
         </div>
+    );
+}
+
+// Pay-later installment plan: deposit + weekly schedule, each row paid or not,
+// with a Mark-paid action. If no plan yet, staff set the terms to generate it.
+function PaymentSchedule({ leadId, plan, config, defaults = {}, fmt }) {
+    const presets = config?.presets || { 3: 13, 6: 26 };
+    const dep = config?.deposit || { default: 25, min: 20, max: 30 };
+    const monthsList = Object.keys(presets).map(Number).sort((a, b) => a - b);
+
+    const [months, setMonths] = useState(monthsList[0] || 3);
+    const [pct, setPct] = useState(dep.default);
+    const [professional, setProfessional] = useState(defaults.professional ?? defaults.total ?? "");
+    const [inz, setInz] = useState(defaults.inz || "");
+    const [discountType, setDiscountType] = useState("none");
+    const [discountValue, setDiscountValue] = useState(0);
+    const [adminFee, setAdminFee] = useState(config?.admin_fee ?? 0);
+    const [saving, setSaving] = useState(false);
+    const [payingId, setPayingId] = useState(null);
+
+    const base = `${immBase()}/cases/${leadId}`;
+    const active = plan && (plan.status === "active" || plan.status === "completed");
+
+    const discountAmount = Math.max(0, Math.min(
+        discountType === "percent" ? (Number(professional) * Number(discountValue)) / 100
+            : discountType === "fixed" ? Number(discountValue) : 0,
+        Number(professional || 0),
+    ));
+    const total = Math.max(0, Number(professional || 0) - discountAmount) + Number(inz || 0) + Number(adminFee || 0);
+
+    const weeks = presets[months] || months * 4;
+    const deposit = Math.min(Math.max((Number(total) * Number(pct)) / 100, Number(inz || 0)), Number(total || 0));
+    const financed = Math.max(0, Number(total || 0) - deposit);
+    const weekly = weeks > 0 ? financed / weeks : 0;
+
+    const createPlan = () => {
+        if (!Number(professional)) { toast.error("Enter the professional fee"); return; }
+        setSaving(true);
+        router.post(`${base}/installment-plan`,
+            {
+                professional_fee: Number(professional), inz_fee: Number(inz || 0),
+                discount_type: discountType, discount_value: Number(discountValue), admin_fee: Number(adminFee || 0),
+                plan_months: Number(months), deposit_percent: Number(pct),
+            },
+            { preserveScroll: true, preserveState: true, onFinish: () => setSaving(false) });
+    };
+    const markPaid = (row) => {
+        if (!window.confirm(`Record ${fmt(row.amount)} as paid?`)) return;
+        setPayingId(row.id);
+        router.post(`${base}/installments/${row.id}/pay`, {},
+            { preserveScroll: true, preserveState: true, onFinish: () => setPayingId(null) });
+    };
+
+    return (
+        <section className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                <Calendar size={14} className="text-gray-500" />
+                <h3 className="text-[13px] font-bold text-gray-900">Payment plan</h3>
+                <span className="text-[11px] text-gray-400">· pay-later schedule</span>
+            </div>
+
+            {!active ? (
+                <div className="p-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Professional fee</span>
+                            <input type="number" min="0" step="0.01" value={professional} onChange={(e) => setProfessional(e.target.value)} className={inputCls} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">INZ fee</span>
+                            <input type="number" min="0" step="0.01" value={inz} onChange={(e) => setInz(e.target.value)} className={inputCls} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Admin fee</span>
+                            <input type="number" min="0" step="0.01" value={adminFee} onChange={(e) => setAdminFee(e.target.value)} className={inputCls} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Discount</span>
+                            <select value={discountType} onChange={(e) => setDiscountType(e.target.value)} className={inputCls + " bg-white"}>
+                                <option value="none">No discount</option>
+                                <option value="percent">Percent off</option>
+                                <option value="fixed">Fixed $ off</option>
+                            </select></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">{discountType === "percent" ? "Discount %" : "Discount $"}</span>
+                            <input type="number" min="0" step="0.01" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} disabled={discountType === "none"} className={inputCls + " disabled:bg-gray-100 disabled:text-gray-400"} /></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Plan length</span>
+                            <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className={inputCls + " bg-white"}>
+                                {monthsList.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"} · {presets[m]} wks</option>)}
+                            </select></label>
+                        <label className="block"><span className="text-[11px] font-semibold text-gray-500">Deposit % ({dep.min}–{dep.max})</span>
+                            <input type="number" min={dep.min} max={dep.max} step="1" value={pct} onChange={(e) => setPct(e.target.value)} className={inputCls} /></label>
+                    </div>
+                    <p className="mt-2 text-[11px] text-gray-500">
+                        Professional <span className="font-semibold text-gray-700 tabular-nums">{fmt(professional || 0)}</span>
+                        {discountAmount > 0 && <> − discount <span className="font-semibold text-emerald-600 tabular-nums">{fmt(discountAmount)}</span></>}
+                        {" + "}admin <span className="font-semibold text-gray-700 tabular-nums">{fmt(adminFee || 0)}</span>
+                        {" + "}INZ <span className="font-semibold text-gray-700 tabular-nums">{fmt(inz || 0)}</span>
+                        {" = "}<span className="font-bold text-gray-900 tabular-nums">{fmt(total)}</span>
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-500">Deposit <span className="font-semibold text-gray-700">{fmt(deposit)}</span> (incl. INZ) · then <span className="font-semibold text-gray-700">{fmt(weekly)}</span> / week × {weeks} · financed {fmt(financed)}</p>
+                    <button type="button" onClick={createPlan} disabled={saving}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-[11px] font-semibold hover:bg-black disabled:opacity-50">
+                        <Plus size={13} /> Create payment plan
+                    </button>
+                </div>
+            ) : (
+                <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
+                        <Stat label="Deposit" value={fmt(plan.deposit_amount)} />
+                        <Stat label={`Weekly × ${plan.weeks}`} value={fmt(plan.weekly_amount)} />
+                        <Stat label="Paid" value={fmt(plan.total_paid)} tone="emerald" />
+                        <Stat label="Outstanding" value={fmt(plan.amount_owed)} />
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-[12.5px]">
+                            <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase tracking-wider">
+                                <tr><th className="text-left px-4 py-2 font-bold">Payment</th><th className="text-left px-4 py-2 font-bold">Due</th><th className="text-right px-4 py-2 font-bold">Amount</th><th className="text-right px-4 py-2 font-bold">Status</th><th className="px-4 py-2"></th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {(plan.schedule || []).map((row) => (
+                                    <tr key={row.id} className={row.status === "overdue" ? "bg-rose-50/40" : ""}>
+                                        <td className="px-4 py-2 text-gray-700">{row.kind === "deposit" ? "Deposit" : `Week ${row.sequence}`}</td>
+                                        <td className="px-4 py-2 text-gray-500">{row.due_date}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums text-gray-900">{fmt(row.amount)}</td>
+                                        <td className="px-4 py-2 text-right">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                                row.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    : row.status === "overdue" ? "bg-rose-50 text-rose-600 border-rose-200"
+                                                    : "bg-gray-50 text-gray-500 border-gray-200"}`}>{row.status}</span>
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                            {row.status !== "paid" && (
+                                                <button type="button" onClick={() => markPaid(row)} disabled={payingId === row.id}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white disabled:opacity-50">
+                                                    <CheckCircle2 size={11} /> Mark paid
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {plan.status === "completed" && (
+                        <p className="px-5 py-3 text-[12px] font-semibold text-emerald-700 inline-flex items-center gap-1.5"><CheckCircle2 size={14} /> Fully paid.</p>
+                    )}
+                </>
+            )}
+        </section>
     );
 }
 

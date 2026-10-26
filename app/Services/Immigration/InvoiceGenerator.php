@@ -234,6 +234,21 @@ class InvoiceGenerator
             }
         }
 
+        // Onboarding discount + admin fee (case-level). Applied to the flat
+        // single-table invoice (default lines, not a per-applicant family
+        // grouping and not staff-supplied custom items): a negative discount
+        // line then a positive admin-fee line, both folded into the total.
+        if (empty($o['items']) && ! $groups) {
+            $discountAmount = round((float) ($o['discount_amount'] ?? 0), 2);
+            $adminFee = round((float) ($o['admin_fee'] ?? 0), 2);
+            if ($discountAmount > 0) {
+                $items[] = ['description' => 'Discount', 'quantity' => 1, 'unit_price' => -$discountAmount, 'amount' => -$discountAmount];
+            }
+            if ($adminFee > 0) {
+                $items[] = ['description' => 'Admin fee', 'quantity' => 1, 'unit_price' => $adminFee, 'amount' => $adminFee];
+            }
+        }
+
         $total = $groups
             ? array_sum(array_column($groups, 'subtotal'))
             : array_sum(array_column($items, 'amount'));

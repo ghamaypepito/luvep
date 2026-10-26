@@ -458,6 +458,10 @@ class ImmigrationController extends Controller
                         // fall back to "Unassigned".
                         'immigration_stage' => $l->immigration_stage,
                         'immigration_priority' => $l->immigration_priority,
+                        // INZ visa sub-status summary (Visa Lodged → outcome) — a
+                        // compact badge for the row + collapse. null when the case
+                        // is not in a tracked stage.
+                        'visa_progress' => app(\App\Services\Immigration\VisaProgressService::class)->summary($l),
                         'docs_total' => $l->documents->count(),
                         'docs_approved' => $l->documents->where('status', 'Approved')->count(),
                         'docs_pending' => $l->documents->whereIn('status', ['Submitted', 'UnderReview'])->count(),
@@ -2055,6 +2059,70 @@ class ImmigrationController extends Controller
      * The Assessment + intake are still progressed so the row leaves the
      * triage queue.
      */
+    /**
+     * Best-effort: stamp this assessment's pre-screening as converted so the
+     * potential-client vetting status stays in sync with the case flag. Keyed
+     * on the pre-screening's subject (the intake for submitted forms, the Lead
+     * for free assessments / drafts). Must never break the conversion itself.
+     */
+    private function recordPreScreeningConversion(\Illuminate\Database\Eloquent\Model $subject, Lead $lead): void
+    {
+        try {
+            $pre = \App\Models\PreScreening::where('subject_type', $subject->getMorphClass())
+                ->where('subject_id', $subject->getKey())
+                ->first();
+            if ($pre && $pre->status !== \App\Models\PreScreening::STATUS_CONVERTED) {
+                app(\App\Services\Immigration\PreScreeningService::class)
+                    ->recordConversion($pre, $lead->id, auth()->user());
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Pre-screening conversion sync failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Re-create a submitted assessment as a DIFFERENT visa type, carrying over
+     * every answer the two forms share. For when a client picked the wrong visa
+     * type (e.g. an AEWV work form when they meant Student) — the applicant
+     * profile copies 1:1; only the visa-specific sections are left to complete.
+     * The original assessment is left intact.
+     */
+    public function recreateAssessmentAs(\Illuminate\Http\Request $request, $type, $id)
+    {
+        $typeMap = [
+            'resident' => ResidentIntake::class,
+            'work' => \App\Models\WorkIntake::class,
+            'student' => \App\Models\StudentIntake::class,
+            'visitor' => \App\Models\VisitorIntake::class,
+            'family' => \App\Models\FamilyIntake::class,
+        ];
+        abort_unless(isset($typeMap[$type]), 404);
+
+        $data = $request->validate([
+            'target' => 'required|in:resident,work,student,visitor,family',
+        ]);
+        abort_if($data['target'] === $type, 422, 'Pick a different visa type.');
+
+        $source = $typeMap[$type]::findOrFail($id);
+
+        try {
+            $new = app(\App\Services\Immigration\IntakeTypeConverter::class)->recreateAs($source, $data['target']);
+        } catch (\RuntimeException $e) {
+            // A user-actionable problem (e.g. the target visa type isn't set up).
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Recreate assessment as other type failed', ['type' => $type, 'id' => $id, 'target' => $data['target'], 'error' => $e->getMessage()]);
+
+            return back()->with('error', 'Could not re-create the assessment.');
+        }
+
+        // Land the staff on the new assessment's pre-screening profile.
+        $pre = app(\App\Services\Immigration\PreScreeningService::class)->ensureFor($new);
+
+        return redirect("/portal/immigration/assessments/profile/{$pre->token}")
+            ->with('success', 'Re-created as a '.ucfirst($data['target']).' assessment with the shared answers carried over — complete the visa-specific sections.');
+    }
+
     public function convertAssessmentToCase(\Illuminate\Http\Request $request, $id)
     {
         try {
@@ -2153,7 +2221,14 @@ class ImmigrationController extends Controller
                 $wantLast = strtolower(trim((string) $lastName));
                 $wantFirst = strtolower(trim((string) ($intake->first_name ?? $assessment->applicant_first_name ?? '')));
 
-                $lead = null;
+                // 0. Prefer the pre-screening's "working lead" — the record that
+                //    already holds this applicant's onboarding (payment plan,
+                //    bookings, uploaded documents). Converting onto it keeps all
+                //    of that attached instead of spawning a parallel case.
+                $lead = \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                    ->where('subject_id', $intake->getKey())
+                    ->whereNotNull('lead_id')
+                    ->first()?->lead;
 
                 // 1. Same email AND matching FULL name — the confident match.
                 //    Email is not unique to a person (families share an inbox)
@@ -2161,7 +2236,7 @@ class ImmigrationController extends Controller
                 //    too. Matching on surname alone would hijack a same-email
                 //    relative's lead (e.g. converting "Test Rogene" linked to a
                 //    different "… Rogene" and the success message named them).
-                if ($email && $wantLast !== '' && $wantFirst !== '') {
+                if (! $lead && $email && $wantLast !== '' && $wantFirst !== '') {
                     $lead = Lead::where('email', $email)->get()
                         ->first(fn ($l) => strtolower(trim((string) $l->last_name)) === $wantLast
                             && strtolower(trim((string) $l->first_name)) === $wantFirst);
@@ -2246,6 +2321,8 @@ class ImmigrationController extends Controller
                     $this->fireCaseConverted($lead);
                 }
 
+                $this->recordPreScreeningConversion($intake, $lead);
+
                 return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
                     ->with('success', "Converted {$lead->first_name} to an immigration case.");
             });
@@ -2286,6 +2363,9 @@ class ImmigrationController extends Controller
                 'stage_updated_by' => auth()->id(),
             ])->save();
         }
+
+        // Free assessments pre-screen on the Lead itself (no intake record).
+        $this->recordPreScreeningConversion($lead, $lead);
 
         return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
             ->with('success', "Converted {$lead->first_name} to an immigration case.");
@@ -2336,6 +2416,8 @@ class ImmigrationController extends Controller
             if ($becameCase) {
                 $this->fireCaseConverted($lead);
             }
+
+            $this->recordPreScreeningConversion($intake, $lead);
 
             return redirect("/portal/immigration/cases/{$lead->id}/profile?tab=documents")
                 ->with('success', "Converted {$intake->first_name} to an immigration case.");
@@ -2424,6 +2506,162 @@ class ImmigrationController extends Controller
     public function assessments()
     {
         return inertia('portal/immigration/Assessments', $this->assessmentsPayload());
+    }
+
+    /**
+     * Full-page pre-screening profile for one Visa Assessment (the potential-
+     * client vetting surface). Reuses the exact row the list builds — keyed by
+     * the pre-screening token — so its shape, flags, links and convert action
+     * match the list 1:1. The form sections / readiness are self-fetched by the
+     * page from the existing intake data endpoint. Procedural, not advice.
+     */
+    public function assessmentProfile(\App\Models\PreScreening $preScreening)
+    {
+        $row = collect($this->assessmentsPayload()['intakes'])
+            ->first(fn ($r) => ($r['pre_screen']['token'] ?? null) === $preScreening->token);
+
+        abort_unless($row, 404);
+
+        $fmtBooking = function (?\App\Models\Booking $b): ?array {
+            if (! $b) {
+                return null;
+            }
+
+            return [
+                'id' => $b->id,
+                'status' => $b->status,
+                'service_type' => $b->service_type,
+                'date' => optional($b->appointment_date)->toDateString(),
+                'time' => $b->appointment_time,
+                'at' => optional($b->appointment_at)->toIso8601String(),
+                'consultant' => $b->consultant_name,
+                'meet_link' => $b->meet_link,
+                'manage_token' => $b->manage_token,
+            ];
+        };
+
+        $plans = app(\App\Services\Immigration\InstallmentPlanService::class);
+
+        return inertia('portal/immigration/AssessmentProfile', [
+            'intake' => $row,
+            // The two pre-screening meetings (consultation, then consent).
+            'bookings' => [
+                'consult' => $fmtBooking($preScreening->consultBooking),
+                'consent' => $fmtBooking($preScreening->consentBooking),
+            ],
+            // Files the client uploaded from their /application link.
+            'client_documents' => $this->preScreeningUploads($preScreening),
+            // Engagement agreement status (managed Agreement on the working lead).
+            'agreement' => $this->preScreeningAgreement($preScreening),
+            // Data for the shared "Generate engagement" modal (pack + invoice),
+            // driven against the working lead — reuses the case-profile modal.
+            'engagement_pack' => $preScreening->lead ? [
+                'lead_id' => $preScreening->lead->id,
+                'lead_name' => trim("{$preScreening->lead->first_name} {$preScreening->lead->last_name}") ?: 'Client',
+                'documents' => \App\Services\Immigration\EngagementDocumentGenerator::catalogue(),
+                'signers' => $this->signingAdvisers(),
+                'default_signer_id' => $this->defaultSignerId(),
+                'has_email' => ! empty($preScreening->lead->email),
+                'sent' => (bool) $preScreening->lead->engagement_sent_at,
+            ] : null,
+            // Installments: the live plan (if any), a fee prefill from the visa
+            // type, and the config knobs (presets + deposit band).
+            'plan' => $preScreening->lead ? $plans->summary($plans->activeFor($preScreening->lead)) : null,
+            'fee_quote' => $this->feeQuote($preScreening),
+            'installment_config' => [
+                'presets' => $plans->presets(),
+                'deposit' => $plans->depositBounds(),
+                'admin_fee' => (float) config('immigration.fees.admin_fee', 10),
+            ],
+        ]);
+    }
+
+    /** Fee prefill (GST-inclusive totals + INZ fee) for a pre-screening's visa. */
+    private function feeQuote(\App\Models\PreScreening $pre, string $location = 'onshore'): array
+    {
+        $subject = $pre->subject;
+        $visaType = null;
+
+        if ($subject instanceof Lead) {
+            $visaType = $subject->inz_visa_type
+                ? \App\Models\VisaType::where('name', $subject->inz_visa_type)->first()
+                : null;
+        } elseif ($subject) {
+            $visaType = \App\Support\IntakeVisaTypeMap::resolve($subject::class);
+        }
+
+        if (! $visaType) {
+            return ['resolved' => false, 'normal_total' => 0, 'discounted_total' => 0, 'inz_fee' => 0];
+        }
+
+        $rows = collect($visaType->feeBreakdown($location));
+        $normal = $rows->firstWhere('tier', 'normal');
+        $disc = $rows->firstWhere('tier', 'discounted');
+
+        $inzFee = (float) ($normal['inz_fee'] ?? 0);
+
+        return [
+            'resolved' => true,
+            'visa_type' => $visaType->name,
+            'normal_total' => (float) ($normal['total'] ?? 0),
+            'discounted_total' => (float) ($disc['total'] ?? 0),
+            'inz_fee' => $inzFee,
+            // Professional portion (GST-inclusive) = total − INZ, for the plan's
+            // professional-fee field (discount applies to this, not the INZ fee).
+            'normal_professional' => max(0, (float) ($normal['total'] ?? 0) - $inzFee),
+        ];
+    }
+
+    /** Engagement agreement status for a pre-screening's working lead. */
+    private function preScreeningAgreement(\App\Models\PreScreening $pre): ?array
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return null;
+        }
+
+        $a = \App\Models\Agreement::where('lead_id', $lead->id)
+            ->whereNotIn('status', [\App\Models\Agreement::STATUS_VOIDED])
+            ->latest('id')->first();
+        if (! $a) {
+            return null;
+        }
+
+        $awaitingSign = in_array($a->status, [\App\Models\Agreement::STATUS_SENT, \App\Models\Agreement::STATUS_VIEWED], true);
+        $signBy = $a->sent_at ? $a->sent_at->copy()->addDays((int) config('immigration.onboarding.sign_days', 5)) : null;
+        $chooseBy = $a->signed_at ? $a->signed_at->copy()->addDays((int) config('immigration.onboarding.choose_days', 5)) : null;
+
+        return [
+            'title' => $a->title,
+            'status' => $a->status,
+            'signer_name' => $a->signer_name,
+            'signed_at' => optional($a->signed_at)->toIso8601String(),
+            // Deadlines for the staff countdown (same windows the client sees).
+            'sign_by' => $awaitingSign ? optional($signBy)->toIso8601String() : null,
+            'sign_overdue' => $awaitingSign && $signBy ? now()->greaterThan($signBy) : false,
+            'choose_by' => optional($chooseBy)->toIso8601String(),
+            'choose_overdue' => $chooseBy ? now()->greaterThan($chooseBy) : false,
+        ];
+    }
+
+    /** Documents the client uploaded via /application (the working lead's own uploads). */
+    private function preScreeningUploads(\App\Models\PreScreening $pre): array
+    {
+        $lead = $pre->lead;
+        if (! $lead) {
+            return [];
+        }
+
+        return \App\Models\LeadDocument::where('lead_id', $lead->id)
+            ->where('source', \App\Models\LeadDocument::SOURCE_UPLOAD)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn ($d) => [
+                'label' => $d->original_name,
+                'ext' => strtoupper(pathinfo((string) $d->original_name, PATHINFO_EXTENSION)) ?: null,
+                'url' => "/application/{$pre->token}/uploads/{$d->id}?inline=1",
+            ])
+            ->all();
     }
 
     /** Assessments-page payload (intakes). Extracted so the adviser portal can
@@ -2609,6 +2847,35 @@ class ImmigrationController extends Controller
                 ->where('status', 'Draft')
                 ->latest('updated_at')->limit(200)->get();
 
+            // Pre-screening hub (the token for the /application/{token} client
+            // link + the vetting stage) for every assessment entry — submitted
+            // intakes and draft/free Leads alike. Lazily created the first time
+            // an entry is seen here and keyed back to each row so the module can
+            // show the link + the pre-screen stage without per-row queries.
+            $preSvc = app(\App\Services\Immigration\PreScreeningService::class);
+            $preByKey = [];
+            $ensurePre = function ($models, string $record, ?string $visaType) use ($preSvc, &$preByKey) {
+                if ($models->isEmpty()) {
+                    return;
+                }
+                $map = $preSvc->ensureMany($models);
+                foreach ($models as $m) {
+                    $ps = $map["{$m->getMorphClass()}:{$m->getKey()}"] ?? null;
+                    if (! $ps) {
+                        continue;
+                    }
+                    $key = $record === 'intake' ? "intake:{$visaType}:{$m->getKey()}" : "lead:{$m->getKey()}";
+                    $preByKey[$key] = $preSvc->summary($ps);
+                }
+            };
+            $ensurePre($resident, 'intake', 'resident');
+            $ensurePre($work, 'intake', 'work');
+            $ensurePre($student, 'intake', 'student');
+            $ensurePre($visitor, 'intake', 'visitor');
+            $ensurePre($family, 'intake', 'family');
+            $ensurePre($free, 'lead', null);
+            $ensurePre($drafts, 'lead', null);
+
             $rows = $rows->concat(
                 $drafts
                     ->reject(fn (Lead $l) => isset($submittedEmails[mb_strtolower(trim((string) $l->email))]))
@@ -2619,7 +2886,17 @@ class ImmigrationController extends Controller
             // Sort on last activity where we have it (free assessments), falling
             // back to arrival time for the visa intakes, whose updated_at moves
             // whenever staff triage them and would reshuffle the queue.
-            $intakes = $rows->sortByDesc(fn ($r) => $r['saved_at'] ?? $r['created_at'])->values();
+            $intakes = $rows->sortByDesc(fn ($r) => $r['saved_at'] ?? $r['created_at'])
+                ->map(function ($r) use ($preByKey) {
+                    $key = ($r['record'] ?? '') === 'intake'
+                        ? "intake:{$r['visa_type']}:{$r['id']}"
+                        : "lead:{$r['id']}";
+                    $r['pre_screen'] = $preByKey[$key] ?? null;
+                    $r['application_link'] = $preByKey[$key]['link'] ?? null;
+
+                    return $r;
+                })
+                ->values();
 
             return ['intakes' => $intakes];
         } catch (\Throwable $e) {
@@ -3452,53 +3729,53 @@ class ImmigrationController extends Controller
     {
         return match ($type) {
             'resident' => [
-                'Personal Details' => ['dob', 'nationality'],
-                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history'],
-                'Employment' => ['job_title', 'employment_start', 'employment_type', 'hourly_rate'],
+                'Personal Details' => ['dob', 'nationality', 'birth_certificate_available', 'birth_certificate_reason'],
+                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history', 'face_image_consent'],
+                'Employment' => ['job_title', 'employer_name', 'employment_start', 'employment_type', 'hourly_rate', 'job_skills_level'],
                 'Qualifications' => ['highest_qualification', 'institution_name', 'country_of_study', 'nzqa_status', 'nzqa_iqa_reference'],
                 'Work Experience' => ['nz_skilled_years', 'total_skilled_years', 'career_summary'],
                 'English & Family' => ['english_evidence', 'english_test_score', 'english_test_date', 'include_family', 'family_members'],
                 'Documents' => ['documents', 'document_files'],
-                'Additional Information' => ['character_health_disclosure', 'other_notes'],
+                'Additional Information' => ['character_health_disclosure', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type', 'police_certificate_available', 'other_notes'],
             ],
             'work' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'partnership_status', 'current_address'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'previous_nz_visa', 'previous_nz_visa_details', 'previous_nzeta', 'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
-                'NZ Employer' => ['employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed', 'job_start_date', 'hourly_rate', 'supports_dependent_children'],
-                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details'],
-                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant'],
+                'NZ Employer' => ['employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed', 'job_start_date', 'hourly_rate', 'supports_dependent_children', 'job_skills_level'],
+                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details', 'police_certificate_available'],
+                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type'],
                 'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
                 'Military & Travel' => ['military_compulsory', 'military_undertaken', 'military_details', 'travelled_internationally'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'student' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'passport_number', 'passport_expiry', 'partnership_status', 'current_address', 'overseas_address'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'passport_number', 'passport_expiry', 'partnership_status', 'current_address', 'overseas_address', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
-                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details'],
-                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant'],
-                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
+                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details', 'police_certificate_available'],
+                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type'],
+                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address', 'job_skills_level'],
                 'Study Plan' => ['programmes', 'study_period_from', 'study_period_to', 'school_name', 'has_offer'],
                 'Study Funds & Assets' => ['has_enough_funds', 'tuition_fee_nzd', 'living_expenses_nzd', 'has_sponsor', 'sponsor_relationship', 'sponsor_income_source', 'can_provide_statements', 'has_other_assets', 'other_assets_details'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'visitor' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'passport_number', 'passport_expiry', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'town_city', 'region', 'postcode'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'passport_number', 'passport_expiry', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'town_city', 'region', 'postcode', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'previous_nz_visa', 'previous_nzeta', 'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
                 'Character' => ['character_convicted', 'character_deported', 'character_investigation', 'character_visa_refused', 'lived_other_country_5y', 'previous_police_certificate'],
                 'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'previous_xray', 'previous_inz1007', 'inz_requested_medical'],
                 'Education' => ['has_tertiary', 'qualification_duration', 'qualification_name', 'qualification_completed', 'education_provider'],
-                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
+                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address', 'job_skills_level'],
                 'Travel Plan' => ['purpose_of_visit', 'intended_stay_length', 'intended_from', 'intended_to', 'has_leave_permit', 'multi_entry_plans'],
                 'Travel Funds' => ['travel_funds_description', 'can_provide_statements', 'has_other_assets', 'other_assets_details'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'family' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'partnership_status', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id'],
+                'Identity' => ['other_names', 'gender', 'dob', 'partnership_status', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration' => ['current_country', 'previous_nz_visa', 'current_address'],
                 'Visa Details' => ['applying_as', 'visa_type', 'partner_living_together', 'partner_12_months', 'partner_same_period', 'partner_close_relatives', 'child_dependent'],
                 'Character' => ['character_convicted', 'character_removed', 'character_investigation', 'character_visa_refused', 'lived_other_country_5y', 'previous_police_certificate'],
                 'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'previous_xray', 'previous_medical_cert', 'countries_visited_3m'],
-                'Work History' => ['currently_working', 'current_employer_name', 'current_occupation', 'current_employer_phone', 'current_employer_email', 'current_start', 'current_end', 'current_employer_address'],
+                'Work History' => ['currently_working', 'current_employer_name', 'current_occupation', 'current_employer_phone', 'current_employer_email', 'current_start', 'current_end', 'current_employer_address', 'job_skills_level'],
                 'Contacts & Declaration' => ['nz_contacts', 'declaration_accepted', 'signature_name', 'signature_date'],
             ],
             default => [],
@@ -3511,6 +3788,14 @@ class ImmigrationController extends Controller
         static $labels = [
             'dob' => 'Date of Birth',
             'nationality' => 'Nationality',
+            'birth_certificate_available' => 'Birth Certificate — can provide at processing',
+            'birth_certificate_reason' => 'If no birth certificate — reason',
+            'face_image_consent' => 'Agrees to provide a face image (JPG) at processing',
+            'medical_cert_recent' => 'Has a medical certificate under 3 months old (unsubmitted)',
+            'medical_cert_submitted_last' => 'Submitted a medical certificate in last visa application',
+            'medical_cert_type' => 'Medical certificate type',
+            'police_certificate_available' => 'Can provide a Police Certificate',
+            'job_skills_level' => 'Job Skills Level (ANZSCO / NOL)',
             'national_id' => 'National ID',
             'country_of_citizenship' => 'Country of Citizenship',
             'other_citizenships' => 'Other Citizenships',
@@ -3650,7 +3935,17 @@ class ImmigrationController extends Controller
             return $value ? 'Yes' : 'No';
         }
         if ($value instanceof \Illuminate\Support\Carbon || $value instanceof \DateTimeInterface) {
-            return \Illuminate\Support\Carbon::parse($value)->toFormattedDateString();
+            return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+        }
+        // Date columns arrive as ISO strings after ->toArray() serialisation
+        // (e.g. 1983-10-21T00:00:00.000000Z); render them as a plain date rather
+        // than the raw timestamp. Only touches values that are already dates.
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}([T ]|$)/', $value)) {
+            try {
+                return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+            } catch (\Throwable $e) {
+                // fall through to the string return below
+            }
         }
         if (is_array($value)) {
             if (array_is_list($value) && collect($value)->every(fn ($v) => is_scalar($v))) {

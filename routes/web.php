@@ -411,6 +411,22 @@ Route::middleware(['throttle:tracker'])->group(function () {
     Route::post('/engagement/{token}/proof-of-payment', [\App\Http\Controllers\EngagementSigningController::class, 'uploadProof'])->name('engagement.proof');
 });
 
+// Client-facing pre-screening application surface. The pre_screenings.token is
+// the bearer credential (no login) — the client sees their pre-screening status,
+// visa-assessment summary, consultations and consent step. Rate-limited like the
+// tracker; NOT behind tracker.enabled so an unrelated toggle can't take it down.
+Route::middleware(['throttle:tracker'])->group(function () {
+    $clientApp = \App\Http\Controllers\Immigration\ClientApplicationController::class;
+    Route::get('/application/{preScreening}', [$clientApp, 'show'])->name('application.show');
+    Route::post('/application/{preScreening}/consent-ack', [$clientApp, 'consentAck'])->name('application.consent-ack');
+    Route::post('/application/{preScreening}/book', [$clientApp, 'book'])->name('application.book');
+    Route::post('/application/{preScreening}/plan', [$clientApp, 'choosePlan'])->name('application.plan');
+    Route::post('/application/{preScreening}/agreement/sign', [$clientApp, 'signAgreement'])->name('application.agreement.sign');
+    Route::get('/application/{preScreening}/agreement/pdf', [$clientApp, 'agreementPdf'])->name('application.agreement.pdf');
+    Route::post('/application/{preScreening}/document', [$clientApp, 'uploadDoc'])->name('application.document');
+    Route::get('/application/{preScreening}/uploads/{doc}', [$clientApp, 'streamUpload'])->name('application.upload.stream');
+});
+
 // Public Registration & Assessment Routes
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the
@@ -1599,6 +1615,9 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/cases/{lead}/steps/start', [$cp, 'startProcess']);
             Route::post('/cases/{lead}/steps/{step}/complete', [$cp, 'completeStep']);
             Route::post('/cases/{lead}/steps/{step}/reactivate', [$cp, 'reactivateStep']);
+            // INZ visa sub-status tracker (Visa Lodged → outcome).
+            Route::post('/cases/{lead}/visa-progress', [$cp, 'updateVisaProgress']);
+            Route::post('/cases/{lead}/visa-progress/status', [$cp, 'updateVisaApplicationStatus']);
             Route::post('/cases/{lead}/payment', [$cp, 'recordPayment']);
             Route::post('/cases/{lead}/partner-recommendation', [$cp, 'partnerRecommendation']);
             Route::post('/cases/{lead}/verdict', [$cp, 'recordVerdict']);
@@ -1611,6 +1630,11 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/cases/{lead}/financials/payments/{payment}', [$cp, 'deleteFinancePayment']);
             Route::post('/cases/{lead}/financials/invoice', [$cp, 'generateInvoice']);
             Route::get('/cases/{lead}/financials/invoice/preview', [$cp, 'previewInvoice']);
+            // Installment payment plan (pay-later) — set terms + mark a payment paid.
+            Route::post('/cases/{lead}/installment-plan', [$cp, 'setInstallmentPlan']);
+            Route::post('/cases/{lead}/installments/{installment}/pay', [$cp, 'payInstallment']);
+            // Multi-visa — start the client's next visa application from an approved case.
+            Route::post('/cases/{lead}/next-visa', [$cp, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [$cp, 'generateInzForm'])->where('code', 'INZ[0-9]+');
             Route::post('/cases/{lead}/inz-forms/{code}/assign', [$cp, 'assignInzForm'])->where('code', 'INZ[0-9]+');
 
@@ -1864,6 +1888,24 @@ Route::middleware(['auth'])->group(function () {
 
             // WORK
             Route::get('/assessments', [ImmigrationController::class, 'assessments'])->name('assessments');
+            // Pre-screening (potential-client vetting) staff actions on an
+            // assessment. {preScreening} resolves by its token (model route key).
+            $preScreen = \App\Http\Controllers\Immigration\PreScreeningController::class;
+            Route::post('/pre-screening/{preScreening}/consent-sent', [$preScreen, 'consentSent'])->name('pre-screening.consent-sent');
+            Route::post('/pre-screening/{preScreening}/consent-ack', [$preScreen, 'consentAck'])->name('pre-screening.consent-ack');
+            Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
+            Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
+            Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
+            // Staff schedule a consultation / consent meeting directly.
+            Route::post('/pre-screening/{preScreening}/book', [$preScreen, 'book'])->name('pre-screening.book');
+            // Engagement agreement — staff generate + send for the working lead.
+            Route::post('/pre-screening/{preScreening}/agreement', [$preScreen, 'generateAgreement'])->name('pre-screening.agreement');
+            // Installment plan (pay-later terms) + recording a payment.
+            Route::post('/pre-screening/{preScreening}/plan', [$preScreen, 'setPlan'])->name('pre-screening.plan');
+            Route::post('/pre-screening/{preScreening}/installments/{installment}/pay', [$preScreen, 'payInstallment'])->name('pre-screening.installment.pay');
+            // Full-page pre-screening potential-client profile (the assessment
+            // detail as a page, not a modal). Keyed by the pre-screening token.
+            Route::get('/assessments/profile/{preScreening}', [ImmigrationController::class, 'assessmentProfile'])->name('assessments.profile');
             // Per-intake detail page — covers Work / Student / Visitor.
             // Resident intakes use the dedicated /admin/immigration/
             // resident-intakes/{id} route (richer document handling).
@@ -1899,6 +1941,10 @@ Route::middleware(['auth'])->group(function () {
             // ResidentIntake.id for backward compat — any pre-Phase-B
             // bookmark that POSTed an intake id still resolves cleanly.
             Route::post('/assessments/{id}/convert-to-case', [ImmigrationController::class, 'convertAssessmentToCase'])->name('assessments.convert');
+            // Re-create a submitted assessment as a different visa type (wrong-type fix).
+            Route::post('/assessments/{type}/{id}/recreate-as', [ImmigrationController::class, 'recreateAssessmentAs'])
+                ->where(['type' => 'resident|work|student|visitor|family', 'id' => '[0-9]+'])
+                ->name('assessments.recreate');
             // Delete an assessment submission (intake + paired Assessment).
             Route::delete('/assessments', [ImmigrationController::class, 'destroyIntake'])->name('assessments.destroy');
             // AI completeness/consistency review of an intake (internal, indicative
@@ -1992,10 +2038,33 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.steps.complete');
             Route::post('/cases/{lead}/steps/{step}/reactivate', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'reactivateStep'])
                 ->name('cases.steps.reactivate');
+            Route::post('/cases/{lead}/next-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/payment', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'recordPayment'])
                 ->name('cases.payment');
             Route::post('/cases/{lead}/partner-recommendation', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'partnerRecommendation'])
                 ->name('cases.partner-recommendation');
+
+            // INZ visa sub-status tracker (Visa Lodged → outcome). Procedural
+            // status tracking — not advice-bearing.
+            Route::post('/cases/{lead}/visa-progress', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updateVisaProgress'])
+                ->name('cases.visa-progress');
+            Route::post('/cases/{lead}/visa-progress/status', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updateVisaApplicationStatus'])
+                ->name('cases.visa-progress.status');
+
+            // Potential Cases — onboarding/vetting pipeline before official cases.
+            // Two logged consultations + a key-matters audio acknowledgment gate
+            // the written-agreement signing (a licensed adviser can override with
+            // a reason); passing promotes the lead to an official case.
+            $pc = \App\Http\Controllers\Immigration\PotentialCaseController::class;
+            Route::get('/potential-cases', [$pc, 'index'])->name('potential-cases');
+            Route::post('/potential-cases', [$pc, 'store'])->name('potential-cases.store');
+            Route::post('/potential-cases/{potentialCase}/meeting', [$pc, 'logMeeting'])->name('potential-cases.meeting');
+            Route::post('/potential-cases/{potentialCase}/acknowledge-audio', [$pc, 'acknowledgeAudio'])->name('potential-cases.acknowledge-audio');
+            Route::post('/potential-cases/{potentialCase}/agreement-sent', [$pc, 'markAgreementSent'])->name('potential-cases.agreement-sent');
+            Route::post('/potential-cases/{potentialCase}/sign', [$pc, 'sign'])->name('potential-cases.sign');
+            Route::post('/potential-cases/{potentialCase}/override', [$pc, 'override'])->name('potential-cases.override');
+            Route::post('/potential-cases/{potentialCase}/promote', [$pc, 'promote'])->name('potential-cases.promote');
+            Route::post('/potential-cases/{potentialCase}/decline', [$pc, 'decline'])->name('potential-cases.decline');
 
             // Build 12 phase 5 — advice-bearing attestations. Licence-gated in
             // the controller via AdviceBearingPolicy; the lodgement sign-off is
@@ -2028,6 +2097,11 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.financials.invoice');
             Route::get('/cases/{lead}/financials/invoice/preview', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'previewInvoice'])
                 ->name('cases.financials.invoice.preview');
+            // Installment payment plan (pay-later) — set terms + mark a payment paid.
+            Route::post('/cases/{lead}/installment-plan', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'setInstallmentPlan'])
+                ->name('cases.installment-plan.set');
+            Route::post('/cases/{lead}/installments/{installment}/pay', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'payInstallment'])
+                ->name('cases.installments.pay');
 
             // Generate a filled INZ form (official PDF) as a draft on the case.
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'generateInzForm'])

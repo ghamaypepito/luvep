@@ -62,9 +62,12 @@ jobs:
           sync_to_vps() {
             rsync -rlptvz -e "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4" --delete --no-owner --no-group \
               --filter='P /public/build/assets/***' \
+              --filter='P /.deployment-*.json' \
               --exclude='.git' \
               --exclude='.github' \
+              --exclude='.claude' \
               --exclude='.env' \
+              --exclude='.env.*' \
               --exclude='node_modules' \
               --exclude='storage/logs/*' \
               --exclude='storage/backups' \
@@ -91,6 +94,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=accept-new ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
             cd /var/www/epathways-production &&
+            bash scripts/install-social-workspace.sh &&
             sudo chown -R deploy:www-data storage bootstrap/cache &&
             sudo find storage bootstrap/cache -type d -exec chmod 2775 {} \; &&
             sudo find storage bootstrap/cache -type f -exec chmod 664 {} \; &&

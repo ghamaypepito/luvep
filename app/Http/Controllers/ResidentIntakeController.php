@@ -56,12 +56,15 @@ class ResidentIntakeController extends Controller
             'last_name' => 'required|string|max:255',
             'dob' => 'required|date',
             'nationality' => 'required|string|max:120',
+            'birth_certificate_available' => 'nullable|in:Yes,No',
+            'birth_certificate_reason' => 'nullable|required_if:birth_certificate_available,No|string|max:500',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:25',
 
             'passport_number' => 'required|string|max:60',
             'passport_expiry' => 'required|date',
             'issuing_country' => 'required|string|max:120',
+            'face_image_consent' => 'nullable|boolean',
 
             'current_visa_type' => 'required|in:AEWV,Essential Skills,Work to Residence,Other',
             'current_visa_other' => 'nullable|required_if:current_visa_type,Other|string|max:255',
@@ -70,9 +73,11 @@ class ResidentIntakeController extends Controller
             'previous_nz_visa_history' => 'nullable|string',
 
             'job_title' => 'required|string|max:255',
+            'employer_name' => 'nullable|string|max:255',
             'employment_start' => 'required|date',
             'employment_type' => 'required|string|max:120',
             'hourly_rate' => 'required|numeric|min:0',
+            'job_skills_level' => 'nullable|in:Level 1,Level 2,Level 3,Level 4,Level 5,No',
 
             'highest_qualification' => 'required|string|max:120',
             'institution_name' => 'nullable|string|max:255',
@@ -101,6 +106,10 @@ class ResidentIntakeController extends Controller
             'document_files.*.*' => 'nullable|file|mimes:pdf|max:10240',
 
             'character_health_disclosure' => 'nullable|string',
+            'medical_cert_recent' => 'nullable|in:Yes,No',
+            'medical_cert_submitted_last' => 'nullable|in:Yes,No',
+            'medical_cert_type' => 'nullable|required_if:medical_cert_submitted_last,Yes|in:General Medical,X-Ray Medical Examination',
+            'police_certificate_available' => 'nullable|in:Yes,No',
             'other_notes' => 'nullable|string',
         ];
     }

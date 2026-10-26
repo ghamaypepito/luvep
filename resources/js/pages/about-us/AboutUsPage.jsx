@@ -328,7 +328,7 @@ export default function AboutUs() {
                                 },
                                 { 
                                     id: 'ph', name: "Philippines", city: "Digos City", top: "49%", left: "77%",
-                                    address: "Digos City, Davao del Sur, Philippines", email: "hello@epathways.ph", phone: "+63 900 000 0000",
+                                    address: "Digos City, Davao del Sur, Philippines", email: "hello@luvep.com", phone: "+63 900 000 0000",
                                     head: { name: "Neil Escaner", image: null },
                                     team: [
                                         { name: "Neil Escaner", role: "Booking Specialist", image: null },

@@ -98,3 +98,12 @@ Schedule::command('tickets:archive')->dailyAt('02:00')->timezone('Asia/Manila')-
 Schedule::command('education:dispatch-registration-outreach')->everyMinute()->withoutOverlapping();
 
 \Illuminate\Support\Facades\Schedule::command('education:dispatch-rsvps')->everyMinute()->withoutOverlapping();
+
+// Chase onboarding deadlines: remind clients who haven't signed the agreement
+// within the sign-by window, then haven't chosen a payment option within the
+// choose-by window. Once-per-window markers dedupe, so once daily is enough.
+Schedule::command('immigration:onboarding-reminders')
+    ->dailyAt('09:45')
+    ->timezone('Pacific/Auckland')
+    ->name('immigration-onboarding-reminders')
+    ->withoutOverlapping();

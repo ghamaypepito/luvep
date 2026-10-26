@@ -11,6 +11,8 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
+use App\Services\Immigration\VisaProgressService;
+use Illuminate\Validation\Rule;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
@@ -130,6 +132,10 @@ class CaseProfileController extends Controller
             // INZ forms available for this visa type (current version + readiness).
             'inzForms' => $this->loadInzForms($lead),
             'dependents' => $this->loadDependents($lead),
+            // Multi-visa — this case's place in the client's chain of visa
+            // applications (Visa N of M), lock state, and whether the next
+            // application can be started (Approved Visa, latest, still open).
+            'visaChain' => app(\App\Services\Immigration\VisaApplicationService::class)->chainData($lead),
             // When this case is itself tied to a parent's case as a dependant,
             // the parent it belongs to (reciprocal indicator in the header).
             'tiedTo' => (function () use ($lead) {
@@ -156,6 +162,13 @@ class CaseProfileController extends Controller
             'visaTypes' => \App\Models\VisaType::where('active', true)
                 ->orderBy('name')->get(['id', 'name'])
                 ->map(fn ($v) => ['id' => $v->id, 'name' => $v->name])->values(),
+            // INZ-style visa sub-status tracker (Visa Lodged → outcome) — current
+            // sub-status + per-activity history + lodge/outcome dates.
+            'visaProgress' => app(\App\Services\Immigration\VisaProgressService::class)->get($lead),
+            // Dated timeline of every immigration stage this case moved through —
+            // drives the Stages tab (the current stage expands into the tracker).
+            'stageTimeline' => collect($lead->stage_history ?? [])
+                ->where('department', 'immigration')->values()->all(),
         ]);
     }
 
@@ -208,7 +221,62 @@ class CaseProfileController extends Controller
                 'net_after_disbursement' => $fin ? $fin->netAfterDisbursement() : 0,
                 'settled' => $fin ? $fin->isSettled() : false,
             ],
+            // Pay-later installment plan (deposit + weekly schedule), so staff
+            // see which scheduled payments are paid and can record against them.
+            'installment_plan' => $this->installmentSummary($lead),
+            'installment_config' => [
+                'presets' => (array) config('immigration.installments.plan_presets', [3 => 13, 6 => 26]),
+                'deposit' => app(\App\Services\Immigration\InstallmentPlanService::class)->depositBounds(),
+                'admin_fee' => (float) config('immigration.fees.admin_fee', 10),
+            ],
         ];
+    }
+
+    /** The case's live installment plan + schedule for the Financials tab. */
+    private function installmentSummary(Lead $lead): ?array
+    {
+        $svc = app(\App\Services\Immigration\InstallmentPlanService::class);
+
+        return $svc->summary($svc->activeFor($lead));
+    }
+
+    /** Staff set / update the pay-later installment terms, generating the schedule. */
+    public function setInstallmentPlan(Request $request, Lead $lead)
+    {
+        $user = $this->guardCase($lead);
+
+        $data = $request->validate([
+            'professional_fee' => 'required|numeric|min:0',
+            'inz_fee' => 'nullable|numeric|min:0',
+            'discount_type' => 'nullable|in:none,percent,fixed',
+            'discount_value' => 'nullable|numeric|min:0',
+            'admin_fee' => 'nullable|numeric|min:0',
+            'plan_months' => 'required|integer|min:1|max:24',
+            'deposit_percent' => 'required|numeric|min:0|max:100',
+        ]);
+
+        $svc = app(\App\Services\Immigration\InstallmentPlanService::class);
+        $plan = $svc->draft($lead, $data, $user);
+        // On a case the plan is agreed, so generate the schedule straight away.
+        $svc->activate($plan);
+
+        return back()->with('success', 'Payment plan saved.');
+    }
+
+    /** Staff record one installment as paid (writes a ledger receipt + mirrors to AR). */
+    public function payInstallment(Request $request, Lead $lead, \App\Models\Installment $installment)
+    {
+        $user = $this->guardCase($lead);
+        abort_unless($installment->plan && $installment->plan->lead_id === $lead->id, 403);
+
+        $data = $request->validate([
+            'method' => 'nullable|string|max:60',
+            'reference' => 'nullable|string|max:120',
+            'paid_at' => 'nullable|date',
+        ]);
+        app(\App\Services\Immigration\InstallmentPlanService::class)->recordPayment($installment, $data, $user);
+
+        return back()->with('success', 'Payment recorded.');
     }
 
     /** Create/update the case's fee + invoice record, and the referral. */
@@ -943,6 +1011,56 @@ class CaseProfileController extends Controller
     }
 
     /**
+     * Set one INZ visa-progress activity's status. Procedural status tracking
+     * (like a QC result) — NOT advice-bearing, so it is not routed through
+     * AdviceBearingPolicy. Appends the transition to the activity's history so
+     * past + current both survive.
+     */
+    public function updateVisaProgress(Request $request, Lead $lead, VisaProgressService $progress)
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        $this->ensureCanViewCases($user);
+        abort_unless($lead->is_immigration_case, 404);
+
+        $data = $request->validate([
+            'activity' => ['required', 'string', Rule::in(collect($progress->catalogue())->pluck('key')->all())],
+            'status' => ['required', 'string', Rule::in(array_keys($progress->statuses()))],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $progress->setActivityStatus($lead, $data['activity'], $data['status'], $data['note'] ?? null, $user);
+
+        return back()->with('success', 'Visa progress updated.');
+    }
+
+    /**
+     * Set the overall INZ application-status label (e.g. "Under Assessment") and,
+     * optionally, the lodge date (stored on the existing inz_lodged_at column).
+     */
+    public function updateVisaApplicationStatus(Request $request, Lead $lead, VisaProgressService $progress)
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        $this->ensureCanViewCases($user);
+        abort_unless($lead->is_immigration_case, 404);
+
+        $data = $request->validate([
+            'application_status' => ['nullable', 'string', 'max:120'],
+            'lodged_at' => ['nullable', 'date'],
+        ]);
+
+        if ($request->has('lodged_at')) {
+            $lead->inz_lodged_at = $data['lodged_at'] ?: null;
+            $lead->save();
+        }
+
+        $progress->setApplicationStatus($lead, $data['application_status'] ?? null);
+
+        return back()->with('success', 'Visa application status updated.');
+    }
+
+    /**
      * Dismiss a whole rule's findings at once (Build 12 phase 3 refinement). The
      * panel collapses repeated same-rule findings (e.g. 18 checklist items) into
      * one summary row with a single dismiss — but dismissal stays PER ITEM here:
@@ -1432,6 +1550,34 @@ class CaseProfileController extends Controller
     }
 
     /** Same policy as Build 10's case-analysis gate. */
+    /**
+     * POST /portal/immigration/cases/{lead}/next-visa — start the client's next
+     * visa application: a fresh case carrying their details + the documents the
+     * new visa also needs, with this (approved) application closed/locked.
+     */
+    public function startNextVisa(\Illuminate\Http\Request $request, Lead $lead, \App\Services\Immigration\VisaApplicationService $visas)
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        $this->ensureCanViewCases($user);
+        abort_unless($lead->is_immigration_case, 404);
+
+        $data = $request->validate([
+            'visa_type_id' => 'nullable|exists:visa_types,id',
+            'visa_label' => 'required_without:visa_type_id|string|max:120',
+        ]);
+
+        $label = $data['visa_label']
+            ?? \App\Models\VisaType::find($data['visa_type_id'])?->name
+            ?? 'New visa application';
+
+        $new = $visas->startNextVisa($lead, $label, $data['visa_type_id'] ?? null, $user);
+
+        $base = $request->is('portal/agent/*') ? '/portal/agent' : '/portal/immigration';
+        return redirect("{$base}/cases/{$new->id}/profile")
+            ->with('success', 'Started the next visa application — details and matching documents were carried over.');
+    }
+
     private function ensureCanViewCases(User $user): void
     {
         abort_unless(
