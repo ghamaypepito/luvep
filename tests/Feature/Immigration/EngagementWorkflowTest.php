@@ -123,6 +123,37 @@ class EngagementWorkflowTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
+    public function test_oia_accepts_the_existing_city_region_and_country_address(): void
+    {
+        $this->lead->update([
+            'residence_address_line_1' => null,
+            'residence_address_line_2' => null,
+            'residence_city' => 'Cagayan de Oro City',
+            'residence_state' => 'Misamis Oriental',
+            'residence_country' => 'Philippines',
+        ]);
+        $address = 'Cagayan de Oro City, Misamis Oriental, Philippines';
+        $html = app(EngagementDocumentGenerator::class)->renderHtml($this->lead, 'oia', ['signer_id' => $this->adviser->id]);
+        $this->assertStringContainsString($address, $html);
+        $this->prepare('oia');
+        $this->assertDatabaseCount('lead_documents', 0);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_oia_still_reports_a_genuinely_empty_address(): void
+    {
+        $this->lead->update([
+            'residence_address_line_1' => null,
+            'residence_address_line_2' => null,
+            'residence_city' => null,
+            'residence_state' => null,
+            'residence_country' => null,
+        ]);
+        $this->postJson("/admin/leads/{$this->lead->id}/engagement/prepare", $this->settings('oia'))
+            ->assertUnprocessable()->assertJsonValidationErrors('client_details');
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_review_is_silent_and_only_explicit_send_sends_exact_pack_once(): void
     {
         $pack = $this->save();
