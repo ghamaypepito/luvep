@@ -1,5 +1,6 @@
 import UserViewControls from './components/admin/UserViewControls';
 import { installUserViewRequests, updateUserView } from './lib/userView';
+import { withPageLayout } from './lib/pageLayout';
 import './bootstrap';
 
 import { createInertiaApp, router } from '@inertiajs/react';
@@ -72,11 +73,7 @@ createInertiaApp({
     // Management must keep the user's OWN sidebar, not switch to the admin
     // chrome — so they adopt the signed-in user's role layout (admins still
     // resolve to AdminLayout through RoleLayout).
-    if (!page.default.layout && layout) {
-      page.default.layout = page => <layout.default>{page}</layout.default>;
-    }
-
-    return page;
+    return withPageLayout(name, page, layout);
 
   },
   setup({ el, App, props }) {

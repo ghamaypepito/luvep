@@ -43,6 +43,27 @@ class CaseAttestation extends Model
         return $this->belongsTo(User::class, 'adviser_id');
     }
 
+    /** Count missing attestations for an already-authorized set of case IDs. */
+    public static function pendingCountsFor(iterable $leadIds): array
+    {
+        $ids = collect($leadIds)->unique()->values();
+        if ($ids->isEmpty()) {
+            return ['awaiting_verdict' => 0, 'awaiting_lodgement' => 0, 'pending_signoff' => 0];
+        }
+
+        $presence = static::whereIn('lead_id', $ids)
+            ->select('lead_id')
+            ->selectRaw('MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS has_verdict', [self::TYPE_VERDICT])
+            ->selectRaw('MAX(CASE WHEN type = ? THEN 1 ELSE 0 END) AS has_signoff', [self::TYPE_LODGEMENT_SIGNOFF])
+            ->groupBy('lead_id')->get();
+
+        return [
+            'awaiting_verdict' => $ids->count() - $presence->where('has_verdict', 1)->count(),
+            'awaiting_lodgement' => $ids->count() - $presence->where('has_signoff', 1)->count(),
+            'pending_signoff' => $ids->count() - $presence->filter(fn ($row) => $row->has_verdict && $row->has_signoff)->count(),
+        ];
+    }
+
     /** The current (latest) verdict for a case, or null. */
     public static function currentVerdict(int $leadId): ?self
     {

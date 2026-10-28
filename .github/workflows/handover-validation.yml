@@ -41,6 +41,8 @@ jobs:
           tests/Feature/Immigration/VisaProgressTest.php
           tests/Feature/Immigration/StaffNoticeCcBccTest.php
           tests/Feature/Immigration/AutomationCcAgentTest.php
+          tests/Feature/Immigration/AdviserNavigationPerformanceTest.php
+          tests/Feature/Immigration/VerdictTest.php
           tests/Feature/VisaIntakeSubmitSmokeTest.php
           tests/Feature/Leads/EducationProfileNotesTest.php
           tests/Feature/Leads/InternalNoteProgramsTest.php
@@ -48,8 +50,9 @@ jobs:
           tests/Feature/UserViewTest.php tests/Feature/VerificationDeepLinkTest.php
           tests/Feature/ProgramVerificationTest.php tests/Feature/ConsultancyVerificationTest.php
           tests/Feature/ProposalAgreementDownloadTest.php
-          tests/Feature/Leads/ProposalVerificationTest.php tests/Feature/Hr/HrPreviewTest.php
-          tests/Feature/Hr/HrSessionTest.php tests/Feature/Auth tests/Feature/Admin/ModuleFeaturesTest.php
+          tests/Feature/PortalDashboardPerformanceTest.php
+          tests/Feature/Leads/ProposalVerificationTest.php tests/Feature/Hr
+          tests/Feature/Auth tests/Feature/Admin/ModuleFeaturesTest.php
       - name: Verify workspace interactions and installation
         run: |
           node tests/Frontend/brief-references.cjs
@@ -60,3 +63,5 @@ jobs:
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/engagement-email-review.cjs
+          node tests/Frontend/hr-return-link.cjs
+          node tests/Frontend/portal-layout-navigation.cjs

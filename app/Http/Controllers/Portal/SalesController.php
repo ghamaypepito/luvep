@@ -87,7 +87,18 @@ class SalesController extends Controller
                 // Only leads still in the pipeline — a lead converted to a
                 // student / case / accommodation client has moved on and
                 // shouldn't resurface in the Sales "recent leads" widget.
-                'recentLeads' => Lead::inLeadPipeline()->with(['studyPlans', 'event'])->latest()->limit(8)->get()->map(fn ($l) => $this->leadRow($l)),
+                'recentLeads' => Lead::inLeadPipeline()
+                    ->with([
+                        'studyPlans', 'event', 'tags:id,name',
+                        'portalUser:id,lead_id,last_login_at',
+                        'stageUpdater:id,name', 'lastActivityUser:id,name',
+                        'agent:id,name,avatar_path',
+                        'notes' => fn ($q) => $q->latest(),
+                        'documents:id,lead_id,checklist_key,status', 'faceImage',
+                    ])
+                    ->withCount(['notes', 'documents'])
+                    ->withCount(['tasks as tasks_open_count' => fn ($q) => $q->where('completed', false)])
+                    ->latest()->limit(8)->get()->map(fn ($l) => $this->leadRow($l)),
                 'upcomingBookings' => Booking::with('lead')
                     ->whereDate('appointment_date', '>=', $now->toDateString())
                     ->orderBy('appointment_date')->orderBy('appointment_time')

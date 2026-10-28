@@ -197,9 +197,10 @@ class HandleInertiaRequests extends Middleware
             $caseScope = \App\Models\Lead::immigrationCase()
                 ->when(! $user->isAdmin(), fn ($q) => $q->where('current_owner_id', $user->id));
             $myIds = (clone $caseScope)->pluck('id');
+            $pending = \App\Models\CaseAttestation::pendingCountsFor($myIds);
             $out['immigration-adviser'] = [
                 'my_cases' => $myIds->count(),
-                'pending_signoff' => $myIds->filter(fn ($id) => \App\Models\CaseAttestation::currentVerdict($id) === null || ! \App\Models\CaseAttestation::hasLodgementSignoff($id))->count(),
+                'pending_signoff' => $pending['pending_signoff'],
                 'pending_verification' => \App\Models\LeadDocument::where('status', \App\Models\LeadDocument::STATUS_CHECKED)
                     ->whereHas('lead', fn ($q) => $q->immigrationCase())->count(),
                 'notifications_unread' => $user->unreadNotifications()->count(),

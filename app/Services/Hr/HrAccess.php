@@ -32,6 +32,24 @@ class HrAccess
         if (! $this->internal($actor) || ! in_array($ability, config('hr.abilities'), true)) {
             return false;
         }
+
+        return $this->allowsInternal($actor, $ability, $subject);
+    }
+
+    /** Evaluate the subject-free menu as one snapshot, without caching access decisions. */
+    public function menuPermissions(User $actor): array
+    {
+        $internal = $this->internal($actor);
+        $permissions = [];
+        foreach (config('hr.abilities') as $ability) {
+            $permissions[$ability] = $internal && $this->allowsInternal($actor, $ability);
+        }
+
+        return $permissions;
+    }
+
+    private function allowsInternal(User $actor, string $ability, ?HrEmployee $subject = null): bool
+    {
         if (in_array($ability, ['leave.review', 'leave.fallback', 'leave.emergency', 'dtr.review'], true) && $subject?->user_id === $actor->id) {
             return false;
         }
