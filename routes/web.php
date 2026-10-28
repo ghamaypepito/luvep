@@ -1158,6 +1158,8 @@ Route::middleware(['auth'])->group(function () {
         // view without going through dompdf.
         Route::get('/admin/leads/{id}/generate/{type}/preview', [LeadDocumentController::class, 'previewDocument'])
             ->name('admin.leads.generate.preview');
+        Route::post('/admin/leads/{id}/generate/{type}/download-preview', [LeadDocumentController::class, 'downloadPreview'])
+            ->name('admin.leads.generate.download-preview');
         // "Proposal" — not a document. Staff pick up to 3 programs to
         // suggest to the lead; saved as a JSON array on the lead row.
         Route::post('/admin/leads/{id}/proposal', [LeadDocumentController::class, 'saveProposal'])

@@ -1813,6 +1813,8 @@ const BANK_PRESETS = {
 
 function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null }) {
     const [leadId, setLeadId] = useState('');
+    const [downloading, setDownloading] = useState(false);
+    const [downloadError, setDownloadError] = useState('');
     // No default — staff must actively pick a doc type. Empty string
     // keeps the preview area empty and the Generate button disabled.
     const [type, setType] = useState('');
@@ -2138,7 +2140,55 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     // onLoad callback will clear it once the new content is painted.
     useEffect(() => {
         if (previewUrl) setPreviewLoading(true);
+        setDownloadError('');
     }, [previewUrl]);
+
+    async function downloadPdf() {
+        if (!canSubmit || downloading || !previewUrl) return;
+        setDownloading(true);
+        setDownloadError('');
+        try {
+            const url = new URL(previewUrl, window.location.origin);
+            const body = new URLSearchParams(url.search);
+            const csrfCookie = document.cookie.split('; ').find((cookie) => cookie.startsWith('XSRF-TOKEN='));
+            if (isProposalType) {
+                pickedProgramIds.forEach((id) => {
+                    body.append('program_ids[]', String(id));
+                    if (pickedReasons[id]?.trim()) body.append(`reasons[${id}]`, pickedReasons[id].trim());
+                });
+            }
+            const response = await fetch(url.pathname.replace(/\/preview$/, '/download-preview'), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': csrfCookie ? decodeURIComponent(csrfCookie.slice('XSRF-TOKEN='.length)) : '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body,
+            });
+            if (!response.ok || !response.headers.get('Content-Type')?.includes('application/pdf')) {
+                let message = 'Could not download the PDF. Please refresh the page and try again.';
+                if (response.headers.get('Content-Type')?.includes('application/json')) {
+                    const error = await response.json();
+                    message = Object.values(error.errors || {}).flat()[0] || error.message || message;
+                }
+                throw new Error(message);
+            }
+            const file = URL.createObjectURL(await response.blob());
+            const link = document.createElement('a');
+            link.href = file;
+            link.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'proposal-agreement-draft.pdf';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(file), 60000);
+        } catch (error) {
+            setDownloadError(error.message || 'Could not download the PDF. Please try again.');
+        } finally {
+            setDownloading(false);
+        }
+    }
 
     if (! open) return null;
     const currentTypeLabel = typeMeta?.label || 'Select a document type';
@@ -2399,7 +2449,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                     <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
                         {/* Top strip — label + selection pill. Swaps between
                             "Preview" (agreements) and "Shortlist" (proposal). */}
-                        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-shrink-0">
+                        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex items-center gap-3 flex-wrap flex-shrink-0">
                             <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-gray-500">
                                 {isProposalType ? 'Shortlist' : 'Preview'}
                             </span>
@@ -2415,7 +2465,15 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                     <span className="text-[11px] text-gray-400 italic">nothing selected yet</span>
                                 )}
                             </div>
+                            <button type="button" onClick={downloadPdf}
+                                disabled={!canSubmit || downloading || amountSettling}
+                                title="Download a draft of the current selection. This does not send an email."
+                                className="ml-auto inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                                {downloading ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
+                                {downloading ? 'Preparing PDF…' : 'Download PDF'}
+                            </button>
                         </div>
+                        {downloadError && <p role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50">{downloadError}</p>}
 
                         {/* Body — proposal shows the full-width picker so
                             staff has real room to browse; agreements show
