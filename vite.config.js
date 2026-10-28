@@ -9,6 +9,15 @@ export default defineConfig({
         cssCodeSplit: false,
         rollupOptions: {
             output: {
+                // nginx serves .mjs as octet-stream on production. Module
+                // workers require a JavaScript MIME type; keep PDF.js bytes
+                // intact but emit its worker with the supported .js extension.
+                assetFileNames(asset) {
+                    if (asset.names?.includes('pdf.worker.min.mjs')) {
+                        return 'assets/[name]-[hash].js';
+                    }
+                    return 'assets/[name]-[hash][extname]';
+                },
                 // Avoid dozens of tiny icon requests on a cold portal load.
                 manualChunks(id) {
                     if (id.includes('/node_modules/lucide-react/')) return 'icons';
