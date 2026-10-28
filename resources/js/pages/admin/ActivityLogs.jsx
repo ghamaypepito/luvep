@@ -184,7 +184,8 @@ export default function ActivityLogs({ logs = [], actions = [], portals = [] }) 
                                     </td>
                                 </tr>
                             ) : pageItems.map(log => {
-                                const hasProps = log.properties && Object.keys(log.properties).length > 0;
+                                const details = { ...(log.properties || {}), ...(log.metadata ? { audit: log.metadata } : {}) };
+                                const hasProps = Object.keys(details).length > 0;
                                 const isOpen = expanded === log.id;
                                 return (
                                     <React.Fragment key={log.id}>
@@ -237,7 +238,7 @@ export default function ActivityLogs({ logs = [], actions = [], portals = [] }) 
                                                 <td colSpan={7} className="px-4 py-3">
                                                     <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Details</div>
                                                     <pre className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
-{JSON.stringify(log.properties, null, 2)}
+{JSON.stringify(details, null, 2)}
                                                     </pre>
                                                 </td>
                                             </tr>

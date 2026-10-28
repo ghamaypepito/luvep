@@ -26,9 +26,28 @@ class ActivityLog extends Model
     {
         return [
             'properties' => 'array',
-            'changes'    => 'array',
-            'metadata'   => 'array',
+            'changes' => 'array',
+            'metadata' => 'array',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $log) {
+            $request = request();
+            $actor = $request?->attributes->get('user_view_actor');
+            $target = $request?->attributes->get('user_view_target');
+            if (! $actor || ! $target) {
+                return;
+            }
+            $log->user_id = $actor->id;
+            $log->actor_name = $actor->name;
+            $log->actor_role = $actor->role;
+            $log->metadata = array_merge($log->metadata ?? [], ['user_view' => [
+                'actor_id' => $actor->id, 'actor_name' => $actor->name,
+                'target_id' => $target->id, 'target_name' => $target->name, 'target_role' => $target->role,
+            ]]);
+        });
     }
 
     public function user(): BelongsTo

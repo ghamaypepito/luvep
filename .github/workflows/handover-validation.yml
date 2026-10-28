@@ -44,6 +44,10 @@ jobs:
           tests/Feature/Leads/EducationProfileNotesTest.php
           tests/Feature/Leads/InternalNoteProgramsTest.php
           tests/Feature/Leads/DocThreadTest.php
+          tests/Feature/UserViewTest.php tests/Feature/VerificationDeepLinkTest.php
+          tests/Feature/ProgramVerificationTest.php tests/Feature/ConsultancyVerificationTest.php
+          tests/Feature/Leads/ProposalVerificationTest.php tests/Feature/Hr/HrPreviewTest.php
+          tests/Feature/Hr/HrSessionTest.php tests/Feature/Auth tests/Feature/Admin/ModuleFeaturesTest.php
       - name: Verify workspace interactions and installation
         run: |
           node tests/Frontend/brief-references.cjs
@@ -51,3 +55,4 @@ jobs:
           node tests/Frontend/ghl-calendar.cjs
           node tests/Frontend/ghl-post-media.cjs
           node tests/Frontend/workspace-install.cjs
+          node tests/Frontend/user-view.cjs

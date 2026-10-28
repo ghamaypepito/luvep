@@ -456,6 +456,12 @@ Route::get('/assessment-result/{lead_id}', [LeadController::class, 'showAssessme
 Route::post('/quick-lead', [QuickLeadController::class, 'store'])->name('quick-lead');
 
 // Authentication Routes
+Route::middleware('auth')->prefix('admin/user-view')->name('user-view.')->group(function () {
+    Route::get('/users', [\App\Http\Controllers\UserViewController::class, 'index'])->name('users');
+    Route::post('/exit', [\App\Http\Controllers\UserViewController::class, 'destroy'])->name('exit');
+    Route::post('/{user}', [\App\Http\Controllers\UserViewController::class, 'store'])->name('store');
+});
+
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login')->middleware('guest');
 Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');

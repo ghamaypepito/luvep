@@ -1,3 +1,4 @@
+import { UserViewButton } from '../admin/UserViewControls';
 import ProfileMenu from '../hr/ProfileMenu';
 import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
@@ -433,6 +434,7 @@ export default function DashboardLayout({
                             </div>
                         )}
 
+                        <UserViewButton />
                         <GlobalSearchBar />
 
                         {user?.role !== "lead" && user?.role !== "agent" && <RequestTicketButton />}

@@ -12,7 +12,7 @@ class BlockHrPreviewWrites
     public function handle(Request $request, Closure $next): Response
     {
         if (config('hr.enabled') && $request->hasSession() && $request->session()->has('hr_preview_employee_id')) {
-            $exit = in_array($request->route()?->getName(), ['hr.preview.exit', 'hr.main.preview.exit', 'hr.portal.preview.exit', 'logout', 'hr.logout'], true);
+            $exit = ($request->routeIs('*user-view.*') && $request->user()?->isSuperAdmin()) || in_array($request->route()?->getName(), ['hr.preview.exit', 'hr.main.preview.exit', 'hr.portal.preview.exit', 'logout', 'hr.logout'], true);
             if (! $exit) {
                 app(HrContext::class)->validate($request);
                 $legacyDtr = $request->getHost() !== config('hr.host') && $request->is('admin/dtr', 'admin/dtr/*', 'dtr/report', 'dtr/weekly-report*');

@@ -10,13 +10,14 @@ import {
 // The consultancy counterpart of Program Verification. A generated consultancy
 // agreement enters as PENDING; a reviewer confirms/edits each fee line-item,
 // leaves internal notes, then Verify → Approve (which emails the client).
-export default function ConsultancyVerification({ proposals = [], counts = {}, leadBase = "/admin" }) {
-    const [activeId, setActiveId] = useState(proposals[0]?.id ?? null);
+export default function ConsultancyVerification({ selectedLeadId = null, proposals = [], counts = {}, leadBase = "/admin" }) {
+    const [activeId, setActiveId] = useState(selectedLeadId ?? proposals[0]?.id ?? null);
     const active = useMemo(() => proposals.find((p) => p.id === activeId) || proposals[0] || null, [proposals, activeId]);
 
     return (
         <>
             <Head title="Consultancy Agreement Verification" />
+            {selectedLeadId && <Link href="/consultancy-verification" className="inline-block mb-3 text-sm font-semibold text-emerald-800 hover:underline">← All reviews</Link>}
             <div className="p-6 max-w-[1400px] mx-auto">
                 <div className="flex items-center gap-2 mb-1">
                     <BadgeCheck size={22} className="text-gray-900" />

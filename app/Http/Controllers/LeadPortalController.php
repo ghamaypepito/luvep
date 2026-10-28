@@ -1025,6 +1025,7 @@ class LeadPortalController extends Controller
             return $preview;
         }
 
+        abort_if(request()->attributes->has('user_view_actor'), 403, 'This user is not linked to a client record. Return to Super Admin to repair their account.');
         Auth::logout();
 
         return redirect('/login')->withErrors([

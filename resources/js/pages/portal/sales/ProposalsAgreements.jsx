@@ -1,3 +1,4 @@
+import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, Link, router } from '@inertiajs/react';
@@ -562,6 +563,7 @@ function ProposalReviewRow({ r, portalBase, fmtDate, onNotify }) {
             {/* Status & created */}
             <div className="md:w-[140px] shrink-0 whitespace-nowrap">
                 <ProposalStatusBadge status={r.proposal_status} />
+                <div><ApprovalReviewLink leadId={r.id} status={r.proposal_status} /></div>
                 <div className="text-[11px] text-gray-500 mt-1.5">{fmtDate(r.updated_at)}</div>
                 <div className="text-[10px] text-gray-400 mt-0.5">{r.created_by_label}</div>
             </div>
@@ -1059,6 +1061,7 @@ function DocumentRow({ lead, portalBase, fmtSize, fmtDate, onNotify, onEdit }) {
                             </div>
 
                             {/* Actions */}
+                            {pending && <ApprovalReviewLink leadId={lead.id} kind="consultancy" status="pending" />}
                             <div className="md:w-[32px] shrink-0 md:text-right">
                                 <DocumentRowActions doc={doc} lead={lead} onNotify={onNotify} onEdit={onEdit} pending={pending} />
                             </div>
