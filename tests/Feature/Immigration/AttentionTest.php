@@ -123,8 +123,10 @@ class AttentionTest extends TestCase
         $adviser = $this->adviser();
         CaseView::create(['lead_id' => $case->id, 'user_id' => $adviser->id, 'opened_at' => now()]);
 
-        // The public tracker (the client's surface) exposes no view telemetry.
-        $res = $this->get('/track/TRACK123')->assertOk();
+        // Cases use their own authenticated client portal, which must not leak
+        // the staff's attention or viewing telemetry.
+        $client = User::factory()->create(['role' => 'lead', 'lead_id' => $case->id]);
+        $res = $this->actingAs($client)->get('/portal/lead/tracker')->assertOk();
         $res->assertDontSee('attention_opened_at', false);
         $res->assertDontSee('case_views', false);
         $res->assertDontSee('opened_at', false);

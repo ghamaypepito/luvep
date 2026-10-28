@@ -38,18 +38,26 @@ class BulkEmailTest extends TestCase
         ], $attrs));
     }
 
-    public function test_index_lists_scoped_templates_and_recipients(): void
+    public function test_index_lists_active_email_templates_across_departments_and_emailable_recipients(): void
     {
+        $existingCount = MessageTemplate::active()->get()->filter(fn ($t) => $t->hasChannel('email'))->count();
         $this->tmpl(['department' => 'sales']);
-        $this->tmpl(['department' => 'education', 'key' => 'edu']);   // other dept — hidden
+        $this->tmpl(['department' => 'education', 'key' => 'edu', 'name' => 'Education']);
+        $this->tmpl(['key' => 'inactive', 'name' => 'Inactive', 'is_active' => false]);
+        $this->tmpl(['key' => 'sms_only', 'name' => 'SMS only', 'channels' => ['sms']]);
         $this->lead();
+        $this->lead(['email' => null]);
 
         $this->actingAs($this->sales())
             ->get('/portal/sales/bulk-email')
             ->assertOk()
             ->assertInertia(fn ($p) => $p
                 ->component('portal/sales/BulkEmail')
-                ->has('templates', 1)
+                ->has('templates', $existingCount + 2)
+                ->where('templates', fn ($templates) => collect($templates)->pluck('name')->contains('Promo')
+                    && collect($templates)->pluck('name')->contains('Education')
+                    && ! collect($templates)->pluck('name')->contains('Inactive')
+                    && ! collect($templates)->pluck('name')->contains('SMS only'))
                 ->has('recipients', 1));
     }
 
@@ -105,14 +113,21 @@ class BulkEmailTest extends TestCase
         $this->assertSame([$with->id], $campaign->recipient_lead_ids);
     }
 
-    public function test_cannot_use_another_departments_template(): void
+    public function test_can_use_another_departments_template_without_changing_campaign_ownership(): void
     {
+        Queue::fake();
         $lead = $this->lead();
         $edu = $this->tmpl(['department' => 'education', 'key' => 'edu']);
 
         $this->actingAs($this->sales())->post('/portal/sales/bulk-email', [
             'name' => 'X', 'template_id' => $edu->id, 'recipient_lead_ids' => [$lead->id], 'action' => 'send_now',
-        ])->assertForbidden();
+        ])->assertRedirect()->assertSessionHas('success');
+
+        $this->assertDatabaseHas('email_campaigns', [
+            'name' => 'X', 'department' => 'sales', 'template_id' => $edu->id,
+            'status' => 'sending', 'total_recipients' => 1,
+        ]);
+        Queue::assertPushed(SendCampaign::class, 1);
     }
 
     public function test_scheduled_campaign_can_be_canceled(): void

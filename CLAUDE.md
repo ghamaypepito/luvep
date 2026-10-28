@@ -19,7 +19,7 @@ composer run dev          # = php artisan serve + queue:listen + pail + npm run 
 # Or run pieces individually:
 php artisan serve         # app on http://localhost:8000
 npm run dev               # Vite dev server (HMR)
-npm run build             # production asset build (this is what CI runs — CI does NOT run tests)
+npm run build             # production asset build (PR CI also runs the full PHP suite)
 php artisan queue:listen  # required for AI analysis, campaign/email sends, Drive push, findings
 php artisan schedule:work # required for campaigns, reminders, reply sync, findings sweep
 
@@ -54,8 +54,10 @@ space in the **same atomic `ALTER`** (`ROW_FORMAT=DYNAMIC` + convert some large 
 that touch `leads` are MySQL-guarded (sqlite tests skip the row-format work). See
 `docs/refactors/leads-table-split.md` for the long-term plan to split the table.
 
-`composer test` currently has ~55 pre-existing failures (tracker/checklist/agreement areas) unrelated to
-schema — do not assume a fully green baseline; compare against the branch point when judging your changes.
+PR validation runs the complete PHP regression suite plus frontend checks. Keep fixtures aligned with
+the current client-portal, checklist, template-sharing and manual-email contracts; see
+`docs/regression-contracts-2026-10-28.md` for the resolved legacy expectations. Do not skip failures or
+restore superseded behavior to make an old assertion pass.
 
 Useful diagnostic/maintenance commands (`app/Console/Commands/`) — several are the fastest way to
 reproduce a scheduled behaviour by hand: `immigration:evaluate-findings`,
@@ -305,7 +307,7 @@ and changing an item `id` orphans previously uploaded files**). Immigration case
 
 Pushes to `staging` → `staging.epathways.co.nz`, pushes to `main` → `epathways.co.nz`, via GitHub
 Actions (`.github/workflows/deploy-*.yml`) which `composer install --no-dev` + `npm ci` + `npm run build`
-on the runner and rsync to a single Hostinger VPS. **CI does not run the test suite** — run
+on the runner and rsync to a single Hostinger VPS. **PR CI runs the full test suite**; also run
 `composer test` locally before merging. **`docs/deployment.md` is the authoritative ops/troubleshooting
 reference** — read it before touching deploy workflows, server config, file-upload/permissions code, or
 the Cerebras integration. Key gotchas it documents: rsync `--delete` will eat

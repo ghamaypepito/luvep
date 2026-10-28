@@ -346,13 +346,13 @@ class AssessmentPipelineTest extends TestCase
         $this->assertSame('Visitor Visa', $lead->inz_visa_type);
     }
 
-    // ─── 14 : matches existing Lead by email instead of creating duplicate ──
+    // ─── 14 : reuse the same applicant without hijacking a shared inbox ──
 
-    public function test_14_convert_finds_existing_lead_by_email(): void
+    public function test_14_convert_reuses_an_existing_lead_with_matching_email_and_full_name(): void
     {
         $this->actAsAdviser();
         $existing = Lead::create([
-            'lead_id' => 'LP-99999', 'first_name' => 'Pre', 'last_name' => 'Existing',
+            'lead_id' => 'LP-99999', 'first_name' => 'Jane', 'last_name' => 'Doe',
             'email'   => 'jane@example.com', 'phone' => '+64210000000', 'status' => 'New Leads',
         ]);
 
@@ -365,6 +365,30 @@ class AssessmentPipelineTest extends TestCase
         $this->assertSame(1, Lead::where('email', 'jane@example.com')->count(), 'Expected to reuse existing lead, not create a duplicate.');
         $existing->refresh();
         $this->assertTrue((bool) $existing->is_immigration_case);
+        $this->assertSame($assessment->id, $existing->assessment_id);
+    }
+
+    public function test_conversion_does_not_hijack_a_relative_with_the_same_email_and_surname(): void
+    {
+        $this->actAsAdviser();
+        $relative = Lead::create([
+            'first_name' => 'John', 'last_name' => 'Doe', 'email' => 'jane@example.com',
+            'status' => 'New Leads',
+        ]);
+        $this->post('/resident-interest', $this->residentPayload())->assertRedirect();
+        $assessment = Assessment::firstOrFail();
+
+        $this->post("/portal/immigration/assessments/{$assessment->id}/convert-to-case")
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(2, Lead::where('email', 'jane@example.com')->count());
+        $relative->refresh();
+        $this->assertFalse((bool) $relative->is_immigration_case);
+        $this->assertNull($relative->assessment_id);
+        $applicant = Lead::where('first_name', 'Jane')->firstOrFail();
+        $this->assertTrue((bool) $applicant->is_immigration_case);
+        $this->assertSame($assessment->id, $applicant->assessment_id);
     }
 
     // ─── 15 : timestamps + endorser ──────────────────────────────────
