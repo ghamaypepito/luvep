@@ -41,6 +41,9 @@ jobs:
           tests/Feature/Immigration/StaffNoticeCcBccTest.php
           tests/Feature/Immigration/AutomationCcAgentTest.php
           tests/Feature/VisaIntakeSubmitSmokeTest.php
+          tests/Feature/Leads/EducationProfileNotesTest.php
+          tests/Feature/Leads/InternalNoteProgramsTest.php
+          tests/Feature/Leads/DocThreadTest.php
       - name: Verify workspace interactions and installation
         run: |
           node tests/Frontend/brief-references.cjs
