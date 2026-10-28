@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 
 const origin = new URL(process.env.LUVEP_CHECK_URL || 'https://luvep.com').origin;
+const manifest = JSON.parse(readFileSync(new URL('../public/build/manifest.json', import.meta.url), 'utf8'));
+const worker = manifest['node_modules/pdfjs-dist/build/pdf.worker.min.mjs'];
+assert.ok(worker, 'PDF worker exists in build manifest');
+const workerResponse = await fetch(origin + '/build/' + worker.file, {
+    method: 'HEAD', signal: AbortSignal.timeout(30000),
+});
+assert.equal(workerResponse.status, 200, 'PDF worker HTTP response');
+assert.match(workerResponse.headers.get('content-type') || '', /^(text|application)\/javascript\b/i,
+    'PDF worker must be served with a JavaScript MIME type');
+console.log('PDF worker check passed: production serves the rendering worker as JavaScript.');
 const browser = await chromium.launch({
     headless: true,
     ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),

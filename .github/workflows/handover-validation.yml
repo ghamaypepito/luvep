@@ -26,6 +26,8 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: npm ci
       - run: npm run build
+      - name: Verify PDF worker build compatibility
+        run: node --test tests/js/pdf-worker-build.test.mjs
       - name: Configure isolated test environment
         run: |
           cp .env.example .env
