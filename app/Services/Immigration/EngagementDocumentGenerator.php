@@ -36,6 +36,20 @@ class EngagementDocumentGenerator
      * pulls client + visa-fee data; the other three are standard docs.
      */
     public const DOCS = [
+        'initial_consultation' => [
+            'view' => 'agreements.engagement.initial-consultation',
+            'header' => 'INITIAL CONSULTATION AGREEMENT', 'label' => 'Initial Consultation Agreement',
+            'description' => 'Initial visa consultation - USD 250 booking fee.',
+            'eyebrow' => null, 'cover_title' => 'INITIAL CONSULTATION', 'cover_subtitle' => null,
+            'prefix' => 'InitialConsultationAgreement', 'dynamic' => true,
+        ],
+        'oia' => [
+            'view' => 'agreements.engagement.oia',
+            'header' => 'LETTER OF AUTHORISATION', 'label' => 'OIA Engagement Agreement',
+            'description' => 'Official Information Act / Privacy Act request - NZD 500 plus GST.',
+            'eyebrow' => null, 'cover_title' => 'OIA AUTHORISATION', 'cover_subtitle' => null,
+            'prefix' => 'OIAEngagement', 'dynamic' => true,
+        ],
         'written_agreement' => [
             'view' => 'agreements.engagement.written-agreement',
             'header' => 'WRITTEN AGREEMENT',
@@ -85,7 +99,7 @@ class EngagementDocumentGenerator
     /** Lightweight catalogue for the frontend document picker. */
     public static function catalogue(): array
     {
-        $docs = collect(self::DOCS)->map(fn ($d, $key) => [
+        $docs = collect(self::DOCS)->except(['initial_consultation', 'oia'])->map(fn ($d, $key) => [
             'key' => $key,
             'label' => $d['label'],
             'description' => $d['description'],
@@ -188,7 +202,42 @@ class EngagementDocumentGenerator
             $payload = array_merge($payload, $this->writtenAgreementData($lead, $overrides));
         }
 
+        if (in_array($type, ['initial_consultation', 'oia'], true)) {
+            $payload['client']['dob'] = $lead->dob ? \Illuminate\Support\Carbon::parse($lead->dob)->format('d/m/Y') : null;
+            $payload['client']['passport'] = $lead->passport_number;
+            $payload['consultation'] = array_intersect_key($overrides, array_flip([
+                'consultation_date', 'consultation_time', 'consultation_timezone', 'meeting_link',
+            ]));
+        }
+        // Signing reproduces the exact case/adviser/fee details saved in the draft.
+        if (isset($overrides['payload_snapshot'])) {
+            $payload = array_replace($payload, $overrides['payload_snapshot']);
+            $payload['client']['signature'] = $overrides['client_signature'] ?? null;
+        }
+        $payload['client_signed_date'] = $overrides['client_signed_date'] ?? null;
+
         return $withMeta ? [$meta['view'], $payload, $meta] : [$meta['view'], $payload];
+    }
+
+    public function snapshot(Lead $lead, string $type, array $overrides): array
+    {
+        [, $payload] = $this->resolve($lead, $type, $overrides);
+        unset($payload['logo_data'], $payload['cover_bg_data']);
+        return $payload;
+    }
+
+    public static function signable(string $type): bool
+    {
+        return in_array($type, ['written_agreement', 'initial_consultation', 'oia'], true);
+    }
+
+    public static function typesFor(string $type): array
+    {
+        return match ($type) {
+            'initial_consultation' => ['initial_consultation', 'invoice'],
+            'oia' => ['oia', 'invoice'],
+            default => ['written_agreement', 'invoice', 'professional_standards', 'code_of_conduct', 'complaints_procedure'],
+        };
     }
 
     /** Client + visa-fee + signing-adviser data for the Written Agreement. */

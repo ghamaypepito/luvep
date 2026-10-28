@@ -881,7 +881,7 @@ class LeadDocumentController extends Controller
             // signed one and make a completed pack look unsigned again — so skip
             // those types entirely and leave the signed document exactly as it is.
             $alreadySigned = LeadDocument::where('lead_id', $lead->id)
-                ->where('source_variant', 'like', 'engagement:%')
+                ->where('source_variant', 'like', 'engagement:%')->whereNull('notes->engagement_pack_id')
                 ->whereNotNull('client_signed_at')
                 ->pluck('source_variant')
                 ->map(fn ($v) => str_replace('engagement:', '', $v))
@@ -898,6 +898,7 @@ class LeadDocumentController extends Controller
             // we're regenerating so a draft doesn't stack duplicates. Signed
             // documents are never touched (their signature must be preserved).
             LeadDocument::where('lead_id', $lead->id)
+                ->whereNull('notes->engagement_pack_id')
                 ->whereIn('source_variant', array_map(fn ($t) => "engagement:{$t}", $typesToGenerate))
                 ->whereNull('client_signed_at')
                 ->get()
@@ -918,7 +919,7 @@ class LeadDocumentController extends Controller
                     // also shows in the Invoice workspace). Replace any prior
                     // invoice so the case keeps a single current one.
                     LeadDocument::where('lead_id', $lead->id)
-                        ->where('source_variant', 'invoice')
+                        ->where('source_variant', 'invoice')->whereNull('notes->engagement_pack_id')
                         ->get()
                         ->each(function (LeadDocument $old) {
                             if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
@@ -928,7 +929,7 @@ class LeadDocumentController extends Controller
                         });
 
                     $doc = app(\App\Services\Immigration\InvoiceGenerator::class)
-                        ->generate($lead, array_merge($this->invoiceOptionsFromEngagement($overrides), $this->planInvoiceAdjustments($lead)));
+                        ->generate($lead, array_merge($this->invoiceOptionsFromEngagement($overrides), $this->planInvoiceAdjustments($lead), ['silent' => true]));
                 } else {
                     $doc = $generator->generate($lead, $t, $overrides);
                 }
@@ -979,15 +980,7 @@ class LeadDocumentController extends Controller
                 ])->save();
             }
 
-            // Generating the written agreement moves the case forward to
-            // "Agreement Sent" — but only from an early stage, so it never
-            // downgrades an advanced or already-signed case. Signing then moves
-            // it on to "Agreement Signed".
-            if (in_array('written_agreement', $typesToGenerate, true)) {
-                if ($lead->advanceImmigrationStage('Agreement Sent', ['For Assessment', 'Endorsed'], auth()->id())) {
-                    \App\Jobs\EvaluateCaseFindings::dispatch($lead->id);
-                }
-            }
+            // A generated draft is not sent. Stage progression occurs only after reviewed delivery.
 
             $n = count($typesToGenerate);
             $message = "{$n} engagement document(s) generated for {$lead->first_name} {$lead->last_name}.";
@@ -995,36 +988,8 @@ class LeadDocumentController extends Controller
                 $message .= ' '.count($skippedSigned).' already-signed document(s) were left unchanged.';
             }
 
-            // Optionally email the client that their documents are now available
-            // on the scoped signing page. Sending marks the pack as no longer a
-            // draft (records engagement_sent_at, which reveals the client link).
-            // Saving as a draft must clear any previous "sent" flag so the status
-            // reads Draft again — unless the pack already carries a signed
-            // document, in which case its state is left intact.
-            if (! empty($data['notify'])) {
-                if (empty($lead->email)) {
-                    $message .= ' Email not sent — no email on file.';
-                } else {
-                    $token = $lead->ensureEngagementSigningToken();
-                    $signUrl = rtrim((string) config('app.url'), '/').'/engagement/'.$token;
-
-                    // The "Engagement sent" automation message is the single source
-                    // for this email — fire it with the signing link so the template
-                    // can include {{engagement_url}}. Only when no client automation
-                    // message is configured do we send the built-in email instead
-                    // (so the client never gets two).
-                    $firedClient = app(\App\Services\EmailAutomationService::class)
-                        ->fire('immigration.engagement.sent', $lead, ['engagement_url' => $signUrl]);
-                    if (! $firedClient) {
-                        $this->notifyEngagement($lead, $token, $typesToGenerate, $generatedDocIds);
-                    }
-
-                    $lead->forceFill(['engagement_sent_at' => now()])->save();
-                    $message .= " Client notified at {$lead->email}.";
-                }
-            } elseif (empty($alreadySigned)) {
-                $lead->forceFill(['engagement_sent_at' => null])->save();
-            }
+            // Generation is always silent. Sending requires the reviewed-email endpoint.
+            if (empty($alreadySigned)) $lead->forceFill(['engagement_sent_at' => null])->save();
 
             return back()->with('success', $message);
         } catch (\App\Exceptions\StaleSignerLicenceException $e) {
@@ -1194,28 +1159,7 @@ class LeadDocumentController extends Controller
      */
     public function sendEngagement(Request $request, $leadId)
     {
-        $lead = Lead::findOrFail($leadId);
-
-        if (empty($lead->email)) {
-            return back()->withErrors(['error' => 'No email on file for this client.']);
-        }
-
-        $typeMap = LeadDocument::where('lead_id', $lead->id)
-            ->where('source_variant', 'like', 'engagement:%')
-            ->get()
-            ->mapWithKeys(fn (LeadDocument $d) => [str_replace('engagement:', '', $d->source_variant) => $d->id])
-            ->all();
-
-        if (empty($typeMap)) {
-            return back()->withErrors(['error' => 'No engagement documents to send.']);
-        }
-
-        $token = $lead->ensureEngagementSigningToken();
-        $this->notifyEngagement($lead, $token, array_keys($typeMap), $typeMap);
-        $lead->forceFill(['engagement_sent_at' => now()])->save();
-        app(\App\Services\EmailAutomationService::class)->fire('immigration.engagement.sent', $lead, []);
-
-        return back()->with('success', "Engagement sent to {$lead->email}.");
+        return back()->withErrors(['error' => 'Open the engagement draft and use Verify & Email to review the email and attachments before sending.']);
     }
 
     /**
@@ -1452,6 +1396,8 @@ class LeadDocumentController extends Controller
                     $q->where('source_variant', 'like', 'engagement:%')
                         ->orWhere('source_variant', 'invoice');
                 })
+                ->when($request->query('pack_id') && $request->query('pack_id') !== 'legacy', fn ($q) => $q->where('notes->engagement_pack_id', $request->query('pack_id')))
+                ->when($request->query('pack_id') === 'legacy', fn ($q) => $q->whereNull('notes->engagement_pack_id'))
                 ->get();
 
             foreach ($docs as $doc) {
@@ -1602,8 +1548,9 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $engOverrides['professional_fee'] = (float) $profFee;
             }
-            $html = app(\App\Services\Immigration\InvoiceGenerator::class)
-                ->renderHtml($lead, $this->invoiceOptionsFromEngagement($engOverrides));
+            $engagementType = $request->query('engagement_type', 'immigration_advice');
+            $invoiceOptions = app(\App\Services\Immigration\EngagementPackWorkflow::class)->invoiceOptions($lead, $engagementType, $engOverrides);
+            $html = app(\App\Services\Immigration\InvoiceGenerator::class)->renderHtml($lead, $invoiceOptions);
 
             return response($html)->header('Content-Type', 'text/html; charset=utf-8');
         }
@@ -1635,6 +1582,7 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $opts['professional_fee'] = (float) $profFee;
             }
+            $opts = array_merge($opts, $request->only(['consultation_date', 'consultation_time', 'consultation_timezone', 'meeting_link']));
             $html = app(EngagementDocumentGenerator::class)->renderHtml($lead, $engageType, $opts);
 
             return response($html)->header('Content-Type', 'text/html; charset=utf-8');

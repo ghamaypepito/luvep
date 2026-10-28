@@ -35,6 +35,7 @@ jobs:
           php -d memory_limit=1G vendor/bin/phpunit
           tests/Feature/Ai tests/Feature/Marketing tests/Feature/Social tests/Feature/Finance
           tests/Feature/Immigration/HandoverRegressionTest.php
+          tests/Feature/Immigration/EngagementWorkflowTest.php
           tests/Feature/Immigration/PotentialCaseTest.php
           tests/Feature/Immigration/RecreateAssessmentTest.php
           tests/Feature/Immigration/VisaProgressTest.php
@@ -58,3 +59,4 @@ jobs:
           node tests/Frontend/workspace-install.cjs
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
+          node tests/Frontend/engagement-email-review.cjs

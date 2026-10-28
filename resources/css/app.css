@@ -4,6 +4,14 @@
 @import 'tailwindcss';
 @import "flowbite";
 
+/* Flowbite's later width utilities otherwise override responsive column widths. */
+.engagement-builder .engagement-builder-body { flex-direction: row; overflow: hidden; }
+.engagement-builder .engagement-settings { width: 520px; max-width: 100%; flex: 0 0 520px; }
+@media (max-width: 1023px) {
+    .engagement-builder .engagement-builder-body { flex-direction: column; overflow-y: auto; }
+    .engagement-builder .engagement-settings { width: 100%; flex-basis: auto; max-height: 48vh; flex-shrink: 0; }
+}
+
 html {
     font-size: 100%;
 }

@@ -1128,6 +1128,12 @@ Route::middleware(['auth'])->group(function () {
         // + IAA standards) for a case in one call — the Engagement workspace.
         Route::post('/admin/leads/{id}/engagement/generate', [LeadDocumentController::class, 'generateEngagement'])
             ->name('admin.leads.engagement.generate');
+        Route::post('/admin/leads/{id}/engagement/prepare', [\App\Http\Controllers\EngagementWorkflowController::class, 'prepare']);
+        Route::get('/admin/leads/{id}/engagement/defaults', [\App\Http\Controllers\EngagementWorkflowController::class, 'defaults']);
+        Route::post('/admin/leads/{id}/engagement/save', [\App\Http\Controllers\EngagementWorkflowController::class, 'save']);
+        Route::post('/admin/leads/{id}/engagement/review', [\App\Http\Controllers\EngagementWorkflowController::class, 'review']);
+        Route::post('/admin/leads/{id}/engagement/send-reviewed', [\App\Http\Controllers\EngagementWorkflowController::class, 'send']);
+        Route::get('/admin/leads/{id}/engagement/preview/{kind}/{token}/{index}', [\App\Http\Controllers\EngagementWorkflowController::class, 'preview']);
         // Live fee totals for the engagement modal receipt (family-aware).
         Route::get('/admin/leads/{id}/engagement/fee-totals', [LeadDocumentController::class, 'engagementFeeTotals'])
             ->name('admin.leads.engagement.fee-totals');

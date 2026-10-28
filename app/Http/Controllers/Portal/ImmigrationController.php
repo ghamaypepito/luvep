@@ -827,7 +827,6 @@ class ImmigrationController extends Controller
                 ->all();
 
             $cases = Lead::immigrationCase()
-                ->whereNotIn('id', $engagedLeadIds)
                 ->orderByDesc('updated_at')
                 ->limit(300)
                 ->get(['id', 'lead_id', 'first_name', 'last_name', 'email', 'phone', 'residence_country', 'inz_visa_type', 'immigration_stage'])
@@ -864,20 +863,26 @@ class ImmigrationController extends Controller
             ])
                 ->where('source_variant', 'like', 'engagement:%')
                 ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->limit(300)
                 ->get()
                 // One row per CASE — the case's generated documents are
                 // nested so the table renders a single line per applicant
                 // instead of one line per file.
-                ->groupBy('lead_id')
+                ->groupBy(fn ($doc) => $doc->lead_id.':'.($doc->notes['engagement_pack_id'] ?? 'legacy'))
                 ->map(function ($docs) use ($invoicedIds) {
                     $first = $docs->first(); // newest first (ordered desc)
                     $lead = $first->lead;
+                    $packId = $first->notes['engagement_pack_id'] ?? 'legacy';
+                    $settings = $first->notes['engagement_settings'] ?? [];
+                    $invoiceQuery = LeadDocument::where('lead_id', $first->lead_id)->where('source_variant', 'invoice');
+                    $packId === 'legacy' ? $invoiceQuery->whereNull('notes->engagement_pack_id') : $invoiceQuery->where('notes->engagement_pack_id', $packId);
+                    $packInvoice = $invoiceQuery->latest('id')->first();
 
                     // The scoped client link for this engagement pack. Ensure the
                     // token exists so staff can copy/open the link even before the
                     // notification email was sent.
-                    $token = $lead?->engagement_signing_token;
+                    $token = $first->notes['engagement_signing_token'] ?? $lead?->engagement_signing_token;
                     if ($lead && ! $token) {
                         $token = $lead->ensureEngagementSigningToken();
                     }
@@ -885,14 +890,22 @@ class ImmigrationController extends Controller
                     // Signed = the Written Agreement in this pack is signed. Prefer
                     // a signed copy if one exists so a stray unsigned duplicate
                     // (e.g. from a re-draft) never hides a completed signature.
-                    $waCandidates = $docs->filter(fn ($d) => $d->source_variant === 'engagement:written_agreement');
+                    $waCandidates = $docs->filter(fn ($d) => \App\Services\Immigration\EngagementDocumentGenerator::signable(str_replace('engagement:', '', $d->source_variant)));
                     $waDoc = $waCandidates->first(fn ($d) => $d->client_signed_at) ?: $waCandidates->first();
                     $signedAt = optional($waDoc)->client_signed_at;
                     // Draft until the pack's signing link has been emailed.
-                    $isDraft = $lead ? ! $lead->engagement_sent_at : true;
+                    $sentAt = $packId === 'legacy' ? $lead?->engagement_sent_at : ($first->notes['engagement_sent_at'] ?? null);
+                    $isDraft = ! $sentAt;
 
                     return [
                         'case_id' => $first->lead_id,
+                        'pack_id' => $packId,
+                        'engagement_type' => $first->notes['engagement_type'] ?? 'immigration_advice',
+                        'engagement_settings' => $settings,
+                        'currency' => $first->notes['engagement_currency'] ?? 'NZD',
+                        'engagement_type_label' => match ($first->notes['engagement_type'] ?? 'immigration_advice') {
+                            'initial_consultation' => 'Initial Consultation', 'oia' => 'OIA Engagement', default => 'Immigration Advice Services',
+                        },
                         'case_name' => $lead ? trim("{$lead->first_name} {$lead->last_name}") : '—',
                         'case_ref' => $lead?->lead_id,
                         // Drives the "Open application tracker" row action —
@@ -908,28 +921,28 @@ class ImmigrationController extends Controller
                         'is_draft' => $isDraft,
                         // Whether this case already has a generated invoice, so the
                         // draft modal reopens with the Invoice document ticked.
-                        'has_invoice' => $invoicedIds->contains($first->lead_id),
+                        'has_invoice' => (bool) $packInvoice,
                         // The (ex-GST) professional fee the pack was generated at.
-                        'fee_total' => $lead?->engagement_fee_total !== null ? (float) $lead->engagement_fee_total : null,
+                        'fee_total' => $first->notes['engagement_fee_excl'] ?? ($lead?->engagement_fee_total !== null ? (float) $lead->engagement_fee_total : null),
                         // The grand total — our fees (incl GST if quoted so) + INZ
                         // disbursements across the family. Drives the "Total amount"
                         // column; falls back to the ex-GST fee for older rows.
-                        'total_amount' => $lead?->engagement_total_amount !== null ? (float) $lead->engagement_total_amount : null,
+                        'total_amount' => $first->notes['engagement_total'] ?? ($lead?->engagement_total_amount !== null ? (float) $lead->engagement_total_amount : null),
                         // Consolidated summary the table shows instead of every
                         // file — include the bundled invoice so it matches the
                         // client link's document count.
-                        'doc_count' => $docs->count() + ($invoicedIds->contains($first->lead_id) ? 1 : 0),
+                        'doc_count' => $docs->count() + ($packInvoice ? 1 : 0),
                         // Link only once the pack has actually been sent to the client.
-                        'signing_url' => (! $isDraft && $token) ? '/engagement/'.$token : null,
+                        'signing_url' => (! $isDraft && $token) ? '/engagement/'.$token.($packId === 'legacy' ? '' : '?pack='.$packId) : null,
                         'signer_id' => optional($waDoc)->engagement_signer_id,
                         // Settings the pack was generated at — so the draft modal
                         // reopens with the same location / tier / GST / assisting adviser.
-                        'assist_signer_id' => $lead?->engagement_assist_signer_id,
-                        'fee_location' => $lead?->engagement_fee_location,
-                        'fee_tier' => $lead?->engagement_fee_tier,
-                        'include_gst' => (bool) $lead?->engagement_include_gst,
+                        'assist_signer_id' => $settings['assist_signer_id'] ?? $lead?->engagement_assist_signer_id,
+                        'fee_location' => $settings['fee_location'] ?? $lead?->engagement_fee_location,
+                        'fee_tier' => $settings['fee_tier'] ?? $lead?->engagement_fee_tier,
+                        'include_gst' => $settings['include_gst'] ?? (bool) $lead?->engagement_include_gst,
                         'country' => $lead?->residence_country,
-                        'sent_at' => optional($lead?->engagement_sent_at)?->toIso8601String(),
+                        'sent_at' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->toIso8601String() : null,
                         'signed' => (bool) $signedAt,
                         'signed_at' => optional($signedAt)?->toIso8601String(),
                         'signer_name' => optional($waDoc)->client_signer_name,
@@ -947,11 +960,11 @@ class ImmigrationController extends Controller
                             'signer_name' => optional($waDoc)->client_signer_name,
                             'signed_at' => optional($signedAt)?->toIso8601String(),
                         ],
-                        'documents' => $docs->map(fn ($d) => [
+                        'documents' => $docs->concat($packInvoice ? [$packInvoice] : [])->map(fn ($d) => [
                             'id' => $d->id,
                             'type_key' => str_replace('engagement:', '', (string) $d->source_variant),
                             'type_label' => \App\Services\Immigration\EngagementDocumentGenerator::DOCS[str_replace('engagement:', '', $d->source_variant)]['label']
-                                ?? 'Document',
+                                ?? ($d->source_variant === 'invoice' ? 'Invoice' : 'Document'),
                             'size' => $d->size,
                             'signed' => (bool) $d->client_signed_at,
                             'created_at' => optional($d->created_at)?->toIso8601String(),
@@ -1112,16 +1125,18 @@ class ImmigrationController extends Controller
                 'uploader:id,name',
             ])
                 ->where('source_variant', 'invoice')
-                ->orderByDesc('created_at')
+                ->orderByDesc('created_at')->orderByDesc('id')
                 ->limit(300)
                 ->get()
-                ->groupBy('lead_id')
+                ->groupBy(fn ($doc) => $doc->lead_id.':'.($doc->notes['engagement_currency'] ?? 'NZD'))
                 ->map(function ($docs) {
                     $first = $docs->first();
                     $lead = $first->lead;
+                    $settings = $first->notes['engagement_settings'] ?? [];
 
                     return [
                         'case_id' => $first->lead_id,
+                        'currency' => $first->notes['engagement_currency'] ?? 'NZD',
                         'case_name' => $lead ? trim("{$lead->first_name} {$lead->last_name}") : '—',
                         'case_ref' => $lead?->lead_id,
                         // Drives the "Open application tracker" row action —
@@ -1133,9 +1148,9 @@ class ImmigrationController extends Controller
                         'latest_created_at' => optional($first->created_at)?->toIso8601String(),
                         'latest_by' => $first->uploader?->name,
                         // Pricing context this invoice was generated under.
-                        'fee_location' => $lead?->engagement_fee_location,
-                        'fee_tier' => $lead?->engagement_fee_tier,
-                        'include_gst' => (bool) $lead?->engagement_include_gst,
+                        'fee_location' => $settings['fee_location'] ?? $lead?->engagement_fee_location,
+                        'fee_tier' => $settings['fee_tier'] ?? $lead?->engagement_fee_tier,
+                        'include_gst' => $settings['include_gst'] ?? (bool) $lead?->engagement_include_gst,
                         'country' => $lead?->residence_country,
                         // Total invoiced for this case (sum of its invoice totals);
                         // null when none were stored (pre-column invoices).
@@ -1145,6 +1160,7 @@ class ImmigrationController extends Controller
                         'invoices' => $docs->map(fn ($d) => [
                             'id' => $d->id,
                             'number' => $d->invoice_number,
+                            'currency' => $d->notes['engagement_currency'] ?? 'NZD',
                             'total' => $d->invoice_total !== null ? (float) $d->invoice_total : null,
                             'size' => $d->size,
                             'created_at' => optional($d->created_at)?->toIso8601String(),
@@ -2558,6 +2574,7 @@ class ImmigrationController extends Controller
             'engagement_pack' => $preScreening->lead ? [
                 'lead_id' => $preScreening->lead->id,
                 'lead_name' => trim("{$preScreening->lead->first_name} {$preScreening->lead->last_name}") ?: 'Client',
+                'email' => $preScreening->lead->email,
                 'documents' => \App\Services\Immigration\EngagementDocumentGenerator::catalogue(),
                 'signers' => $this->signingAdvisers(),
                 'default_signer_id' => $this->defaultSignerId(),
