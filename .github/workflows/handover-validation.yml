@@ -56,3 +56,4 @@ jobs:
           node tests/Frontend/ghl-post-media.cjs
           node tests/Frontend/workspace-install.cjs
           node tests/Frontend/user-view.cjs
+          node tests/Frontend/proposal-approval-confirmation.cjs

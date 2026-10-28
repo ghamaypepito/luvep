@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import {
     BadgeCheck, CheckCircle2, ShieldCheck, GraduationCap, Mail, Clock, Loader2,
@@ -176,6 +176,8 @@ function ProposalPanel({ p, catalogue, schools, leadBase }) {
     const [busy, setBusy] = useState(null);
     const [adding, setAdding] = useState(false);
     const [requesting, setRequesting] = useState(false);
+    const [confirmingApproval, setConfirmingApproval] = useState(false);
+    const [approvalError, setApprovalError] = useState("");
 
     const post = (url, data, opts = {}) => {
         setBusy(opts.key || url);
@@ -205,7 +207,15 @@ function ProposalPanel({ p, catalogue, schools, leadBase }) {
             reasons: Object.fromEntries(p.programs.filter((x) => x.reason).map((x) => [x.id, x.reason])),
         }, { key: "add", onSuccess: () => setAdding(false) });
     };
-    const approve = (opts) => post(`/program-verification/${p.id}/approve`, opts, { key: opts.verify_all ? "verify-all" : opts.send_email === false ? "approve-noemail" : "approve" });
+    const approve = () => {
+        if (busy || p.status === "approved") return;
+        setApprovalError("");
+        post(`/program-verification/${p.id}/approve`, { verify_all: true, send_email: true }, {
+            key: "verify-all",
+            onSuccess: () => setConfirmingApproval(false),
+            onError: (errors) => setApprovalError(Object.values(errors)[0] || "The proposal could not be approved. Please try again."),
+        });
+    };
 
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -242,8 +252,8 @@ function ProposalPanel({ p, catalogue, schools, leadBase }) {
                     </button>
                     <button
                         type="button"
-                        onClick={() => approve({ verify_all: true, send_email: true })}
-                        disabled={busy === "verify-all" || p.status === "approved"}
+                        onClick={() => { setApprovalError(""); setConfirmingApproval(true); }}
+                        disabled={!!busy || p.status === "approved"}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40"
                     >
                         {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Verify &amp; approve all
@@ -322,6 +332,15 @@ function ProposalPanel({ p, catalogue, schools, leadBase }) {
             {tab === "activity" && <ActivityTab p={p} />}
             {tab === "preview" && <PreviewTab p={p} />}
 
+            {confirmingApproval && (
+                <ApprovalConfirmation
+                    proposal={p}
+                    busy={busy === "verify-all"}
+                    error={approvalError}
+                    onClose={() => setConfirmingApproval(false)}
+                    onConfirm={approve}
+                />
+            )}
             {adding && (
                 <AddProgramModal
                     catalogue={catalogue}
@@ -477,6 +496,55 @@ function PreviewTab({ p }) {
 }
 
 // ── Modals ──────────────────────────────────────────────────────────────────
+function ApprovalConfirmation({ proposal, busy, error, onClose, onConfirm }) {
+    const dialogRef = useRef(null);
+    const cancelRef = useRef(null);
+
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        const previousFocus = document.activeElement;
+        dialog.showModal();
+        cancelRef.current?.focus();
+        return () => {
+            dialog.close();
+            previousFocus?.focus();
+        };
+    }, []);
+
+    return (
+        <dialog
+            ref={dialogRef}
+            aria-labelledby="proposal-approval-title"
+            aria-describedby="proposal-approval-email"
+            className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-md rounded-2xl border-0 p-0 bg-white text-gray-900 shadow-2xl backdrop:bg-black/50"
+            onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}
+            onClick={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}
+        >
+            <div className="p-6">
+                <span className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><BadgeCheck size={22} /></span>
+                <h2 id="proposal-approval-title" className="text-lg font-bold leading-snug">Are you ready to verify and approve the proposal?</h2>
+                <p className="mt-3 text-sm font-semibold">{proposal.name}</p>
+                <p id="proposal-approval-email" className="mt-2 text-sm leading-relaxed text-gray-600">
+                    {proposal.email ? <>
+                        The client will receive an email with this proposal when you confirm.
+                        <span className="mt-1 block break-words font-medium text-gray-900">To: {proposal.email}</span>
+                    </> : "No email address is saved for this client. The proposal will be approved, but no client email can be sent."}
+                </p>
+                {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 px-6 py-4">
+                <button ref={cancelRef} type="button" disabled={busy} onClick={onClose}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+                <button type="button" disabled={busy} onClick={onConfirm}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-50">
+                    {busy && <Loader2 size={14} className="animate-spin" />}
+                    {busy ? "Sending…" : "Verify & approve"}
+                </button>
+            </div>
+        </dialog>
+    );
+}
+
 function AddProgramModal({ catalogue, existing, onClose, onAdd, busy }) {
     const [search, setSearch] = useState("");
     const [picked, setPicked] = useState([]);
