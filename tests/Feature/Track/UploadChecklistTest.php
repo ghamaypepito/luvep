@@ -13,24 +13,42 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * End-to-end verification of the upload→checklist→approve loop on /track:
- *
- *   - the LeadTrackingController returns visa.checklist when the lead is
- *     an immigration case with an inz_visa_type that matches a VisaType row
- *   - it returns visa=null for non-immigration leads (so the modal falls
- *     back to its DOC_TYPES list)
- *   - it returns visa with an empty checklist (or no name match) when the
- *     immigration case has no visa_type set
- *   - uploading via /track/{code}/document persists the lead's chosen
- *     checklist_key verbatim
- *   - a fresh upload flips the matching Visa Requirements item from
- *     "missing" to "submitted"
- *   - a staff approval via /admin/leads/{id}/documents/{docId}/status
- *     flips it from "submitted" to "approved" on the same /track payload
+ * Client upload, checklist status and staff-review integration.
+ * Immigration cases use the authenticated client portal; their public
+ * tracking codes never grant access to case details or uploads.
  */
 class UploadChecklistTest extends TestCase
 {
     use RefreshDatabase;
+
+    private array $clients = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('local');
+        Storage::fake('public');
+    }
+
+    private function client(Lead $lead): User
+    {
+        return $this->clients[$lead->id] ??= User::factory()->create([
+            'role' => 'lead', 'lead_id' => $lead->id, 'email' => $lead->email,
+        ]);
+    }
+
+    private function viewApplication(Lead $lead)
+    {
+        return $this->actingAs($this->client($lead))->get('/portal/lead/tracker');
+    }
+
+    private function uploadChecklist(Lead $lead, string $key)
+    {
+        return $this->actingAs($this->client($lead))
+            ->post("/portal/lead/documents/checklist/{$key}/upload", [
+                'files' => [UploadedFile::fake()->create('document.pdf', 200, 'application/pdf')],
+            ])->assertSessionHasNoErrors()->assertRedirect();
+    }
 
     /** A minimal admin user used for the staff-approval call. */
     private function admin(): User
@@ -81,12 +99,14 @@ class UploadChecklistTest extends TestCase
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->where('visa.code', 'STUDENT')
                 ->where('visa.name', 'Student Visa')
-                ->has('visa.checklist', 32)
+                ->has('visa.checklist', 33)
+                ->where('visa.checklist.0.key', 'svf')
+                ->where('visa.checklist.0.required', true)
                 ->where('visa.totals.approved', 0)
                 ->where('visa.totals.submitted', 0)
             );
@@ -97,23 +117,29 @@ class UploadChecklistTest extends TestCase
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
-                ->has('visa.checklist.0', fn ($item) => $item
-                    ->has('key')
-                    ->has('label')
-                    ->has('hint')
-                    ->has('required')
-                    ->has('status')
-                    ->has('count')
-                )
-                // The seeder embeds the section in the label as
-                // "Section · Item Name"; the picker splits on " · ".
-                ->where('visa.checklist.0.label', fn ($label) => str_contains($label, ' · '))
+                ->where('visa.checklist', function ($items) {
+                    foreach ($items as $item) {
+                        foreach (['key', 'label', 'hint', 'required', 'status', 'count'] as $field) {
+                            $this->assertArrayHasKey($field, $item);
+                        }
+                        $this->assertIsBool($item['required']);
+                        $this->assertSame('missing', $item['status']);
+                        $this->assertSame(0, $item['count']);
+                    }
+                    // Modern catalogue rows carry their section separately;
+                    // the picker also accepts the universal information form.
+                    $passport = collect($items)->firstWhere('key', 'passport');
+                    $this->assertSame('Applicant Documents', $passport['category']);
+                    $this->assertSame('Passport (PDF format)', $passport['label']);
+
+                    return true;
+                })
             );
     }
 
-    public function test_05_non_immigration_lead_gets_visa_null_so_modal_falls_back_to_doc_types(): void
+    public function test_05_public_non_immigration_lead_gets_education_intake_requirements(): void
     {
         $lead = Lead::create([
             'lead_id'             => 'LP-NORMAL-1',
@@ -126,18 +152,27 @@ class UploadChecklistTest extends TestCase
 
         $this->get("/track/{$lead->tracking_code}")
             ->assertInertia(fn ($page) => $page
-                ->where('visa', null)
+                ->where('visa.code', null)
+                ->where('visa.name', 'Document Checklist')
+                ->where('visa.checklist', fn ($items) => collect($items)->pluck('key')->all() === [
+                    'pers.passport', 'acad.cv', 'acad.degree_diploma',
+                    'acad.transcript', 'pers.certificate_employment',
+                ])
                 ->where('lead.is_immigration_case', false)
             );
     }
 
-    public function test_06_immigration_lead_without_visa_type_set_gets_visa_null(): void
+    public function test_06_immigration_lead_without_a_visa_type_gets_general_requirements(): void
     {
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead(['inz_visa_type' => null]);
 
-        $this->get("/track/{$lead->tracking_code}")
-            ->assertInertia(fn ($page) => $page->where('visa', null));
+        $this->viewApplication($lead)
+            ->assertInertia(fn ($page) => $page
+                ->where('visa.code', null)
+                ->where('visa.name', 'Document Checklist')
+                ->where('visa.checklist', fn ($items) => collect($items)->contains('key', 'pers.passport'))
+            );
     }
 
     public function test_06b_immigration_lead_with_unknown_visa_type_still_renders_with_empty_checklist(): void
@@ -148,7 +183,7 @@ class UploadChecklistTest extends TestCase
         // to DOC_TYPES (useChecklist evaluates false).
         $lead = $this->makeImmigrationLead(['inz_visa_type' => 'Made-Up Visa']);
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where('visa.name', 'Made-Up Visa')
                 ->has('visa.checklist', 0)
@@ -161,16 +196,15 @@ class UploadChecklistTest extends TestCase
     {
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
-        Storage::fake('public');
 
-        $this->post("/track/{$lead->tracking_code}/document", [
-            'file'          => UploadedFile::fake()->create('passport.pdf', 200, 'application/pdf'),
-            'checklist_key' => 'passport',
-        ])->assertRedirect();
+        $this->uploadChecklist($lead, 'passport');
 
         $doc = LeadDocument::where('lead_id', $lead->id)->firstOrFail();
         $this->assertSame('passport', $doc->checklist_key);
         $this->assertSame(LeadDocument::STATUS_SUBMITTED, $doc->status);
+        $this->assertSame($this->client($lead)->id, $doc->uploaded_by);
+        Storage::disk('local')->assertExists($doc->file_path);
+        Storage::disk('public')->assertMissing($doc->file_path);
     }
 
     // ─── status flips Missing → Submitted (covers spec test 8) ──────────
@@ -179,23 +213,19 @@ class UploadChecklistTest extends TestCase
     {
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
-        Storage::fake('public');
 
         // Item starts missing.
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page->where(
                 'visa.checklist',
                 fn ($items) => collect($items)->firstWhere('key', 'passport')['status'] === 'missing'
             ));
 
         // Upload one against passport.
-        $this->post("/track/{$lead->tracking_code}/document", [
-            'file'          => UploadedFile::fake()->create('passport.pdf', 200, 'application/pdf'),
-            'checklist_key' => 'passport',
-        ]);
+        $this->uploadChecklist($lead, 'passport');
 
         // Item now shows submitted, totals.submitted incremented.
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where(
                     'visa.checklist',
@@ -212,14 +242,10 @@ class UploadChecklistTest extends TestCase
         // gain status — the doc just lives outside the requirements panel.
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
-        Storage::fake('public');
 
-        $this->post("/track/{$lead->tracking_code}/document", [
-            'file'          => UploadedFile::fake()->create('misc.pdf', 100, 'application/pdf'),
-            'checklist_key' => 'other',
-        ]);
+        $this->uploadChecklist($lead, 'other');
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where('visa.totals.submitted', 0)
                 ->where('visa.totals.approved', 0)
@@ -232,13 +258,9 @@ class UploadChecklistTest extends TestCase
     {
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
-        Storage::fake('public');
 
         // Lead uploads.
-        $this->post("/track/{$lead->tracking_code}/document", [
-            'file'          => UploadedFile::fake()->create('passport.pdf', 200, 'application/pdf'),
-            'checklist_key' => 'passport',
-        ]);
+        $this->uploadChecklist($lead, 'passport');
         $doc = LeadDocument::where('lead_id', $lead->id)->firstOrFail();
 
         // Staff approves via the admin documents route.
@@ -248,7 +270,7 @@ class UploadChecklistTest extends TestCase
 
         // Visa Requirements panel now shows the item as approved with
         // totals.approved=1.
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where(
                     'visa.checklist',
@@ -261,17 +283,15 @@ class UploadChecklistTest extends TestCase
 
     // ─── New tabbed-layout coverage (servable-testable subset) ──────────
 
-    public function test_10_track_page_renders_with_tabbed_layout_component(): void
+    public function test_10_client_tracker_renders_with_its_authenticated_layout(): void
     {
-        // Confirms the redesigned page still mounts the same Inertia
-        // component name so the React layout swap doesn't break direct
-        // links or shared bookmarks.
+        // The client application stays within the authenticated portal chrome.
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertOk()
-            ->assertInertia(fn ($page) => $page->component('track/TrackingPage'));
+            ->assertInertia(fn ($page) => $page->component('portal/lead/Tracker')->where('embedded', true));
     }
 
     public function test_11_track_page_payload_carries_data_for_every_tab(): void
@@ -282,7 +302,7 @@ class UploadChecklistTest extends TestCase
         $this->seedStudentVisa();
         $lead = $this->makeImmigrationLead();
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->has('lead')
                 ->has('info')
@@ -303,7 +323,7 @@ class UploadChecklistTest extends TestCase
             'date_of_engagement'    => now()->subDays(3),
         ]);
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where('timeline', fn ($timeline) => collect($timeline)->contains(fn ($step) => $step['status'] === 'completed'))
                 ->where('timeline', fn ($timeline) => collect($timeline)->contains(fn ($step) => $step['status'] === 'current'))
@@ -323,7 +343,7 @@ class UploadChecklistTest extends TestCase
             'date_of_engagement'    => null,
         ]);
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where('timeline.0.status', 'current')
                 ->where('timeline', fn ($timeline) => collect($timeline)->doesntContain(fn ($step) => $step['status'] === 'completed'))
@@ -342,11 +362,59 @@ class UploadChecklistTest extends TestCase
             'inz_decision_at'   => now()->subDay(),
         ]);
 
-        $this->get("/track/{$lead->tracking_code}")
+        $this->viewApplication($lead)
             ->assertInertia(fn ($page) => $page
                 ->where('timeline', fn ($timeline) =>
                     collect($timeline)->last()['key'] === 'application_declined'
                 )
             );
+    }
+
+    public function test_public_case_code_never_exposes_case_data_or_accepts_uploads(): void
+    {
+        $lead = $this->makeImmigrationLead();
+
+        $this->get("/track/{$lead->tracking_code}")
+            ->assertNotFound()
+            ->assertInertia(fn ($page) => $page
+                ->where('lead', null)->where('info', null)
+                ->has('documents', 0)->where('visa', null)
+            );
+        $this->assertNull($lead->fresh()->last_seen_at);
+
+        $this->post("/track/{$lead->tracking_code}/document", [
+            'file' => UploadedFile::fake()->create('passport.pdf', 100, 'application/pdf'),
+            'checklist_key' => 'passport',
+        ])->assertRedirect()->assertSessionHas('error');
+
+        $this->assertDatabaseCount('lead_documents', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_client_tracker_and_uploads_stay_scoped_to_their_own_case(): void
+    {
+        $this->seedStudentVisa();
+        $own = $this->makeImmigrationLead();
+        $other = $this->makeImmigrationLead([
+            'lead_id' => 'LP-IMM-2', 'first_name' => 'Other', 'email' => 'other@example.test',
+        ]);
+        $this->uploadChecklist($other, 'passport');
+
+        $this->actingAs($this->client($own))
+            ->get("/portal/lead/tracker?lead_id={$other->id}&code={$other->tracking_code}")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('lead.tracking_code', $own->tracking_code)->has('documents', 0)
+                ->where('visa.checklist', fn ($items) => collect($items)->firstWhere('key', 'passport')['count'] === 0)
+            );
+
+        $this->post('/portal/lead/documents/checklist/passport/upload', [
+            'lead_id' => $other->id,
+            'files' => [UploadedFile::fake()->create('own-passport.pdf', 100, 'application/pdf')],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(1, $own->documents()->count());
+        $this->assertSame(1, $other->documents()->count());
+        $this->assertSame($this->client($own)->id, $own->documents()->firstOrFail()->uploaded_by);
     }
 }

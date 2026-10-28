@@ -18,10 +18,9 @@ use Tests\TestCase;
 /**
  * Build 11.D Phase 1 — Inertia prop loading + intake resolution.
  *
- * Per the audit, the Lead <-> Assessment join is by email only (no FK).
- * resolveIntake() must find the latest Assessment by applicant_email and
- * pull its polymorphic intakeable. Sales-converted cases (no Assessment)
- * must load with intake=null and is_assessment_converted=false.
+ * Converted cases use assessment_id; legacy cases can match by email and
+ * applicant name. A shared email must not expose another person's intake.
+ * Sales-converted cases without an assessment load with intake=null.
  */
 class CaseProfileDataLoadingTest extends TestCase
 {
@@ -74,11 +73,15 @@ class CaseProfileDataLoadingTest extends TestCase
             );
     }
 
-    public function test_assessment_converted_case_loads_intake_data(): void
+    public function test_legacy_assessment_case_loads_intake_data_for_matching_name_and_email(): void
     {
         $this->adminActing();
         $visaType = $this->makeVisaType('Skilled Migrant Category');
-        $case = $this->makeCase(['email' => 'assessment.applicant@example.test']);
+        $case = $this->makeCase([
+            'first_name' => 'Assessment',
+            'last_name' => 'Applicant',
+            'email' => 'assessment.applicant@example.test',
+        ]);
 
         $intake = ResidentIntake::create([
             'intake_id'             => 'RI-TEST-1',
@@ -106,13 +109,14 @@ class CaseProfileDataLoadingTest extends TestCase
             'status'                => 'Engaged',
         ]);
 
-        Assessment::createForIntake($intake, $visaType);
+        $assessment = Assessment::createForIntake($intake, $visaType);
 
         $this->get("/portal/immigration/cases/{$case->id}/profile")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('intake.type', 'resident')
                 ->where('intake.data.intake_id', 'RI-TEST-1')
+                ->where('intake.data.assessment_id', $assessment->id)
                 ->where('lead.is_assessment_converted', true)
             );
     }
@@ -122,6 +126,8 @@ class CaseProfileDataLoadingTest extends TestCase
         $this->adminActing();
         $visaType = $this->makeVisaType('Accredited Employer Work Visa');
         $case = $this->makeCase([
+            'first_name' => 'Work',
+            'last_name' => 'Applicant',
             'email'         => 'work.applicant@example.test',
             'inz_visa_type' => 'Accredited Employer Work Visa',
         ]);
@@ -137,13 +143,39 @@ class CaseProfileDataLoadingTest extends TestCase
             'status'                 => 'Engaged',
         ]);
 
-        Assessment::createForIntake($intake, $visaType);
+        $assessment = Assessment::createForIntake($intake, $visaType);
+        $case->update(['assessment_id' => $assessment->id]);
 
         $this->get("/portal/immigration/cases/{$case->id}/profile")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('intake.type', 'work')
                 ->where('intake.data.intake_id', 'WI-TEST-1')
+                ->where('intake.data.assessment_id', $assessment->id)
+                ->where('lead.is_assessment_converted', true)
+            );
+    }
+
+    public function test_shared_email_does_not_load_another_applicants_intake(): void
+    {
+        $this->adminActing();
+        $visaType = $this->makeVisaType('Accredited Employer Work Visa');
+        $case = $this->makeCase(['email' => 'shared@example.test']);
+        $otherIntake = WorkIntake::create([
+            'intake_id' => 'WI-OTHER',
+            'first_name' => 'Other',
+            'family_name' => 'Applicant',
+            'email' => 'shared@example.test',
+            'status' => 'Engaged',
+        ]);
+        Assessment::createForIntake($otherIntake, $visaType);
+
+        $this->get("/portal/immigration/cases/{$case->id}/profile")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('lead.id', $case->id)
+                ->where('intake', null)
+                ->where('vif', null)
             );
     }
 
@@ -194,11 +226,15 @@ class CaseProfileDataLoadingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('checklist.source', 'visa_type')
                 ->where('checklist.visa', 'Skilled Migrant Category')
-                ->has('checklist.items', 2)
+                ->has('checklist.items', 3)
+                ->where('checklist.items.0.key', 'svf')
+                ->where('checklist.items.0.required', true)
+                ->where('checklist.items.1.key', 'passport')
+                ->where('checklist.items.2.key', 'ielts')
             );
     }
 
-    public function test_checklist_falls_back_to_empty_when_no_visa_type_match(): void
+    public function test_checklist_keeps_required_universal_form_when_no_visa_type_match(): void
     {
         $this->adminActing();
         $case = $this->makeCase(['inz_visa_type' => 'Made Up Visa']);
@@ -207,7 +243,10 @@ class CaseProfileDataLoadingTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('checklist.source', 'none')
-                ->has('checklist.items', 0)
+                ->has('checklist.items', 1)
+                ->where('checklist.items.0.key', 'svf')
+                ->where('checklist.items.0.label', 'Visa Information Form')
+                ->where('checklist.items.0.required', true)
             );
     }
 

@@ -36,11 +36,15 @@ Two layers, both enforced server-side:
 |---|---|---|
 | `immigration` | Standard department staff (the singleton in `User::PORTAL_ROLES`) | Full department access including document/engagement/invoice writes |
 | `immigration_manager` | Department head | Can **edit visa types incl. price** (`VisaTypePolicy`); full case write |
-| `immigration_adviser` | Licensed Immigration Adviser (LIA) | **Full write on cases** (notes, threads, documents, stage, verdict). Read-only on the visa *catalogue* only. Advice-bearing artifacts are gated by licence, not role — see below |
+| `immigration_adviser` | Licensed Immigration Adviser (LIA) | **Full write on cases** (notes, threads, documents, stage, verdict) and visa catalogue CRUD, including fees. Advice-bearing artifacts are gated by licence, not role — see below |
 | `admin` / `super-admin` | Full access to every portal | `canAccessPortal` returns true for all `portal:*` checks |
 
 `User::IMMIGRATION_ROLES = [immigration_manager, immigration_adviser]`. `homeRoute()` lands all three
 immigration roles on `/portal/immigration/dashboard`.
+
+Catalogue access was expanded to advisers on 2026-08-22 (`fba4a056`, "visas for adviser").
+`VisaTypePolicy` permits adviser create/update/delete; fee edits are audited by `VisaTypeController`.
+This ordinary commercial write permission does not bypass the advice-bearing approval gate.
 
 ### Advice-bearing content is licence-gated, not role-gated (Build 12 §2)
 
@@ -112,7 +116,7 @@ The immigration Case Profile Documents tab uses these shared `LeadDocumentContro
 | `Portal\ImmigrationController` | The portal's pages: `dashboard`, `cases`, `engagement`, `invoice`, `documents`, `assessments`, `intakes`, `appointments`, `reports`, `profile`, case CRUD + inline stage/visa/priority, `convertAssessmentToCase`. Uses `BuildsLeadRow` trait for lead/case row payloads. |
 | `Immigration\CaseProfileController` | Build 11.D purpose-built Case Profile (`/cases/{lead}/profile`); `updatePersonal`. Hard-404s non-cases. |
 | `Immigration\AgreementController` | **Managed** agreements on the Case Profile (`cases/{lead}/agreements/*`): index, templates, generate, send, downloadPdf, void. Re-checks case + agreement↔lead ownership. |
-| `VisaTypeController` | Visa catalogue CRUD + price history + checklist templates. Shared with admin; `VisaTypePolicy` gates edits (manager/admin write, adviser read). |
+| `VisaTypeController` | Visa catalogue CRUD + price history + checklist templates. Shared with admin; `VisaTypePolicy` permits admin, manager, adviser and base immigration staff edits. Deletion excludes base immigration staff. |
 | `LeadDocumentController` | Cross-department document engine: requests, status review, checklist uploads, **engagement pack generation**, **invoice generation**, previews, downloads, `documentsJson` (Files popover). |
 | `ResidentIntakeController` | Resident-visa intake: public submit + `/admin/immigration/resident-intakes` review + token edit-links. |
 | `LeadPortalInvitationController` | Lead Portal access request→approve→setup flow (client portal). |
