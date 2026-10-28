@@ -6,7 +6,6 @@ import {
     UserRound,
     UsersRound,
     LogOut,
-    ArrowUpRight,
     Clock3,
     ClipboardCheck,
     CalendarDays,
@@ -20,6 +19,7 @@ import NotificationBell from "../NotificationBell";
 import ClockWidget from "../hr/ClockWidget";
 import ProfileMenu from "../hr/ProfileMenu";
 import PreviewBanner from "../hr/PreviewBanner";
+import HrReturnLink from "../hr/HrReturnLink";
 import "../../../css/hr.css";
 
 export default function HrLayout({ children }) {
@@ -70,9 +70,7 @@ export default function HrLayout({ children }) {
                     ))}
                 </nav>
                 <div className="hr-sidebar-footer">
-                    <a href={hr?.main_url || "/"}>
-                        Back to Luvep <ArrowUpRight size={16} />
-                    </a>
+                    <HrReturnLink hr={hr} />
                     <button onClick={() => router.post("/logout")}>
                         <LogOut size={16} />
                         Sign out

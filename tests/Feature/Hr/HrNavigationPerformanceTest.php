@@ -73,4 +73,15 @@ class HrNavigationPerformanceTest extends TestCase
         $this->assertFalse($props['permissions']['documents.medical']);
         $this->assertFalse($props['permissions']['access.manage']);
     }
+
+    public function test_administrators_get_a_direct_return_to_the_main_admin_dashboard(): void
+    {
+        config(['hr.main_url' => 'https://luvep.com']);
+        foreach (['admin', 'super_admin'] as $role) {
+            $user = User::factory()->create(['role' => $role]);
+            $this->assertSame('https://luvep.com/admin/dashboard', data_get($this->contextFor($user), 'admin_return_url'));
+        }
+        $staff = User::factory()->create(['role' => 'education']);
+        $this->assertNull(data_get($this->contextFor($staff), 'admin_return_url'));
+    }
 }

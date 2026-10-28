@@ -61,3 +61,4 @@ jobs:
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/engagement-email-review.cjs
+          node tests/Frontend/hr-return-link.cjs

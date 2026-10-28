@@ -72,6 +72,8 @@ class HrContext
         }
 
         return ['enabled' => (bool) config('hr.enabled'), 'url' => config('hr.portal_mode') ? rtrim(config('hr.main_url'), '/').'/portal/hr/' : $this->url(), 'portal_mode' => (bool) config('hr.portal_mode'), 'main_url' => config('hr.main_url'), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
-            'permissions' => $abilities, 'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
+            'permissions' => $abilities,
+            'admin_return_url' => $actor?->isAdmin() ? rtrim(config('hr.main_url'), '/').'/admin/dashboard' : null,
+            'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
     }
 }
