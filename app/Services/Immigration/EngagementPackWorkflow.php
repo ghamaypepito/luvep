@@ -87,10 +87,13 @@ class EngagementPackWorkflow
         }
         if ($type === 'oia') {
             $missing = [];
-            foreach (['dob' => 'date of birth', 'passport_number' => 'passport number', 'residence_address_line_1' => 'current address', 'email' => 'email', 'phone' => 'phone number'] as $key => $label) {
+            foreach (['dob' => 'date of birth', 'passport_number' => 'passport number', 'email' => 'email', 'phone' => 'phone number'] as $key => $label) {
                 if (! $lead->$key) {
                     $missing[] = $label;
                 }
+            }
+            if (trim((string) $this->generator->clientAddress($lead)) === '') {
+                $missing[] = 'current address';
             }
             if ($missing) {
                 throw ValidationException::withMessages(['client_details' => 'Update the client record before generating: '.implode(', ', $missing).'.']);

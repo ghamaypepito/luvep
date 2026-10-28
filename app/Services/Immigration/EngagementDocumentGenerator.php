@@ -610,7 +610,7 @@ class EngagementDocumentGenerator
         ];
     }
 
-    private function clientAddress(Lead $lead): ?string
+    public function clientAddress(Lead $lead): ?string
     {
         $parts = array_filter([
             $lead->residence_address_line_1 ?? null,
