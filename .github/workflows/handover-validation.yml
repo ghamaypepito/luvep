@@ -46,6 +46,7 @@ jobs:
           tests/Feature/Leads/DocThreadTest.php
           tests/Feature/UserViewTest.php tests/Feature/VerificationDeepLinkTest.php
           tests/Feature/ProgramVerificationTest.php tests/Feature/ConsultancyVerificationTest.php
+          tests/Feature/ProposalAgreementDownloadTest.php
           tests/Feature/Leads/ProposalVerificationTest.php tests/Feature/Hr/HrPreviewTest.php
           tests/Feature/Hr/HrSessionTest.php tests/Feature/Auth tests/Feature/Admin/ModuleFeaturesTest.php
       - name: Verify workspace interactions and installation

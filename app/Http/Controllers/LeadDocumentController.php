@@ -9,6 +9,7 @@ use App\Services\AgreementGenerator;
 use App\Services\Immigration\CaseChecklistService;
 use App\Services\Immigration\EngagementDocumentGenerator;
 use App\Support\UploadValidation;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -1560,11 +1561,29 @@ class LeadDocumentController extends Controller
      * through dompdf, but return it as raw HTML for iframe preview. Lets
      * the "New" modal on the Proposal & Agreements page show a live
      * preview that updates as staff pick lead + type — dompdf is way
-     * too slow to spin up on every keystroke.
+     * too slow to spin up on every keystroke. An explicit download=pdf
+     * exports a draft of the same inputs without saving or sending it.
      */
     public function previewDocument(Request $request, AgreementGenerator $generator, $leadId, $type)
     {
         $lead = Lead::findOrFail($leadId);
+        $download = $request->query('download') === 'pdf';
+
+        if ($type === 'proposal' && $download) {
+            $data = $request->validate([
+                'program_ids' => ['required', 'array', 'min:1', 'max:5'],
+                'program_ids.*' => ['required', 'integer', 'distinct', 'exists:programs,id'],
+                'reasons' => ['sometimes', 'array', 'max:5'],
+                'reasons.*' => ['nullable', 'string', 'max:1000'],
+            ]);
+            $programs = \App\Models\Program::with('school')->whereIn('id', $data['program_ids'])->get()->keyBy('id');
+
+            return $this->draftPdfResponse($lead, $type, 'agreements.proposal-draft', [
+                'lead' => $lead,
+                'programs' => collect($data['program_ids'])->map(fn ($id) => $programs->get($id)),
+                'reasons' => $data['reasons'] ?? [],
+            ]);
+        }
 
         // The invoice rides in the engagement pack but renders through the
         // InvoiceGenerator, priced off the same tier / location / GST / fee.
@@ -1656,8 +1675,40 @@ class LeadDocumentController extends Controller
                 ->header('Content-Type', 'text/html; charset=utf-8');
         }
 
+        if ($download) {
+            return $this->draftPdfResponse($lead, $type, $view, $payload);
+        }
+
         return response(view($view, $payload)->render())
             ->header('Content-Type', 'text/html; charset=utf-8');
+    }
+
+    /** POST accepts long shortlist reasons without putting client content in a URL. */
+    public function downloadPreview(Request $request, AgreementGenerator $generator, $leadId, $type)
+    {
+        $request->query->set('download', 'pdf');
+
+        return $this->previewDocument($request, $generator, $leadId, $type);
+    }
+
+    /** A private, read-only export; no LeadDocument, verification or notification writes. */
+    private function draftPdfResponse(Lead $lead, string $type, string $view, array $payload)
+    {
+        $payload['preview'] = false;
+        $pdf = Pdf::loadView($view, $payload)->setPaper('a4');
+        $pdf->render();
+        $dompdf = $pdf->getDomPDF();
+        $font = $dompdf->getFontMetrics()->getFont('Helvetica', 'bold');
+        $label = 'DRAFT - FOR REVIEW';
+        $width = $dompdf->getFontMetrics()->getTextWidth($label, $font, 8);
+        $dompdf->getCanvas()->page_text((595.28 - $width) / 2, 12, $label, $font, 8, [0.3, 0.38, 0.3]);
+        $filename = Str::limit(Str::slug("{$type}-{$lead->first_name}-{$lead->last_name}"), 150, '').'-draft.pdf';
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     private function englishEngagementPayload(Lead $lead, string $currency = 'php', int $englishFee = 14500, int $pteFee = 240): array
