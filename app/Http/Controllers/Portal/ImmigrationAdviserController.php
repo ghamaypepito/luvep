@@ -40,14 +40,13 @@ class ImmigrationAdviserController extends Controller
         $myCaseIds = (clone $this->caseScope($user))->pluck('id');
 
         // Awaiting the adviser's attestation = a case with no current verdict.
-        $awaitingVerdict = $myCaseIds->filter(fn ($id) => CaseAttestation::currentVerdict($id) === null)->count();
-        $awaitingLodgement = $myCaseIds->filter(fn ($id) => ! CaseAttestation::hasLodgementSignoff($id))->count();
+        $pending = CaseAttestation::pendingCountsFor($myCaseIds);
 
         return inertia('portal/immigration-adviser/Dashboard', [
             'stats' => [
                 'my_cases' => $myCaseIds->count(),
-                'awaiting_verdict' => $awaitingVerdict,
-                'awaiting_lodgement' => $awaitingLodgement,
+                'awaiting_verdict' => $pending['awaiting_verdict'],
+                'awaiting_lodgement' => $pending['awaiting_lodgement'],
                 'lodged' => (clone $this->caseScope($user))->whereIn('inz_status', ['Lodged', 'Decision Pending', 'Info Requested'])->count(),
             ],
             'recentCases' => $cases->map(fn ($l) => $this->caseRow($l))->values(),

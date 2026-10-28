@@ -41,6 +41,8 @@ jobs:
           tests/Feature/Immigration/VisaProgressTest.php
           tests/Feature/Immigration/StaffNoticeCcBccTest.php
           tests/Feature/Immigration/AutomationCcAgentTest.php
+          tests/Feature/Immigration/AdviserNavigationPerformanceTest.php
+          tests/Feature/Immigration/VerdictTest.php
           tests/Feature/VisaIntakeSubmitSmokeTest.php
           tests/Feature/Leads/EducationProfileNotesTest.php
           tests/Feature/Leads/InternalNoteProgramsTest.php
