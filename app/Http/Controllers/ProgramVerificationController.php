@@ -24,18 +24,23 @@ class ProgramVerificationController extends Controller
 
     public function index(Request $request)
     {
-        $data = $request->validate(['status' => 'nullable|in:pending,verified,approved', 'page' => 'nullable|integer|min:1']);
+        $data = $request->validate(['status' => 'nullable|in:pending,verified,approved', 'page' => 'nullable|integer|min:1', 'lead_id' => 'nullable|integer|min:1']);
         $status = $data['status'] ?? 'pending';
         $base = Lead::query()->whereNotNull('proposed_program_ids');
+        $selectedLead = isset($data['lead_id']) ? (clone $base)->whereIn('proposal_review->status', ['pending', 'verified', 'approved'])->findOrFail($data['lead_id']) : null;
+        if ($selectedLead) {
+            $status = $selectedLead->proposal_review['status'];
+        }
         $counts = [];
         foreach (['pending', 'verified', 'approved'] as $state) {
             $counts[$state] = (clone $base)->where('proposal_review->status', $state)->count();
         }
         $counts['approved_today'] = (clone $base)->where('proposal_review->approved_at', '>=', now()->startOfDay()->toIso8601String())->count();
         $page = (clone $base)->where('proposal_review->status', $status)
+            ->when($selectedLead, fn ($q) => $q->whereKey($selectedLead->id))
             ->orderByDesc('updated_at')->orderByDesc('id')
             ->with(['documents:id,lead_id,checklist_key,status', 'agent:id,name'])
-            ->paginate(50)->withQueryString();
+            ->paginate(50, ['*'], 'page', $selectedLead ? 1 : null)->withQueryString();
         $leads = $page->getCollection();
 
         // Resolve every program + staff name referenced, in two queries.
@@ -156,6 +161,7 @@ class ProgramVerificationController extends Controller
             'proposals' => $rows,
             'counts' => $counts,
             'selectedStatus' => $status,
+            'selectedLeadId' => $selectedLead?->id,
             'pagination' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total(), 'prev_url' => $page->previousPageUrl(), 'next_url' => $page->nextPageUrl()],
             'programs' => $catalogue,
             'schools' => \App\Models\School::orderBy('name')->pluck('name')->values(),

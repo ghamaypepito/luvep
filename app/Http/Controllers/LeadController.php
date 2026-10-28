@@ -1597,6 +1597,7 @@ class LeadController extends Controller
                 ->values();
             $proposal = [
                 'programs' => $ppOrdered,
+                'review_status' => $lead->proposal_review['status'] ?? null,
                 'preferred_program_id' => $lead->preferred_program_id,
                 'chosen_at' => optional($lead->preferred_program_chosen_at)->toIso8601String(),
             ];

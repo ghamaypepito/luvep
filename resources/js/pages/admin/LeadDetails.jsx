@@ -1,3 +1,4 @@
+import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -272,6 +273,7 @@ function ProposedProgramsCard({ proposal, leadId, programOptions = [], onViewPro
                     </div>
                     <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500 mb-0.5">Programs offered</p>
+                        <ApprovalReviewLink leadId={leadId} status={proposal?.review_status} />
                         <h2 className="text-base font-bold text-gray-900 tracking-tight">
                             {chosen ? 'Client chose a program' : 'Programs proposed to this lead'}
                         </h2>

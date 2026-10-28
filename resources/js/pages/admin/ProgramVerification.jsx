@@ -31,12 +31,12 @@ const fmtDateTime = (iso) => iso
     : "—";
 
 export default function ProgramVerification({
-    proposals = [], counts = { pending: 0, verified: 0, approved_today: 0 },
+    selectedLeadId = null, proposals = [], counts = { pending: 0, verified: 0, approved_today: 0 },
     programs = [], schools = [], leadBase = "/admin", selectedStatus = "pending", pagination = {},
 }) {
     const filter = selectedStatus;
     const setFilter = (status) => router.get(window.location.pathname, { status }, { preserveScroll: true });
-    const [activeId, setActiveId] = useState(proposals[0]?.id ?? null);
+    const [activeId, setActiveId] = useState(selectedLeadId ?? proposals[0]?.id ?? null);
 
     const list = useMemo(() => proposals.filter((p) => {
         if (filter === "approved") return !!p.approved_at;
@@ -53,6 +53,7 @@ export default function ProgramVerification({
     return (
         <div className="max-w-[1500px] mx-auto pb-10">
             <Head title="Program Verification" />
+            {selectedLeadId && <Link href="/program-verification" className="inline-block mb-3 text-sm font-semibold text-emerald-800 hover:underline">← All reviews</Link>}
 
             <div className="flex items-center gap-3 flex-wrap mb-4">
                 <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">

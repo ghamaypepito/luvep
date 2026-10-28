@@ -1,3 +1,4 @@
+import { UserViewButton } from '../admin/UserViewControls';
 import { hrPath } from "@/lib/hrPath";
 import { Link, router, usePage } from "@inertiajs/react";
 import {
@@ -82,6 +83,7 @@ export default function HrLayout({ children }) {
                 <header className="hr-topbar">
                     <span>Employee portal</span>
                     <div className="hr-actions">
+                        <UserViewButton />
                         <NotificationBell />
                         <ProfileMenu />
                     </div>

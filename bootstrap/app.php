@@ -20,8 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
             '/webhook/zernio',
         ]);
         $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\RestrictHrHost::class);
+        $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\ApplyUserView::class);
         $middleware->web(replace: [\Illuminate\Session\Middleware\StartSession::class => \App\Http\Middleware\StartLuvepSharedSession::class], append: [
             \App\Http\Middleware\RestrictHrHost::class,
+            \App\Http\Middleware\ApplyUserView::class,
             \App\Http\Middleware\BlockHrPreviewWrites::class,
             \App\Http\Middleware\ProtectHrLegacyDtr::class,
             HandleInertiaRequests::class,
@@ -39,5 +41,12 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontFlash(['api_key', 'ghl_api_token']);
-        //
+        $exceptions->respond(function ($response, $exception, $request) {
+            if ($request->attributes->has('user_view_actor') && ! $request->expectsJson() && in_array($response->getStatusCode(), [403, 404])) {
+                return \Inertia\Inertia::render('UserViewError', ['status' => $response->getStatusCode(), 'userView' => \App\Services\UserView::props($request)])
+                    ->toResponse($request)->setStatusCode($response->getStatusCode());
+            }
+
+            return $response;
+        });
     })->create();

@@ -1,6 +1,8 @@
+import UserViewControls from './components/admin/UserViewControls';
+import { installUserViewRequests, updateUserView } from './lib/userView';
 import './bootstrap';
 
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import { createRoot } from 'react-dom/client';
 import { useEffect } from 'react';
 import { Toaster } from 'sonner';
@@ -78,6 +80,9 @@ createInertiaApp({
 
   },
   setup({ el, App, props }) {
+    updateUserView(props.initialPage);
+    installUserViewRequests(router, window.axios);
+    router.on('navigate', ({ detail }) => updateUserView(detail.page));
     createRoot(el, {
       onUncaughtError(error) {
         console.error(error);
@@ -86,6 +91,7 @@ createInertiaApp({
     }).render(
       <>
         <App {...props} />
+        <UserViewControls initialPage={props.initialPage} />
         <FlashToaster />
         <AssistantDock initialPage={props.initialPage} />
         {!props.initialPage.component.startsWith('hr/') && (

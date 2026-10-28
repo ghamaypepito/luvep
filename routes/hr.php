@@ -91,6 +91,11 @@ $hrRoutes = function () {
 };
 Route::domain(config('hr.host'))->name('hr.')->group(function () use ($hrRoutes) {
     $hrRoutes();
+    Route::middleware('auth')->prefix('admin/user-view')->name('user-view.')->group(function () {
+        Route::get('/users', [\App\Http\Controllers\UserViewController::class, 'index'])->name('users');
+        Route::post('/exit', [\App\Http\Controllers\UserViewController::class, 'destroy'])->name('exit');
+        Route::post('/{user}', [\App\Http\Controllers\UserViewController::class, 'store'])->name('store');
+    });
     Route::get('/login', fn () => redirect()->away(config('hr.main_url').'/login'))->name('login');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::any('/{path?}', fn () => abort(404))->where('path', '.*')->name('not-found');

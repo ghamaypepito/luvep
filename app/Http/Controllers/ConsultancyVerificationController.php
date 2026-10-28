@@ -24,14 +24,17 @@ class ConsultancyVerificationController extends Controller
 
     public function index(Request $request)
     {
+        $data = $request->validate(['lead_id' => 'nullable|integer|min:1']);
+        $selectedLead = isset($data['lead_id']) ? Lead::whereNotNull('consultancy_review')->findOrFail($data['lead_id']) : null;
         $todayStart = now()->startOfDay()->toIso8601String();
         $leads = Lead::query()
             ->whereNotNull('consultancy_review')
-            ->where(function ($q) use ($todayStart) {
+            ->when($selectedLead, fn ($q) => $q->whereKey($selectedLead->id))
+            ->when(! $selectedLead, fn ($query) => $query->where(function ($q) use ($todayStart) {
                 $q->whereIn('consultancy_review->status', ['pending', 'verified'])
                     ->orWhere('consultancy_review->approved_at', '>=', $todayStart)
                     ->orWhere('consultancy_review->verified_at', '>=', $todayStart);
-            })
+            }))
             ->orderByDesc('updated_at')
             ->limit(300)
             ->with(['documents' => fn ($q) => $q->whereIn('checklist_key', ['agree.consultancy', 'agree.engagement_english'])
@@ -139,6 +142,7 @@ class ConsultancyVerificationController extends Controller
 
         return inertia($component, [
             'proposals' => $rows,
+            'selectedLeadId' => $selectedLead?->id,
             'counts' => $counts,
             'leadBase' => $isEducation ? '/portal/education' : '/admin',
         ]);
