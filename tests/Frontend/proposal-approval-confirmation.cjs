@@ -8,6 +8,7 @@ const dom = new JSDOM('<div id="root"></div>', { url: 'https://preview.test/prog
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLDialogElement', 'Event', 'MouseEvent']) {
     global[key] = dom.window[key];
 }
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 // jsdom does not implement native dialog top-layer behavior; browser checks cover it.
 HTMLDialogElement.prototype.showModal = function () { this.open = true; };
