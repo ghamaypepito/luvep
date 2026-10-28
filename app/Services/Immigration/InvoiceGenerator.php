@@ -272,6 +272,7 @@ class InvoiceGenerator
             // applicant (the blade then renders the flat items table).
             'groups' => $groups,
             'total' => $total,
+            'currency' => in_array($o['currency'] ?? 'NZD', ['NZD', 'USD'], true) ? ($o['currency'] ?? 'NZD') : 'NZD',
         ];
     }
 
@@ -320,10 +321,12 @@ class InvoiceGenerator
         ]);
 
         // Email automation — invoice sent.
-        app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
+        if (! ($o['silent'] ?? false)) {
+            app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
             'invoice_number' => $number,
             'invoice_total' => $payload['total'] ?? null,
-        ]);
+            ]);
+        }
 
         return $doc;
     }

@@ -40,6 +40,7 @@
     "flowbite-react": "^0.12.7",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.541.0",
+    "pdfjs-dist": "5.4.624",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
     "react-country-region-selector": "^4.0.2",

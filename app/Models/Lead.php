@@ -292,7 +292,7 @@ class Lead extends Model
      * a signed/lodged one. Stamps the stage-tracking columns + history and saves.
      * Returns true when the stage actually moved.
      */
-    public function advanceImmigrationStage(string $to, array $from, ?int $byUserId = null): bool
+    public function advanceImmigrationStage(string $to, array $from, ?int $byUserId = null, bool $notify = true): bool
     {
         $current = $this->immigration_stage;
         if ($current === $to) {
@@ -306,11 +306,11 @@ class Lead extends Model
         $this->stage_updated_at = now();
         $this->stage_updated_by = $byUserId;
         $this->pushStageHistory('immigration', $to, $this->immigration_assignee);
-        $this->save();
+        $notify ? $this->save() : $this->saveQuietly();
 
         // Email automation — fire the per-stage event so any configured
         // messages go out (no-op unless an admin enabled one).
-        app(\App\Services\EmailAutomationService::class)->fire(
+        if ($notify) app(\App\Services\EmailAutomationService::class)->fire(
             'immigration.stage.'.\Illuminate\Support\Str::slug($to, '_'),
             $this,
             ['stage' => $to],

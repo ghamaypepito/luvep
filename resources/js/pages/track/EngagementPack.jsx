@@ -89,7 +89,7 @@ export default function EngagementPack({ token, client = {}, documents = [], pro
                             <div className="flex items-start justify-between gap-4">
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: "#5eead4" }}>Action required</p>
-                                    <h2 className="text-xl font-bold mt-1.5">Sign your written agreement</h2>
+                                    <h2 className="text-xl font-bold mt-1.5">Sign your agreement</h2>
                                     <p className="text-[13.5px] text-gray-300 mt-2 leading-relaxed max-w-md">
                                         This is the contract between you and your licensed adviser — it sets out the services, the fee, and your right to complain. Read it, then sign electronically. Takes about four minutes.
                                     </p>
@@ -211,13 +211,13 @@ function InvoiceCard({ invoice, paid, proofs = [], uploadUrl, onView }) {
                     <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: paid ? "#059669" : "#b45309" }}>{paid ? "Paid" : "Awaiting payment"}</p>
                     <h2 className="text-lg font-bold text-gray-900 mt-1">{invoice.title}</h2>
                     <p className="text-[12.5px] text-gray-500 mt-0.5">
-                        {invoice.due_date ? `Due ${fmtDate(invoice.due_date)} · ` : ""}service fee and INZ lodgement charge
+                        {invoice.due_date ? `Due ${fmtDate(invoice.due_date)} · ` : ""}{invoice.engagement_type === "initial_consultation" ? "initial consultation booking fee" : invoice.engagement_type === "oia" ? "OIA / Privacy Act request service" : "service fee and INZ lodgement charge"}
                     </p>
                 </div>
                 {invoice.invoice_total != null && (
                     <div className="text-right flex-shrink-0">
                         <p className="text-[22px] font-bold text-gray-900 tabular-nums">{money(invoice.invoice_total)}</p>
-                        <p className="text-[11px] text-gray-400">NZD, GST included</p>
+                        <p className="text-[11px] text-gray-400">{invoice.currency || "NZD"}{invoice.engagement_type === "initial_consultation" ? " · booking fee" : invoice.engagement_type === "oia" ? " · GST included" : ""}</p>
                     </div>
                 )}
             </div>

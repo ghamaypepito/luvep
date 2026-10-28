@@ -9,6 +9,9 @@ import {
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import GenerationProgress from "@/components/ui/GenerationProgress";
+import EngagementEmailReview from "@/components/immigration/EngagementEmailReview";
+import useEngagementWorkflow from "@/components/immigration/useEngagementWorkflow";
+import PdfDocumentPreview from "@/components/immigration/PdfDocumentPreview";
 
 // Initials fallback for the profile avatar when there's no face image.
 const rowInitials = (name = "") =>
@@ -143,7 +146,7 @@ function ClientLink({ url }) {
  * first (naming the case + document count), then removes the stored files
  * and their rows server-side.
  */
-function DeleteCaseDocsButton({ caseId, caseName, count }) {
+function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
     const [busy, setBusy] = useState(false);
 
     const remove = async () => {
@@ -154,7 +157,7 @@ function DeleteCaseDocsButton({ caseId, caseName, count }) {
         });
         if (! ok) return;
         setBusy(true);
-        router.delete(`/admin/leads/${caseId}/engagement/documents`, {
+        router.delete(`/admin/leads/${caseId}/engagement/documents?pack_id=${encodeURIComponent(packId || "legacy")}`, {
             preserveScroll: true,
             onError: () => toast.error("Could not delete the documents."),
             onFinish: () => setBusy(false),
@@ -285,7 +288,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                             <tbody className="divide-y divide-gray-100">
                                 {/* One row per CASE — its generated documents stack inside. */}
                                 {generated.map((c) => (
-                                    <tr key={c.case_id} className="hover:bg-gray-50/60 transition-colors align-top">
+                                    <tr key={`${c.case_id}:${c.pack_id || "legacy"}`} className="hover:bg-gray-50/60 transition-colors align-top">
                                         {/* Profile */}
                                         <td className="px-4 py-3">
                                             <Link href={`/portal/immigration/cases/${c.case_id}/profile`} className="inline-block">
@@ -304,6 +307,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                             >
                                                 {c.case_name}
                                             </Link>
+                                            {c.engagement_type_label && <p className="mt-0.5 text-[11px] text-gray-600">{c.engagement_type_label}</p>}
                                             <div className="mt-0.5">
                                                 {c.email && <div className="text-[10.5px] text-gray-500 truncate max-w-[210px]">{c.email}</div>}
                                                 {c.phone && <div className="text-[10.5px] text-gray-400 truncate max-w-[210px]">{c.phone}</div>}
@@ -337,7 +341,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                             {c.fee_total != null ? (
                                                 <>
                                                     <div className="text-[13px] font-bold text-gray-900 tabular-nums">
-                                                        ${Number(c.fee_total).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        {c.currency || "NZD"} ${Number(c.fee_total).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
                                                     <div className="text-[10px] text-gray-400">ex GST</div>
                                                 </>
@@ -352,9 +356,9 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                             {c.total_amount != null ? (
                                                 <>
                                                     <div className="text-[13px] font-bold text-gray-900 tabular-nums">
-                                                        ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        {c.currency || "NZD"} ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
-                                                    <div className="text-[10px] text-gray-400">incl. fees &amp; INZ</div>
+                                                    <div className="text-[10px] text-gray-400">{c.engagement_type === "immigration_advice" || !c.engagement_type ? "incl. fees & INZ" : c.engagement_type === "oia" ? "incl. GST" : "booking fee"}</div>
                                                 </>
                                             ) : (
                                                 <span className="text-[11px] text-gray-300">—</span>
@@ -411,6 +415,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 </button>
                                                 <DeleteCaseDocsButton
                                                     caseId={c.case_id}
+                                                    packId={c.pack_id}
                                                     caseName={c.case_name}
                                                     count={c.documents.length}
                                                 />
@@ -480,240 +485,6 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                 />
             )}
         </div>
-    );
-}
-
-// Manage a DRAFT engagement — preview on the left, editable settings on the
-// right. "Save changes" regenerates the pack (still a draft); "Send to email"
-// emails the client the signing link and clears the draft state.
-function DraftManageModal({ row, signers = [], documents = [], onClose }) {
-    // Prefill the fee with the amount this draft was generated at (editable).
-    const initialFee = row.fee_total != null ? String(row.fee_total) : "";
-    const currentTypes = (row.documents || []).map((d) => d.type_key).filter(Boolean);
-    const [selectedTypes, setSelectedTypes] = useState(
-        currentTypes.length ? currentTypes : documents.map((d) => d.key)
-    );
-    const [signerId, setSignerId] = useState(row.signer_id ?? signers[0]?.id ?? null);
-    const [assistSignerId, setAssistSignerId] = useState(row.assist_signer_id ?? null);
-    // Reopen the draft with the settings it was generated at.
-    const [feeLocation, setFeeLocation] = useState(row.fee_location ?? "onshore");
-    const [feeTier, setFeeTier] = useState(row.fee_tier ?? "normal");
-    const [includeGst, setIncludeGst] = useState(!! row.include_gst);
-    const [feeOverride, setFeeOverride] = useState(initialFee);
-    const [busy, setBusy] = useState(null); // 'save' | 'send'
-    // Family-aware fee totals for the receipt (professional sum + INZ sum).
-    const [familyTotals, setFamilyTotals] = useState(null);
-    useEffect(() => {
-        let cancelled = false;
-        const url = `/admin/leads/${row.case_id}/engagement/fee-totals?fee_tier=${feeTier}&fee_location=${feeLocation}&include_gst=${includeGst ? 1 : 0}`;
-        fetch(url, { headers: { Accept: "application/json" } })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (!cancelled) setFamilyTotals(d); })
-            .catch(() => { if (!cancelled) setFamilyTotals(null); });
-        return () => { cancelled = true; };
-    }, [row.case_id, feeTier, feeLocation, includeGst]);
-    const familyProfExcl = familyTotals?.professional_excl ?? null;
-    const effectiveFee = feeOverride !== "" ? Number(feeOverride) : familyProfExcl;
-    const inzTotal = familyTotals?.inz_total ?? null;
-    // Which document is shown in the preview (tab-selectable).
-    const [previewType, setPreviewType] = useState(
-        (currentTypes.length ? currentTypes : documents.map((d) => d.key)).includes("written_agreement")
-            ? "written_agreement"
-            : (currentTypes[0] || documents[0]?.key || "written_agreement")
-    );
-    // Fall back to a still-selected doc if the previewed one gets unchecked.
-    const activePreview = selectedTypes.includes(previewType) ? previewType : (selectedTypes[0] || previewType);
-    const labelFor = (k) => (documents.find((d) => d.key === k)?.label) || k;
-    const previewUrl = `/admin/leads/${row.case_id}/generate/engage_${activePreview}/preview?fee_tier=${feeTier}&fee_location=${feeLocation}&include_gst=${includeGst ? 1 : 0}${signerId ? `&signer=${signerId}` : ""}${assistSignerId ? `&assist_signer=${assistSignerId}` : ""}${feeOverride !== "" ? `&professional_fee=${encodeURIComponent(feeOverride)}` : ""}`;
-
-    const toggleType = (k) => setSelectedTypes((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
-
-    const saveChanges = () => {
-        if (busy || selectedTypes.length === 0) return;
-        setBusy("save");
-        router.post(`/admin/leads/${row.case_id}/engagement/generate`, {
-            types: selectedTypes, notify: false, signer_id: signerId, assist_signer_id: assistSignerId,
-            fee_tier: feeTier, fee_location: feeLocation, include_gst: includeGst,
-            professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
-        }, {
-            preserveScroll: true,
-            onSuccess: () => { toast.success("Draft updated"); onClose(); },
-            onError: () => toast.error("Could not save changes."),
-            onFinish: () => setBusy(null),
-        });
-    };
-
-    const sendEmail = () => {
-        if (busy) return;
-        setBusy("send");
-        router.post(`/admin/leads/${row.case_id}/engagement/send`, {}, {
-            preserveScroll: true,
-            onSuccess: () => { toast.success("Engagement sent to the client"); onClose(); },
-            onError: (e) => toast.error(Object.values(e)[0] || "Could not send."),
-            onFinish: () => setBusy(null),
-        });
-    };
-
-    return createPortal(
-        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-3" onClick={onClose}>
-            <div className="w-[96vw] max-w-[1200px] h-[92vh] max-h-[calc(100vh-1.5rem)] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
-                    <div className="min-w-0">
-                        <h2 className="text-sm font-bold text-gray-900 truncate">Manage draft — {row.case_name}</h2>
-                        <p className="text-[11px] text-gray-500">Not yet sent to the client</p>
-                    </div>
-                    <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
-                </div>
-
-                <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-                    {/* Preview + a tab per generated document */}
-                    <div className="flex-1 min-w-0 min-h-[280px] bg-gray-100 border-b lg:border-b-0 lg:border-r border-gray-100 flex flex-col">
-                        {/* Document tabs double as include checkboxes: tick to keep
-                            in the pack, click the name to preview. */}
-                        <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-gray-100 overflow-x-auto flex-shrink-0">
-                            <button
-                                type="button"
-                                onClick={() => setSelectedTypes(selectedTypes.length === documents.length ? [] : documents.map((d) => d.key))}
-                                className="text-[10px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-900 flex-shrink-0 mr-0.5"
-                            >
-                                {selectedTypes.length === documents.length ? "Clear all" : "Select all"}
-                            </button>
-                            {documents.map((d) => {
-                                const checked = selectedTypes.includes(d.key);
-                                const isPreview = activePreview === d.key;
-                                return (
-                                    <div
-                                        key={d.key}
-                                        className={`flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full whitespace-nowrap border flex-shrink-0 transition-colors ${isPreview ? "bg-gray-900 border-gray-900 text-white" : checked ? "bg-gray-100 border-gray-200 text-gray-700" : "bg-white border-gray-200 text-gray-400"}`}
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleType(d.key)}
-                                            className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${checked ? (isPreview ? "bg-white border-white" : "bg-gray-900 border-gray-900") : "bg-white border-gray-300"}`}
-                                        >
-                                            {checked && <Check size={10} className={isPreview ? "text-gray-900" : "text-white"} strokeWidth={3} />}
-                                        </button>
-                                        <button type="button" onClick={() => setPreviewType(d.key)} className="text-[11px] font-semibold flex items-center gap-1">
-                                            {d.label}
-                                            {d.dynamic && <span className={`text-[8px] font-bold uppercase tracking-wide rounded px-1 ${isPreview ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600"}`}>Auto</span>}
-                                        </button>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <iframe key={previewUrl} src={previewUrl} title="Engagement preview" className="flex-1 w-full border-0" />
-                    </div>
-
-                    {/* Settings */}
-                    <div className="lg:w-[360px] flex-shrink-0 overflow-y-auto p-5 space-y-4">
-                        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">Settings</p>
-
-                        <div className="grid grid-cols-2 gap-2 items-start">
-                            <div>
-                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Signing adviser</label>
-                                <select value={signerId ?? ""} onChange={(e) => setSignerId(Number(e.target.value) || null)}
-                                    className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-900">
-                                    {signers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.licence_current === false ? " (licence expired)" : ""}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Adviser to assist <span className="text-gray-400 font-normal">(optional)</span></label>
-                                <select value={assistSignerId ?? ""} onChange={(e) => setAssistSignerId(e.target.value ? Number(e.target.value) : null)}
-                                    className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-900">
-                                    <option value="">— None —</option>
-                                    {signers.filter((s) => s.id !== signerId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <p className="text-[10.5px] text-gray-400 -mt-2">The signing adviser is the Main adviser; the other is listed as Adviser to assist (clause 2.1).</p>
-
-                        <div>
-                            <label className="block text-[11px] font-semibold text-gray-600 mb-1">Applicant location</label>
-                            <select value={feeLocation} onChange={(e) => setFeeLocation(e.target.value)}
-                                className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-900">
-                                <option value="onshore">Onshore</option>
-                                <option value="offshore">Offshore</option>
-                            </select>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Payment basis</label>
-                                <select value={feeTier} onChange={(e) => setFeeTier(e.target.value)}
-                                    className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-900">
-                                    <option value="normal">Normal (payment plan)</option>
-                                    <option value="discounted">Discounted (pay now)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-semibold text-gray-600 mb-1">GST</label>
-                                <select value={includeGst ? "incl" : "excl"} onChange={(e) => setIncludeGst(e.target.value === "incl")}
-                                    className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-900">
-                                    <option value="excl">Excluding GST</option>
-                                    <option value="incl">Including GST ({GST_PCT}%)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Receipt-style fee summary — our professional fee (editable,
-                            summed across the family), GST, INZ disbursements, total. */}
-                        {(() => {
-                            const prof = effectiveFee != null && effectiveFee !== "" ? Number(effectiveFee) : 0;
-                            const inz = inzTotal != null ? Number(inzTotal) : 0;
-                            const gstAmt = prof * GST_RATE;
-                            const total = (includeGst ? prof + gstAmt : prof) + inz;
-                            return (
-                                <div className="rounded-lg overflow-hidden text-white" style={{ backgroundColor: BRAND_TEAL }}>
-                                    <div className="px-3 py-1.5 bg-black/10 text-[10px] font-bold uppercase tracking-wider text-white/80">Fee summary</div>
-                                    <div className="px-3 py-2 space-y-1.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="text-[11.5px] text-white/85">Our fees <span className="text-white/50">(ex GST)</span></span>
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[12px] font-bold">$</span>
-                                                <input type="number" min="0" step="0.01" value={effectiveFee ?? ""} onChange={(e) => setFeeOverride(e.target.value)} placeholder="0.00"
-                                                    className="w-20 bg-white/15 rounded px-2 py-0.5 text-[12.5px] font-bold text-white text-right tabular-nums placeholder-white/40 focus:outline-none focus:bg-white/25" />
-                                            </div>
-                                        </div>
-                                        {includeGst && (
-                                            <div className="flex items-center justify-between gap-2 text-white/75">
-                                                <span className="text-[11.5px]">GST ({GST_PCT}%)</span>
-                                                <span className="text-[12.5px] font-semibold tabular-nums">${fmtFee(gstAmt)}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="text-[11.5px] text-white/85">Disbursements <span className="text-white/50">(INZ)</span></span>
-                                            <span className="text-[12.5px] font-semibold tabular-nums">{inzTotal != null ? `$${fmtFee(inz)}` : "—"}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-2 border-t border-white/25 pt-1.5 mt-0.5">
-                                            <span className="text-[11px] font-bold uppercase tracking-wide">Total amount</span>
-                                            <span className="text-[15px] font-bold tabular-nums">${fmtFee(total)}</span>
-                                        </div>
-                                        {feeOverride !== "" && (
-                                            <button type="button" onClick={() => setFeeOverride("")} className="text-[10px] text-white/70 hover:text-white underline">Reset to visa fee</button>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
-                        <div className="pt-2 space-y-2 border-t border-gray-100">
-                            <button type="button" onClick={saveChanges} disabled={!!busy || selectedTypes.length === 0}
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-[13px] font-bold hover:bg-gray-50 disabled:opacity-50">
-                                {busy === "save" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Save changes
-                            </button>
-                            <button type="button" onClick={sendEmail} disabled={!!busy || !row.email}
-                                title={row.email ? "" : "No client email on file"}
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-[13px] font-bold hover:bg-black disabled:opacity-50">
-                                {busy === "send" ? <Loader2 size={14} className="animate-spin" /> : <SendIcon size={14} />} Send to client email
-                            </button>
-                            {!row.email && <p className="text-[11px] text-amber-600">No email on file for this client.</p>}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <GenerationProgress active={!!busy} title={busy === "send" ? "Sending to the client…" : "Saving your changes…"} />
-        </div>,
-        document.body,
     );
 }
 
@@ -808,14 +579,25 @@ function Activity({ icon, tag, body, at }) {
     );
 }
 
-function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = null, meId, onClose, initialCase = null, draft = null }) {
+export function NewEngagementModal({ cases, documents: baseDocuments, signers = [], defaultSignerId = null, meId, onClose, initialCase = null, draft = null }) {
+    const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
+    const specialService = engagementType !== "immigration_advice";
+    const consultation = engagementType === "initial_consultation";
+    const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
+    const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
+    const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
+    const [meetingLink, setMeetingLink] = useState(draft?.engagement_settings?.meeting_link || "");
+    const documents = useMemo(() => specialService ? [
+        { key: engagementType, label: consultation ? "Initial Consultation Agreement" : "OIA Engagement Agreement", dynamic: true },
+        { key: "invoice", label: "Invoice", dynamic: true },
+    ] : baseDocuments, [engagementType, baseDocuments]);
     // When managing an existing draft, seed every setting from it so the modal
     // reopens exactly as the pack was generated. The invoice isn't an
     // "engagement:" document, so add it back from the draft's has_invoice flag.
     const draftTypes = draft
         ? [
             ...(draft.documents || []).map((d) => d.type_key).filter(Boolean),
-            ...(draft.has_invoice ? ["invoice"] : []),
+            ...(draft.has_invoice && !(draft.documents || []).some((doc) => doc.type_key === "invoice") ? ["invoice"] : []),
         ]
         : [];
 
@@ -823,8 +605,6 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
     const [selectedCase, setSelectedCase] = useState(initialCase);
     const [selectedTypes, setSelectedTypes] = useState(draftTypes.length ? draftTypes : documents.map((d) => d.key));
     const [previewType, setPreviewType] = useState(documents[0]?.key ?? null);
-    const [submitAction, setSubmitAction] = useState(null); // 'draft' | 'send' | null
-    const submitting = submitAction !== null;
     const [previewLoading, setPreviewLoading] = useState(false);
     // Keep the preview scrolled where the user left it across the silent reloads
     // that follow a per-applicant amount/disbursement edit (which only bumps
@@ -840,7 +620,6 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
             win.onscroll = () => { previewScrollRef.current = win.scrollY; };
         } catch (e) { /* same-origin only; ignore if unavailable */ }
     };
-    const [notify, setNotify] = useState(true);
     // Which price the client is engaged at — "normal" (payment plan) or
     // "discounted" (pay now). Drives the professional fee on the agreement.
     const [feeTier, setFeeTier] = useState(draft?.fee_tier ?? "normal");
@@ -851,7 +630,7 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
     // quotes that figure or the GST-inclusive RRP.
     const [includeGst, setIncludeGst] = useState(!! draft?.include_gst);
     // Manual override for the (ex-GST) professional fee. "" = use the visa's fee.
-    const [feeOverride, setFeeOverride] = useState("");
+    const [feeOverride, setFeeOverride] = useState(draft?.engagement_settings?.professional_fee ?? "");
     // Default the signing adviser to the draft's, else the practice's designated
     // LIA (Hendry), else the current user if eligible, else the first.
     const [signerId, setSignerId] = useState(() => {
@@ -866,6 +645,19 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
         if (draft) return draft.assist_signer_id ?? null;
         return (defaultSignerId && signers.some((s) => s.id === defaultSignerId) && defaultSignerId !== signerId) ? defaultSignerId : null;
     });
+
+    useEffect(() => {
+        if (!consultation || !selectedCase?.id || draft) return;
+        let cancelled = false;
+        fetch(`/admin/leads/${selectedCase.id}/engagement/defaults`, { headers: { Accept: "application/json" } })
+            .then((response) => response.ok ? response.json() : {})
+            .then((data) => {
+                if (cancelled) return;
+                setConsultationDate(data.consultation_date || ""); setConsultationTime(data.consultation_time || "");
+                setConsultationTimezone(data.consultation_timezone || "Pacific/Auckland"); setMeetingLink(data.meeting_link || "");
+            }).catch(() => { if (!cancelled) toast.error("Could not load saved consultation details. Enter them below."); });
+        return () => { cancelled = true; };
+    }, [consultation, selectedCase?.id, draft]);
 
     const selectedSigner = signers.find((s) => s.id === signerId) || null;
 
@@ -1006,53 +798,35 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
     const writtenSelected = selectedTypes.includes("written_agreement");
     const missingFees = selectedCase && writtenSelected &&
         (!selectedCase[feeFields.normal] || !selectedCase[feeFields.inz]);
-    const missingSignature = writtenSelected && selectedSigner && !selectedSigner.has_signature;
+    const missingSignature = selectedTypes.some((key) => ["written_agreement", "initial_consultation", "oia"].includes(key)) && selectedSigner && !selectedSigner.has_signature;
 
-    const previewUrl = selectedCase && previewType
-        ? `/admin/leads/${selectedCase.id}/generate/engage_${previewType}/preview?fee_tier=${feeTier}&fee_location=${feeLocation}&include_gst=${includeGst ? 1 : 0}${signerId ? `&signer=${signerId}` : ""}${assistSignerId ? `&assist_signer=${assistSignerId}` : ""}${feeOverride !== "" ? `&professional_fee=${encodeURIComponent(feeOverride)}` : ""}&_r=${familyRefresh}`
-        : null;
-
-    // sendEmail=false → "Save as draft": generates the pack but does NOT email
-    // the client. sendEmail=true → also emails the scoped signing link.
-    const generate = async (sendEmail) => {
-        if (!selectedCase || selectedTypes.length === 0) return;
-        if (!assistSignerId) { toast.error("Choose an adviser to assist before generating."); return; }
-        const who = selectedCase.name || "the client";
-        const n = selectedTypes.length;
-        const ok = await confirmDialog({
-            title: sendEmail ? "Generate & email engagement?" : "Save engagement as draft?",
-            message: sendEmail
-                ? `Generate ${n} document${n === 1 ? "" : "s"} and email the signing link to ${who}.`
-                : `Generate ${n} document${n === 1 ? "" : "s"} as a draft. The client will NOT be emailed.`,
-            confirmText: sendEmail ? "Generate & email" : "Save as draft",
-        });
-        if (!ok) return;
-        setSubmitAction(sendEmail ? "send" : "draft");
-        router.post(
-            `/admin/leads/${selectedCase.id}/engagement/generate`,
-            {
-                types: selectedTypes,
-                notify: !!sendEmail && !!selectedCase.email,
-                signer_id: signerId,
-                assist_signer_id: assistSignerId,
-                fee_tier: feeTier,
-                fee_location: feeLocation,
-                include_gst: includeGst,
-                professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => { onClose(); },
-                onError: () => { toast.error("Could not generate the documents."); },
-                onFinish: () => setSubmitAction(null),
-            }
-        );
+    const settings = {
+        engagement_type: engagementType, types: selectedTypes, signer_id: signerId,
+        assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
+        include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
+        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
+            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}),
+        ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
+        revision: familyRefresh,
     };
+    const flow = useEngagementWorkflow(selectedCase?.id, settings, draft, onClose);
+    const submitting = !!flow.busy;
+    const previewParameters = new URLSearchParams({
+        engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
+        include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
+        ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
+        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
+            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}), _r: familyRefresh,
+    });
+    const preparedPreview = flow.prepared?.documents.find((doc) => doc.type === previewType)?.preview_url;
+    const savedPreview = !flow.prepared && flow.savedPackId ? draft?.documents?.find((doc) => doc.type_key === previewType)?.view_url : null;
+    const previewUrl = preparedPreview || savedPreview || (selectedCase && previewType
+        ? `/admin/leads/${selectedCase.id}/generate/engage_${previewType}/preview?${previewParameters}` : null);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
             <div
-                className="bg-white rounded-2xl shadow-xl w-full max-w-[1500px] h-[94vh] flex flex-col overflow-hidden"
+                className="engagement-builder bg-white rounded-2xl shadow-xl w-full max-w-[1500px] h-[94vh] flex flex-col overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -1066,11 +840,12 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
                 </div>
 
-                <div className="flex-1 flex min-h-0">
+                <div className="engagement-builder-body flex-1 flex min-h-0">
                     {/* Left: controls. Case + settings are fixed at the top;
                         only the document list scrolls, so picking documents
                         never squeezes the settings and vice versa. */}
-                    <div className="w-[520px] border-r border-gray-100 flex flex-col min-h-0 flex-shrink-0 overflow-y-auto">
+                    <div className="engagement-settings min-w-0 border-r border-gray-100 flex flex-col min-h-0 overflow-y-auto">
+                        <fieldset disabled={submitting} className="min-w-0 w-full border-0 p-0 m-0">
                         {/* Case picker */}
                         <div className="px-4 pt-3 pb-3 border-b border-gray-100">
                             <FieldLabel>Case</FieldLabel>
@@ -1117,6 +892,37 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                             by side. Warnings only render when they apply, so
                             the block stays short in the normal case. */}
                         <div className="px-4 pt-3 pb-3 border-b border-gray-100 space-y-2.5">
+                            <div>
+                                <label htmlFor="engagement-type" className="text-[11px] font-semibold text-gray-600">Engagement Type</label>
+                                <select id="engagement-type" value={engagementType} disabled={!!draft}
+                                    onChange={(event) => {
+                                        const type = event.target.value;
+                                        setEngagementType(type);
+                                        const keys = type === "immigration_advice" ? baseDocuments.map((doc) => doc.key) : [type, "invoice"];
+                                        setSelectedTypes(keys); setPreviewType(keys[0]);
+                                    }} className={`${ctrlCls} mt-1.5`}>
+                                    <option value="immigration_advice">Immigration Advice Services – Written Agreement &amp; Invoice</option>
+                                    <option value="initial_consultation">Initial Consultation Agreement &amp; Invoice</option>
+                                    <option value="oia">Official Information Act (OIA) Engagement &amp; Invoice</option>
+                                </select>
+                            </div>
+                            {consultation && <div className="space-y-2.5">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <label className="text-xs font-medium text-gray-700">Consultation date
+                                        <input type="date" value={consultationDate} onChange={(e) => setConsultationDate(e.target.value)} className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                    <label className="text-xs font-medium text-gray-700">Consultation time
+                                        <input type="time" value={consultationTime} onChange={(e) => setConsultationTime(e.target.value)} className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                </div>
+                                <label className="block text-xs font-medium text-gray-700">Time zone
+                                    <input value={consultationTimezone} onChange={(e) => setConsultationTimezone(e.target.value)} placeholder="Pacific/Auckland" className={`${ctrlCls} mt-1.5`} />
+                                </label>
+                                <label className="block text-xs font-medium text-gray-700">Google Meet link
+                                    <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/…" className={`${ctrlCls} mt-1.5`} />
+                                </label>
+                            </div>}
+
                             <div className="grid grid-cols-2 gap-2 items-start">
                                 <div>
                                     <FieldLabel>Signing adviser</FieldLabel>
@@ -1135,7 +941,7 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                                 </div>
 
                                 <div>
-                                    <FieldLabel>Adviser to assist <span className="text-red-500 font-normal">*</span></FieldLabel>
+                                    <FieldLabel>Adviser to assist <span className="font-normal">(optional)</span></FieldLabel>
                                     <select
                                         value={assistSignerId ?? ""}
                                         onChange={(e) => setAssistSignerId(e.target.value ? Number(e.target.value) : null)}
@@ -1160,6 +966,7 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                                 </Note>
                             )}
 
+                            {!specialService && <>
                             <div className="min-w-0">
                                 <FieldLabel>Applicant location</FieldLabel>
                                 <select
@@ -1300,6 +1107,12 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                                 );
                             })()}
 
+                            </>}
+                            {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+                                <p className="font-semibold">{consultation ? "USD 250.00 booking fee" : "NZD 500.00 + 75.00 GST = NZD 575.00"}</p>
+                                <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
+                                <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
+                            </div>}
                             {signers.length === 0 && (
                                 <Note>
                                     Only licensed advisers can sign. Add an <span className="font-semibold">IAA licence number</span> on My Profile to appear here.
@@ -1317,16 +1130,17 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                             )}
                         </div>
 
+                        </fieldset>
                     </div>
 
                     {/* Right: live preview */}
-                    <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
+                    <div className="flex-1 flex flex-col min-w-0 min-h-[240px] lg:min-h-0 bg-gray-50">
                         {/* Document tabs double as the include checkboxes: tick to
                             add to the pack, click the name to preview it. */}
                         <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-1.5 overflow-x-auto flex-shrink-0 bg-white">
                             <button
                                 type="button"
-                                onClick={() => setSelectedTypes(selectedTypes.length === documents.length ? [] : documents.map((d) => d.key))}
+                                disabled={specialService || submitting} onClick={() => setSelectedTypes(selectedTypes.length === documents.length ? [] : documents.map((d) => d.key))}
                                 className="text-[10.5px] font-semibold text-gray-400 hover:text-gray-900 flex-shrink-0 mr-0.5"
                             >
                                 {selectedTypes.length === documents.length ? "Clear all" : "Select all"}
@@ -1341,7 +1155,7 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                                     >
                                         <button
                                             type="button"
-                                            onClick={() => toggleType(d.key)}
+                                            onClick={() => { if (!specialService) toggleType(d.key); }} disabled={specialService || submitting}
                                             className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${checked ? (isPreview ? "bg-white border-white" : "bg-gray-900 border-gray-900") : "bg-white border-gray-300"}`}
                                         >
                                             {checked && <Check size={10} className={isPreview ? "text-gray-900" : "text-white"} strokeWidth={3} />}
@@ -1363,18 +1177,18 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                                 </div>
                             ) : previewUrl ? (
                                 <>
-                                    {previewLoading && (
+                                    {previewLoading && !preparedPreview && !savedPreview && (
                                         <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 z-10">
                                             <Loader2 size={22} className="text-gray-700 animate-spin" />
                                         </div>
                                     )}
-                                    <iframe
+                                    {(preparedPreview || savedPreview) ? <PdfDocumentPreview url={previewUrl} className="absolute inset-0 h-full w-full" /> : <iframe
                                         ref={previewIframeRef}
                                         src={previewUrl}
                                         title="Document preview"
                                         className="absolute inset-0 w-full h-full bg-white"
                                         onLoad={handlePreviewLoad}
-                                    />
+                                    />}
                                 </>
                             ) : (
                                 <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
@@ -1385,49 +1199,33 @@ function NewEngagementModal({ cases, documents, signers = [], defaultSignerId = 
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-4 flex-shrink-0">
-                    <div className="min-w-0">
-                        <p className="text-[12px] text-gray-600 flex items-center gap-1.5">
-                            <Mail size={13} className="text-gray-400 flex-shrink-0" />
-                            {selectedCase && !selectedCase.email
-                                ? <span className="text-amber-600">No client email — draft only</span>
-                                : <span className="text-gray-500"><span className="font-semibold text-gray-700">Generate &amp; email</span> sends the client the signing link{selectedCase?.email ? ` · ${selectedCase.email}` : ""}</span>}
-                        </p>
-                        <p className="text-[11px] text-gray-400 mt-1">
-                            {selectedTypes.length} document{selectedTypes.length === 1 ? "" : "s"} selected · <span className="font-semibold text-gray-500">Save as draft</span> does not email the client
-                        </p>
+                {/* Generate, save and reviewed sending are distinct operations. */}
+                <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                    <div className="min-w-0 text-xs text-gray-600">
+                        <p>{flow.savedPackId ? "Draft saved. Ready to review the email." : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
+                        <p className="mt-1">Generate and Save as Draft do not send email.</p>
+                        {flow.error && !flow.review && <p role="alert" className="mt-2 max-w-xl text-red-700">{flow.error}</p>}
                     </div>
-                    {(() => {
-                        const disabled = !selectedCase || selectedTypes.length === 0 || submitting
-                            || !assistSignerId
-                            || (selectedSigner && selectedSigner.licence_current === false);
-                        return (
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                                <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-gray-800">Cancel</button>
-                                <button
-                                    onClick={() => generate(false)}
-                                    disabled={disabled}
-                                    className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {submitAction === "draft" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                                    Save as draft
-                                </button>
-                                <button
-                                    onClick={() => generate(true)}
-                                    disabled={disabled || !selectedCase?.email}
-                                    title={selectedCase && !selectedCase.email ? "No email on file for this client" : ""}
-                                    className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-black transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {submitAction === "send" ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
-                                    Generate &amp; email
-                                </button>
-                            </div>
-                        );
-                    })()}
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => { if (!submitting) onClose(); }} disabled={submitting} className="px-3 py-2 text-sm font-semibold text-gray-600 disabled:opacity-50">Close</button>
+                        <button type="button" onClick={flow.generate}
+                            disabled={!selectedCase || !selectedTypes.length || !signerId || submitting || selectedSigner?.licence_current === false || !!draft?.signed}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                            {flow.busy === "prepare" ? "Generating…" : "Generate"}
+                        </button>
+                        <button type="button" onClick={flow.save} disabled={!flow.prepared || submitting || !!flow.savedPackId}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                            {flow.busy === "save" ? "Saving…" : "Save as Draft"}
+                        </button>
+                        <button type="button" onClick={flow.verify} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
+                            className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
+                            {flow.busy === "review" ? "Preparing review…" : "Verify & Email"}
+                        </button>
+                    </div>
                 </div>
             </div>
-            <GenerationProgress active={submitting} title={submitAction === "send" ? "Generating & emailing…" : "Saving your draft…"} />
+            <GenerationProgress active={submitting && !flow.review} title={flow.busy === "prepare" ? "Generating documents without emailing…" : flow.busy === "save" ? "Saving your draft…" : "Preparing email review…"} />
+            {flow.review && <EngagementEmailReview review={flow.review} busy={flow.busy === "send-reviewed"} error={flow.error} onClose={flow.closeReview} onSend={flow.send} />}
         </div>
     );
 }

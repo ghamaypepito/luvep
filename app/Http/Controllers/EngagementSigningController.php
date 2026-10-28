@@ -20,6 +20,7 @@ use Illuminate\Support\Str;
  */
 class EngagementSigningController extends Controller
 {
+    private string $resolvedPackId = "legacy";
     /** Plain-language, client-facing blurbs for the standard pack documents. */
     private const DOC_BLURBS = [
         'complaints_procedure' => 'How to raise a concern with us, and with the Immigration Advisers Authority.',
@@ -35,6 +36,13 @@ class EngagementSigningController extends Controller
             return null;
         }
 
+        $doc = LeadDocument::where('notes->engagement_signing_token', $token)->first();
+        if ($doc) {
+            if (empty($doc->notes['engagement_sent_at'])) return null;
+            $this->resolvedPackId = $doc->notes['engagement_pack_id'];
+            return $doc->lead;
+        }
+        $this->resolvedPackId = 'legacy';
         return Lead::where('engagement_signing_token', $token)->first();
     }
 
@@ -44,7 +52,9 @@ class EngagementSigningController extends Controller
      */
     private function packQuery(Lead $lead)
     {
-        return $lead->documents()->where(function ($q) {
+        return $lead->documents()
+            ->when($this->resolvedPackId === 'legacy', fn ($q) => $q->whereNull('notes->engagement_pack_id'), fn ($q) => $q->where('notes->engagement_pack_id', $this->resolvedPackId))
+            ->where(function ($q) {
             $q->where('source_variant', 'like', 'engagement:%')
                 ->orWhere('source_variant', 'invoice')
                 ->orWhere('source_variant', 'proof_of_payment');
@@ -52,7 +62,7 @@ class EngagementSigningController extends Controller
     }
 
     /** The standalone page: the engagement pack + the agreement to sign. */
-    public function show(string $token)
+    public function show(Request $request, string $token)
     {
         $lead = $this->resolveByToken($token);
         abort_unless($lead, 404);
@@ -61,17 +71,18 @@ class EngagementSigningController extends Controller
 
         // The pack + the bundled invoice (proof-of-payment uploads are listed
         // separately below).
-        $documents = $lead->documents()
+        $documents = $this->packQuery($lead)
             ->where(function ($q) {
                 $q->where('source_variant', 'like', 'engagement:%')
                     ->orWhere('source_variant', 'invoice');
             })
+            ->when($request->filled('pack'), fn ($q) => $q->where('notes->engagement_pack_id', $request->query('pack')))
             ->orderByDesc('created_at')
             ->get()
             ->map(function (LeadDocument $d) use ($token, $labels) {
                 $isInvoice = $d->source_variant === 'invoice';
                 $type = str_replace('engagement:', '', (string) $d->source_variant);
-                $isWrittenAgreement = $type === 'written_agreement';
+                $isWrittenAgreement = EngagementDocumentGenerator::signable($type);
                 $title = $isInvoice ? 'Invoice'.($d->invoice_number ? " {$d->invoice_number}" : '')
                     : (isset($labels[$type]) ? $labels[$type]['label'] : $d->original_name);
 
@@ -86,6 +97,8 @@ class EngagementSigningController extends Controller
                     // Invoice figures (real; nulls stay null).
                     'invoice_number' => $isInvoice ? $d->invoice_number : null,
                     'invoice_total' => $isInvoice && $d->invoice_total !== null ? (float) $d->invoice_total : null,
+                    'currency' => $d->notes['engagement_currency'] ?? 'NZD',
+                    'engagement_type' => $d->notes['engagement_type'] ?? 'immigration_advice',
                     'due_date' => $isInvoice ? optional(optional($d->created_at)->addDays(7))->toIso8601String() : null,
                     'view_url' => "/engagement/{$token}/documents/{$d->id}/download?inline=1",
                     'download_url' => "/engagement/{$token}/documents/{$d->id}/download",
@@ -106,7 +119,7 @@ class EngagementSigningController extends Controller
 
         // The licensed adviser who signs — from the written agreement's signer.
         $waDoc = $documents->firstWhere('signable', true);
-        $signerId = $lead->documents()->where('source_variant', 'engagement:written_agreement')->value('engagement_signer_id');
+        $signerId = $waDoc ? $this->packQuery($lead)->where('id', $waDoc['id'])->value('engagement_signer_id') : null;
         $signer = $signerId ? \App\Models\User::find($signerId) : null;
         $adviser = $signer ? [
             'name' => $signer->name,
@@ -115,7 +128,7 @@ class EngagementSigningController extends Controller
         ] : null;
 
         // The client's own proof-of-payment uploads.
-        $proofs = $lead->documents()
+        $proofs = $this->packQuery($lead)
             ->where('source_variant', 'proof_of_payment')
             ->orderByDesc('created_at')
             ->get()
@@ -182,7 +195,7 @@ class EngagementSigningController extends Controller
 
         // Remove prior proofs that were not yet confirmed (Approved). A confirmed
         // proof is kept as the record of a settled payment.
-        LeadDocument::where('lead_id', $lead->id)
+        $this->packQuery($lead)
             ->where('source_variant', 'proof_of_payment')
             ->where('status', '!=', LeadDocument::STATUS_APPROVED)
             ->get()
@@ -204,6 +217,7 @@ class EngagementSigningController extends Controller
             'status' => LeadDocument::STATUS_SUBMITTED,
             'source' => LeadDocument::SOURCE_UPLOAD,
             'source_variant' => 'proof_of_payment',
+            'notes' => $this->resolvedPackId === 'legacy' ? null : ['engagement_pack_id' => $this->resolvedPackId],
             'uploaded_by' => null,
         ]);
 
@@ -225,7 +239,8 @@ class EngagementSigningController extends Controller
         abort_unless($lead, 404);
 
         $doc = $this->packQuery($lead)->where('id', $docId)->firstOrFail();
-        abort_unless($doc->source_variant === 'engagement:written_agreement', 403);
+        $type = str_replace('engagement:', '', $doc->source_variant);
+        abort_unless(EngagementDocumentGenerator::signable($type), 403);
 
         // Any already-stored signature, so a re-open shows what was signed.
         $clientSig = null;
@@ -236,11 +251,13 @@ class EngagementSigningController extends Controller
         }
 
         $overrides = ['signer_id' => $doc->engagement_signer_id];
+        if (! empty($doc->notes['engagement_payload'])) $overrides['payload_snapshot'] = $doc->notes['engagement_payload'];
         if ($clientSig) {
             $overrides['client_signature'] = $clientSig;
+            $overrides['client_signed_date'] = $doc->client_signed_at?->format('d/m/Y');
         }
 
-        $html = $generator->renderHtml($lead, 'written_agreement', $overrides);
+        $html = $generator->renderHtml($lead, $type, $overrides);
 
         return response($html)->header('Content-Type', 'text/html; charset=utf-8');
     }
@@ -250,9 +267,19 @@ class EngagementSigningController extends Controller
     {
         $lead = $this->resolveByToken($token);
         abort_unless($lead, 404);
+        return \Illuminate\Support\Facades\Cache::lock("engagement:case:{$lead->id}", 90)->block(5,
+            fn () => $this->signLocked($request, $generator, $token, $docId));
+    }
+
+    private function signLocked(Request $request, EngagementDocumentGenerator $generator, string $token, $docId)
+    {
+        $lead = $this->resolveByToken($token);
+        abort_unless($lead, 404);
 
         $doc = $this->packQuery($lead)->where('id', $docId)->firstOrFail();
-        abort_unless($doc->source_variant === 'engagement:written_agreement', 403);
+        $type = str_replace('engagement:', '', $doc->source_variant);
+        abort_unless(EngagementDocumentGenerator::signable($type), 403);
+        abort_if($doc->client_signed_at, 409, 'This agreement has already been signed.');
 
         // Capture BEFORE we stamp client_signed_at so the confirmation email
         // fires only on the first signing, not on a re-sign.
@@ -276,9 +303,11 @@ class EngagementSigningController extends Controller
         $clientSig = 'data:image/'.($ext === 'jpeg' ? 'jpeg' : 'png').';base64,'.base64_encode($binary);
 
         // Re-render the Written Agreement with the applicant signature baked in.
-        $pdf = $generator->pdfBinary($lead, 'written_agreement', [
+        $pdf = $generator->pdfBinary($lead, $type, [
             'signer_id' => $doc->engagement_signer_id,
             'client_signature' => $clientSig,
+            'client_signed_date' => now()->format('d/m/Y'),
+            ...(! empty($doc->notes['engagement_payload']) ? ['payload_snapshot' => $doc->notes['engagement_payload']] : []),
         ]);
         Storage::disk('local')->put($doc->file_path, $pdf);
 
@@ -293,7 +322,7 @@ class EngagementSigningController extends Controller
 
         // Signing moves the case to "Agreement Signed" — only from a pre-signing
         // stage, so it never downgrades a case that's already lodged/approved.
-        if ($firstSigning) {
+        if ($firstSigning && $type === 'written_agreement') {
             if ($lead->advanceImmigrationStage('Agreement Signed', ['For Assessment', 'Endorsed', 'Agreement Sent', 'For Agreement & Invoice', 'Request for Information'], null)) {
                 \App\Jobs\EvaluateCaseFindings::dispatch($lead->id);
             }

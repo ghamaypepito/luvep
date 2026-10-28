@@ -122,7 +122,7 @@
                     <th style="width: 58%;">Description</th>
                     <th class="num" style="width: 12%;">Quantity</th>
                     <th class="num" style="width: 15%;">Unit Price</th>
-                    <th class="num" style="width: 15%;">Amount NZD</th>
+                    <th class="num" style="width: 15%;">Amount {{ $currency ?? 'NZD' }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -137,7 +137,7 @@
                 <tr class="subtotal">
                     <td></td>
                     <td></td>
-                    <td class="num">Subtotal NZD</td>
+                    <td class="num">Subtotal {{ $currency ?? 'NZD' }}</td>
                     <td class="num">{{ number_format($g['subtotal'], 2) }}</td>
                 </tr>
             </tbody>
@@ -148,7 +148,7 @@
             <tr class="total">
                 <td style="width: 58%;"></td>
                 <td style="width: 12%;"></td>
-                <td class="num" style="width: 15%;">TOTAL NZD</td>
+                <td class="num" style="width: 15%;">TOTAL {{ $currency ?? 'NZD' }}</td>
                 <td class="num" style="width: 15%;">{{ number_format($total, 2) }}</td>
             </tr>
         </tbody>
@@ -160,7 +160,7 @@
                 <th style="width: 58%;">Description</th>
                 <th class="num" style="width: 12%;">Quantity</th>
                 <th class="num" style="width: 15%;">Unit Price</th>
-                <th class="num" style="width: 15%;">Amount NZD</th>
+                <th class="num" style="width: 15%;">Amount {{ $currency ?? 'NZD' }}</th>
             </tr>
         </thead>
         <tbody>
@@ -175,7 +175,7 @@
             <tr class="total">
                 <td></td>
                 <td></td>
-                <td class="num">TOTAL NZD</td>
+                <td class="num">TOTAL {{ $currency ?? 'NZD' }}</td>
                 <td class="num">{{ number_format($total, 2) }}</td>
             </tr>
         </tbody>

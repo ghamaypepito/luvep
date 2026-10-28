@@ -159,7 +159,7 @@ export default function Invoice({ cases = [], generated = [], suggestions = [], 
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {generated.map((c) => (
-                                    <tr key={c.case_id} className="hover:bg-gray-50/60 transition-colors align-top">
+                                    <tr key={`${c.case_id}:${c.currency || "NZD"}`} className="hover:bg-gray-50/60 transition-colors align-top">
                                         <td className="px-4 py-3">
                                             <Link href={`/portal/immigration/cases/${c.case_id}/profile`} className="inline-block">
                                                 <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center bg-gray-100 text-gray-500 text-[11px] font-bold ring-1 ring-gray-200">
@@ -201,7 +201,7 @@ export default function Invoice({ cases = [], generated = [], suggestions = [], 
                                         <td className="px-3 py-3 whitespace-nowrap">
                                             {c.total_amount != null ? (
                                                 <span className="text-[13px] font-bold text-gray-900 tabular-nums">
-                                                    ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    {c.currency || "NZD"} ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </span>
                                             ) : (
                                                 <span className="text-[11px] text-gray-300">—</span>
