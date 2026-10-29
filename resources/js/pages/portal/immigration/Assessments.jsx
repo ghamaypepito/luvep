@@ -659,8 +659,11 @@ const substantiveObs = (o) => o && o.note && !/not\s*(provided|submitted|supplie
 
 function assessCsrf() {
     const xsrf = decodeURIComponent((document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || "");
+    // Laravel checks X-CSRF-TOKEN first; the initial HTML token can be stale
+    // after an Inertia login rotates the session, so prefer the current cookie.
+    if (xsrf) return { "X-XSRF-TOKEN": xsrf };
     const meta = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
-    return xsrf ? { "X-XSRF-TOKEN": xsrf, "X-CSRF-TOKEN": meta } : { "X-CSRF-TOKEN": meta };
+    return { "X-CSRF-TOKEN": meta };
 }
 
 // Applicant review modal: LEFT = the submitted visa-assessment form in an
@@ -700,6 +703,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const [notes, setNotes] = useState([]);
     const [noteDraft, setNoteDraft] = useState("");
     const [postingNote, setPostingNote] = useState(false);
+    const [noteError, setNoteError] = useState("");
     const [convertOpen, setConvertOpen] = useState(false);
     const [rightTab, setRightTab] = useState("notes");
     const [editSection, setEditSection] = useState(null);
@@ -762,24 +766,35 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
         return [...hits].sort((a, b) => (SEV_RANK[b.severity] || 1) - (SEV_RANK[a.severity] || 1))[0];
     };
 
-    const postNote = () => {
+    const postNote = async () => {
         const body = noteDraft.trim();
         if (!body || postingNote) return;
         setPostingNote(true);
-        // A caller-supplied poster (case profile) handles persistence + refresh;
-        // otherwise post to the assessment's own notes.
-        if (onPostNote) {
-            Promise.resolve(onPostNote(body))
-                .then((ok) => { if (ok !== false) setNoteDraft(""); })
-                .catch(() => {})
-                .finally(() => setPostingNote(false));
-            return;
+        setNoteError("");
+        const failedMessage = "Could not save the note. Your draft is still here; please try again.";
+        try {
+            // A caller-supplied poster (case profile) handles persistence + refresh;
+            // otherwise post to the assessment's own notes.
+            if (onPostNote) {
+                if (await onPostNote(body) === false) throw new Error(failedMessage);
+            } else {
+                const response = await fetch(notesBase, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...assessCsrf() }, body: JSON.stringify({ body }) });
+                const result = await response.json().catch(() => null);
+                if (!response.ok) {
+                    const validation = response.status === 422 && Object.values(result?.errors || {}).flat()[0];
+                    throw new Error(response.status === 419
+                        ? "Your session expired. Copy your note, refresh the page, and try again."
+                        : validation || failedMessage);
+                }
+                if (!result?.note) throw new Error(failedMessage);
+                setNotes((prev) => [result.note, ...prev]);
+            }
+            setNoteDraft("");
+        } catch (error) {
+            setNoteError(error instanceof TypeError ? failedMessage : (error.message || failedMessage));
+        } finally {
+            setPostingNote(false);
         }
-        fetch(notesBase, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...assessCsrf() }, body: JSON.stringify({ body }) })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (d?.note) { setNotes((prev) => [d.note, ...prev]); setNoteDraft(""); } })
-            .catch(() => {})
-            .finally(() => setPostingNote(false));
     };
 
     // Humanise a role slug ("immigration_adviser" → "Immigration adviser").
@@ -1053,6 +1068,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                             placeholder="Add a note…"
                                             className="w-full bg-transparent px-3 py-2 text-[13px] outline-none resize-y placeholder:text-gray-400" />
                                     </div>
+                                    {noteError && <p role="alert" className="mt-2 text-xs text-rose-600">{noteError}</p>}
                                     <div className="flex items-center justify-between mt-2 gap-2">
                                         <div className="flex flex-wrap gap-1">
                                             {["Chased applicant", "Waiting on employer", "Needs adviser review", "Log a call"].map((t) => (

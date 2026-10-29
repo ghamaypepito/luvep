@@ -20,22 +20,7 @@ class LeadNoteController extends Controller
     {
         $lead = Lead::findOrFail($leadId);
         $user = $request->user();
-        $ownerId = match ($user?->role) {
-            'agent' => $user->id,
-            'sub_agent' => $user->parent_agent_id,
-            default => null,
-        };
-        $ownsReferral = $ownerId !== null && (int) $lead->agent_id === (int) $ownerId;
-        // Education works both the unconverted Leads list and the Students
-        // register (including English learners). Match those existing lists
-        // for internal discussion instead of requiring is_student alone.
-        // Keep this local to notes; other communication/AI access is unchanged.
-        $educationRecord = $user?->role === 'education' && Lead::whereKey($lead->id)
-            ->where(fn ($query) => $query
-                ->where(fn ($pipeline) => $pipeline->inLeadPipeline())
-                ->orWhere(fn ($students) => $students->inStudentsRegister()))
-            ->exists();
-        abort_unless($user && ($ownsReferral || $educationRecord || \App\Support\LeadAccess::canView($user, $lead)), 403);
+        abort_unless($user && \App\Support\LeadDiscussionAccess::canUseNotes($user, $lead), 403);
 
         return $lead;
     }

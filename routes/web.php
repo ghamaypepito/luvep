@@ -980,8 +980,9 @@ Route::middleware(['auth'])->group(function () {
 
         // Per-lead communications (Build 11.A) — compose a one-off message and
         // read the message history. Access is re-checked per lead inside the
-        // controller (LeadAccess), so the broad route group can't leak a lead
+        // controller (LeadDiscussionAccess), so the broad route group can't leak a lead
         // across departments.
+        Route::get('/admin/leads/{lead}/compose/templates', [\App\Http\Controllers\Sales\ComposeMessageController::class, 'templates'])->name('admin.leads.compose.templates');
         Route::post('/admin/leads/{lead}/compose', [\App\Http\Controllers\Sales\ComposeMessageController::class, 'send'])->name('admin.leads.compose');
         Route::get('/admin/leads/{lead}/communications', [\App\Http\Controllers\Sales\LeadCommunicationsController::class, 'index'])->name('admin.leads.communications');
         // Reply to the lead from the conversation tab (blocked if they have no email).
@@ -1829,6 +1830,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/leads', [\App\Http\Controllers\Portal\ImmigrationAdviserController::class, 'leads'])->name('leads');
             Route::post('/leads/bulk-agent', [SalesController::class, 'bulkAssignAgent'])->name('leads.bulk-agent');
             Route::post('/leads/bulk-delete', [SalesController::class, 'bulkDelete'])->name('leads.bulk-delete');
+            Route::post('/leads/{id}/notes', [\App\Http\Controllers\LeadNoteController::class, 'store'])->name('leads.notes.store');
             Route::post('/leads/{id}', [ImmigrationController::class, 'updateLead'])->name('leads.update');
             Route::post('/leads/{id}/visa', [LeadController::class, 'updateLeadVisa'])->name('leads.visa');
             Route::post('/leads/{id}/portal-invitation/request', [LeadPortalInvitationController::class, 'request'])->name('leads.portal-invitation.request');
@@ -1891,6 +1893,7 @@ Route::middleware(['auth'])->group(function () {
             // Declared before /leads/{id} so the two static segments win.
             Route::post('/leads/bulk-agent', [SalesController::class, 'bulkAssignAgent'])->name('leads.bulk-agent');
             Route::post('/leads/bulk-delete', [SalesController::class, 'bulkDelete'])->name('leads.bulk-delete');
+            Route::post('/leads/{id}/notes', [\App\Http\Controllers\LeadNoteController::class, 'store'])->name('leads.notes.store');
             Route::post('/leads/{id}', [ImmigrationController::class, 'updateLead'])->name('leads.update');
             Route::post('/leads/{id}/visa', [LeadController::class, 'updateLeadVisa'])->name('leads.visa');
             Route::post('/leads/{id}/portal-invitation/request', [LeadPortalInvitationController::class, 'request'])

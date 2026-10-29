@@ -32,7 +32,7 @@ class CaseConversationReplyTest extends TestCase
         Mail::fake();
         $case = Lead::create(['first_name' => 'Private', 'last_name' => 'Case', 'email' => 'private@example.test', 'is_immigration_case' => true]);
         foreach (['lead', 'agent', 'education', 'sales'] as $role) {
-            $this->actingAs(User::factory()->create(['role' => $role, 'portal_access' => ['immigration']]))
+            $this->actingAs(User::factory()->create(['role' => $role, 'portal_access' => in_array($role, ['lead', 'agent'], true) ? ['immigration'] : []]))
                 ->postJson("/admin/leads/{$case->id}/communications", ['subject' => 'Attempt', 'body' => 'Not allowed'])
                 ->assertForbidden();
         }
