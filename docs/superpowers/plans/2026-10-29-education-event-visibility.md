@@ -1,0 +1,13 @@
+# Event visibility
+
+User requests an option to hide specific school/event schedules. Add an Event visibility selector in existing schedule add/edit forms and Hidden/Shown summary badges. Hide each individual visit from public RSVP, live catalogue and programme-registration school/event options; other visits of that school remain available. Visibility is independent of open/closed/cancelled and date publication. New schedules may start hidden, existing schedules default shown. No real schedules are hidden without staff choosing them.
+
+Add is_hidden boolean defaultfalse and a named local model scope reused by public catalogue queries and managed-registration validation. Reject new intake to hidden visits even from stale forms; row-lock/recheck RSVP before creation. Preserve exact completed submission replay and all existing attendance, membership, pipeline and journey history. Visibility-only changes do not increment schedule_version or send announcements, cancel appointments or alter reminders for existing contacts.
+
+Tests RED→GREEN: hide/show public catalogues and registration, same-school other visit retained, admin history and RSVP retained, new direct RSVP/registration blocked without pipeline/outreach, exact replays stable, staff authorization and boolean validation, hidden-on-create and unrelated update preserves hidden flag. Run focused regression suites, browser-check control, targeted hashed/backed-up deploy with only new migration, rollback-only synthetic live checks and private-safe screenshot. No new notifications, dependencies or actual event edits.
+
+## Verification ledger
+- RED: visibility tests failed for ignored staff setting and accepted hidden intake. GREEN:60 focused tests /401 assertions pass, with four existing PHP8.5 deprecations. Coverage includes hiding/restoring a single visit while another same-school visit stays public, stale-form rejection, hidden-on-create, role/boolean validation, no implicit unhide, exact completed replays, unchanged schedule_version and retained matched lead/status/full journey.
+- Independent review found no Critical/Important issues. Updated the empty-schedule helper wording it flagged so it no longer promises hidden new schedules will appear publicly. No findings deferred. Mechanical view detector returned[]; diff check passed.
+- Live preflight hashes of all six existing source files matched the local base, preserving intervening changes. Local SQLite migrated with only the new visibility migration.
+- Local browser authenticated as the disposable Education preview account, changed only Preview Learning College to hidden and saved; the Hidden badge, retained date/availability and success message rendered correctly. No actual school record was edited for QA.

@@ -120,4 +120,72 @@ class EducationManagedScheduleTest extends TestCase
         $this->actingAs($this->staff())->putJson('/portal/education/rsvp-visits/'.$v->id, $this->schedule(['event_date' => '2026-11-20', 'status' => 'closed']))->assertOk();
         $this->get('/education/register')->assertViewHas('registrationVisits', fn ($rows) => $rows && $rows->contains(fn ($row) => $row['date'] === '2026-11-20'));
     }
+
+    public function test_staff_can_hide_and_restore_individual_visits_without_changing_schedule_or_history(): void
+    {
+        $v = $this->visit();
+        $other = $this->visit(['slug' => 'second-school-visit', 'activity' => 'Another visible event']);
+        $staff = $this->staff();
+        $r = \App\Models\EducationRsvp::create(['education_visit_id' => $v->id, 'public_id' => (string) Str::uuid(), 'submission_id' => (string) Str::uuid(), 'payload_hash' => str_repeat('a', 64), 'full_name' => 'Existing Attendee', 'name_key' => 'existing-attendee', 'email' => 'existing@example.test', 'consented_at' => now(), 'attendance_status' => 'attended']);
+        $lead = \App\Models\Lead::create(['lead_id' => 'HIDDEN-PRESERVE', 'first_name' => 'Existing', 'last_name' => 'Attendee', 'email' => $r->email, 'status' => 'Contact Attempted']);
+        $r->update(['lead_id' => $lead->id, 'linked_at' => now(), 'verified_at' => now()]);
+        $historyBefore = app(\App\Services\EducationRsvpWorkflow::class)->history($lead);
+        $this->assertCount(1, $historyBefore);
+        $version = $v->fresh()->schedule_version;
+        $this->actingAs($staff)->putJson('/portal/education/rsvp-visits/'.$v->id, $this->schedule(['is_hidden' => true]))->assertOk();
+        $this->assertTrue($v->fresh()->is_hidden);
+        $this->assertSame($version, $v->fresh()->schedule_version);
+        $this->getJson('/education/rsvp/catalogue')->assertJsonCount(1, 'visits')->assertJsonPath('visits.0.id', $other->id);
+        $this->get('/education/rsvp')->assertViewHas('visits', fn ($visits) => $visits->count() === 1 && $visits->first()['id'] === $other->id);
+        $this->get('/education/register')->assertViewHas('registrationVisits', fn ($visits) => $visits->count() === 1 && $visits->first()['id'] === $other->id);
+        $this->get('/portal/education/rsvps')->assertOk()->assertSee('Existing Attendee')->assertSee('Hidden');
+        $this->assertDatabaseHas('education_rsvps', ['id' => $r->id, 'attendance_status' => 'attended']);
+        $this->assertDatabaseCount('education_outreach', 0);
+        $this->assertEquals($lead->id, $r->fresh()->lead_id);
+        $this->assertSame('Contact Attempted', $lead->fresh()->status);
+        $this->assertSame($historyBefore, app(\App\Services\EducationRsvpWorkflow::class)->history($lead));
+        $this->putJson('/portal/education/rsvp-visits/'.$v->id, $this->schedule(['is_hidden' => false]))->assertOk();
+        $this->getJson('/education/rsvp/catalogue')->assertJsonCount(2, 'visits');
+    }
+
+    public function test_hidden_visits_reject_stale_form_intakes_before_creating_contacts(): void
+    {
+        $v = $this->visit(['is_hidden' => true]);
+        $this->postJson('/education/register', $this->contact(['visit_id' => $v->id]))->assertUnprocessable()->assertJsonValidationErrors('visit_id');
+        $this->postJson('/education/rsvp', ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Hidden Attendee', 'email' => 'hidden@example.test', 'consent' => true])->assertUnprocessable();
+        $this->assertDatabaseCount('leads', 0);
+        $this->assertDatabaseCount('education_rsvps', 0);
+        $this->assertDatabaseCount('education_outreach', 0);
+    }
+
+    public function test_hidden_schedule_creation_requires_staff_and_updates_do_not_unhide_implicitly(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->postJson('/portal/education/rsvp-visits', $this->schedule(['is_hidden' => true]))->assertForbidden();
+        $this->actingAs($this->staff())->postJson('/portal/education/rsvp-visits', $this->schedule(['is_hidden' => true]))->assertCreated();
+        $v = EducationVisit::firstOrFail();
+        $this->assertTrue($v->is_hidden);
+        $this->putJson('/portal/education/rsvp-visits/'.$v->id, $this->schedule(['is_hidden' => 'invalid']))->assertUnprocessable();
+        $this->putJson('/portal/education/rsvp-visits/'.$v->id, $this->schedule(['activity' => 'Updated hidden event']))->assertOk();
+        $this->assertTrue($v->fresh()->is_hidden);
+        $this->getJson('/education/rsvp/catalogue')->assertJsonCount(0, 'visits');
+    }
+
+    public function test_completed_submissions_can_replay_after_a_visit_is_hidden(): void
+    {
+        Mail::fake();
+        Notification::fake();
+        $this->staff();
+        $v = $this->visit();
+        $registration = $this->contact(['visit_id' => $v->id]);
+        $this->postJson('/education/register', $registration)->assertCreated();
+        $rsvp = ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Original Attendee', 'email' => 'original@example.test', 'consent' => true];
+        $this->postJson('/education/rsvp', $rsvp)->assertCreated();
+        $outreach = \App\Models\EducationOutreach::count();
+        $v->update(['is_hidden' => true]);
+        $this->postJson('/education/register', $registration)->assertOk();
+        $this->postJson('/education/rsvp', $rsvp)->assertOk();
+        $this->assertDatabaseCount('education_event_registrations', 1);
+        $this->assertDatabaseCount('education_rsvps', 1);
+        $this->assertDatabaseCount('education_outreach', $outreach);
+    }
 }

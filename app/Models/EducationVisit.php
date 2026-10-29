@@ -9,7 +9,12 @@ class EducationVisit extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['event_date' => 'date', 'proposed_date' => 'date', 'schedule_confirmed' => 'boolean', 'schedule_version' => 'integer'];
+    protected $casts = ['event_date' => 'date', 'proposed_date' => 'date', 'is_hidden' => 'boolean', 'schedule_confirmed' => 'boolean', 'schedule_version' => 'integer'];
+
+    public function scopePubliclyVisible(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->where('is_hidden', false);
+    }
 
     public function rsvps()
     {

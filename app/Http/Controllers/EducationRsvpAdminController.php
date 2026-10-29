@@ -47,6 +47,7 @@ class EducationRsvpAdminController extends Controller
             'event_time' => 'nullable|date_format:H:i',
             'timezone' => ['required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
             'location' => 'nullable|string|max:255', 'schedule_confirmed' => 'required|boolean',
+            'is_hidden' => 'sometimes|boolean',
             'status' => ['required', Rule::in($creating ? ['open', 'closed'] : ['open', 'closed', 'cancelled'])],
         ];
     }
@@ -67,7 +68,7 @@ class EducationRsvpAdminController extends Controller
             return $v;
         });
 
-        return $request->expectsJson() ? response()->json(['ok' => true, 'id' => $visit->id], 201) : redirect()->route('education.rsvps.manage')->with('status', 'Schedule added. It is available in programme registration'.($visit->status === 'open' ? ' and on the RSVP page.' : '.'))->with('open_visit', $visit->id);
+        return $request->expectsJson() ? response()->json(['ok' => true, 'id' => $visit->id], 201) : redirect()->route('education.rsvps.manage')->with('status', $visit->is_hidden ? 'Schedule added. It is hidden from public RSVP and programme registration.' : 'Schedule added. It is available in programme registration'.($visit->status === 'open' ? ' and on the RSVP page.' : '.'))->with('open_visit', $visit->id);
     }
 
     public function update(Request $request, EducationVisit $visit)
@@ -81,11 +82,11 @@ class EducationRsvpAdminController extends Controller
                     $v->schedule_version++;
                 }
                 $v->save();
-                ActivityLog::record('education.rsvp.schedule_updated', ['portal' => 'education', 'properties' => ['visit_id' => $v->id, 'schedule_version' => $v->schedule_version], 'description' => 'Updated Education RSVP schedule']);
+                ActivityLog::record('education.rsvp.schedule_updated', ['portal' => 'education', 'properties' => ['visit_id' => $v->id, 'schedule_version' => $v->schedule_version, 'is_hidden' => $v->is_hidden], 'description' => 'Updated Education RSVP schedule']);
             }
         });
 
-        return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', 'Schedule saved. Confirmed changes will be sent to verified RSVP contacts.')->with('open_visit', $visit->id);
+        return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', $visit->fresh()->is_hidden ? 'Schedule saved. Hidden from public RSVP and programme registration; existing attendance records are retained.' : 'Schedule saved. Confirmed changes will be sent to verified RSVP contacts.')->with('open_visit', $visit->id);
     }
 
     public function attendance(Request $request, EducationRsvp $rsvp)
@@ -116,7 +117,7 @@ class EducationRsvpAdminController extends Controller
 
         return $request->expectsJson()
             ? response()->json(['ok' => true, 'logo' => $url])
-            : redirect()->route('education.rsvps.manage')->with('status', 'School logo updated. It is now shown on the public RSVP page.')->with('open_visit', $visit->id);
+            : redirect()->route('education.rsvps.manage')->with('status', $visit->is_hidden ? 'School logo updated. It will appear publicly when this event is shown again.' : 'School logo updated. It is now shown on the public RSVP page.')->with('open_visit', $visit->id);
     }
 
     public function slack(Request $request)

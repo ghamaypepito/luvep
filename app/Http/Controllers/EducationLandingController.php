@@ -23,7 +23,7 @@ class EducationLandingController extends Controller
 
     public function show(Request $request)
     {
-        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS])
+        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::publiclyVisible()->where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS])
             ->header('Cache-Control', 'private, no-store');
     }
 
@@ -69,7 +69,7 @@ class EducationLandingController extends Controller
                 abort_if(RateLimiter::tooManyAttempts($rateKey, 3), 429, 'Please wait before sending another registration.');
                 $result = DB::transaction(function () use ($data, $fingerprint, $intake, $request) {
                     if (! empty($data['visit_id'])) {
-                        $visit = \App\Models\EducationVisit::whereKey($data['visit_id'])->where('status', '!=', 'cancelled')->lockForUpdate()->first();
+                        $visit = \App\Models\EducationVisit::publiclyVisible()->whereKey($data['visit_id'])->where('status', '!=', 'cancelled')->lockForUpdate()->first();
                         if (! $visit) {
                             throw \Illuminate\Validation\ValidationException::withMessages(['visit_id' => 'This schedule is no longer available. Choose another event.']);
                         }

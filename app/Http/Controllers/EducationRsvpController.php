@@ -15,12 +15,12 @@ class EducationRsvpController extends Controller
 {
     public function show(Request $request)
     {
-        return response()->view('education.rsvp', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'visits' => EducationVisit::where('status', 'open')->orderBy('id')->get()->map->publicData()->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
     }
 
     public function catalogue()
     {
-        return response()->json(['visits' => EducationVisit::where('status', 'open')->orderBy('id')->get()->map->publicData()->values()]);
+        return response()->json(['visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->values()])->header('Cache-Control', 'private, no-store');
     }
 
     public function store(Request $request, EducationRsvpWorkflow $workflow)
@@ -30,7 +30,6 @@ class EducationRsvpController extends Controller
         $d['full_name'] = preg_replace('/\s+/u', ' ', trim($d['full_name']));
         abort_unless(EducationRsvpWorkflow::nameKey($d['full_name']), 422, 'Please enter your name.');
         $v = EducationVisit::findOrFail($d['visit_id']);
-        abort_unless($v->status === 'open', 422, 'This visit is not accepting RSVPs.');
         $fields = ['full_name' => $d['full_name'], 'name_key' => EducationRsvpWorkflow::nameKey($d['full_name']), 'email' => $d['email'], 'phone' => trim($d['phone'] ?? '') ?: null, 'role' => $v->kind === 'partnership' ? (trim($d['role'] ?? '') ?: null) : null, 'email_reminders' => (bool) ($d['email_reminders'] ?? false), 'future_invites' => (bool) ($d['future_invites'] ?? false), 'education_visit_id' => $v->id];
         $hash = hash('sha256', json_encode($fields));
 
@@ -40,12 +39,16 @@ class EducationRsvpController extends Controller
                 abort_unless(hash_equals($prior->payload_hash, $hash), 409, 'Please reload before changing a completed submission.');
 
                 return response()->json(['ok' => true]);
-            }if (EducationRsvp::where('education_visit_id', $v->id)->where('email', $d['email'])->exists()) {
+            }
+            abort_unless($v->status === 'open' && ! $v->is_hidden, 422, 'This visit is not accepting RSVPs.');
+            if (EducationRsvp::where('education_visit_id', $v->id)->where('email', $d['email'])->exists()) {
                 return response()->json(['ok' => true]);
             }$key = 'rsvp-rate:'.hash('sha256', $d['email']);
             abort_if(RateLimiter::tooManyAttempts($key, 5), 429, 'Please wait before submitting another RSVP.');
             DB::transaction(function () use ($fields, $d, $hash, $workflow, $v) {
-                $r = EducationRsvp::create($fields + ['submission_id' => $d['submission_id'], 'public_id' => (string) Str::uuid(), 'payload_hash' => $hash, 'consented_at' => now(), 'schedule_version_seen' => $v->schedule_confirmed ? $v->schedule_version : 0]);
+                $currentVisit = EducationVisit::whereKey($v->id)->lockForUpdate()->firstOrFail();
+                abort_unless($currentVisit->status === 'open' && ! $currentVisit->is_hidden, 422, 'This visit is not accepting RSVPs.');
+                $r = EducationRsvp::create($fields + ['submission_id' => $d['submission_id'], 'public_id' => (string) Str::uuid(), 'payload_hash' => $hash, 'consented_at' => now(), 'schedule_version_seen' => $currentVisit->schedule_confirmed ? $currentVisit->schedule_version : 0]);
                 $workflow->queueRsvp($r);
             });
             RateLimiter::hit($key, 3600);
