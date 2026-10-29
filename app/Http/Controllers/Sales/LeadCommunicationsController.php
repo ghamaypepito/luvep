@@ -7,7 +7,7 @@ use App\Models\EmailReply;
 use App\Models\Lead;
 use App\Models\MessageLog;
 use App\Services\CommunicationService;
-use App\Support\LeadAccess;
+use App\Support\LeadDiscussionAccess;
 use Illuminate\Http\Request;
 
 /**
@@ -21,7 +21,7 @@ class LeadCommunicationsController extends Controller
     /** GET /admin/leads/{lead}/communications */
     public function index(Request $request, Lead $lead)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         // Outbound — everything we sent this lead (templates, composed, replies).
         $outbound = MessageLog::query()
@@ -89,7 +89,7 @@ class LeadCommunicationsController extends Controller
      */
     public function reply(Request $request, Lead $lead, CommunicationService $comms)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         if (empty($lead->email)) {
             return response()->json(['message' => 'This lead has no email address — add one in Personal Info first.'], 422);
@@ -117,6 +117,10 @@ class LeadCommunicationsController extends Controller
 
         $log = $comms->sendComposedEmail($lead->email, $subject, $body, $attachments, $rawHtml, $lead->id);
 
+        if ($log->status === MessageLog::STATUS_FAILED) {
+            return response()->json(['message' => 'Could not send the email. Your draft has been kept; please try again.', 'log_id' => $log->id], 502);
+        }
+
         return response()->json(['ok' => true, 'log_id' => $log->id]);
     }
 
@@ -128,7 +132,7 @@ class LeadCommunicationsController extends Controller
      */
     public function sync(Request $request, Lead $lead)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         \App\Jobs\SyncEmailRepliesJob::dispatch();
 

@@ -29,6 +29,8 @@ const xsrf = () => decodeURIComponent((document.cookie.match(/XSRF-TOKEN=([^;]+)
 export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
+    const [checkError, setCheckError] = useState(null);
     const [openId, setOpenId] = useState(null);
     const [canEmail, setCanEmail] = useState(!!leadEmail);
     const [email, setEmail] = useState(leadEmail);
@@ -73,15 +75,21 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
 
     const load = useCallback(async () => {
         setLoading(true);
+        setLoadError(null);
         try {
             const res = await fetch(indexUrl, {
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
                 credentials: "same-origin",
             });
-            const data = res.ok ? await res.json() : { data: [] };
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(res.status === 419
+                ? "Your session expired. Refresh the page and try again."
+                : data.message || "Could not load the conversation. Please try again.");
             setLogs(data.data ?? []);
             if (typeof data.can_email === "boolean") setCanEmail(data.can_email);
             if (data.lead_email !== undefined) setEmail(data.lead_email || "");
+        } catch (error) {
+            setLoadError(error instanceof TypeError ? "Could not load the conversation. Please try again." : error.message);
         } finally {
             setLoading(false);
         }
@@ -92,18 +100,23 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
     // Trigger the IMAP mailbox fetch, then refresh the feed so a just-arrived
     // reply shows up here without visiting the Email → Replies inbox.
     const checkReplies = async () => {
-        setChecking(true); setCheckNote(null);
+        setChecking(true); setCheckNote(null); setCheckError(null);
         try {
-            await fetch(`${indexUrl}/sync`, {
+            const res = await fetch(`${indexUrl}/sync`, {
                 method: "POST",
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest", "X-XSRF-TOKEN": xsrf() },
                 credentials: "same-origin",
             });
+            if (!res.ok) throw new Error(res.status === 419
+                ? "Your session expired. Refresh the page and try again."
+                : "Could not check for replies. Please try again.");
             // The fetch is queued; give the worker a moment, then reload.
             await new Promise((r) => setTimeout(r, 2500));
             await load();
-            setCheckNote("Checked the mailbox. Any new replies now show above — click again in a moment if one is still landing.");
+            setCheckNote("Mailbox check requested. Refresh shortly to see any new replies.");
             setTimeout(() => setCheckNote(null), 6000);
+        } catch (error) {
+            setCheckError(error instanceof TypeError ? "Could not check for replies. Please try again." : error.message);
         } finally {
             setChecking(false);
         }
@@ -249,8 +262,13 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                 </div>
             </div>
             {checkNote && <p className="text-[11px] text-gray-400 px-1 -mt-2">{checkNote}</p>}
+            {checkError && <p role="alert" className="text-xs text-rose-600 px-1">{checkError}</p>}
+            {loadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                <p>{loadError}</p>
+                <button type="button" onClick={load} className="mt-2 font-semibold underline">Retry</button>
+            </div>}
 
-            {loading && logs.length === 0 ? (
+            {loadError ? null : loading && logs.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 flex items-center justify-center text-gray-400 text-sm gap-2">
                     <Loader2 size={16} className="animate-spin" /> Loading conversation…
                 </div>

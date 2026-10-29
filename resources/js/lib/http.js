@@ -1,9 +1,10 @@
-// Small JSON fetch helpers for session-authenticated endpoints. Writes send
-// the CSRF token from the <meta name="csrf-token"> tag (what Laravel's
-// VerifyCsrfToken expects), so plain fetch() works inside the Inertia app.
-
-const csrfToken = () =>
-    document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+// Session-authenticated JSON requests. The cookie is refreshed by Laravel;
+// the initial HTML meta token can be stale after an Inertia login.
+const csrfHeaders = () => {
+    const cookie = document.cookie.split('; ').find(value => value.startsWith('XSRF-TOKEN='));
+    if (cookie) return { "X-XSRF-TOKEN": decodeURIComponent(cookie.slice('XSRF-TOKEN='.length)) };
+    return { "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "" };
+};
 
 export async function getJson(url) {
     const res = await fetch(url, {
@@ -22,7 +23,7 @@ export async function postJson(url, body) {
             Accept: "application/json",
             "Content-Type": "application/json",
             "X-Requested-With": "XMLHttpRequest",
-            "X-CSRF-TOKEN": csrfToken(),
+            ...csrfHeaders(),
         },
         credentials: "same-origin",
         body: JSON.stringify(body || {}),
