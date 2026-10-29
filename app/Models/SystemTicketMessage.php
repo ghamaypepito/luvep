@@ -7,9 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SystemTicketMessage extends Model
 {
-    protected $fillable = ['ticket_id', 'user_id', 'body', 'is_support'];
+    protected $fillable = ['ticket_id', 'user_id', 'body', 'is_support', 'attachments'];
 
-    protected $casts = ['is_support' => 'boolean'];
+    protected $hidden = ['attachments'];
+
+    protected $casts = ['is_support' => 'boolean', 'attachments' => 'array'];
 
     public function ticket(): BelongsTo
     {

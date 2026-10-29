@@ -47,4 +47,5 @@ jobs:
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
+          node tests/Frontend/ticket-attachments.cjs
           node --test tests/Frontend/assessment-notes.cjs tests/js/task-comments.test.mjs tests/js/case-thread-replies.test.mjs tests/js/http-client-csrf.test.mjs tests/js/compose-message-panel.test.mjs

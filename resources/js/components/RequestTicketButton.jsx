@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "@inertiajs/react";
-import { LifeBuoy, X, Send, ImagePlus } from "lucide-react";
-
-const MAX_IMAGES = 5;
+import { LifeBuoy, X, Send } from "lucide-react";
+import TicketAttachmentPicker from "./TicketAttachmentPicker";
 
 const CATEGORIES = [
     { key: "change", label: "Change to something" },
@@ -20,25 +19,24 @@ const inp = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-
  */
 export default function RequestTicketButton() {
     const [open, setOpen] = useState(false);
-    const form = useForm({ title: "", description: "", category: "change", priority: "normal", images: [] });
-    const { data, setData, post, processing, errors, reset } = form;
-
-    // Object URLs for the selected-file thumbnails; revoked when the set
-    // changes or the modal unmounts so we don't leak blobs.
-    const previews = useMemo(() => data.images.map((f) => URL.createObjectURL(f)), [data.images]);
-    useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
-
-    const addImages = (fileList) => {
-        const incoming = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
-        setData("images", [...data.images, ...incoming].slice(0, MAX_IMAGES));
-    };
-    const removeImage = (idx) => setData("images", data.images.filter((_, i) => i !== idx));
+    const form = useForm({ title: "", description: "", category: "change", priority: "normal", attachments: [] });
+    const { data, setData, post, processing, progress, errors, reset, transform } = form;
+    const submitting = useRef(false);
 
     const submit = (e) => {
         e.preventDefault();
+        if (submitting.current || processing) return;
+        submitting.current = true;
+        transform((values) => {
+            const payload = new FormData();
+            ["title", "description", "category", "priority"].forEach((key) => payload.append(key, values[key]));
+            values.attachments.forEach((file) => payload.append("attachments[]", file));
+            return payload;
+        });
         post("/tickets", {
             forceFormData: true,
             preserveScroll: true,
+            onFinish: () => { submitting.current = false; },
             onSuccess: () => { reset(); setOpen(false); },
         });
     };
@@ -93,34 +91,8 @@ export default function RequestTicketButton() {
                                 {errors.description && <span className="text-xs text-rose-600">{errors.description}</span>}
                             </label>
 
-                            <div className="block">
-                                <span className="block text-xs font-semibold text-gray-600 mb-1">
-                                    Screenshots <span className="font-normal text-gray-400">— optional, up to {MAX_IMAGES}</span>
-                                </span>
-                                <div className="flex flex-wrap gap-2">
-                                    {previews.map((src, i) => (
-                                        <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 group">
-                                            <img src={src} alt={`Screenshot ${i + 1}`} className="w-full h-full object-cover" />
-                                            <button type="button" onClick={() => removeImage(i)} title="Remove"
-                                                className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <X size={11} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {data.images.length < MAX_IMAGES && (
-                                        <label className="w-16 h-16 rounded-lg border border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 cursor-pointer">
-                                            <ImagePlus size={16} />
-                                            <span className="text-[9px] mt-0.5">Add</span>
-                                            <input type="file" accept="image/*" multiple className="hidden"
-                                                onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
-                                        </label>
-                                    )}
-                                </div>
-                                <p className="text-[11px] text-gray-400 mt-1">Attach a screenshot so we can see exactly which part of the system you mean.</p>
-                                {(errors.images || errors["images.0"]) && (
-                                    <span className="text-xs text-rose-600">{errors.images || "Each file must be an image under 5 MB."}</span>
-                                )}
-                            </div>
+                            <TicketAttachmentPicker files={data.attachments} onChange={(files) => setData("attachments", files)} disabled={processing} errors={errors} />
+                            {processing && <p role="status" className="text-xs text-gray-600">{progress ? `Uploading… ${Math.round(progress.percentage ?? 0)}%` : "Submitting ticket…"}</p>}
 
                             <div className="flex justify-end gap-2 pt-1">
                                 <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
