@@ -32,12 +32,13 @@ class EducationLandingController extends Controller
         $managed = $request->filled('visit_id');
         $data = $request->validate([
             'visit_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'event_location_only' => ['sometimes', 'boolean'],
             'submission_id' => ['required', 'uuid'], 'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'], 'email' => ['required', 'email:rfc', 'max:255'],
             'phone' => ['required', 'string', 'min:7', 'max:40'], 'goal' => ['required', Rule::in(self::GOALS)],
             'event_name' => [Rule::excludeIf($managed), 'required', 'string', 'max:180'], 'event_date' => [Rule::excludeIf($managed), 'required', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
             'event_hour' => [Rule::excludeIf($managed), 'required', 'integer', 'between:1,12'], 'event_minute' => [Rule::excludeIf($managed), 'required', 'integer', 'between:0,59'],
-            'event_period' => [Rule::excludeIf($managed), 'required', Rule::in(['AM', 'PM'])], 'event_timezone' => [Rule::excludeIf($managed), 'required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
+            'event_period' => [Rule::excludeIf($managed), 'required', Rule::in(['AM', 'PM'])], 'event_timezone' => [Rule::excludeIf($managed), 'required', Rule::in(\App\Support\EducationTimeZones::identifiers())],
             'country' => ['required', 'string', 'max:100'], 'school' => [Rule::excludeIf($managed), 'required', 'string', 'max:180'],
             'planning_timeline' => ['required', Rule::in(self::TIMELINES)], 'education_level' => ['required', Rule::in(self::LEVELS)],
             'consent' => ['required', 'accepted'], 'website' => ['nullable', 'string', 'max:0'],
@@ -50,6 +51,9 @@ class EducationLandingController extends Controller
         }
         if ($managed) {
             $data['visit_id'] = (int) $data['visit_id'];
+        }
+        if (array_key_exists('event_location_only', $data)) {
+            $data['event_location_only'] = (bool) $data['event_location_only'];
         }
         $fingerprint = hash('sha256', json_encode(collect($data)->except(['submission_id', 'website', 'consent'])->sortKeys()->all()));
 
@@ -94,13 +98,16 @@ class EducationLandingController extends Controller
                         'planning_timeline' => $data['planning_timeline'], 'education_level' => $data['education_level'],
                         'contact_details' => collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), 'consented_at' => now(),
                     ]);
-                    $lead->educationExps()->firstOrCreate(['institution' => $data['school'], 'level' => $data['education_level']]);
+                    if (empty($data['event_location_only'])) {
+                        $lead->educationExps()->firstOrCreate(['institution' => $data['school'], 'level' => $data['education_level']]);
+                    }
+                    $locationLabel = ! empty($data['event_location_only']) ? 'School / business / venue' : 'School / university';
                     if (! $lead->studyPlans()->exists()) {
                         $lead->studyPlans()->create(['preferred_intake' => $data['planning_timeline'], 'preferred_city' => 'New Zealand', 'qualification_level' => $data['education_level']]);
                     }
                     $lead->notes()->create([
                         'author_name' => 'Education event registration', 'author_role' => 'system', 'kind' => 'note',
-                        'body' => "School event registration #{$registration->id}\n".$registration->eventSummary()."\nCountry of origin: {$data['country']}\nSchool / university: {$data['school']}\nGoal: {$data['goal']}\nStudy timeline: {$data['planning_timeline']}\nContact consent received.".(! empty($data['visit_id']) ? ' Event selected from the Education schedule.' : ' Event details awaiting team confirmation.'),
+                        'body' => "School event registration #{$registration->id}\n".$registration->eventSummary()."\nCountry of origin: {$data['country']}\n{$locationLabel}: {$data['school']}\nGoal: {$data['goal']}\nStudy timeline: {$data['planning_timeline']}\nContact consent received.".(! empty($data['visit_id']) ? ' Event selected from the Education schedule.' : ' Event details awaiting team confirmation.'),
                     ]);
 
                     return $registration;

@@ -11,7 +11,7 @@
  <label>Event format<select name="mode"><option value="in_person" @selected($value('mode')==='in_person')>In person</option><option value="online" @selected($value('mode')==='online')>Online</option></select></label>
  <label>Event date<input type="date" name="event_date" value="{{ $value('event_date') }}"></label>
  <label>Event time<input type="time" name="event_time" value="{{ $value('event_time') }}"></label>
- <label>Time zone<select name="timezone"><option value="Asia/Manila" @selected($value('timezone')==='Asia/Manila')>Philippine time</option><option value="Pacific/Auckland" @selected($value('timezone')==='Pacific/Auckland')>New Zealand time</option></select></label>
+ <label>Time zone<select name="timezone">@include('education.timezone-options',['selectedTimezone'=>$value('timezone')])</select></label>
  <label>Room / joining details<input name="location" value="{{ $value('location') }}" maxlength="255"></label>
  <label>Publish date & time<select name="schedule_confirmed"><option value="0" @selected(!$value('schedule_confirmed'))>To be confirmed — hide date and time</option><option value="1" @selected($value('schedule_confirmed'))>Confirmed — publish date and time</option></select></label>
  <label>Event visibility<select name="is_hidden"><option value="0" @selected(!$value('is_hidden'))>Shown on public pages</option><option value="1" @selected($value('is_hidden'))>Hidden from public pages</option></select></label>

@@ -166,4 +166,31 @@ class EducationLandingTest extends TestCase
         $this->postJson('/education/register', $this->payload())->assertTooManyRequests();
         $this->assertDatabaseCount('education_event_registrations', 3);
     }
+
+    public function test_manual_events_accept_global_iana_timezones_and_reject_invalid_zones(): void
+    {
+        Mail::fake();
+        Notification::fake();
+        $this->owner();
+        foreach (['Asia/Dubai', 'America/New_York'] as $index => $zone) {
+            $this->postJson('/education/register', $this->payload(['email' => 'timezone-'.$index.'@example.test', 'event_timezone' => $zone, 'event_hour' => 5, 'event_minute' => 0, 'event_period' => 'PM']))->assertCreated();
+            $this->assertDatabaseHas('education_event_registrations', ['event_timezone' => $zone, 'event_time' => '17:00']);
+        }
+        $this->postJson('/education/register', $this->payload(['email' => 'bad-zone@example.test', 'event_timezone' => 'Mars/Olympus']))->assertUnprocessable()->assertJsonValidationErrors('event_timezone');
+        $this->assertDatabaseCount('education_event_registrations', 2);
+    }
+
+    public function test_event_venue_is_saved_without_changing_the_applicants_school_history(): void
+    {
+        Mail::fake();
+        Notification::fake();
+        $this->owner();
+        $lead = Lead::create(['lead_id' => 'VENUE-PRESERVE', 'first_name' => 'Maria', 'last_name' => 'Santos', 'email' => 'maria@example.com', 'status' => 'Contact Attempted']);
+        $lead->educationExps()->create(['institution' => 'Applicant University', 'level' => "Bachelor's Degree"]);
+        $this->postJson('/education/register', $this->payload(['event_location_only' => true, 'school' => 'Sample Conference Centre', 'event_timezone' => 'Europe/London', 'event_hour' => 9, 'event_minute' => 0, 'event_period' => 'AM']))->assertCreated();
+        $this->assertDatabaseHas('education_event_registrations', ['lead_id' => $lead->id, 'school' => 'Sample Conference Centre', 'event_timezone' => 'Europe/London', 'event_time' => '09:00']);
+        $this->assertSame(1, $lead->educationExps()->count());
+        $this->assertSame('Applicant University', $lead->educationExps()->first()->institution);
+        $this->assertSame('Contact Attempted', $lead->fresh()->status);
+    }
 }

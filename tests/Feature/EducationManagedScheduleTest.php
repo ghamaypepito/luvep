@@ -188,4 +188,15 @@ class EducationManagedScheduleTest extends TestCase
         $this->assertDatabaseCount('education_rsvps', 1);
         $this->assertDatabaseCount('education_outreach', $outreach);
     }
+
+    public function test_managed_schedules_share_the_extended_timezone_choices(): void
+    {
+        Mail::fake();
+        Notification::fake();
+        $this->actingAs($this->staff())->postJson('/portal/education/rsvp-visits', $this->schedule(['timezone' => 'Australia/Sydney']))->assertCreated();
+        $visit = EducationVisit::firstOrFail();
+        $this->get('/education/register')->assertViewHas('registrationVisits', fn ($visits) => $visits->contains(fn ($row) => $row['timezone'] === 'Australia/Sydney'));
+        $this->postJson('/education/register', $this->contact(['visit_id' => $visit->id, 'event_timezone' => 'Europe/London']))->assertCreated();
+        $this->assertDatabaseHas('education_event_registrations', ['education_visit_id' => $visit->id, 'event_timezone' => 'Australia/Sydney', 'event_time' => '15:30']);
+    }
 }

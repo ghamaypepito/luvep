@@ -45,7 +45,7 @@ class EducationRsvpAdminController extends Controller
             'mode' => [$creating ? 'required' : 'sometimes', Rule::in(['in_person', 'online'])],
             'event_date' => [Rule::requiredIf($request->boolean('schedule_confirmed')), 'nullable', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
             'event_time' => 'nullable|date_format:H:i',
-            'timezone' => ['required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
+            'timezone' => ['required', Rule::in(\App\Support\EducationTimeZones::identifiers())],
             'location' => 'nullable|string|max:255', 'schedule_confirmed' => 'required|boolean',
             'is_hidden' => 'sometimes|boolean',
             'status' => ['required', Rule::in($creating ? ['open', 'closed'] : ['open', 'closed', 'cancelled'])],
