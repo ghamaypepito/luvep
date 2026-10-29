@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\SystemTicket;
+use App\Models\SystemTicketMessage;
 use App\Models\User;
 use App\Notifications\TicketMessageReceived;
+use App\Support\TicketAttachments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -22,7 +24,7 @@ class TicketConversationController extends Controller
     {
         $this->authorizeTicket($request, $ticket);
         $messages = $ticket->messages()->with('user:id,name')->orderByDesc('id')->paginate(30);
-        $messages->setCollection($messages->getCollection()->reverse()->values());
+        $messages->setCollection($messages->getCollection()->reverse()->values()->map(fn ($message) => TicketAttachments::message($message)));
 
         return response()->json([
             'ticket' => $ticket->only(['id', 'ticket_ref', 'title', 'status', 'archived_at']),
@@ -35,24 +37,42 @@ class TicketConversationController extends Controller
     public function storeMessage(Request $request, SystemTicket $ticket)
     {
         $this->authorizeTicket($request, $ticket);
-        $data = $request->validate(['body' => ['required', 'string', 'max:10000']]);
+        $data = $request->validate(['body' => ['nullable', 'required_without:attachments', 'string', 'max:10000']] + TicketAttachments::rules());
         $user = $request->user();
-        $message = DB::transaction(function () use ($ticket, $user, $data) {
-            $locked = SystemTicket::whereKey($ticket->id)->lockForUpdate()->firstOrFail();
-            abort_if($locked->archived_at, 422, 'Archived tickets are read-only.');
-            $message = $locked->messages()->create(['user_id' => $user->id, 'body' => $data['body'], 'is_support' => $user->isAdmin()]);
-            if ($user->isAdmin() && (int) $locked->submitted_by !== (int) $user->id && ! $locked->events()->where('kind', 'first_response')->exists()) {
-                $locked->events()->create(['actor_id' => $user->id, 'kind' => 'first_response', 'metadata' => ['message_id' => $message->id]]);
-            }
+        $stored = [];
+        try {
+            $message = DB::transaction(function () use ($ticket, $user, $data, $request, &$stored) {
+                $locked = SystemTicket::whereKey($ticket->id)->lockForUpdate()->firstOrFail();
+                abort_if($locked->archived_at, 422, 'Archived tickets are read-only.');
+                $message = $locked->messages()->create(['user_id' => $user->id, 'body' => $data['body'] ?? '', 'is_support' => $user->isAdmin()]);
+                $stored = TicketAttachments::store($request->file('attachments', []), "system-tickets/{$ticket->id}/messages/{$message->id}");
+                if ($stored) {
+                    $message->update(['attachments' => $stored]);
+                }
+                if ($user->isAdmin() && (int) $locked->submitted_by !== (int) $user->id && ! $locked->events()->where('kind', 'first_response')->exists()) {
+                    $locked->events()->create(['actor_id' => $user->id, 'kind' => 'first_response', 'metadata' => ['message_id' => $message->id]]);
+                }
 
-            return $message;
-        });
+                return $message;
+            });
+        } catch (\Throwable $e) {
+            TicketAttachments::delete($stored);
+            throw $e;
+        }
         $recipients = $user->isAdmin()
             ? User::whereKey($ticket->submitted_by)->where('id', '!=', $user->id)->where('is_active', true)->get()
             : User::whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->where('is_active', true)->where('id', '!=', $user->id)->get();
         Notification::send($recipients, new TicketMessageReceived($ticket));
 
-        return response()->json(['message' => $message->load('user:id,name')], 201);
+        return response()->json(['message' => TicketAttachments::message($message->load('user:id,name'))], 201);
+    }
+
+    public function attachment(Request $request, SystemTicket $ticket, SystemTicketMessage $message, int $index)
+    {
+        $this->authorizeTicket($request, $ticket);
+        abort_unless((int) $message->ticket_id === (int) $ticket->id, 404);
+
+        return TicketAttachments::stream($request, $message->attachments ?? [], $index);
     }
 
     public function saveResolution(Request $request, SystemTicket $ticket)

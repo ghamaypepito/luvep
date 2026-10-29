@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { Ticket, Search, X } from "lucide-react";
 import TicketConversation from "@/components/TicketConversation";
+import TicketAttachments from "@/components/TicketAttachments";
 import Pagination from "@/components/ui/Pagination";
 
 const STATUS_META = {
@@ -154,6 +155,7 @@ function TicketDrawer({ ticket, statuses, assignees, onClose }) {
                 {notice && <p role="status" className="text-sm text-emerald-700">{notice}</p>}
                 <section><h3 className="text-sm font-semibold mb-2">Request</h3><p className="text-sm text-gray-700 whitespace-pre-wrap">{ticket.description}</p></section>
                 {!!ticket.images?.length && <div className="flex flex-wrap gap-2">{ticket.images.map((src, i) => <a key={src} href={src} target="_blank" rel="noopener noreferrer"><img src={src} alt={`Screenshot ${i + 1}`} className="w-24 h-24 rounded-lg object-cover border" /></a>)}</div>}
+                <TicketAttachments attachments={ticket.attachments} />
                 {ticket.admin_response && <section className="rounded-xl bg-gray-50 p-3"><h3 className="text-xs font-semibold text-gray-500">Saved admin response</h3><p className="whitespace-pre-wrap text-sm mt-1">{ticket.admin_response}</p></section>}
                 <TicketConversation ticket={ticket} />
                 {!ticket.archived_at && <section className="space-y-4 border-t pt-5">

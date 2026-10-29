@@ -7,6 +7,7 @@ use App\Models\SystemTicketEvent;
 use App\Models\User;
 use App\Notifications\TicketSubmitted;
 use App\Notifications\TicketUpdated;
+use App\Support\TicketAttachments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -32,31 +33,39 @@ class SystemTicketController extends Controller
             // Up to 5 screenshots so the admin can see the exact screen.
             'images' => ['nullable', 'array', 'max:5'],
             'images.*' => ['image', 'mimes:jpeg,jpg,png,webp,gif', 'max:5120'],
-        ]);
-
-        $ticket = SystemTicket::create([
-            'title' => $data['title'],
-            'description' => $data['description'],
-            'category' => $data['category'],
-            'priority' => $data['priority'] ?? 'normal',
-            'status' => 'open',
-            'tracking_started_at' => now(),
-            'waiting_on' => 'support',
-            'submitted_by' => $user->id,
-            'department' => $user->role,
-        ]);
-
-        // Store screenshots on the private disk (they can contain client data);
-        // they're served back through the auth-gated image() stream below.
-        if ($request->hasFile('images')) {
-            $paths = [];
-            foreach ($request->file('images') as $img) {
-                $paths[] = $img->store("system-tickets/{$ticket->id}", 'local');
-            }
-            $ticket->update(['images' => $paths]);
+        ] + TicketAttachments::rules());
+        if (count($request->file('images', [])) + count($request->file('attachments', [])) > TicketAttachments::MAX_FILES) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'Attach up to 10 files per ticket.']);
         }
 
-        SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $user->id, 'kind' => 'created', 'to_status' => 'open', 'created_at' => now()]);
+        $stored = [];
+        $legacyPaths = [];
+        try {
+            $ticket = DB::transaction(function () use ($request, $user, $data, &$stored, &$legacyPaths) {
+                $ticket = SystemTicket::create([
+                    'title' => $data['title'], 'description' => $data['description'],
+                    'category' => $data['category'], 'priority' => $data['priority'] ?? 'normal',
+                    'status' => 'open', 'tracking_started_at' => now(), 'waiting_on' => 'support',
+                    'submitted_by' => $user->id, 'department' => $user->role,
+                ]);
+                foreach ($request->file('images', []) as $image) {
+                    $path = $image->store("system-tickets/{$ticket->id}", 'local');
+                    if (! $path) {
+                        throw new \RuntimeException('Could not store screenshot.');
+                    }
+                    $legacyPaths[] = $path;
+                }
+                $stored = TicketAttachments::store($request->file('attachments', []), "system-tickets/{$ticket->id}/attachments");
+                $ticket->update(['images' => $legacyPaths ?: null, 'attachments' => $stored ?: null]);
+                SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $user->id, 'kind' => 'created', 'to_status' => 'open', 'created_at' => now()]);
+
+                return $ticket;
+            });
+        } catch (\Throwable $e) {
+            TicketAttachments::delete($stored);
+            Storage::disk('local')->delete($legacyPaths);
+            throw $e;
+        }
         Notification::route('mail', 'support@luvep.com')->notify(new \App\Notifications\SupportTicketCreated($ticket));
 
         $recipients = User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->get();
@@ -232,6 +241,13 @@ class SystemTicketController extends Controller
         return response()->file(Storage::disk('local')->path($images[$index]));
     }
 
+    public function attachment(Request $request, SystemTicket $ticket, int $index)
+    {
+        TicketAttachments::authorize($request, $ticket);
+
+        return TicketAttachments::stream($request, $ticket->attachments ?? [], $index);
+    }
+
     private function serialize(SystemTicket $t): array
     {
         return [
@@ -259,6 +275,7 @@ class SystemTicketController extends Controller
                 ->keys()
                 ->map(fn ($i) => url("/system-tickets/{$t->id}/images/{$i}"))
                 ->all(),
+            'attachments' => TicketAttachments::serialize($t->attachments ?? [], "/system-tickets/{$t->id}/attachments"),
             'created_at' => optional($t->created_at)?->toIso8601String(),
             'resolved_at' => optional($t->resolved_at)?->toIso8601String(),
         ];

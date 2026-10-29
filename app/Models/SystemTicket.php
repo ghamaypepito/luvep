@@ -27,10 +27,12 @@ class SystemTicket extends Model
     protected $fillable = [
         'ticket_ref', 'title', 'description', 'category', 'priority', 'status',
         'submitted_by', 'department', 'admin_response', 'resolved_by', 'resolved_at',
-        'images', 'assigned_to', 'assigned_at', 'tracking_started_at', 'archived_at',
+        'images', 'attachments', 'assigned_to', 'assigned_at', 'tracking_started_at', 'archived_at',
         'waiting_on', 'topic', 'resolution_report', 'documentation_title', 'documentation_body',
         'documentation_published_at', 'response_target_hours',
     ];
+
+    protected $hidden = ['attachments'];
 
     protected $casts = [
         'resolved_at' => 'datetime',
@@ -39,6 +41,7 @@ class SystemTicket extends Model
         'response_target_hours' => 'integer',
         // Array of private-disk paths for the submitter's screenshots.
         'images' => 'array',
+        'attachments' => 'array',
     ];
 
     protected static function booted(): void
