@@ -7,6 +7,7 @@ const { buildSync } = require('esbuild');
 
 const dom = new JSDOM('<meta name="csrf-token" content="stale-login-token"><div id="root"></div>', { url: 'http://localhost' });
 for (const name of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[name] = dom.window[name];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react');
 const { act } = React;
