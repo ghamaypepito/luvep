@@ -7,3 +7,9 @@ Update current Clark/Davao/Digos/Tagum records in place to preserve links/logos/
 Order the public RSVP HTML/catalogue and registration event options by published date, unknown dates last. Stable existing order breaks ties. No change to intake, recipients, profile matching, themes or pipeline. Targeted two-controller deployment only, hash checks against inspected live source.
 
 Validation before publication: PHP syntax and diff whitespace passed. Existing RSVP, managed-schedule and simple-registration suites completed34 tests with239 assertions, no failures; existing PHP8.5 deprecations remain. Live schedule transaction will verify all seven dates/times and catalogue order before commit.
+
+## Publication evidence
+
+Source commit71c6672 deployed with exact pre/post hashes and source backup `/home/deploy/education-november-source-backups/20261030-131209`. Schedule transaction committed after validating all7dates/times in both public catalogues and chronological order. Private row backup `/home/deploy/education-november-schedule-backups/20261030-131209.json`. Updated current event IDs20/21/22/25, created BGC26, secondDigos27, Pasig28. Existing logos retained; November8 Digos shares current Digos logo. Prior hidden schools untouched.
+
+Live browser confirms November4–10 sequence, every event at7PM Asia/Manila, venues To Be Announced. Opened November8Digos and confirmed matching form date; returned to event list without submitting attendance. Public screenshot `education-rsvp-preview/november-event-schedule-live.png` in parent workspace. No application/schema/notification-recipient changes.
