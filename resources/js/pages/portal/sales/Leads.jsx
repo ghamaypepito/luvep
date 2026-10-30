@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import NoteProgramPicker, { NotePrograms } from '@/components/leads/NoteProgramPicker';
 import BulkEmailModal from "@/components/sales/BulkEmailModal";
 import Avatar from "@/components/ui/Avatar";
+import LeadReferenceBadges from "@/components/leads/LeadReferenceBadges";
 import { getJson } from "@/lib/http";
 import {
     DndContext, DragOverlay, KeyboardSensor, PointerSensor,
@@ -662,6 +663,7 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                                                     {l.lead_id && (
                                                         <div className="text-[10px] text-gray-400 font-mono truncate">{l.lead_id}</div>
                                                     )}
+                                                    <LeadReferenceBadges tags={l.tags} />
                                                 </div>
                                             </Link>
                                         </td>
@@ -3262,6 +3264,7 @@ function LeadKanbanCard({ lead, portalBase, statuses = [], onStageChange, dragga
                 <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold text-gray-900 truncate">{lead.name || "—"}</p>
                     <p className="text-[10px] text-gray-500 font-mono">{lead.lead_id}</p>
+                    <LeadReferenceBadges tags={lead.tags} />
                 </div>
             </div>
 

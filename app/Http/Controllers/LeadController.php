@@ -2086,6 +2086,8 @@ class LeadController extends Controller
                     : null,
             ]));
 
+        $items = $items->concat(app(\App\Services\EducationLeadReference::class)->sources($lead));
+
         return $items->sortBy('date')->values()->all();
     }
 

@@ -98,6 +98,7 @@ class EducationLandingController extends Controller
                         'planning_timeline' => $data['planning_timeline'], 'education_level' => $data['education_level'],
                         'contact_details' => collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), 'consented_at' => now(),
                     ]);
+                    app(\App\Services\EducationLeadReference::class)->attach($lead);
                     if (empty($data['event_location_only'])) {
                         $lead->educationExps()->firstOrCreate(['institution' => $data['school'], 'level' => $data['education_level']]);
                     }
