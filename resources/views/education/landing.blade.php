@@ -14,7 +14,7 @@
  @if($contact['messenger'])
  <article class="ep-action-card"><span class="ep-kicker">MESSAGE THE TEAM</span><h3>Ask a quick question</h3><p>Continue the conversation with the ePathways team on Messenger. Share the event and school you joined so we can connect you with the right adviser.</p><a href="{{ $contact['messenger'] }}" target="_blank" rel="noopener noreferrer" class="ep-link-button ep-primary">Chat with the team ↗</a></article>
  @endif
- <article class="ep-action-card"><span class="ep-kicker">EMAIL THE TEAM</span><h3>Prefer email?</h3><p>Reply to your welcome email or contact our monitored inbox. Include your school and event name so the Education team can follow up.</p>@if($contact['email_url'])<a href="{{ $contact['email_url'] }}" class="ep-link-button">Email an adviser →</a>@endif </article>
+ <article class="ep-action-card"><span class="ep-kicker">EMAIL THE TEAM</span><h3>Prefer email?</h3><p>Reply to your welcome email or contact our monitored inbox. Include your school and event name so the Education team can follow up.</p><a href="mailto:emma@luvep.com" class="ep-link-button">Email an adviser →</a> </article>
  </div>
  @if($contact['phone'])<p class="ep-contact-phone">Prefer to call? <a href="tel:{{ preg_replace('/[^+0-9]/', '', $contact['phone']) }}">{{ $contact['phone'] }}</a></p>@endif
 </section>
