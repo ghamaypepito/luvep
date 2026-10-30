@@ -11,3 +11,12 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 @media(max-width:700px){body{padding:16px 0}#education-rsvp{--gutter:18px;width:calc(100% - 24px);border-radius:12px}}
 @media print{body{padding:0}body::before{display:none}#education-rsvp{width:100%;max-width:none;border-radius:0;box-shadow:none}}
 @media(forced-colors:active){body::before{display:none}#education-rsvp{box-shadow:none;outline:1px solid CanvasText}}
+
+/* Event choices use EP green at rest and the original pale green on interaction. */
+:root{--event-row-bg:light-dark(#21583a,#24563b);--event-row-ink:#f2f6f1;--event-row-muted:#d2e4d8;--event-row-hover-bg:light-dark(#edf4ee,#cce5d3);--event-row-hover-ink:#193629;--event-row-hover-muted:#53665d}
+.event-row{background:var(--event-row-bg);color:var(--event-row-ink);transition:transform 140ms var(--ease),background-color 180ms ease,color 180ms ease}
+.event-row .date{color:inherit}
+.event-row .date small,.event-row .school small{color:var(--event-row-muted);transition:color 180ms ease}
+.event-row:focus-visible{--event-row-bg:var(--event-row-hover-bg);--event-row-ink:var(--event-row-hover-ink);--event-row-muted:var(--event-row-hover-muted)}
+@media(hover:hover) and (pointer:fine){.event-row:hover{--event-row-bg:var(--event-row-hover-bg);--event-row-ink:var(--event-row-hover-ink);--event-row-muted:var(--event-row-hover-muted)}}
+@media(forced-colors:active){.event-row{background:ButtonFace;color:ButtonText}.event-row .date small,.event-row .school small{color:ButtonText}}
