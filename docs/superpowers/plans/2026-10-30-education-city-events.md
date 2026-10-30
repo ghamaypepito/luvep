@@ -1,0 +1,7 @@
+# Current Education city events
+
+User requests the current public schedule to be Clark, Davao and Digos with time and venue To Be Announced. Create separate city-event records with unconfirmed date/time/venue, open intake, Philippines timezone. Hide the previous seven school visits without deleting/renaming them, retaining all attendance and linked contacts. Both public RSVP and programme-registration selections must show the three current events only. Preserve the prior hide/show controls and source changes if overwritten by a later deployment; verify against current live hashes before each write.
+
+Generalize public list column to Event. Always show unknown time and venue clearly rather than leaving blank; selected form must show Venue: To Be Announced until published. Update shared editable introduction to choose a city/event rather than school. Do not publish guessed dates or send announcement/reminder messages for provisional schedules. Back up exact old schedule rows/content setting privately before transaction; staff audit records the change. Use distinct slugs so reruns cannot duplicate the new city events. No real contact/attendance changes.
+
+Verification: existing visibility/schedule/RSVP feature suites; rollback-only live visibility test; real public catalogue and programme dropdown show Clark/Davao/Digos, prior visits retained and hidden; browser opens each event with provisional schedule and venue text without submitting attendance. Capture public list screenshot. No new migration is needed if existing is_hidden column is present.
