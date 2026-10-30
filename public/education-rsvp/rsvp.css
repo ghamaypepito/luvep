@@ -23,3 +23,6 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 
 /* One corner treatment for the RSVP page’s rectangular surfaces and controls. */
 .story,.scene,.destination,.primary,.back,.welcome,.verified,.receipt,.help details,.help summary,.event-context,input:not([type="checkbox"]):not([type="hidden"]){border-radius:var(--radius-box)}
+
+/* Editor-selectable single-photo banner; existing step images still transition. */
+.story--full .scene{width:100%}

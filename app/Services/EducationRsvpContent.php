@@ -7,13 +7,16 @@ use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class EducationRsvpContent
 {
+    public const BANNER_LAYOUTS = ['split' => 'Split banner — main photo and side panel', 'full' => 'Full banner — one wide photo'];
+
     public function defaults(): array
     {
         return [
-            'hero' => ['image' => '/education-rsvp/assets/campus.webp', 'image_alt' => 'Students sharing a conversation on campus', 'heading' => 'Choose your event.', 'description' => 'Find your school below, then let us know you’ll be there. A simple hello can be the start of your New Zealand chapter.'],
+            'hero' => ['banner_layout' => 'split', 'image' => '/education-rsvp/assets/campus.webp', 'image_alt' => 'Students sharing a conversation on campus', 'heading' => 'Choose your event.', 'description' => 'Find your school below, then let us know you’ll be there. A simple hello can be the start of your New Zealand chapter.'],
             'destination' => ['image' => '/education-rsvp/assets/waterfront.webp', 'image_alt' => 'Young adults walking beside Wellington harbour', 'caption' => "Start with a conversation.\nSee where it takes you."],
             'form' => ['image' => '/education-rsvp/assets/conversation.webp', 'image_alt' => 'A conversation about education opportunities', 'heading' => 'I will attend.', 'description' => 'Leave your details and we’ll send your event confirmation to your inbox.'],
             'confirmation' => ['image' => '/education-rsvp/assets/library.webp', 'image_alt' => 'Friends exploring study options together', 'heading' => 'You’re on the list.', 'message' => 'Your RSVP is saved.'],
@@ -26,7 +29,7 @@ class EducationRsvpContent
         $field = fn ($label, $max = 120, $type = 'text') => ['label' => $label, 'max' => $max, 'type' => $type];
 
         return [
-            'hero' => ['label' => 'Event page', 'help' => 'The main photo, heading and introduction above the school list.', 'fields' => ['heading' => $field('Main heading'), 'description' => $field('Introduction', 600, 'textarea'), 'image_alt' => $field('Photo description', 200)]],
+            'hero' => ['label' => 'Event page', 'help' => 'The main photo, heading and introduction above the school list.', 'fields' => ['banner_layout' => ['label' => 'Banner layout', 'type' => 'select', 'options' => self::BANNER_LAYOUTS, 'help' => 'Applies to the event page, RSVP form and confirmation. Full banner hides the smaller New Zealand panel. Use a wide landscape photo.'], 'heading' => $field('Main heading'), 'description' => $field('Introduction', 600, 'textarea'), 'image_alt' => $field('Photo description', 200)]],
             'destination' => ['label' => 'New Zealand photo panel', 'help' => 'The smaller photo and caption alongside the main image.', 'fields' => ['caption' => $field('Photo caption', 200, 'textarea'), 'image_alt' => $field('Photo description', 200)]],
             'form' => ['label' => 'RSVP form', 'help' => 'Shown after someone chooses their school event.', 'fields' => ['heading' => $field('Form heading'), 'description' => $field('Form introduction', 600, 'textarea'), 'image_alt' => $field('Photo description', 200)]],
             'confirmation' => ['label' => 'Confirmation screen', 'help' => 'Shown after attendance has been confirmed.', 'fields' => ['heading' => $field('Confirmation heading'), 'message' => $field('Message after the attendee’s name', 600, 'textarea'), 'image_alt' => $field('Photo description', 200)]],
@@ -37,11 +40,16 @@ class EducationRsvpContent
     public function get(): array
     {
         $data = $this->defaults();
+        $schema = $this->schema();
         foreach ($data as $section => $defaults) {
             $saved = Setting::get('education_rsvp_content_'.$section, []);
             if (is_array($saved)) {
                 foreach ($defaults as $key => $value) {
                     if (isset($saved[$key]) && is_string($saved[$key])) {
+                        $options = $schema[$section]['fields'][$key]['options'] ?? null;
+                        if ($options && ! array_key_exists($saved[$key], $options)) {
+                            continue;
+                        }
                         $data[$section][$key] = $saved[$key];
                     }
                 }
@@ -57,7 +65,9 @@ class EducationRsvpContent
         abort_unless(isset($schema[$section]), 404);
         $rules = [];
         foreach ($schema[$section]['fields'] as $key => $field) {
-            $rules[$key] = ['required', 'string', 'max:'.$field['max']];
+            $rules[$key] = $field['type'] === 'select'
+                ? ['sometimes', 'required', Rule::in(array_keys($field['options']))]
+                : ['required', 'string', 'max:'.$field['max']];
         }
         if (isset($this->defaults()[$section]['image'])) {
             $rules['image'] = ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:5120', 'dimensions:max_width=6000,max_height=6000'];

@@ -5,3 +5,9 @@
 #ep-education .ep-simple-fields>.ep-managed-summary{margin:0;padding:14px 16px;border:1px solid var(--ep-line);border-radius:8px;background:var(--ep-soft);font-size:12px;line-height:1.6}
 #ep-education .ep-simple-fields>.ep-consent{margin:4px 0 0}
 #ep-education .ep-simple-fields:disabled{opacity:.75}
+
+/* Shared EP collage framing, matching the public RSVP page. */
+html{background:light-dark(#f1f4f1,#111b14)}
+body{position:relative;isolation:isolate}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(light-dark(transparent,rgba(9,19,12,.91)),light-dark(transparent,rgba(9,19,12,.91))),url("/education-rsvp/assets/ep-event-collage.webp");background-position:center top;background-repeat:no-repeat;background-size:cover}
+@media print, (forced-colors:active){body::before{display:none}}
