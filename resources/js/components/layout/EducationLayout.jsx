@@ -19,6 +19,7 @@ export default function EducationLayout({ children }) {
         { name: "Work", section: true },
         { name: "Assessments", href: "/portal/education/assessments", icon: <ClipboardCheck size={20} />, badge: badges.assessments, badgeTone: "warning" },
         { name: "Bookings", href: "/portal/education/booking", icon: <BookOpen size={20} />, badge: badges.bookings_new, badgeTone: "warning" },
+        { name: "Events & RSVP", href: "/portal/education/rsvps", icon: <CalendarDays size={20} /> },
         { name: "List of Leads", href: "/portal/education/leads", icon: <UserSquare2 size={20} />, badge: badges.new_leads_today, badgeTone: "warning" },
         { name: "Proposal & Agreements", href: "/portal/education/leads/proposals-agreements", icon: <FileText size={20} /> },
         { name: "Students",  href: "/portal/education/students",  icon: <Users size={20} /> },

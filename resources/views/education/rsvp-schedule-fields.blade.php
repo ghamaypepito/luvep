@@ -5,7 +5,7 @@
 @endphp
 <input type="hidden" name="_form" value="{{ $formId }}">
 <div class="field-grid">
- <label>School / university<input name="school" value="{{ $value('school') }}" list="known-schools" required maxlength="180" placeholder="Choose an existing school or type a new one"></label>
+ <label>School / event name<input name="school" value="{{ $value('school') }}" list="known-schools" required maxlength="180" placeholder="Choose an existing event or enter a new name"></label>
  <label>Event title<input name="activity" value="{{ $value('activity') }}" required maxlength="180"></label>
  <label>City / campus<input name="city" value="{{ $value('city') }}" maxlength="120"></label>
  <label>Event format<select name="mode"><option value="in_person" @selected($value('mode')==='in_person')>In person</option><option value="online" @selected($value('mode')==='online')>Online</option></select></label>

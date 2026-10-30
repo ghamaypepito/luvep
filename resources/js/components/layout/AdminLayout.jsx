@@ -58,6 +58,7 @@ const ADMIN_NAV = [
     { name: "Document Queue", href: "/admin/document-queue", icon: <Inbox size={20} /> },
     { name: "Portal Invitations", href: "/admin/portal-invitations", icon: <KeyRound size={20} />, module: "portal_invitation" },
     { name: "Events", href: "/admin/events", icon: <CalendarIcon size={20} /> },
+    { name: "Education Events & RSVP", href: "/portal/education/rsvps", icon: <CalendarDays size={20} /> },
     { name: "Bookings", href: "/admin/booking", icon: <BookOpen size={20} /> },
     { name: "Daily Time Record", href: "/admin/dtr", icon: <Clock size={20} /> },
     { name: "Availability", href: "/admin/availability", icon: <Clock size={20} /> },
