@@ -15,12 +15,12 @@ class EducationRsvpController extends Controller
 {
     public function show(Request $request)
     {
-        return response()->view('education.rsvp', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
+        return response()->view('education.rsvp', ['page' => app(\App\Services\EducationRsvpContent::class)->get(), 'visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->sortBy(fn ($visit) => $visit['date'] ?? '9999-12-31')->values(), 'initialKind' => $request->query('type') === 'partnership' ? 'partnership' : 'school'])->header('Cache-Control', 'private, no-store');
     }
 
     public function catalogue()
     {
-        return response()->json(['visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->values()])->header('Cache-Control', 'private, no-store');
+        return response()->json(['visits' => EducationVisit::publiclyVisible()->where('status', 'open')->orderBy('id')->get()->map->publicData()->sortBy(fn ($visit) => $visit['date'] ?? '9999-12-31')->values()])->header('Cache-Control', 'private, no-store');
     }
 
     public function store(Request $request, EducationRsvpWorkflow $workflow)

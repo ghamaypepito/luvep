@@ -23,7 +23,7 @@ class EducationLandingController extends Controller
 
     public function show(Request $request)
     {
-        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::publiclyVisible()->where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS, 'countries' => config('education-countries')])
+        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::publiclyVisible()->where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->sortBy(fn ($visit) => $visit['date'] ?? '9999-12-31')->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS, 'countries' => config('education-countries')])
             ->header('Cache-Control', 'private, no-store');
     }
 
