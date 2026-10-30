@@ -25,3 +25,5 @@ Final visual check also identified the approved EP team WebP removed by the same
 Privacy-safe screenshots in parent workspace education-rsvp-preview: registration-shared-background-live.png, full-banner-live.png, full-banner-editor-live.png. Main deployment metadata was not replaced; existing draft PR15 still carries the source changes. A future full main deployment can overwrite scoped Education changes until those source changes are integrated. No claim that this release-workflow risk has been fixed.
 
 Follow-up: user selected the public registration contact screen’s Email an adviser button and requested emma@luvep.com. Set only that action to mailto:emma@luvep.com; retain the existing label. One public-page smoke test passed; diff check passed. No email sending is part of this change.
+
+Adviser-link deployment9496cc8: original template hash matched; backup `/home/deploy/education-contact-link-backups/20261030-161507`. Live browser opened Contact an adviser and read the Email an adviser href as mailto:emma@luvep.com. No mail action invoked. Screenshot `education-rsvp-preview/emma-adviser-link-live.png` in parent workspace.
