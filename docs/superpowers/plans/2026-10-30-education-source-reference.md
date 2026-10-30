@@ -23,24 +23,24 @@
 ### Task1: Reference tagging and backfill
 Files: app/Services/EducationLeadReference.php (new); app/Http/Controllers/EducationLandingController.php; app/Console/Commands/TagEducationRegistrations.php (new); tests/Feature/EducationLeadReferenceTest.php (new).
 Interfaces: `EducationLeadReference::attach(Lead $lead): bool` returns whether added; command `education:tag-registrations` processes distinct saved-registration contacts in chunks, emits counts only.
-- [ ] Add failing route tests for new/returning/replayed tags and preservation, command repeat/backfill plus RSVP-only non-conversion.
-- [ ] Run RED, implement attach inside existing registration transaction and chunked command, run GREEN.
-- [ ] Commit focused backend implementation.
+- [x] Add failing route tests for new/returning/replayed tags and preservation, command repeat/backfill plus RSVP-only non-conversion.
+- [x] Run RED, implement attach inside existing registration transaction and chunked command, run GREEN.
+- [x] Commit focused backend implementation.
 
 ### Task2: Explicit Education source timeline
 Files: app/Services/EducationLeadReference.php; app/Http/Controllers/LeadController.php; tests/Feature/EducationLeadReferenceTest.php.
 Interfaces: `EducationLeadReference::sources(Lead $lead): array` uses existing collectSources shape kind/label/detail/reference/date. Education registration snapshot gives event/school/date/time/timezone; verified linked RSVP gives event/school/current status. Event kind consumed by existing source styling.
-- [ ] Add failing actual staff route feed test: named registration + verified RSVP, sorted timestamps, no other-lead/unverified entries, cancelled RSVP labelled.
-- [ ] Run RED, merge service sources into collectSources once, run GREEN and focused regressions.
-- [ ] Commit timeline extension.
+- [x] Add failing actual staff route feed test: named registration + verified RSVP, sorted timestamps, no other-lead/unverified entries, cancelled RSVP labelled.
+- [x] Run RED, merge service sources into collectSources once, run GREEN and focused regressions.
+- [x] Commit timeline extension.
 
 ### Task3: Restrained badges, production and proof
 Files: resources/js/components/leads/LeadReferenceBadges.jsx (new); resources/js/pages/portal/sales/Leads.jsx; spec/plan ledgers.
 Interfaces: `LeadReferenceBadges({tags=[]})` renders only reference- names, exact text with title, wraps long labels and respects inherited theme. Used below lead ID on shared table and kanban.
-- [ ] Add simple accessible badge component, preserve default visuals and interactions, build frontend and inspect local synthetic examples in table/kanban/timeline.
-- [ ] Run focused Education/lead suites and one full-suite run reporting existing failures. Fresh review approved task delta.
-- [ ] Hash-check current production sources/build and prepare targeted source/bundle update with rollback backup. Run rollback-only live tests, then approved idempotent reference backfill without messages. Inspect live UI and save private-safe synthetic/local proof.
-- [ ] Update existing draft PR and document validation/deployment/backfill counts. Push feature branch; leave unrelated full-site deployment unmerged.
+- [x] Add simple accessible badge component, preserve default visuals and interactions, build frontend and inspect local synthetic examples in table/kanban/timeline.
+- [x] Run focused Education/lead suites and one full-suite run reporting existing failures. Fresh review approved task delta.
+- [x] Hash-check current production sources/build and prepare targeted source/bundle update with rollback backup. Run rollback-only live tests, then approved idempotent reference backfill without messages. Inspect live UI and save private-safe synthetic/local proof.
+- [x] Update existing draft PR and document validation/deployment/backfill counts. Push feature branch; leave unrelated full-site deployment unmerged.
 
 ## Execution ledger
 - User approved the concrete proposed design. Ruling: implement inline in current dedicated feature branch and continue through deployment; no repeated plan approval because authorization already covers this approach. Existing feature checkout is clean and dedicated, not main/master.
@@ -50,3 +50,9 @@ Interfaces: `LeadReferenceBadges({tags=[]})` renders only reference- names, exac
 - Ruling: retain existing generic origin/resubmit entries and legacy applicant-side RSVP history as separate preexisting surfaces; this task adds named facts to staff history once per linked record. Do not invent cancellation/check-in timestamps; label current attendance status alongside original RSVP received time.
 - UI: new badges only for reference- tags; ordinary tags remain in existing editor/filter. Branch build succeeded using Vite runner config loading because the shared node_modules cache is outside writable roots. A separate build from current live source/locked npm dependencies succeeded, preserving live HR/PDF-worker/source differences. Preserve the live stylesheet and add only15 new utility rules/one new theme variable; original5056 rules verified intact.
 - Local synthetic profile/table/kanban showed exact reference-ph-events and named registration/verified attendance with timestamp/reference. Preview contact contains only fabricated details. Existing full-suite run initially hit PHP128MB memory limit; rerun with1024MB to report the actual baseline failures rather than misclassifying the resource limit.
+
+- Full-suite verification completed1343 tests /7074 assertions,3 errors and51 failures. All54 failing/error names exactly match the documented baseline in `2026-10-25-rsvp-editor-verification.md`; no new names. Four existing PHP8.5 deprecations and three PHPUnit deprecations remain. The initial128MB run was a resource failure, superseded by the completed1024MB run.
+- Release7a52009 deployed with394 source/manifest/new-asset files after checking806 current live frontend input hashes. Six source files changed; all previous assets kept. Built from current production source/lockfile, preserved live proposal.review_status overlay and the existing stylesheet5056 rules with only15 utility rules/one theme variable added. No route/schema/global-source metadata replacement. Backup `/home/deploy/education-reference-backups/20261030-061420`.
+- Live synthetic registration check passed exact tagging, completed replay, returning source/owner/stage/other-tag preservation, named source items, truthful cancellation and complete transaction rollback with delivery faked. Two-connection MySQL REPEATABLE READ check passed stale-snapshot concurrent canonical tag/pivot attachment without duplicate-key failure. Initial test-helper PHPUnit assertion was unavailable on production; replaced it with direct fake-transport inspection and reran successfully. Synthetic contacts/pivots were removed; two orphaned synthetic creation audit rows cleaned after verification. The canonical reference tag dictionary entry is the intended retained feature data.
+- Approved production backfill processed4 distinct saved-registration contacts and added4 reference associations; repeat processed4 and added0. Exact contact source/owner/stage/UTM/updated_at states and all prior pivot rows/timestamps compared unchanged. No notifications/mail/outreach. Private prior-state backup `/home/deploy/education-reference-backups/backfill-20261030-061516.json`; audit records aggregate completion without contact details.
+- Live authenticated browser verified all four list badges and a named EDU-REG touchpoint in the existing Journey Activity log. Public events remain Clark/Davao/Digos. Privacy-safe synthetic screenshots in parent workspace `education-rsvp-preview/reference-list-preview.png` and `reference-journey-preview.png`. Local kanban badge also verified. Do not claim a physical mobile test: no real mobile device was used.
