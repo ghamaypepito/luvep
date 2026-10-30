@@ -3,7 +3,7 @@ import { useForm, Head } from "@inertiajs/react";
 import { Upload, FileText, X, CheckCircle, ArrowRight, ChevronDown, Search } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
-import heroBg from "@assets/banner/register.png";
+import heroBg from "@assets/banner/register-ep.webp";
 
 // Standalone registration page — collects a richer applicant profile so the
 // team can assess + prepare a proposal before the consultation. Posts to
