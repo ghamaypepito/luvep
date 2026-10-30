@@ -3,7 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
 <meta name="description" content="Meet the ePathways Education team at your school. Register your interest and explore your study journey in New Zealand.">
 <meta name="color-scheme" content="light dark"><title>Your New Zealand chapter · EP Education</title>
-<link rel="icon" href="/education-landing/ep-logo.png"><link rel="stylesheet" href="/education-landing/landing.css?v={{ filemtime(public_path('education-landing/landing.css')) }}">
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon.png?v={{ filemtime(public_path('favicon.png')) }}"><link rel="stylesheet" href="/education-landing/landing.css?v={{ filemtime(public_path('education-landing/landing.css')) }}">
 <link rel="stylesheet" href="/education-landing/registration-simple.css?v={{ filemtime(public_path('education-landing/registration-simple.css')) }}"><script src="/education-landing/registration-simple.js?v={{ filemtime(public_path('education-landing/registration-simple.js')) }}" defer></script>
 </head><body>
 @include('education.landing-form')

@@ -1,0 +1,5 @@
+# Proportional Education favicon
+
+The public RSVP page, programme registration and event manager used the wide240×143header logo directly as a favicon. Reuse the portal's existing48×48transparent EP favicon, retaining the actual logo proportions inside a square canvas. Source PNGs were inspected visually and their dimensions/alpha bounds checked. No logo editing or new media needed. Set the icon MIME type and sizes, and version the URL with the existing file timestamp so the new link replaces the previous icon cache. Keep header logos unchanged.
+
+Production file hashes match this branch for all3target templates and existing favicon. Targeted template-only deployment with backup/hash checks; no frontend build, permission, schedule or outreach changes. Verify rendered favicon links and square image loading in the live browser. No tests added for this reversible markup change.
