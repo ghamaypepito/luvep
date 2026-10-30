@@ -45,14 +45,20 @@ class EducationManagedScheduleTest extends TestCase
         $this->actingAs($this->staff())->postJson('/portal/education/rsvp-visits', $this->schedule())->assertCreated();
         $v = EducationVisit::firstOrFail();
         $this->getJson('/education/rsvp/catalogue')->assertJsonPath('visits.0.date', '2026-11-12');
+        $this->postJson('/portal/education/rsvp-visits', $this->schedule(['event_date' => '2026-11-13']))->assertCreated();
         $response = $this->get('/education/register')->assertOk()->assertViewHas('registrationVisits', fn ($rows) => $rows && $rows->contains(fn ($row) => $row['id'] === $v->id && $row['time'] === '15:30'));
         $dom = new \DOMDocument;
         $old = libxml_use_internal_errors(true);
         $dom->loadHTML($response->getContent());
         libxml_clear_errors();
         libxml_use_internal_errors($old);
-        $options = (new \DOMXPath($dom))->query('//select[@id="ep-school"]/option[@value="New College"]');
+        $options = (new \DOMXPath($dom))->query('//select[@id="ep-visit"]/option[@value="'.$v->id.'"]');
         $this->assertCount(1, $options);
+        $this->assertStringContainsString('New College', $options->item(0)->textContent);
+        $choices = (new \DOMXPath($dom))->query('//select[@id="ep-visit"]/option[contains(text(),"New College")]');
+        $this->assertCount(2, $choices);
+        $this->assertStringContainsString('12 November 2026', $choices->item(0)->textContent);
+        $this->assertStringContainsString('13 November 2026', $choices->item(1)->textContent);
     }
 
     public function test_another_schedule_reuses_school_logo_without_overwriting_the_previous_event(): void

@@ -36,15 +36,19 @@ class EducationRsvpAdminController extends Controller
         return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', 'Page section saved and published.')->with('open_content', $section);
     }
 
-    private function scheduleRules(Request $request, bool $creating = false): array
+    private function scheduleRules(Request $request, bool $creating = false, ?EducationVisit $visit = null): array
     {
+        $publishTime = $request->exists('time_confirmed') ? $request->boolean('time_confirmed') : (bool) $visit?->time_confirmed;
+        $effectiveTime = $request->exists('event_time') ? $request->input('event_time') : $visit?->event_time;
+
         return [
             'school' => [$creating ? 'required' : 'sometimes', 'required', 'string', 'max:180'],
             'activity' => [$creating ? 'required' : 'sometimes', 'required', 'string', 'max:180'],
             'city' => ['sometimes', 'nullable', 'string', 'max:120'],
             'mode' => [$creating ? 'required' : 'sometimes', Rule::in(['in_person', 'online'])],
             'event_date' => [Rule::requiredIf($request->boolean('schedule_confirmed')), 'nullable', 'date_format:Y-m-d', 'after_or_equal:2000-01-01', 'before_or_equal:'.now()->addYears(2)->format('Y-m-d')],
-            'event_time' => 'nullable|date_format:H:i',
+            'event_time' => [Rule::requiredIf($publishTime && ! $effectiveTime), 'nullable', 'date_format:H:i'],
+            'time_confirmed' => 'sometimes|boolean',
             'timezone' => ['required', Rule::in(\App\Support\EducationTimeZones::identifiers())],
             'location' => 'nullable|string|max:255', 'schedule_confirmed' => 'required|boolean',
             'is_hidden' => 'sometimes|boolean',
@@ -73,12 +77,12 @@ class EducationRsvpAdminController extends Controller
 
     public function update(Request $request, EducationVisit $visit)
     {
-        $d = $request->validate($this->scheduleRules($request));
+        $d = $request->validate($this->scheduleRules($request, false, $visit));
         DB::transaction(function () use ($d, $visit) {
             $v = EducationVisit::whereKey($visit->id)->lockForUpdate()->firstOrFail();
             $v->fill($d);
             if ($v->isDirty()) {
-                if ($v->isDirty(['event_date', 'event_time', 'timezone', 'location', 'schedule_confirmed', 'city', 'mode']) || ($v->isDirty('status') && in_array('cancelled', [$v->status, $v->getOriginal('status')], true))) {
+                if ($v->isDirty(['event_date', 'event_time', 'timezone', 'location', 'schedule_confirmed', 'time_confirmed', 'city', 'mode']) || ($v->isDirty('status') && in_array('cancelled', [$v->status, $v->getOriginal('status')], true))) {
                     $v->schedule_version++;
                 }
                 $v->save();

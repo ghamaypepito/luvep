@@ -1,6 +1,6 @@
 @php
- $defaults = $visit ? $visit->only(['school','activity','city','mode','timezone','location','schedule_confirmed','status','is_hidden']) : ['school'=>'','activity'=>'Education event','city'=>'','mode'=>'in_person','timezone'=>'Asia/Manila','location'=>'','schedule_confirmed'=>0,'status'=>'open','is_hidden'=>0];
- $defaults['event_date']=$visit?->event_date?->format('Y-m-d'); $defaults['event_time']=$visit?->event_time;
+ $defaults = $visit ? $visit->only(['school','activity','city','mode','timezone','location','schedule_confirmed','time_confirmed','status','is_hidden']) : ['school'=>'','activity'=>'Education event','city'=>'','mode'=>'in_person','timezone'=>'Asia/Manila','location'=>'','schedule_confirmed'=>0,'time_confirmed'=>1,'status'=>'open','is_hidden'=>0];
+ $defaults['event_date']=$visit?->event_date?->format('Y-m-d'); $defaults['event_time']=$visit ? $visit->event_time : '19:00';
  $value=fn($key)=>old('_form')===$formId ? old($key,$defaults[$key]??'') : ($defaults[$key]??'');
 @endphp
 <input type="hidden" name="_form" value="{{ $formId }}">
@@ -13,7 +13,8 @@
  <label>Event time<input type="time" name="event_time" value="{{ $value('event_time') }}"></label>
  <label>Time zone<select name="timezone">@include('education.timezone-options',['selectedTimezone'=>$value('timezone')])</select></label>
  <label>Room / joining details<input name="location" value="{{ $value('location') }}" maxlength="255"></label>
- <label>Publish date & time<select name="schedule_confirmed"><option value="0" @selected(!$value('schedule_confirmed'))>To be confirmed — hide date and time</option><option value="1" @selected($value('schedule_confirmed'))>Confirmed — publish date and time</option></select></label>
+<label>Publish event time<select name="time_confirmed"><option value="0" @selected(!$value('time_confirmed'))>With the confirmed schedule</option><option value="1" @selected($value('time_confirmed'))>Publish time now, even if date is pending</option></select></label>
+ <label>Publish date & venue<select name="schedule_confirmed"><option value="0" @selected(!$value('schedule_confirmed'))>To be confirmed — keep date and venue private</option><option value="1" @selected($value('schedule_confirmed'))>Confirmed — publish complete schedule</option></select></label>
  <label>Event visibility<select name="is_hidden"><option value="0" @selected(!$value('is_hidden'))>Shown on public pages</option><option value="1" @selected($value('is_hidden'))>Hidden from public pages</option></select></label>
  <label>RSVP availability<select name="status"><option value="open" @selected($value('status')==='open')>Open for RSVPs</option><option value="closed" @selected($value('status')==='closed')>Closed for new RSVPs</option>@if($visit)<option value="cancelled" @selected($value('status')==='cancelled')>Event cancelled</option>@endif</select></label>
 </div>

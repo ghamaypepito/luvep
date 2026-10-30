@@ -4,7 +4,7 @@
 <meta name="description" content="Meet the ePathways Education team at your school. Register your interest and explore your study journey in New Zealand.">
 <meta name="color-scheme" content="light dark"><title>Your New Zealand chapter · EP Education</title>
 <link rel="icon" href="/education-landing/ep-logo.png"><link rel="stylesheet" href="/education-landing/landing.css?v={{ filemtime(public_path('education-landing/landing.css')) }}">
-<script src="/education-landing/landing.js?v={{ filemtime(public_path('education-landing/landing.js')) }}" defer></script>
+<link rel="stylesheet" href="/education-landing/registration-simple.css?v={{ filemtime(public_path('education-landing/registration-simple.css')) }}"><script src="/education-landing/registration-simple.js?v={{ filemtime(public_path('education-landing/registration-simple.js')) }}" defer></script>
 </head><body>
 @include('education.landing-form')
 <section id="ep-public-contact" class="ep-public-screen" hidden>
@@ -25,5 +25,5 @@
 </section>
 <footer class="ep-public-footer"><span>EP Education · Your New Zealand chapter</span></footer>
 </div>
-<noscript><p style="padding:24px;text-align:center">Please enable JavaScript to complete this guided registration, or <a href="{{ $contact['email_url'] ?: url('/') }}">contact the Education team</a>.</p></noscript>
+<noscript><p style="padding:24px;text-align:center">Please enable JavaScript to complete this registration, or <a href="{{ $contact['email_url'] ?: url('/') }}">contact the Education team</a>.</p></noscript>
 </body></html>

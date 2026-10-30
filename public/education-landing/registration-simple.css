@@ -1,0 +1,7 @@
+#ep-education .ep-simple-fields{border:0;padding:0;margin:0;min-width:0;display:grid;gap:20px}
+#ep-education[data-theme] .ep-simple-fields>label{margin:0;gap:8px}
+#ep-education .ep-simple-fields .ep-same-number{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--ep-muted)}
+#ep-education .ep-same-number>input{flex-shrink:0;margin:3px 0 0;accent-color:var(--ep-accent)}
+#ep-education .ep-simple-fields>.ep-managed-summary{margin:0;padding:14px 16px;border:1px solid var(--ep-line);border-radius:8px;background:var(--ep-soft);font-size:12px;line-height:1.6}
+#ep-education .ep-simple-fields>.ep-consent{margin:4px 0 0}
+#ep-education .ep-simple-fields:disabled{opacity:.75}

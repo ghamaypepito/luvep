@@ -7,7 +7,7 @@
 <h1 style="font-size:25px;line-height:1.3;margin:0 0 18px">Welcome, {{ $registration->contact_details['first_name'] }}.</h1>
 <p style="margin:0 0 18px">Thank you for sharing your education enquiry. Your next chapter in New Zealand starts with a little first step.</p>
 <p style="margin:0 0 18px">We’ve received the details of the event you joined:</p>
-<p style="margin:0 0 24px;padding:18px;background:#edf7f0;border-radius:8px"><strong>{{ $registration->eventSummary() }}</strong><br>{{ $registration->school }}<br>Country you are from: {{ $registration->country }}</p>
+<p style="margin:0 0 24px;padding:18px;background:#edf7f0;border-radius:8px"><strong>{{ $registration->eventSummary() }}</strong>@if($registration->school)<br>{{ $registration->school }}@endif<br>Country you are from: {{ $registration->country }}</p>
 <p style="margin:0 0 24px">Your Education adviser will review your enquiry, confirm the event information, and contact you about your next steps. You don’t need to upload documents to get started.</p>
 <table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#267443" style="border-radius:8px"><a href="{{ url('/login') }}" style="display:inline-block;padding:14px 20px;color:#ffffff;font-weight:bold;text-decoration:none">Log in / Applicant profile →</a></td></tr></table>
 <p style="margin:24px 0"><a href="{{ url('/') }}" style="color:#267443">Visit website</a> &nbsp; · &nbsp; <a href="{{ $contact['email_url'] ?: url('/education/register#contact') }}" style="color:#267443">Contact adviser</a></p>

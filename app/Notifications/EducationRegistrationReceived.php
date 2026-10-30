@@ -27,7 +27,7 @@ class EducationRegistrationReceived extends Notification implements ShouldQueue
 
         return [
             'title' => 'New Education registration',
-            'body' => $r->contact_details['first_name'].' '.$r->contact_details['last_name'].' joined '.$r->event_name.' ('.$r->school.').',
+            'body' => trim($r->contact_details['first_name'].' '.$r->contact_details['last_name']).' joined '.$r->event_name.($r->school ? ' ('.$r->school.')' : '').'.',
             'lead_id' => $r->lead_id, 'registration_id' => $r->id,
             'link' => '/portal/education/leads/'.$r->lead_id,
         ];
@@ -37,7 +37,7 @@ class EducationRegistrationReceived extends Notification implements ShouldQueue
     {
         $r = $this->registration;
 
-        return (new MailMessage)->subject('New Education registration — '.$r->school)
+        return (new MailMessage)->subject('New Education registration — '.($r->school ?: $r->event_name))
             ->view('emails.education-registration-staff', ['registration' => $r]);
     }
 }

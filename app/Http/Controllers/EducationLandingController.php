@@ -23,14 +23,15 @@ class EducationLandingController extends Controller
 
     public function show(Request $request)
     {
-        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::publiclyVisible()->where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS])
+        return response()->view('education.landing', ['registrationVisits' => \App\Models\EducationVisit::publiclyVisible()->where('status', '!=', 'cancelled')->orderBy('school')->orderBy('id')->get()->map->publicData()->values(), 'contact' => $this->contact(), 'goals' => self::GOALS, 'timelines' => self::TIMELINES, 'levels' => self::LEVELS, 'countries' => config('education-countries')])
             ->header('Cache-Control', 'private, no-store');
     }
 
     public function store(Request $request, LeadIntakeService $intake)
     {
         $managed = $request->filled('visit_id');
-        $data = $request->validate([
+        $data = $request->input('form_version') === 'simple' ? app(\App\Services\SimpleEducationRegistration::class)->validate($request) : $request->validate([
+            'form_version' => ['sometimes', 'in:simple'],
             'visit_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'event_location_only' => ['sometimes', 'boolean'],
             'submission_id' => ['required', 'uuid'], 'first_name' => ['required', 'string', 'max:100'],
@@ -88,6 +89,9 @@ class EducationLandingController extends Controller
                     if (! $existing && ($owner = $this->owner())) {
                         $lead->update(['assigned_to' => $owner->id]);
                     }
+                    if (! empty($data['whatsapp']) && blank($lead->whatsapp)) {
+                        $lead->update(['whatsapp' => $data['whatsapp']]);
+                    }
                     $hour = isset($data['event_hour']) ? ((int) $data['event_hour'] % 12) + ($data['event_period'] === 'PM' ? 12 : 0) : null;
                     $registration = EducationEventRegistration::create([
                         'education_visit_id' => $data['visit_id'] ?? null, 'event_match_status' => ! empty($data['visit_id']) ? 'matched' : 'pending',
@@ -96,19 +100,36 @@ class EducationLandingController extends Controller
                         'event_time' => $hour !== null ? sprintf('%02d:%02d', $hour, $data['event_minute']) : null, 'event_timezone' => $data['event_timezone'],
                         'country' => $data['country'], 'school' => $data['school'], 'goal' => $data['goal'],
                         'planning_timeline' => $data['planning_timeline'], 'education_level' => $data['education_level'],
-                        'contact_details' => collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), 'consented_at' => now(),
+                        'contact_details' => collect($data)->only(['first_name', 'last_name', 'full_name', 'email', 'phone', 'whatsapp', 'whatsapp_same_as_phone'])->all(), 'consented_at' => now(),
                     ]);
                     app(\App\Services\EducationLeadReference::class)->attach($lead);
                     if (empty($data['event_location_only'])) {
                         $lead->educationExps()->firstOrCreate(['institution' => $data['school'], 'level' => $data['education_level']]);
                     }
                     $locationLabel = ! empty($data['event_location_only']) ? 'School / business / venue' : 'School / university';
-                    if (! $lead->studyPlans()->exists()) {
+                    if (! empty($data['planning_timeline']) && ! $lead->studyPlans()->exists()) {
                         $lead->studyPlans()->create(['preferred_intake' => $data['planning_timeline'], 'preferred_city' => 'New Zealand', 'qualification_level' => $data['education_level']]);
                     }
+                    $details = ["Education event registration #{$registration->id}", $registration->eventSummary(), "Country of origin: {$data['country']}"];
+                    if (! empty($data['school'])) {
+                        $details[] = "{$locationLabel}: {$data['school']}";
+                    }
+                    if (! empty($data['full_name'])) {
+                        $details[] = "Submitted full name: {$data['full_name']}";
+                    }
+                    if (! empty($data['whatsapp'])) {
+                        $details[] = "Contact number: {$data['phone']}\nWhatsApp: {$data['whatsapp']}";
+                    }
+                    if (! empty($data['goal'])) {
+                        $details[] = "Goal: {$data['goal']}";
+                    }
+                    if (! empty($data['planning_timeline'])) {
+                        $details[] = "Study timeline: {$data['planning_timeline']}";
+                    }
+                    $details[] = 'Contact consent received.'.(! empty($data['visit_id']) ? ' Event selected from the Education schedule.' : ' Event details awaiting team confirmation.');
                     $lead->notes()->create([
                         'author_name' => 'Education event registration', 'author_role' => 'system', 'kind' => 'note',
-                        'body' => "School event registration #{$registration->id}\n".$registration->eventSummary()."\nCountry of origin: {$data['country']}\n{$locationLabel}: {$data['school']}\nGoal: {$data['goal']}\nStudy timeline: {$data['planning_timeline']}\nContact consent received.".(! empty($data['visit_id']) ? ' Event selected from the Education schedule.' : ' Event details awaiting team confirmation.'),
+                        'body' => implode("\n", $details),
                     ]);
 
                     return $registration;

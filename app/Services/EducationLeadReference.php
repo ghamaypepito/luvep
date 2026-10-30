@@ -47,7 +47,7 @@ class EducationLeadReference
         $items = $lead->educationEventRegistrations()->get()->map(fn ($registration) => [
             'kind' => 'event',
             'label' => 'Education registration — '.$registration->event_name,
-            'detail' => self::TAG.' · '.$registration->school.' · '.$registration->eventSummary(),
+            'detail' => implode(' · ', array_filter([self::TAG, $registration->school, $registration->eventSummary()])),
             'reference' => 'EDU-REG-'.$registration->id,
             'date' => $registration->created_at?->toIso8601String(),
         ]);
