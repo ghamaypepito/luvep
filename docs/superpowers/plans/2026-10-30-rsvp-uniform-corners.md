@@ -1,0 +1,5 @@
+# Consistent RSVP box corners
+
+User requests20px edges on all remaining square/box designs in the current RSVP page. Use one shared --radius-box:20px token for the outer page (including mobile), event cards, photo panels, form inputs, primary/back controls, welcome/verification/receipt panels, FAQs and mobile event context. Keep circular school marks and native checkbox behavior. Preserve print reset, reduced motion, colors and all form/data behavior. No changes to unrelated portal screens.
+
+CSS parse, Impeccable detector and diff checks passed. Local light/dark forms visually inspected; computed radius20px on outer page, images, event card/context, name/email/phone fields, primary action, receipt/welcome panels and FAQ details. Circular school mark remains50%. Temporary local preview HTML removed before commit. No tests added for this reversible CSS-only change. Deploy only stylesheet with source hashes and private backup; verify actual live controls and screenshot without submitting attendance.
