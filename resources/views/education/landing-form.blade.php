@@ -21,7 +21,7 @@
      <section id="ep-registration-content">
       <h2>Let’s stay in touch.</h2>
       <p class="ep-sub">Leave your details and select the Education event you joined.</p>
-      <figure class="ep-team-figure"><img class="ep-team-photo" src="/education-landing/education-team-ep.webp" alt="EP Education team banner" loading="lazy" decoding="async" width="2170" height="725"><figcaption>Your Education team, here to guide your next step.</figcaption></figure>
+      <figure class="ep-team-figure"><img class="ep-team-photo" src="/education-landing/education-team-banner-2.jpg" alt="EP Education team banner" loading="lazy" decoding="async" width="1800" height="600"><figcaption>Your Education team, here to guide your next step.</figcaption></figure>
       <fieldset id="ep-registration-fields" class="ep-simple-fields">
        <p class="ep-fine" id="ep-returning-rsvp" role="status" hidden></p>
        <label>Full name<input id="ep-full-name" name="full_name" autocomplete="name" required maxlength="150" placeholder="Your full name"></label>
