@@ -19,8 +19,8 @@
      <div class="ep-honeypot" aria-hidden="true"><label>Leave blank<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
      <p id="ep-error" role="alert" hidden></p>
      <section id="ep-registration-content">
-      <h2>Let’s stay in touch.</h2>
-      <p class="ep-sub">Leave your details and select the Education event you joined.</p>
+      <h2>BE PART OF OUR ORIENTATION!</h2>
+      <p class="ep-sub">Select the location where you would like to join us.</p>
       <figure class="ep-team-figure"><img class="ep-team-photo" src="/education-landing/education-team-banner-2.jpg" alt="EP Education team banner" loading="lazy" decoding="async" width="1800" height="600"><figcaption>Your Education team, here to guide your next step.</figcaption></figure>
       <fieldset id="ep-registration-fields" class="ep-simple-fields">
        <p class="ep-fine" id="ep-returning-rsvp" role="status" hidden></p>
