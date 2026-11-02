@@ -1,3 +1,4 @@
+import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import { useState, useRef, useEffect } from "react";
 import { Link, router } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -115,6 +116,7 @@ export default function CaseProfileHeader({
                 <Link href={caseNav().cases} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors">
                     <ArrowLeft size={14} /> Back to cases
                 </Link>
+                <AddPathwayButton leadId={lead.id} />
             </div>
 
             <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
