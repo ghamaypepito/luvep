@@ -1,3 +1,4 @@
+import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -967,7 +968,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                         <button
                             type="button"
                             onClick={() => setComposeOpen(true)}
@@ -982,6 +983,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                         >
                             <CalendarCheck size={15} className="text-[#436235]" /> Book
                         </button>
+                        <AddPathwayButton leadId={backendLead.id} />
                         <ConvertMenu lead={backendLead} canRevert={currentUser?.is_admin} />
                         <LeadActionsMenu
                             editAll={editAll}
@@ -2309,9 +2311,7 @@ function MenuItem({ icon: Icon, children, onClick, disabled, disabledTitle, tone
     );
 }
 
-// ── Convert menu — single "Move to" dropdown listing all three flags
-//    (Student / Case / Accommodation) so the header stays compact. Active
-//    flags display a check + an admin-only revert affordance inline.
+// Existing admin-only reversion controls. New pathways use AddPathwayButton.
 
 const MENU_TONE = {
     emerald: { dot: 'bg-emerald-500', icon: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -2349,9 +2349,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <GraduationCap size={14} />,
             tone: 'emerald',
             active: !!lead.is_student,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-student`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-student`,
-            confirmText: 'Convert to a student? They stay on the same record — all documents, notes and history come with them.',
         },
         {
             key: 'case',
@@ -2360,9 +2358,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Globe size={14} />,
             tone: 'amber',
             active: !!lead.is_immigration_case,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-case`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-case`,
-            confirmText: "Open as an immigration case? Lands them in Immigration's Cases queue with full document folder access.",
         },
         {
             key: 'accommodation',
@@ -2371,9 +2367,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Home size={14} />,
             tone: 'cyan',
             active: !!lead.is_accommodation_client,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-accommodation`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-accommodation`,
-            confirmText: "Open as an accommodation client? They appear in the Accommodation team's queue.",
         },
         {
             key: 'english',
@@ -2382,19 +2376,12 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Globe size={14} />,
             tone: 'purple',
             active: !!lead.is_english_student,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-english`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-english`,
-            confirmText: "Convert to an English student? Lands them in the English team's queue (PTE / DIY / mocktest pipeline).",
         },
     ];
 
     const activeCount = items.filter((i) => i.active).length;
-
-    const convert = (item) => {
-        if (!confirm(`${lead.first_name ? `${lead.first_name}: ` : ''}${item.confirmText}`)) return;
-        router.post(item.endpoint, {}, { preserveScroll: true, preserveState: true });
-        setOpen(false);
-    };
+    if (!canRevert || activeCount === 0) return null;
 
     const revert = (item) => {
         if (!confirm(`Revert this ${item.label.toLowerCase()} status? History stays attached.`)) return;
@@ -2410,7 +2397,7 @@ function ConvertMenu({ lead, canRevert }) {
                 className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 text-sm font-semibold transition-colors shadow-sm"
             >
                 <ArrowRight size={15} />
-                Move to
+                Manage pathways
                 {activeCount > 0 && (
                     <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/20 text-[10px] font-bold tabular-nums">
                         {activeCount}
@@ -2422,17 +2409,16 @@ function ConvertMenu({ lead, canRevert }) {
             {open && (
                 <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden">
                     <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-500">Move this lead to…</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-500">Active pathways</p>
                     </div>
                     <ul className="py-1">
-                        {items.map((item) => {
+                        {items.filter(item => item.active).map((item) => {
                             const t = MENU_TONE[item.tone] || MENU_TONE.emerald;
                             return (
                                 <li key={item.key}>
                                     <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group">
                                         <button
                                             type="button"
-                                            onClick={() => !item.active && convert(item)}
                                             disabled={item.active}
                                             className={`flex-1 flex items-center gap-2.5 text-left text-sm ${
                                                 item.active ? 'cursor-default' : 'cursor-pointer'
