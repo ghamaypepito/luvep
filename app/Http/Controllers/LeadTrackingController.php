@@ -486,6 +486,8 @@ class LeadTrackingController extends Controller
 
         // Once staff has approved a doc it's locked; the lead may still fix a
         // pending / under-review / rejected one.
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
+
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be edited.');
         }
@@ -646,6 +648,8 @@ class LeadTrackingController extends Controller
         if (! $doc) {
             return back()->with('error', 'Document not found.');
         }
+
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
 
         // Approved docs are locked; the lead can still remove a pending /
         // under-review / rejected one.

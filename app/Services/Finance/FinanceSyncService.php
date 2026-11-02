@@ -9,8 +9,8 @@ use App\Models\FinanceReceivable;
 use App\Models\InstallmentPlan;
 use App\Models\Lead;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Keeps the Finance portal's Accounts Receivable in sync with immigration case
@@ -63,7 +63,7 @@ class FinanceSyncService
                     'invoice_no' => $ar->invoice_no ?: ($cf?->invoice_no ?: $this->nextArNo()),
                     'client_name' => $name,
                     'description' => 'Immigration case'.($lead->inz_visa_type ? ' — '.$lead->inz_visa_type : ''),
-                    'currency' => strtoupper((string) ($cf?->currency ?: 'NZD')),
+                    'currency' => strtoupper((string) ($cf?->currency ?: $plan?->currency ?: 'NZD')),
                     'amount' => $amount,
                     'issue_date' => $issue->toDateString(),
                     'due_date' => $ar->due_date ? Carbon::parse($ar->due_date)->toDateString() : $issue->copy()->addDays(14)->toDateString(),
@@ -102,6 +102,14 @@ class FinanceSyncService
     private function mirrorOntoReceivable(CaseFinancePayment $payment, FinanceReceivable $ar): void
     {
         $tag = 'CFP-'.$payment->id;
+        $currency = $payment->currency ?: (CaseFinancial::where('lead_id', $payment->lead_id)->value('currency') ?: 'NZD');
+        if (strtoupper($currency) !== strtoupper($ar->currency)) {
+            // Reconciliation also removes an obsolete auto-mirror if the AR's
+            // currency was corrected. Never convert or mix receipt currencies.
+            $ar->payments()->where('reference', 'like', '%('.$tag.')%')->delete();
+
+            return;
+        }
         if ($ar->payments()->where('reference', 'like', '%('.$tag.')%')->exists()) {
             return;
         }

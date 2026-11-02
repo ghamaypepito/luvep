@@ -197,6 +197,8 @@ class ImmigrationAdviserController extends Controller
         $user = $request->user();
         abort_unless($document->lead && $document->lead->is_immigration_case, 404);
 
+        abort_if($document->source_variant === 'proof_of_payment' || \App\Services\PaymentProofService::isInvoice($document), 422, 'Review payment evidence through Finance.');
+
         $data = $request->validate([
             'action' => ['required', Rule::in(['approve', 'reject'])],
             'note' => 'nullable|string|max:500',

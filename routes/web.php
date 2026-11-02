@@ -489,6 +489,8 @@ Route::post('/api/sync-calendar', [App\Http\Controllers\SyncController::class, '
 // middleware nested below narrows each section ('portal:admin', 'portal:sales', …).
 Route::middleware(['auth'])->group(function () {
 
+    Route::get('/clients/{lead}/payment-proofs/{document}/review-options', [\App\Http\Controllers\PaymentProofController::class, 'options'])->whereNumber(['lead', 'document']);
+
     // Shared client handoff: role and record access are enforced by the controller.
     Route::get('/clients/{lead}/pathways', [\App\Http\Controllers\ClientPathwayController::class, 'index'])->whereNumber('lead');
     Route::post('/clients/{lead}/pathways', [\App\Http\Controllers\ClientPathwayController::class, 'store'])->whereNumber('lead');

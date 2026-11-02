@@ -317,14 +317,15 @@ class InvoiceGenerator
             'source_variant' => 'invoice',
             'invoice_number' => $number,
             'invoice_total' => $payload['total'] ?? null,
+            'notes' => ['engagement_currency' => $payload['currency']],
             'uploaded_by' => Auth::id(),
         ]);
 
         // Email automation — invoice sent.
         if (! ($o['silent'] ?? false)) {
             app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
-            'invoice_number' => $number,
-            'invoice_total' => $payload['total'] ?? null,
+                'invoice_number' => $number,
+                'invoice_total' => $payload['total'] ?? null,
             ]);
         }
 

@@ -308,120 +308,102 @@ class LeadDocumentController extends Controller
 
     public function updateStatus(Request $request, $leadId, $docId)
     {
-        $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $leadId, $docId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
 
-        $validated = $request->validate([
-            'status' => ['required', Rule::in([
-                LeadDocument::STATUS_SUBMITTED,
-                LeadDocument::STATUS_UNDER_REVIEW,
-                LeadDocument::STATUS_CHECKED,
-                LeadDocument::STATUS_APPROVED,
-                LeadDocument::STATUS_REJECTED,
-            ])],
-            'note' => 'nullable|string|max:500',
-            // When verifying a proof of payment from a specific invoice row, the
-            // id of that invoice document — so only that invoice is marked paid.
-            'invoice_id' => 'nullable|integer',
-        ]);
+            if ($doc->source_variant === 'proof_of_payment') {
+                app(\App\Services\PaymentProofService::class)->review($request->user(), $doc, $request->all());
 
-        $doc->update([
-            'status' => $validated['status'],
-            'note' => $validated['note'] ?? $doc->note,
-            'reviewed_by' => Auth::id(),
-            'reviewed_at' => now(),
-        ]);
-
-        // Push approved documents to the client's Google Drive folder — a
-        // best-effort background job, dormant unless Drive is configured.
-        if ($validated['status'] === LeadDocument::STATUS_APPROVED
-            && \App\Services\GoogleDriveService::isConfigured()) {
-            \App\Jobs\PushApprovedDocumentToDrive::dispatch($doc->id);
-        }
-
-        // Confirming a proof of payment settles the invoice — move the case to
-        // "Invoice Paid" (only from a pre-payment stage, so it never downgrades).
-        if ($doc->source_variant === 'proof_of_payment'
-            && $validated['status'] === LeadDocument::STATUS_APPROVED
-            && $doc->lead) {
-            $doc->lead->advanceImmigrationStage(
-                'Invoice Paid',
-                ['For Assessment', 'Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Request for Information'],
-                Auth::id(),
-            );
-
-            // Email automation — payment verified (no-op unless configured).
-            app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.paid', $doc->lead, []);
-
-            // Mark the invoice this proof settles as paid so its row flips to
-            // "Paid" (reviewed_at doubles as the paid date on the badge). When a
-            // specific invoice_id is given (case-profile flow), only that invoice
-            // flips. When none is given (the Invoice module's "confirm payment"),
-            // settle the case's pending invoice document(s) so the case profile
-            // reflects it — otherwise the proof reads Approved but the invoice
-            // never shows verified.
-            $invoiceQuery = LeadDocument::where('lead_id', $leadId)
-                ->whereIn('status', [LeadDocument::STATUS_STAFF_SHARED, LeadDocument::STATUS_SUBMITTED, LeadDocument::STATUS_UNDER_REVIEW]);
-            if (! empty($validated['invoice_id'])) {
-                $invoiceQuery->where('id', $validated['invoice_id']);
-            } else {
-                $invoiceQuery->where(function ($q) {
-                    $q->where('source_variant', 'invoice')->orWhere('source_variant', 'like', 'invoice:%');
-                });
+                return back()->with('success', 'Payment proof review saved.');
             }
-            $invoiceQuery->update([
-                'status' => LeadDocument::STATUS_APPROVED,
+
+            $validated = $request->validate([
+                'status' => ['required', Rule::in([
+                    LeadDocument::STATUS_SUBMITTED,
+                    LeadDocument::STATUS_UNDER_REVIEW,
+                    LeadDocument::STATUS_CHECKED,
+                    LeadDocument::STATUS_APPROVED,
+                    LeadDocument::STATUS_REJECTED,
+                ])],
+                'note' => 'nullable|string|max:500',
+                // When verifying a proof of payment from a specific invoice row, the
+                // id of that invoice document — so only that invoice is marked paid.
+                'invoice_id' => 'nullable|integer',
+            ]);
+
+            if (\App\Services\PaymentProofService::isInvoice($doc)) {
+                if ($doc->invoicePayments()->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'This invoice has recorded payments. Use Finance payment review instead of changing its document status.']);
+                }
+                if ($validated['status'] === LeadDocument::STATUS_APPROVED) {
+                    abort_unless(app(\App\Services\PaymentProofService::class)->canReview($request->user()), 403);
+                    throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'Verify the individual payment proofs and amounts before marking this invoice paid.']);
+                }
+            }
+
+            $doc->update([
+                'status' => $validated['status'],
+                'note' => $validated['note'] ?? $doc->note,
                 'reviewed_by' => Auth::id(),
                 'reviewed_at' => now(),
             ]);
-        }
 
-        // Tell the lead their document was approved / rejected. Prefer the
-        // doc_approved / doc_rejected templates; fall back to the Mailable.
-        $lead = $doc->lead;
-
-        // Reviewing a file is staff activity on the case — show it in the
-        // portals' Updated column.
-        $lead?->recordStaffActivity(
-            $validated['status'].' '.($doc->original_name ?: 'file')
-        );
-
-        // Email automation — document approved / needs attention (a proof of
-        // payment is handled by immigration.invoice.paid above, so exclude it).
-        // The configured automation message is the single source: it returns
-        // whether it emailed the client, so the built-in email below only sends
-        // as a fallback when no client automation message is set (no double-send).
-        $firedClient = false;
-        if ($lead && $doc->source_variant !== 'proof_of_payment') {
-            if ($validated['status'] === LeadDocument::STATUS_APPROVED) {
-                $firedClient = app(\App\Services\EmailAutomationService::class)->fire('immigration.document.approved', $lead, ['document_name' => $doc->original_name]);
-            } elseif ($validated['status'] === LeadDocument::STATUS_REJECTED) {
-                $firedClient = app(\App\Services\EmailAutomationService::class)->fire('immigration.document.rejected', $lead, ['document_name' => $doc->original_name, 'reason' => $validated['note'] ?? '']);
+            // Push approved documents to the client's Google Drive folder — a
+            // best-effort background job, dormant unless Drive is configured.
+            if ($validated['status'] === LeadDocument::STATUS_APPROVED
+                && \App\Services\GoogleDriveService::isConfigured()) {
+                \App\Jobs\PushApprovedDocumentToDrive::dispatch($doc->id);
             }
-        }
-        if (! $firedClient
-            && in_array($validated['status'], [LeadDocument::STATUS_APPROVED, LeadDocument::STATUS_REJECTED], true)
-            && $lead && ! empty($lead->email)) {
-            try {
-                // Needs-attention → the "please re-upload" template (asks the
-                // client to log in to their portal and submit again); approval
-                // keeps the doc_approved template.
-                $key = $validated['status'] === LeadDocument::STATUS_APPROVED ? 'doc_approved' : 'document_reupload';
-                $res = app(\App\Services\CommunicationService::class)->sendTemplated($key, $lead, [
-                    'document_name' => $doc->original_name,
-                    'reason' => $validated['note'] ?? '',
-                ]);
-                if (! $res['email']) {
-                    Mail::to($lead->email)->send(new \App\Mail\DocumentStatusChanged($lead, $doc->fresh(), $validated['note'] ?? null));
+
+            // Tell the lead their document was approved / rejected. Prefer the
+            // doc_approved / doc_rejected templates; fall back to the Mailable.
+            $lead = $doc->lead;
+
+            // Reviewing a file is staff activity on the case — show it in the
+            // portals' Updated column.
+            $lead?->recordStaffActivity(
+                $validated['status'].' '.($doc->original_name ?: 'file')
+            );
+
+            // Email automation — document approved / needs attention (a proof of
+            // payment is handled by immigration.invoice.paid above, so exclude it).
+            // The configured automation message is the single source: it returns
+            // whether it emailed the client, so the built-in email below only sends
+            // as a fallback when no client automation message is set (no double-send).
+            $firedClient = false;
+            if ($lead && $doc->source_variant !== 'proof_of_payment') {
+                if ($validated['status'] === LeadDocument::STATUS_APPROVED) {
+                    $firedClient = app(\App\Services\EmailAutomationService::class)->fire('immigration.document.approved', $lead, ['document_name' => $doc->original_name]);
+                } elseif ($validated['status'] === LeadDocument::STATUS_REJECTED) {
+                    $firedClient = app(\App\Services\EmailAutomationService::class)->fire('immigration.document.rejected', $lead, ['document_name' => $doc->original_name, 'reason' => $validated['note'] ?? '']);
                 }
-            } catch (\Throwable $e) {
-                Log::error('DocumentStatusChanged dispatch failed', ['doc_id' => $doc->id, 'error' => $e->getMessage()]);
             }
-        }
+            if (! $firedClient
+                && in_array($validated['status'], [LeadDocument::STATUS_APPROVED, LeadDocument::STATUS_REJECTED], true)
+                && $lead && ! empty($lead->email)) {
+                try {
+                    // Needs-attention → the "please re-upload" template (asks the
+                    // client to log in to their portal and submit again); approval
+                    // keeps the doc_approved template.
+                    $key = $validated['status'] === LeadDocument::STATUS_APPROVED ? 'doc_approved' : 'document_reupload';
+                    $res = app(\App\Services\CommunicationService::class)->sendTemplated($key, $lead, [
+                        'document_name' => $doc->original_name,
+                        'reason' => $validated['note'] ?? '',
+                    ]);
+                    if (! $res['email']) {
+                        Mail::to($lead->email)->send(new \App\Mail\DocumentStatusChanged($lead, $doc->fresh(), $validated['note'] ?? null));
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('DocumentStatusChanged dispatch failed', ['doc_id' => $doc->id, 'error' => $e->getMessage()]);
+                }
+            }
 
-        // A rejection/approval changes the findings picture — re-evaluate (§8d).
-        \App\Jobs\EvaluateCaseFindings::dispatch($doc->lead_id);
+            // A rejection/approval changes the findings picture — re-evaluate (§8d).
+            \App\Jobs\EvaluateCaseFindings::dispatch($doc->lead_id);
 
-        return back()->with('success', "Document marked {$validated['status']}.");
+            return back()->with('success', "Document marked {$validated['status']}.");
+        });
     }
 
     public function shareWithLead(Request $request, $leadId)
@@ -456,18 +438,24 @@ class LeadDocumentController extends Controller
      */
     public function sendToClient(Request $request, $leadId, $docId)
     {
-        $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
-        abort_unless($doc->file_path, 422, 'This document has no file to send.');
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($leadId, $docId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
+            abort_if($doc->source_variant === 'proof_of_payment', 422, 'Payment proofs must be reviewed through Finance.');
+            abort_unless($doc->file_path, 422, 'This document has no file to send.');
 
-        $doc->update([
-            'status' => LeadDocument::STATUS_STAFF_SHARED,
-            'reviewed_by' => Auth::id(),
-            'reviewed_at' => now(),
-        ]);
+            if (! (\App\Services\PaymentProofService::isInvoice($doc) && $doc->status === LeadDocument::STATUS_APPROVED)) {
+                $doc->update([
+                    'status' => LeadDocument::STATUS_STAFF_SHARED,
+                    'reviewed_by' => Auth::id(),
+                    'reviewed_at' => now(),
+                ]);
+            }
 
-        $doc->lead?->recordStaffActivity('Sent to client: '.($doc->original_name ?: 'document'));
+            $doc->lead?->recordStaffActivity('Sent to client: '.($doc->original_name ?: 'document'));
 
-        return back()->with('success', 'Document sent to the client.');
+            return back()->with('success', 'Document sent to the client.');
+        });
     }
 
     /**
@@ -840,167 +828,174 @@ class LeadDocumentController extends Controller
      */
     public function generateEngagement(Request $request, EngagementDocumentGenerator $generator, $leadId)
     {
-        $lead = Lead::findOrFail($leadId);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $generator, $leadId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $lead = Lead::findOrFail($leadId);
 
-        $data = $request->validate([
-            'types' => 'required|array|min:1',
-            'types.*' => ['string', Rule::in([...array_keys(EngagementDocumentGenerator::DOCS), 'invoice'])],
-            'notify' => 'sometimes|boolean',
-            'signer_id' => 'nullable|integer|exists:users,id',
-            'assist_signer_id' => 'nullable|integer|exists:users,id',
-            'fee_tier' => ['nullable', Rule::in(\App\Models\VisaType::FEE_TIERS)],
-            'fee_location' => ['nullable', Rule::in(\App\Models\VisaType::FEE_LOCATIONS)],
-            'include_gst' => 'sometimes|boolean',
-            // Manual override for the (GST-exclusive) professional fee.
-            'professional_fee' => 'nullable|numeric|min:0|max:9999999',
-        ]);
+            $data = $request->validate([
+                'types' => 'required|array|min:1',
+                'types.*' => ['string', Rule::in([...array_keys(EngagementDocumentGenerator::DOCS), 'invoice'])],
+                'notify' => 'sometimes|boolean',
+                'signer_id' => 'nullable|integer|exists:users,id',
+                'assist_signer_id' => 'nullable|integer|exists:users,id',
+                'fee_tier' => ['nullable', Rule::in(\App\Models\VisaType::FEE_TIERS)],
+                'fee_location' => ['nullable', Rule::in(\App\Models\VisaType::FEE_LOCATIONS)],
+                'include_gst' => 'sometimes|boolean',
+                // Manual override for the (GST-exclusive) professional fee.
+                'professional_fee' => 'nullable|numeric|min:0|max:9999999',
+            ]);
 
-        $overrides = [];
-        if (! empty($data['signer_id'])) {
-            $overrides['signer_id'] = $data['signer_id'];
-        }
-        if (! empty($data['assist_signer_id'])) {
-            $overrides['assist_signer_id'] = $data['assist_signer_id'];
-        }
-        if (! empty($data['fee_tier'])) {
-            $overrides['fee_tier'] = $data['fee_tier'];
-        }
-        if (! empty($data['fee_location'])) {
-            $overrides['fee_location'] = $data['fee_location'];
-        }
-        if (! empty($data['include_gst'])) {
-            $overrides['include_gst'] = true;
-        }
-        if (isset($data['professional_fee']) && $data['professional_fee'] !== null && $data['professional_fee'] !== '') {
-            $overrides['professional_fee'] = (float) $data['professional_fee'];
-        }
-
-        try {
-            // Never touch a document the client has already signed. Regenerating
-            // a signed type would create a conflicting UNSIGNED copy alongside the
-            // signed one and make a completed pack look unsigned again — so skip
-            // those types entirely and leave the signed document exactly as it is.
-            $alreadySigned = LeadDocument::where('lead_id', $lead->id)
-                ->where('source_variant', 'like', 'engagement:%')->whereNull('notes->engagement_pack_id')
-                ->whereNotNull('client_signed_at')
-                ->pluck('source_variant')
-                ->map(fn ($v) => str_replace('engagement:', '', $v))
-                ->all();
-
-            $typesToGenerate = array_values(array_diff($data['types'], $alreadySigned));
-            $skippedSigned = array_values(array_intersect($data['types'], $alreadySigned));
-
-            if (empty($typesToGenerate)) {
-                return back()->with('success', 'Those documents are already signed by the client, so nothing was changed.');
+            $overrides = [];
+            if (! empty($data['signer_id'])) {
+                $overrides['signer_id'] = $data['signer_id'];
+            }
+            if (! empty($data['assist_signer_id'])) {
+                $overrides['assist_signer_id'] = $data['assist_signer_id'];
+            }
+            if (! empty($data['fee_tier'])) {
+                $overrides['fee_tier'] = $data['fee_tier'];
+            }
+            if (! empty($data['fee_location'])) {
+                $overrides['fee_location'] = $data['fee_location'];
+            }
+            if (! empty($data['include_gst'])) {
+                $overrides['include_gst'] = true;
+            }
+            if (isset($data['professional_fee']) && $data['professional_fee'] !== null && $data['professional_fee'] !== '') {
+                $overrides['professional_fee'] = (float) $data['professional_fee'];
             }
 
-            // Replace-per-type: remove the previous UNSIGNED copies of the types
-            // we're regenerating so a draft doesn't stack duplicates. Signed
-            // documents are never touched (their signature must be preserved).
-            LeadDocument::where('lead_id', $lead->id)
-                ->whereNull('notes->engagement_pack_id')
-                ->whereIn('source_variant', array_map(fn ($t) => "engagement:{$t}", $typesToGenerate))
-                ->whereNull('client_signed_at')
-                ->get()
-                ->each(function (LeadDocument $old) {
-                    if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
-                        Storage::disk(self::DISK)->delete($old->file_path);
+            try {
+                // Never touch a document the client has already signed. Regenerating
+                // a signed type would create a conflicting UNSIGNED copy alongside the
+                // signed one and make a completed pack look unsigned again — so skip
+                // those types entirely and leave the signed document exactly as it is.
+                $alreadySigned = LeadDocument::where('lead_id', $lead->id)
+                    ->where('source_variant', 'like', 'engagement:%')->whereNull('notes->engagement_pack_id')
+                    ->whereNotNull('client_signed_at')
+                    ->pluck('source_variant')
+                    ->map(fn ($v) => str_replace('engagement:', '', $v))
+                    ->all();
+
+                $typesToGenerate = array_values(array_diff($data['types'], $alreadySigned));
+                $skippedSigned = array_values(array_intersect($data['types'], $alreadySigned));
+
+                if (empty($typesToGenerate)) {
+                    return back()->with('success', 'Those documents are already signed by the client, so nothing was changed.');
+                }
+
+                // Replace-per-type: remove the previous UNSIGNED copies of the types
+                // we're regenerating so a draft doesn't stack duplicates. Signed
+                // documents are never touched (their signature must be preserved).
+                LeadDocument::where('lead_id', $lead->id)
+                    ->whereNull('notes->engagement_pack_id')
+                    ->whereIn('source_variant', array_map(fn ($t) => "engagement:{$t}", $typesToGenerate))
+                    ->whereNull('client_signed_at')
+                    ->get()
+                    ->each(function (LeadDocument $old) {
+                        if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
+                            \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($old);
+                            Storage::disk(self::DISK)->delete($old->file_path);
+                        }
+                        $old->delete();
+                    });
+
+                // Keep the created document id per type so the notification can
+                // deep-link each icon straight to its generated PDF.
+                $generatedDocIds = [];
+                foreach ($typesToGenerate as $t) {
+                    if ($t === 'invoice') {
+                        // The invoice is generated by the InvoiceGenerator off the
+                        // same agreed fees, and stored as a normal invoice (so it
+                        // also shows in the Invoice workspace). Replace any prior
+                        // invoice so the case keeps a single current one.
+                        LeadDocument::where('lead_id', $lead->id)
+                            ->where('source_variant', 'invoice')->whereNull('notes->engagement_pack_id')
+                            ->get()
+                            ->each(function (LeadDocument $old) {
+                                if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
+                                    \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($old);
+                                    Storage::disk(self::DISK)->delete($old->file_path);
+                                }
+                                $old->delete();
+                            });
+
+                        $doc = app(\App\Services\Immigration\InvoiceGenerator::class)
+                            ->generate($lead, array_merge($this->invoiceOptionsFromEngagement($overrides), $this->planInvoiceAdjustments($lead), ['silent' => true]));
+                    } else {
+                        $doc = $generator->generate($lead, $t, $overrides);
                     }
-                    $old->delete();
-                });
-
-            // Keep the created document id per type so the notification can
-            // deep-link each icon straight to its generated PDF.
-            $generatedDocIds = [];
-            foreach ($typesToGenerate as $t) {
-                if ($t === 'invoice') {
-                    // The invoice is generated by the InvoiceGenerator off the
-                    // same agreed fees, and stored as a normal invoice (so it
-                    // also shows in the Invoice workspace). Replace any prior
-                    // invoice so the case keeps a single current one.
-                    LeadDocument::where('lead_id', $lead->id)
-                        ->where('source_variant', 'invoice')->whereNull('notes->engagement_pack_id')
-                        ->get()
-                        ->each(function (LeadDocument $old) {
-                            if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
-                                Storage::disk(self::DISK)->delete($old->file_path);
-                            }
-                            $old->delete();
-                        });
-
-                    $doc = app(\App\Services\Immigration\InvoiceGenerator::class)
-                        ->generate($lead, array_merge($this->invoiceOptionsFromEngagement($overrides), $this->planInvoiceAdjustments($lead), ['silent' => true]));
-                } else {
-                    $doc = $generator->generate($lead, $t, $overrides);
+                    $generatedDocIds[$t] = $doc->id;
                 }
-                $generatedDocIds[$t] = $doc->id;
-            }
 
-            // Audit a manual fee adjustment — the adviser changed the professional
-            // fee away from the visa-derived default. One clear line in the case's
-            // activity trail ("adjusted from $X to $Y").
-            if (isset($overrides['professional_fee'])) {
-                $defaultFee = $generator->feeTotals($lead, array_merge($overrides, ['professional_fee' => null]))['professional_excl'];
-                $newFee = (float) $overrides['professional_fee'];
-                if ($defaultFee !== null && abs((float) $defaultFee - $newFee) > 0.005) {
-                    \App\Models\ActivityLog::record('engagement.fee_adjusted', [
-                        'description' => sprintf(
-                            '%s adjusted the professional fee from $%s to $%s for "%s"',
-                            auth()->user()?->name ?? 'Staff',
-                            number_format((float) $defaultFee, 2),
-                            number_format($newFee, 2),
-                            trim("{$lead->first_name} {$lead->last_name}") ?: ('Lead #'.$lead->id),
-                        ),
-                        'properties' => [
-                            'subject_type' => 'Lead',
-                            'subject_id' => $lead->id,
-                            'original_fee' => (float) $defaultFee,
-                            'adjusted_fee' => $newFee,
-                        ],
-                    ]);
+                // Audit a manual fee adjustment — the adviser changed the professional
+                // fee away from the visa-derived default. One clear line in the case's
+                // activity trail ("adjusted from $X to $Y").
+                if (isset($overrides['professional_fee'])) {
+                    $defaultFee = $generator->feeTotals($lead, array_merge($overrides, ['professional_fee' => null]))['professional_excl'];
+                    $newFee = (float) $overrides['professional_fee'];
+                    if ($defaultFee !== null && abs((float) $defaultFee - $newFee) > 0.005) {
+                        \App\Models\ActivityLog::record('engagement.fee_adjusted', [
+                            'description' => sprintf(
+                                '%s adjusted the professional fee from $%s to $%s for "%s"',
+                                auth()->user()?->name ?? 'Staff',
+                                number_format((float) $defaultFee, 2),
+                                number_format($newFee, 2),
+                                trim("{$lead->first_name} {$lead->last_name}") ?: ('Lead #'.$lead->id),
+                            ),
+                            'properties' => [
+                                'subject_type' => 'Lead',
+                                'subject_id' => $lead->id,
+                                'original_fee' => (float) $defaultFee,
+                                'adjusted_fee' => $newFee,
+                            ],
+                        ]);
+                    }
                 }
+
+                // Record the fees this pack was generated at, so the Generated
+                // Documents table can show the ex-GST professional fee AND the grand
+                // total (our fees incl GST + INZ disbursements across the family) —
+                // but NEVER move them once the Written Agreement is signed. The signed
+                // agreement locks the amounts the client actually agreed to; a later
+                // regeneration of the supporting docs must not overwrite them.
+                if (! in_array('written_agreement', $alreadySigned, true)) {
+                    $totals = $generator->feeTotals($lead, $overrides);
+                    $lead->forceFill([
+                        'engagement_fee_total' => $totals['professional_excl'],
+                        'engagement_total_amount' => $totals['grand_total'],
+                        // Remember the settings so re-opening the draft reproduces them.
+                        'engagement_fee_location' => $data['fee_location'] ?? 'onshore',
+                        'engagement_fee_tier' => $data['fee_tier'] ?? 'normal',
+                        'engagement_include_gst' => (bool) ($data['include_gst'] ?? false),
+                        'engagement_assist_signer_id' => $data['assist_signer_id'] ?? null,
+                    ])->save();
+                }
+
+                // A generated draft is not sent. Stage progression occurs only after reviewed delivery.
+
+                $n = count($typesToGenerate);
+                $message = "{$n} engagement document(s) generated for {$lead->first_name} {$lead->last_name}.";
+                if (! empty($skippedSigned)) {
+                    $message .= ' '.count($skippedSigned).' already-signed document(s) were left unchanged.';
+                }
+
+                // Generation is always silent. Sending requires the reviewed-email endpoint.
+                if (empty($alreadySigned)) {
+                    $lead->forceFill(['engagement_sent_at' => null])->save();
+                }
+
+                return back()->with('success', $message);
+            } catch (\App\Exceptions\StaleSignerLicenceException $e) {
+                // Expected refusal, not a fault — the chosen adviser's licence has
+                // lapsed. Surface the clear message; do not log as an error.
+                return back()->withErrors(['error' => $e->getMessage()]);
+            } catch (\Throwable $e) {
+                Log::error('Engagement bulk generation failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
+
+                return back()->withErrors(['error' => 'Could not generate the documents: '.$e->getMessage()]);
             }
-
-            // Record the fees this pack was generated at, so the Generated
-            // Documents table can show the ex-GST professional fee AND the grand
-            // total (our fees incl GST + INZ disbursements across the family) —
-            // but NEVER move them once the Written Agreement is signed. The signed
-            // agreement locks the amounts the client actually agreed to; a later
-            // regeneration of the supporting docs must not overwrite them.
-            if (! in_array('written_agreement', $alreadySigned, true)) {
-                $totals = $generator->feeTotals($lead, $overrides);
-                $lead->forceFill([
-                    'engagement_fee_total' => $totals['professional_excl'],
-                    'engagement_total_amount' => $totals['grand_total'],
-                    // Remember the settings so re-opening the draft reproduces them.
-                    'engagement_fee_location' => $data['fee_location'] ?? 'onshore',
-                    'engagement_fee_tier' => $data['fee_tier'] ?? 'normal',
-                    'engagement_include_gst' => (bool) ($data['include_gst'] ?? false),
-                    'engagement_assist_signer_id' => $data['assist_signer_id'] ?? null,
-                ])->save();
-            }
-
-            // A generated draft is not sent. Stage progression occurs only after reviewed delivery.
-
-            $n = count($typesToGenerate);
-            $message = "{$n} engagement document(s) generated for {$lead->first_name} {$lead->last_name}.";
-            if (! empty($skippedSigned)) {
-                $message .= ' '.count($skippedSigned).' already-signed document(s) were left unchanged.';
-            }
-
-            // Generation is always silent. Sending requires the reviewed-email endpoint.
-            if (empty($alreadySigned)) $lead->forceFill(['engagement_sent_at' => null])->save();
-
-            return back()->with('success', $message);
-        } catch (\App\Exceptions\StaleSignerLicenceException $e) {
-            // Expected refusal, not a fault — the chosen adviser's licence has
-            // lapsed. Surface the clear message; do not log as an error.
-            return back()->withErrors(['error' => $e->getMessage()]);
-        } catch (\Throwable $e) {
-            Log::error('Engagement bulk generation failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not generate the documents: '.$e->getMessage()]);
-        }
+        });
     }
 
     /**
@@ -1354,26 +1349,35 @@ class LeadDocumentController extends Controller
     /** Delete every generated invoice for a case (one row = one case). */
     public function destroyInvoices(Request $request, $leadId)
     {
-        $lead = Lead::findOrFail($leadId);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($leadId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $lead = Lead::findOrFail($leadId);
 
-        try {
-            $docs = LeadDocument::where('lead_id', $lead->id)
-                ->where('source_variant', 'invoice')
-                ->get();
+            try {
+                $docs = LeadDocument::where('lead_id', $lead->id)
+                    ->where('source_variant', 'invoice')
+                    ->get();
 
-            foreach ($docs as $doc) {
-                if ($doc->file_path && Storage::disk(self::DISK)->exists($doc->file_path)) {
-                    Storage::disk(self::DISK)->delete($doc->file_path);
+                foreach ($docs as $doc) {
+                    \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
                 }
-                $doc->delete();
+
+                foreach ($docs as $doc) {
+                    if ($doc->file_path && Storage::disk(self::DISK)->exists($doc->file_path)) {
+                        Storage::disk(self::DISK)->delete($doc->file_path);
+                    }
+                    $doc->delete();
+                }
+
+                return back()->with('success', $docs->count()." invoice(s) deleted for {$lead->first_name} {$lead->last_name}.");
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                Log::error('Invoice delete failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
+
+                return back()->withErrors(['error' => 'Could not delete the invoices.']);
             }
-
-            return back()->with('success', $docs->count()." invoice(s) deleted for {$lead->first_name} {$lead->last_name}.");
-        } catch (\Throwable $e) {
-            Log::error('Invoice delete failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not delete the invoices.']);
-        }
+        });
     }
 
     /**
@@ -1384,39 +1388,48 @@ class LeadDocumentController extends Controller
      */
     public function destroyEngagementDocs(Request $request, $leadId)
     {
-        $lead = Lead::findOrFail($leadId);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $leadId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $lead = Lead::findOrFail($leadId);
 
-        try {
-            // Delete the whole engagement pack: the 4 pack documents
-            // (engagement:*) AND the invoice generated with them (source_variant
-            // "invoice"), which is the pack's 5th document. Client-uploaded
-            // proofs of payment and older standalone tax invoices are left alone.
-            $docs = LeadDocument::where('lead_id', $lead->id)
-                ->where(function ($q) {
-                    $q->where('source_variant', 'like', 'engagement:%')
-                        ->orWhere('source_variant', 'invoice');
-                })
-                ->when($request->query('pack_id') && $request->query('pack_id') !== 'legacy', fn ($q) => $q->where('notes->engagement_pack_id', $request->query('pack_id')))
-                ->when($request->query('pack_id') === 'legacy', fn ($q) => $q->whereNull('notes->engagement_pack_id'))
-                ->get();
+            try {
+                // Delete the whole engagement pack: the 4 pack documents
+                // (engagement:*) AND the invoice generated with them (source_variant
+                // "invoice"), which is the pack's 5th document. Client-uploaded
+                // proofs of payment and older standalone tax invoices are left alone.
+                $docs = LeadDocument::where('lead_id', $lead->id)
+                    ->where(function ($q) {
+                        $q->where('source_variant', 'like', 'engagement:%')
+                            ->orWhere('source_variant', 'invoice');
+                    })
+                    ->when($request->query('pack_id') && $request->query('pack_id') !== 'legacy', fn ($q) => $q->where('notes->engagement_pack_id', $request->query('pack_id')))
+                    ->when($request->query('pack_id') === 'legacy', fn ($q) => $q->whereNull('notes->engagement_pack_id'))
+                    ->get();
 
-            foreach ($docs as $doc) {
-                foreach ([$doc->file_path, $doc->client_signature_path] as $path) {
-                    if ($path && Storage::disk(self::DISK)->exists($path)) {
-                        Storage::disk(self::DISK)->delete($path);
-                    }
+                foreach ($docs as $doc) {
+                    \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
                 }
-                $doc->delete();
+
+                foreach ($docs as $doc) {
+                    foreach ([$doc->file_path, $doc->client_signature_path] as $path) {
+                        if ($path && Storage::disk(self::DISK)->exists($path)) {
+                            Storage::disk(self::DISK)->delete($path);
+                        }
+                    }
+                    $doc->delete();
+                }
+
+                $n = $docs->count();
+
+                return back()->with('success', "{$n} engagement document(s) deleted for {$lead->first_name} {$lead->last_name}.");
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                Log::error('Engagement docs delete failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
+
+                return back()->withErrors(['error' => 'Could not delete the documents.']);
             }
-
-            $n = $docs->count();
-
-            return back()->with('success', "{$n} engagement document(s) deleted for {$lead->first_name} {$lead->last_name}.");
-        } catch (\Throwable $e) {
-            Log::error('Engagement docs delete failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not delete the documents.']);
-        }
+        });
     }
 
     /**
@@ -2012,24 +2025,28 @@ class LeadDocumentController extends Controller
      */
     public function destroyDocument(Request $request, $leadId, $docId)
     {
-        $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
-        try {
-            Storage::disk(self::DISK)->exists($doc->file_path)
-                ? Storage::disk(self::DISK)->delete($doc->file_path)
-                : null;
-            $name = $doc->original_name ?: 'file';
-            $doc->delete();
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($leadId, $docId) {
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($docId);
+            \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
+            try {
+                Storage::disk(self::DISK)->exists($doc->file_path)
+                    ? Storage::disk(self::DISK)->delete($doc->file_path)
+                    : null;
+                $name = $doc->original_name ?: 'file';
+                $doc->delete();
 
-            // Surfaces in the portals' Updated column — deleting a client's
-            // file is exactly the kind of action that column exists to show.
-            $doc->lead?->recordStaffActivity('Deleted file '.$name);
+                // Surfaces in the portals' Updated column — deleting a client's
+                // file is exactly the kind of action that column exists to show.
+                $doc->lead?->recordStaffActivity('Deleted file '.$name);
 
-            return back()->with('success', 'File removed.');
-        } catch (\Throwable $e) {
-            Log::error('Document delete failed', ['doc_id' => $docId, 'error' => $e->getMessage()]);
+                return back()->with('success', 'File removed.');
+            } catch (\Throwable $e) {
+                Log::error('Document delete failed', ['doc_id' => $docId, 'error' => $e->getMessage()]);
 
-            return back()->withErrors(['error' => 'Could not delete that file.']);
-        }
+                return back()->withErrors(['error' => 'Could not delete that file.']);
+            }
+        });
     }
 
     /**
@@ -2238,6 +2255,7 @@ class LeadDocumentController extends Controller
         if (! $doc) {
             return back()->with('error', 'Document not found.');
         }
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
         // Approved docs are locked; staff-generated docs are never client-removable.
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be removed.');
@@ -2265,6 +2283,7 @@ class LeadDocumentController extends Controller
         if (! $doc) {
             return back()->with('error', 'Document not found.');
         }
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be replaced.');
         }
@@ -2406,6 +2425,7 @@ class LeadDocumentController extends Controller
     {
         $data = $request->validate(['note' => 'nullable|string|max:2000']);
         $doc = LeadDocument::findOrFail($docId);
+        abort_if($doc->source_variant === 'proof_of_payment', 422, 'Use the Finance payment review to change a proof decision.');
         $doc->note = trim((string) ($data['note'] ?? '')) ?: null;
         $doc->save();
 

@@ -192,6 +192,8 @@ class InstallmentPlanService
     public function recordPayment(Installment $installment, array $data = [], ?User $by = null): CaseFinancePayment
     {
         return DB::transaction(function () use ($installment, $data, $by) {
+            $leadId = InstallmentPlan::whereKey($installment->installment_plan_id)->value('lead_id');
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
             $plan = InstallmentPlan::whereKey($installment->installment_plan_id)->lockForUpdate()->firstOrFail();
             $installment = Installment::whereKey($installment->id)->lockForUpdate()->firstOrFail();
             if ($installment->isPaid()) {
@@ -203,8 +205,12 @@ class InstallmentPlanService
                 ? 'Deposit'
                 : 'Instalment '.$installment->sequence;
 
+            if (filled($data['reference'] ?? null)) {
+                \App\Services\PaymentProofService::assertReferenceAvailable($plan->lead_id, $data['reference']);
+            }
             $payment = CaseFinancePayment::create([
                 'lead_id' => $plan->lead_id,
+                'currency' => $plan->currency ?: 'NZD',
                 'paid_at' => $data['paid_at'] ?? Carbon::now(),
                 'amount' => $installment->amount,
                 'method' => $data['method'] ?? null,

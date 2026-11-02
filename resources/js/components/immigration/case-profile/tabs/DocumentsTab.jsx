@@ -1,3 +1,4 @@
+import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { router, usePage } from "@inertiajs/react";
@@ -588,7 +589,7 @@ export default function DocumentsTab({
                                                 engagementSignedAt={engagement.signed_at}
                                                 invoicePaid={!! engagement.invoice_paid}
                                                 invoicePaidAt={engagement.invoice_paid_at}
-                                                proofs={proofDocs}
+                                                proofs={proofDocs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === row.document?.id || proof.proof_review.invoice_id === row.documents?.[0]?.id)}
                                             />
                                         ))}
                                         {! collapsed && sectionRfiReqs.map((req) => (
@@ -1171,7 +1172,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
         )}
         {verifyOpen && (
             <ProofVerifyModal
-                proofs={proofs}
+                proofs={proofs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === doc?.id)}
                 leadId={leadId}
                 invoiceId={doc?.id}
                 onClose={() => setVerifyOpen(false)}
@@ -1181,145 +1182,13 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
     );
 }
 
-// Proof-of-payment verification — previews the client-uploaded proof inline and,
-// when several are submitted, exposes a tab per proof so staff can flip between
-// them. Verifying posts the same document-status endpoint the review flow uses;
-// an Approved proof advances the case stage to "Invoice Paid" and flips the
-// invoice badge to "Paid".
+// Keep existing per-proof tabs; payment decisions use the shared Finance review.
 function ProofVerifyModal({ proofs = [], leadId, invoiceId = null, onClose }) {
-    const [busyId, setBusyId] = useState(null);
     const [activeId, setActiveId] = useState(proofs[0]?.id ?? null);
-
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === "Escape") onClose(); };
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        window.addEventListener("keydown", onKey);
-        return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-    }, [onClose]);
-
-    const active = proofs.find((p) => p.id === activeId) || proofs[0] || null;
-
-    const act = (proof, status) => {
-        if (!proof) return;
-        setBusyId(proof.id);
-        router.post(
-            `${leadBase()}/${leadId}/documents/${proof.id}/status`,
-            { status, invoice_id: status === "Approved" ? invoiceId : null },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(status === "Approved" ? "Payment verified" : "Proof rejected");
-                    onClose();
-                },
-                onError: () => toast.error("Could not update the proof"),
-                onFinish: () => setBusyId(null),
-            },
-        );
-    };
-
-    const inlineUrl = active ? docDownloadUrl(active.id, { inline: true }) : null;
-    const isPdf = (active?.mime || "").includes("pdf") || /\.pdf$/i.test(active?.original_name || "");
-    const isImage = (active?.mime || "").startsWith("image/") || /\.(png|jpe?g|gif|webp|heic)$/i.test(active?.original_name || "");
-    const approved = active?.status === "Approved";
-    const rejected = active?.status === "Rejected";
-
-    return createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-            <div className="flex h-[88vh] w-[94vw] max-w-[1000px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
-                    <div>
-                        <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-gray-400">Proof of payment</p>
-                        <h3 className="text-sm font-semibold text-gray-900">Verify to mark the invoice paid</h3>
-                    </div>
-                    <button type="button" onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-700"><XIcon size={18} /></button>
-                </div>
-
-                {/* Tabs — one per submitted proof */}
-                {proofs.length > 1 && (
-                    <div className="flex flex-wrap gap-1.5 border-b border-gray-100 bg-gray-50 px-4 py-2">
-                        {proofs.map((p, i) => {
-                            const isActive = p.id === active?.id;
-                            const dot = p.status === "Approved" ? "bg-teal-500" : p.status === "Rejected" ? "bg-red-400" : "bg-amber-400";
-                            return (
-                                <button
-                                    key={p.id}
-                                    type="button"
-                                    onClick={() => setActiveId(p.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium ${isActive ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-800"}`}
-                                >
-                                    <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-                                    Proof {i + 1}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Preview */}
-                <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
-                    {!active ? (
-                        <div className="flex flex-1 items-center justify-center text-[13px] text-gray-500">No proof of payment uploaded yet.</div>
-                    ) : isImage ? (
-                        <div className="flex flex-1 items-start justify-center overflow-auto p-4">
-                            <img src={inlineUrl} alt={active.original_name} className="h-auto max-w-full rounded-lg shadow-sm" />
-                        </div>
-                    ) : isPdf ? (
-                        <iframe src={inlineUrl} title={active.original_name} className="w-full flex-1 border-0" />
-                    ) : (
-                        <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                            <FileText size={40} className="text-gray-300" />
-                            <p className="mt-3 text-sm text-gray-600">No inline preview for this file type.</p>
-                            <a href={docDownloadUrl(active.id)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-white"><Download size={13} /> Download to view</a>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer — filename + verify/reject for the active proof */}
-                {active && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-5 py-3">
-                        <div className="min-w-0">
-                            <p className="truncate text-[13px] font-medium text-gray-800">{active.original_name || "Proof of payment"}</p>
-                            <p className="text-[11px] text-gray-400">
-                                {approved ? "Verified" : rejected ? "Rejected" : "Awaiting verification"}
-                                {active.created_at ? ` · uploaded ${formatDate(active.created_at)}` : ""}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <a href={inlineUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] font-semibold text-gray-600 hover:bg-gray-50"><Eye size={13} /> Open in tab</a>
-                            {!approved && !rejected && (
-                                <button
-                                    type="button"
-                                    disabled={busyId === active.id}
-                                    onClick={() => act(active, "Rejected")}
-                                    className="rounded-lg border border-red-200 px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                >
-                                    Reject
-                                </button>
-                            )}
-                            {!rejected && (
-                                <button
-                                    type="button"
-                                    disabled={busyId === active.id}
-                                    onClick={() => act(active, "Approved")}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-                                >
-                                    {busyId === active.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                                    {approved ? "Mark this invoice paid" : "Verify payment"}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>,
-        document.body,
-    );
+    const active = proofs.find(proof => proof.id === activeId) || proofs[0];
+    return active ? <ProofReviewModal key={active.id} proof={active} leadId={leadId} invoiceId={invoiceId} proofChoices={proofs} onSelect={setActiveId} onClose={onClose} /> : null;
 }
 
-// Bulk-download dropdown — "Download approved (ZIP)" (the lodgement bundle) or
-// "Download all (ZIP)" (every document on the case).
 function DownloadAllMenu({ leadId }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);

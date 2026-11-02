@@ -11,14 +11,14 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
-use App\Services\Immigration\VisaProgressService;
-use Illuminate\Validation\Rule;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Immigration\VisaProgressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
@@ -194,6 +194,8 @@ class CaseProfileController extends Controller
                 'method' => $p->method,
                 'reference' => $p->reference,
                 'recorded_by' => optional($p->recorder)->name,
+                'currency' => $p->currency ?: ($fin?->currency ?: 'NZD'),
+                'has_verified_proofs' => $p->proofReviews()->exists(),
             ])->all();
 
         return [
@@ -215,7 +217,7 @@ class CaseProfileController extends Controller
             'payments' => $payments,
             'totals' => [
                 'payable' => $fin ? $fin->totalPayable() : 0,
-                'paid' => $fin ? $fin->totalPaid() : (float) \App\Models\CaseFinancePayment::where('lead_id', $lead->id)->sum('amount'),
+                'paid' => $fin ? $fin->totalPaid() : (float) \App\Models\CaseFinancePayment::where('lead_id', $lead->id)->where(fn ($query) => $query->whereNull('currency')->orWhere('currency', 'NZD'))->sum('amount'),
                 'owed' => $fin ? $fin->amountOwed() : 0,
                 'disbursement' => $fin ? $fin->disbursementAmount() : 0,
                 'net_after_disbursement' => $fin ? $fin->netAfterDisbursement() : 0,
@@ -328,10 +330,16 @@ class CaseProfileController extends Controller
             'reference' => 'nullable|string|max:120',
         ]);
 
-        \App\Models\CaseFinancePayment::create(array_merge($data, [
-            'lead_id' => $lead->id,
-            'recorded_by' => $user->id,
-        ]));
+        \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $user, $data) {
+            Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            if (filled($data['reference'] ?? null)) {
+                \App\Services\PaymentProofService::assertReferenceAvailable($lead->id, $data['reference']);
+            }
+            \App\Models\CaseFinancePayment::create(array_merge($data, [
+                'lead_id' => $lead->id, 'recorded_by' => $user->id,
+                'currency' => \App\Models\CaseFinancial::where('lead_id', $lead->id)->value('currency') ?: 'NZD',
+            ]));
+        });
 
         return back()->with('success', 'Payment recorded.');
     }
@@ -341,7 +349,10 @@ class CaseProfileController extends Controller
     {
         $this->guardCase($lead);
         abort_unless($payment->lead_id === $lead->id, 404);
-        $payment->delete();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $payment) {
+            Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            \App\Models\CaseFinancePayment::whereKey($payment->id)->lockForUpdate()->firstOrFail()->delete();
+        });
 
         return back()->with('success', 'Payment removed.');
     }
@@ -350,7 +361,7 @@ class CaseProfileController extends Controller
      * Assemble the invoice view-data from the case's financial record + ledger.
      * Shared by generate (PDF), preview (HTML) and Word exports.
      *
-     * @return array{0: array<string, mixed>, 1: string}  [$viewData, $invoiceNo]
+     * @return array{0: array<string, mixed>, 1: string} [$viewData, $invoiceNo]
      */
     private function invoiceData(Lead $lead): array
     {
@@ -366,7 +377,7 @@ class CaseProfileController extends Controller
             ['label' => 'Other fee', 'amount' => (float) $fin->other_fee],
         ])->filter(fn ($l) => $l['amount'] > 0)->values()->all();
 
-        $payments = \App\Models\CaseFinancePayment::where('lead_id', $lead->id)->orderBy('paid_at')->get()
+        $payments = \App\Models\CaseFinancePayment::where('lead_id', $lead->id)->where(fn ($query) => $query->whereNull('currency')->orWhere('currency', $currency))->orderBy('paid_at')->get()
             ->map(fn ($p) => [
                 'paid_at' => optional($p->paid_at)->format('d/m/Y'),
                 'method' => $p->method,
@@ -428,6 +439,8 @@ class CaseProfileController extends Controller
             'size' => strlen($bytes),
             'source' => 'generated',
             'source_variant' => "invoice:{$invoiceNo}",
+            'invoice_total' => $data['totalPayable'], 'invoice_number' => $invoiceNo,
+            'notes' => ['engagement_currency' => $data['currency']],
             'status' => 'StaffShared',
             'uploaded_by' => $user->id,
         ]);
@@ -706,6 +719,7 @@ class CaseProfileController extends Controller
     {
         $user = $this->guardCase($lead);
         abort_unless($dependent->lead_id === $lead->id && $document->dependent_id === $dependent->id, 404);
+        abort_if($document->source_variant === 'proof_of_payment' || \App\Services\PaymentProofService::isInvoice($document), 422, 'Use the Finance payment review to change payment evidence.');
         $data = $request->validate([
             'status' => ['required', \Illuminate\Validation\Rule::in(['Submitted', 'UnderReview', 'Approved', 'Rejected'])],
             'note' => 'nullable|string|max:500',
@@ -736,6 +750,7 @@ class CaseProfileController extends Controller
                 || ($dependent->linked_lead_id && $document->lead_id === $dependent->linked_lead_id),
             404
         );
+        abort_if($document->source_variant === 'proof_of_payment' || \App\Services\PaymentProofService::isInvoice($document), 422, 'Use the Finance payment review to change payment evidence.');
         $data = $request->validate(['note' => 'nullable|string|max:500']);
 
         $document->forceFill([
@@ -752,6 +767,7 @@ class CaseProfileController extends Controller
         $this->guardCase($lead);
         abort_unless($dependent->lead_id === $lead->id && $document->dependent_id === $dependent->id, 404);
 
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($document);
         if ($document->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($document->file_path)) {
             \Illuminate\Support\Facades\Storage::disk('local')->delete($document->file_path);
         }
@@ -1574,6 +1590,7 @@ class CaseProfileController extends Controller
         $new = $visas->startNextVisa($lead, $label, $data['visa_type_id'] ?? null, $user);
 
         $base = $request->is('portal/agent/*') ? '/portal/agent' : '/portal/immigration';
+
         return redirect("{$base}/cases/{$new->id}/profile")
             ->with('success', 'Started the next visa application — details and matching documents were carried over.');
     }
@@ -1851,7 +1868,7 @@ class CaseProfileController extends Controller
 
         return LeadDocument::where('lead_id', $lead->id)
             ->whereNull('dependent_id') // dependants' docs live under the Family tab
-            ->with(['reviewer:id,name,role', 'uploader:id,name,role'])
+            ->with(['reviewer:id,name,role', 'uploader:id,name,role', 'invoicePayments', 'proofReview.invoice.invoicePayments', 'proofReview.payment'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (LeadDocument $d) => [
@@ -1867,6 +1884,8 @@ class CaseProfileController extends Controller
                 'status' => $d->status,
                 'source' => $d->source,
                 'source_variant' => $d->source_variant,
+                'proof_review' => $d->source_variant === 'proof_of_payment' ? app(\App\Services\PaymentProofService::class)->metadata($d) : null,
+                'payment_summary' => \App\Services\PaymentProofService::isInvoice($d) ? app(\App\Services\PaymentProofService::class)->invoiceSummary($d) : null,
                 'note' => $d->note,
                 'reviewed_at' => optional($d->reviewed_at)->toIso8601String(),
                 // Who made the last Approve/Reject/Checked decision, so the
@@ -1918,19 +1937,17 @@ class CaseProfileController extends Controller
             ->whereNotNull('client_signed_at')
             ->max('client_signed_at');
 
-        $paidProof = LeadDocument::where('lead_id', $lead->id)
-            ->where('source_variant', 'proof_of_payment')
-            ->where('status', LeadDocument::STATUS_APPROVED)
-            ->orderByDesc('reviewed_at')
-            ->first();
+        $invoices = \App\Services\PaymentProofService::invoiceQuery($lead)->with('invoicePayments')->get();
+        $allPaid = $invoices->isNotEmpty() && $invoices->every(fn ($invoice) => app(\App\Services\PaymentProofService::class)->invoiceSummary($invoice)['paid']);
+        $paidAt = $allPaid ? $invoices->max('reviewed_at') : null;
 
         return [
             'sent' => (bool) $lead->engagement_sent_at,
             'sent_at' => optional($lead->engagement_sent_at)?->toIso8601String(),
             'signed' => (bool) $signedAt,
             'signed_at' => $signedAt ? \Illuminate\Support\Carbon::parse($signedAt)->toIso8601String() : null,
-            'invoice_paid' => (bool) $paidProof,
-            'invoice_paid_at' => optional($paidProof?->reviewed_at)?->toIso8601String(),
+            'invoice_paid' => $allPaid,
+            'invoice_paid_at' => $paidAt?->toIso8601String(),
             'has_email' => ! empty($lead->email),
             'documents' => \App\Services\Immigration\EngagementDocumentGenerator::catalogue(),
             'signers' => $signers,
@@ -2132,6 +2149,7 @@ class CaseProfileController extends Controller
             ->map(function (LeadNote $n) use ($map) {
                 $row = $map($n);
                 $row['replies'] = $n->replies->map($map)->all();
+
                 return $row;
             })
             ->all();
