@@ -665,6 +665,7 @@ class LeadPortalController extends Controller
                     $q->orWhere(fn ($w) => $w->where('lead_id', $dep->linked_lead_id)->whereNotIn('source', ['generated', 'engagement']));
                 }
             })->firstOrFail();
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
         if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
             \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
         }

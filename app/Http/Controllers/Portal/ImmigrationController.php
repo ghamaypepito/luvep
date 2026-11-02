@@ -870,7 +870,7 @@ class ImmigrationController extends Controller
                 // nested so the table renders a single line per applicant
                 // instead of one line per file.
                 ->groupBy(fn ($doc) => $doc->lead_id.':'.($doc->notes['engagement_pack_id'] ?? 'legacy'))
-                ->map(function ($docs) use ($invoicedIds) {
+                ->map(function ($docs) {
                     $first = $docs->first(); // newest first (ordered desc)
                     $lead = $first->lead;
                     $packId = $first->notes['engagement_pack_id'] ?? 'legacy';
@@ -1207,15 +1207,10 @@ class ImmigrationController extends Controller
 
             // Proof-of-payment uploads clients submitted from the engagement
             // page — staff verify (approve/reject) them here.
-            $proofs = LeadDocument::with(['lead:id,first_name,last_name,lead_id', 'lead.faceImage'])
+            $proofs = LeadDocument::with(['lead:id,first_name,last_name,lead_id', 'lead.faceImage', 'reviewer:id,name', 'proofReview.invoice.invoicePayments', 'proofReview.payment'])
                 ->where('source_variant', 'proof_of_payment')
                 ->orderByDesc('created_at')
-                ->limit(300)
-                ->get()
-                // One row per case — the client submits a single proof per
-                // invoice, and a re-upload replaces the prior file, so show the
-                // latest per case rather than every historical upload.
-                ->unique('lead_id')
+                ->orderByDesc('id')->get()
                 ->map(fn (LeadDocument $d) => [
                     'id' => $d->id,
                     'case_id' => $d->lead_id,
@@ -1225,6 +1220,10 @@ class ImmigrationController extends Controller
                     'original_name' => $d->original_name,
                     'size' => $d->size,
                     'status' => $d->status,
+                    'note' => $d->note,
+                    'proof_review' => app(\App\Services\PaymentProofService::class)->metadata($d),
+                    'reviewed_by' => $d->reviewer?->name,
+                    'reviewed_at' => $d->reviewed_at?->toIso8601String(),
                     'uploaded_at' => optional($d->created_at)?->toIso8601String(),
                     'view_url' => route('admin.documents.download', $d->id).'?inline=1',
                     'download_url' => route('admin.documents.download', $d->id),
@@ -1520,7 +1519,6 @@ class ImmigrationController extends Controller
         abort_unless(\App\Support\LeadAccess::canView($user, $lead)
             || ($user->role === 'agent' && $lead->agent_id === $user->id), 403);
 
-
         $data = $request->validate([
             'note' => ['nullable', 'string', 'max:2000'],
             'document' => ['nullable', 'file', 'mimes:pdf,doc,docx,jpg,jpeg,png', 'max:10240'],
@@ -1749,6 +1747,7 @@ class ImmigrationController extends Controller
             $attachments = $lead->documents()->whereIn('id', $entry['medical_document_ids'])
                 ->where('source_variant', 'medical')->get()->map(fn ($doc) => ['path' => $doc->file_path, 'name' => $doc->original_name])->all();
             abort_unless(count($attachments) === count($entry['medical_document_ids']), 422, 'The saved medical notice is no longer available.');
+
             return $this->notifyMedicalRequest($lead, $attachments)
                 ? back()->with('success', 'Medical request notification queued.')
                 : back()->withErrors(['notification' => 'The request is saved, but the email could not be queued. Check the client email and active Request for Medical template, then retry notification.']);
@@ -4736,8 +4735,7 @@ class ImmigrationController extends Controller
         $liaEndorsements = $inCase()->whereNotNull('stage_history')
             ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])
             ->map(function ($case) use ($from, $to) {
-                $dates = collect($case->stage_history ?? [])->filter(fn ($event) =>
-                    ($event['department'] ?? null) === 'immigration'
+                $dates = collect($case->stage_history ?? [])->filter(fn ($event) => ($event['department'] ?? null) === 'immigration'
                     && ($event['stage'] ?? null) === 'Endorsed'
                     && ! empty($event['at']))->map(function ($event) {
                         try {

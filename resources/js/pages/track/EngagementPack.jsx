@@ -19,7 +19,8 @@ export default function EngagementPack({ token, client = {}, documents = [], pro
     const [viewing, setViewing] = useState(null); // the doc open in the preview modal
 
     const agreement = documents.find((d) => d.signable) || null;
-    const invoice = documents.find((d) => d.is_invoice) || null;
+    const invoices = documents.filter((d) => d.is_invoice);
+    const invoice = invoices[0] || null;
     const standards = documents.filter((d) => !d.signable && !d.is_invoice);
 
     const agreementSigned = !! agreement?.signed;
@@ -36,7 +37,7 @@ export default function EngagementPack({ token, client = {}, documents = [], pro
         },
         {
             n: 2, label: "Invoice paid",
-            sub: invoicePaid ? "Received" : (invoice?.invoice_total != null ? `${money(invoice.invoice_total)} due ${fmtDate(invoice.due_date)}` : "awaiting"),
+            sub: invoicePaid ? "Received" : (invoice?.invoice_total != null ? `${money(invoice.invoice_total, invoice.currency)} due ${fmtDate(invoice.due_date)}` : "awaiting"),
             done: invoicePaid,
         },
         {
@@ -135,9 +136,13 @@ export default function EngagementPack({ token, client = {}, documents = [], pro
                     )}
 
                     {/* Invoice + proof of payment */}
-                    {invoice && (
-                        <InvoiceCard invoice={invoice} paid={invoicePaid} proofs={proofs} uploadUrl={proof_upload_url} onView={() => setViewing(invoice)} />
-                    )}
+                    {invoices.map(item => <InvoiceCard key={item.id} invoice={item} paid={!!item.payment_summary?.paid}
+                        proofs={proofs.filter(proof => proof.proof_review?.invoice_id === item.id || (!proof.proof_review?.invoice_id && invoices.length === 1))}
+                        uploadUrl={proof_upload_url} onView={() => setViewing(item)} />)}
+                    {invoices.length > 1 && proofs.some(proof => !proof.proof_review?.invoice_id) && <section className="rounded-2xl border border-gray-200 bg-white p-5">
+                        <h2 className="text-sm font-bold text-gray-900">Earlier payment proofs</h2><p className="mt-1 text-xs text-gray-600">The team will link these files to the correct invoice.</p>
+                        <ul className="mt-3 space-y-2">{proofs.filter(proof => !proof.proof_review?.invoice_id).map(proof => <li key={proof.id} className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate">{proof.original_name}</span><span>{proofStatus(proof.status)}</span><a href={proof.view_url} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{color:ACCENT}}>View</a></li>)}</ul>
+                    </section>}
 
                     {/* Yours to keep — standard IAA documents */}
                     {standards.length > 0 && (
@@ -204,11 +209,13 @@ export default function EngagementPack({ token, client = {}, documents = [], pro
 
 // The invoice card — amount, due date, proof-of-payment upload, and links.
 function InvoiceCard({ invoice, paid, proofs = [], uploadUrl, onView }) {
+    const summary = invoice.payment_summary;
+    const partial = !paid && Number(summary?.confirmed) > 0;
     return (
         <section className="bg-white border border-gray-200 rounded-2xl p-5">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: paid ? "#059669" : "#b45309" }}>{paid ? "Paid" : "Awaiting payment"}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: paid ? "#059669" : "#b45309" }}>{paid ? "Paid" : partial ? "Partially paid" : "Awaiting payment"}</p>
                     <h2 className="text-lg font-bold text-gray-900 mt-1">{invoice.title}</h2>
                     <p className="text-[12.5px] text-gray-500 mt-0.5">
                         {invoice.due_date ? `Due ${fmtDate(invoice.due_date)} · ` : ""}{invoice.engagement_type === "initial_consultation" ? "initial consultation booking fee" : invoice.engagement_type === "oia" ? "OIA / Privacy Act request service" : "service fee and INZ lodgement charge"}
@@ -216,19 +223,23 @@ function InvoiceCard({ invoice, paid, proofs = [], uploadUrl, onView }) {
                 </div>
                 {invoice.invoice_total != null && (
                     <div className="text-right flex-shrink-0">
-                        <p className="text-[22px] font-bold text-gray-900 tabular-nums">{money(invoice.invoice_total)}</p>
+                        <p className="text-[22px] font-bold text-gray-900 tabular-nums">{money(invoice.invoice_total, invoice.currency)}</p>
                         <p className="text-[11px] text-gray-400">{invoice.currency || "NZD"}{invoice.engagement_type === "initial_consultation" ? " · booking fee" : invoice.engagement_type === "oia" ? " · GST included" : ""}</p>
                     </div>
                 )}
             </div>
 
-            {! paid && uploadUrl && (
+            {summary && <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-600">
+                <span>{summary.legacy_paid ? 'Payment previously confirmed' : <>Confirmed <strong className="text-gray-900">{money(summary.confirmed, summary.currency)}</strong></>}</span>
+                <span>Remaining <strong className="text-gray-900">{money(summary.remaining, summary.currency)}</strong></span>
+            </div>}
+            {uploadUrl && (
                 <div className="mt-4 rounded-xl border border-dashed border-gray-200 p-4 flex items-center justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                         <p className="text-[13px] font-bold text-gray-800">Paid your invoice?</p>
-                        <p className="text-[12px] text-gray-500">Upload your receipt or bank-transfer confirmation and we'll verify it. PDF or image, up to 10 MB.</p>
+                        <p className="text-[12px] text-gray-500">Upload your receipts or bank-transfer confirmations. Select up to 10 PDF or image files, up to 10 MB each.</p>
                     </div>
-                    <ProofUpload uploadUrl={uploadUrl} />
+                    <ProofUpload uploadUrl={uploadUrl} invoiceId={invoice.id} />
                 </div>
             )}
             {paid && (
@@ -242,8 +253,11 @@ function InvoiceCard({ invoice, paid, proofs = [], uploadUrl, onView }) {
                     {proofs.map((p) => (
                         <li key={p.id} className="flex items-center gap-2 text-[12px]">
                             <FileText size={13} className="text-gray-300 flex-shrink-0" />
-                            <span className="text-gray-600 truncate flex-1">{p.original_name}</span>
-                            <span className="text-gray-400 whitespace-nowrap">{proofStatus(p.status)}</span>
+                            <div className="min-w-0 flex-1"><p className="truncate text-gray-700">{p.original_name}</p>
+                                {p.uploaded_at && <p className="mt-0.5 text-[11px] text-gray-500">{fmtDate(p.uploaded_at)}{p.proof_review?.amount != null ? ` · ${p.proof_review.supporting ? 'Supporting document' : `${money(p.proof_review.amount, p.proof_review.currency)} confirmed`}` : ''}</p>}
+                                {p.status === 'Rejected' && p.note && <p className="mt-1 text-[11px] text-rose-700">{p.note}</p>}
+                            </div>
+                            <span className={`whitespace-nowrap text-[11px] font-semibold ${p.status === "Approved" ? "text-emerald-700" : p.status === "Rejected" ? "text-rose-700" : "text-amber-700"}`}>{proofStatus(p.status)}</span>
                             <a href={p.view_url} target="_blank" rel="noopener noreferrer" className="font-semibold flex-shrink-0" style={{ color: ACCENT }}>View</a>
                         </li>
                     ))}
@@ -262,29 +276,35 @@ function InvoiceCard({ invoice, paid, proofs = [], uploadUrl, onView }) {
 }
 
 // Upload button for proof of payment (used inside the invoice card).
-function ProofUpload({ uploadUrl }) {
+export function ProofUpload({ uploadUrl, invoiceId }) {
     const fileRef = useRef(null);
     const [uploading, setUploading] = useState(false);
-    const onChange = (e) => {
-        const file = (e.target.files || [])[0];
-        if (! file) return;
+    const [error, setError] = useState('');
+    const onChange = (event) => {
+        const files = Array.from(event.target.files || []);
+        if (!files.length || uploading) return;
+        setError('');
+        if (files.length > 10 || files.some(file => file.size > 10 * 1024 * 1024)) {
+            setError('Select up to 10 files, each no larger than 10 MB.');
+            event.target.value = '';
+            return;
+        }
         setUploading(true);
-        // One proof per invoice — a re-upload replaces the previous file.
-        router.post(uploadUrl, { files: [file] }, {
+        router.post(uploadUrl, { files, invoice_id: invoiceId }, {
             forceFormData: true, preserveScroll: true,
-            onFinish: () => { setUploading(false); if (fileRef.current) fileRef.current.value = ""; },
+            onError: errors => setError(Object.values(errors)[0] || 'The files could not be uploaded. Please try again.'),
+            onFinish: () => { setUploading(false); if (fileRef.current) fileRef.current.value = ''; },
         });
     };
-    return (
-        <>
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-white text-[13px] font-bold hover:opacity-90 disabled:opacity-50 flex-shrink-0" style={{ backgroundColor: ACCENT }}>
-                {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {uploading ? "Uploading…" : "Upload proof of payment"}
-            </button>
-            <input ref={fileRef} type="file" accept="application/pdf,image/*" className="hidden" onChange={onChange} />
-        </>
-    );
+    return <div className="space-y-2">
+        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-50 flex-shrink-0" style={{backgroundColor:ACCENT}}>
+            {uploading ? <Loader2 size={14} className="animate-spin motion-reduce:animate-none" /> : <Upload size={14} />}
+            {uploading ? 'Uploading…' : 'Upload proofs of payment'}
+        </button>
+        <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" multiple className="hidden" aria-label="Payment proof files" onChange={onChange} />
+        {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
+    </div>;
 }
 
 // Download every "yours to keep" document, one after another.
@@ -299,8 +319,7 @@ function DownloadAll({ docs = [] }) {
 
 const fmtDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : "";
-const money = (n) =>
-    `$${Number(n || 0).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (n, currency = 'NZD') => n === null || n === undefined ? 'Not recorded' : new Intl.NumberFormat('en-NZ', {style:'currency',currency:currency || 'NZD'}).format(Number(n));
 const proofStatus = (s) =>
     s === "Approved" ? "Confirmed" : s === "Rejected" ? "Needs attention" : "Under review";
 const daysLeftLabel = (iso) => {

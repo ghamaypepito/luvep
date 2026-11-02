@@ -84,6 +84,8 @@ class DocumentQueueController extends Controller
 
         $docs = LeadDocument::with('lead')->whereIn('id', $data['ids'])->get();
 
+        abort_if($docs->contains(fn ($doc) => $doc->source_variant === 'proof_of_payment' || \App\Services\PaymentProofService::isInvoice($doc)), 422, 'Review payment evidence individually through Finance.');
+
         DB::transaction(function () use ($docs, $status, $data) {
             foreach ($docs as $doc) {
                 $doc->update([

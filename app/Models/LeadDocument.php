@@ -72,6 +72,16 @@ class LeadDocument extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
+    public function proofReview()
+    {
+        return $this->hasOne(PaymentProofReview::class, 'document_id');
+    }
+
+    public function invoicePayments()
+    {
+        return $this->hasMany(CaseFinancePayment::class, 'invoice_document_id');
+    }
+
     public function reviewer()
     {
         return $this->belongsTo(User::class, 'reviewed_by');

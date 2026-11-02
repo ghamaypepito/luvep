@@ -41,7 +41,9 @@ class CaseFinancial extends Model
     /** Sum of the case's payment ledger. */
     public function totalPaid(): float
     {
-        return round((float) CaseFinancePayment::where('lead_id', $this->lead_id)->sum('amount'), 2);
+        return round((float) CaseFinancePayment::where('lead_id', $this->lead_id)
+            ->where(fn ($query) => $query->whereNull('currency')->orWhere('currency', strtoupper($this->currency ?: 'NZD')))
+            ->sum('amount'), 2);
     }
 
     /** Outstanding balance (can be negative if overpaid). */

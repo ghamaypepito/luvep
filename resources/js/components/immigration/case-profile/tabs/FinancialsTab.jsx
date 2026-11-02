@@ -370,12 +370,12 @@ function PaymentLedger({ leadId, payments, fmt, owed }) {
                         {payments.map((p) => (
                             <tr key={p.id}>
                                 <td className="px-4 py-2 text-[12px] text-gray-700 tabular-nums">{p.paid_at}</td>
-                                <td className="px-4 py-2 text-[13px] font-semibold text-gray-900 tabular-nums">{fmt(p.amount)}</td>
+                                <td className="px-4 py-2 text-[13px] font-semibold text-gray-900 tabular-nums">{new Intl.NumberFormat('en-NZ', { style: 'currency', currency: p.currency || 'NZD' }).format(Number(p.amount))}</td>
                                 <td className="px-4 py-2 text-[12px] text-gray-600">{p.method || "—"}</td>
                                 <td className="px-4 py-2 text-[12px] text-gray-600">{p.reference || "—"}</td>
                                 <td className="px-4 py-2 text-[11px] text-gray-400">{p.recorded_by || "—"}</td>
                                 <td className="px-4 py-2 text-right">
-                                    <button type="button" onClick={() => remove(p.id)} className="text-gray-300 hover:text-rose-600"><Trash2 size={14} /></button>
+                                    <button type="button" disabled={p.has_verified_proofs} title={p.has_verified_proofs ? 'Verified evidence is retained; ask Finance to review a correction.' : 'Remove payment'} onClick={() => remove(p.id)} className="text-gray-300 hover:text-rose-600"><Trash2 size={14} /></button>
                                 </td>
                             </tr>
                         ))}
