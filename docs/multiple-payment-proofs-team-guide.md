@@ -18,7 +18,7 @@ Active Finance, Admin and Super Admin users can confirm a proof or mark it Needs
 ## Finance / Admin steps
 
 1. Open **Finance → Invoice → Proof of payment**.
-2. Find the client and the specific file. Click its eye / **View & verify** action. You can also open **Verify payment** on the invoice in the case's Documents tab.
+2. Find the client and the specific file. Click its eye / **View & verify** action. Users who also have case access can open **Verify payment** on an unpaid invoice, or **Review payment / Confirmed — view review** on an individual proof in the case's Documents tab.
 3. View/download the file and check the invoice and currency. If an older invoice has no saved currency, select its actual currency from the invoice before confirming.
 4. For a separate bank transfer, keep **Record a separate payment** and enter the actual amount received, payment date, and the transfer's unique bank transaction ID. Use the bank transaction ID even if several transfers repeat the invoice number.
 5. If another file supports money already recorded, choose **Supporting file for an existing payment**, then select the matching receipt. This confirms the evidence without adding the money again. An unallocated manual/installment receipt can be linked only to the matching case, invoice and currency.

@@ -730,6 +730,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
     // rather than the review-status dropdown used for client-uploaded documents.
     const variant = typeof doc?.source_variant === "string" ? doc.source_variant : "";
     const isInvoice = variant === "invoice" || variant.startsWith("invoice:");
+    const isProof = variant === "proof_of_payment";
     const isEngagementDoc = variant.startsWith("engagement:");
     const isWrittenAgreement = variant === "engagement:written_agreement";
     // "Sent" once the pack's emailed, or the tax invoice was shared with the client.
@@ -876,7 +877,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => setPreviewDoc(d)}
+                                    onClick={() => d.source_variant === "proof_of_payment" ? setVerifyOpen(true) : setPreviewDoc(d)}
                                     title="View & comment"
                                     className="text-[12px] font-semibold text-teal-700 hover:text-teal-900 flex-shrink-0"
                                 >
@@ -950,7 +951,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
                 ) : doc ? (
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                            <VerdictSelect value={status} options={statusOptions} onPick={pickStatus} saving={savingStatus} />
+                            {isProof ? <button type="button" onClick={() => setVerifyOpen(true)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-900">{doc.status === "Approved" ? "Confirmed — view review" : doc.status === "Rejected" ? "Needs attention — review" : "Review payment"}</button> : <VerdictSelect value={status} options={statusOptions} onPick={pickStatus} saving={savingStatus} />}
                             {savingStatus && <span className="text-[10px] text-gray-400">Saving…</span>}
                         </div>
                         {row.document?.reviewed_by ? (
@@ -1172,9 +1173,9 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
         )}
         {verifyOpen && (
             <ProofVerifyModal
-                proofs={proofs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === doc?.id)}
+                proofs={isProof ? [doc] : proofs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === doc?.id)}
                 leadId={leadId}
-                invoiceId={doc?.id}
+                invoiceId={isProof ? doc?.proof_review?.invoice_id : doc?.id}
                 onClose={() => setVerifyOpen(false)}
             />
         )}
