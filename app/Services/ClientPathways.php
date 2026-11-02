@@ -100,9 +100,8 @@ class ClientPathways
             return null;
         }
         if ($pathway === 'immigration' && $lead->is_immigration_case) {
-            $base = $admin ? '/admin/immigration' : '/portal/immigration';
-
-            return "{$base}/cases/{$lead->id}/profile";
+            // Admins use the same registered case profile route as Immigration.
+            return route('portal.immigration.cases.profile', ['lead' => $lead->id], false);
         }
         $base = $admin ? '/admin' : "/portal/{$pathway}";
 

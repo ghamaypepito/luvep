@@ -232,6 +232,13 @@ class ClientPathwayTest extends TestCase
         $this->assertSame("/portal/immigration/cases/{$lead->id}/profile", $options->firstWhere('key', 'immigration')['open_url']);
     }
 
+    public function test_admin_can_open_the_existing_immigration_pathway_using_a_real_registered_route(): void
+    {
+        $lead = $this->client(['is_immigration_case' => true, 'immigration_stage' => 'Approved Visa']);
+        $options = collect($this->getJson("/clients/{$lead->id}/pathways")->assertOk()->json('pathways'));
+        $this->get($options->firstWhere('key', 'immigration')['open_url'])->assertOk();
+    }
+
     public function test_unauthenticated_and_deleted_records_are_rejected(): void
     {
         $lead = $this->client();
