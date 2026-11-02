@@ -23,11 +23,11 @@ class EducationReportTest extends TestCase
             'tracking_code' => 'ER2', 'status' => 'Proposal Sent', 'stage_updated_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->component('portal/education/Reports')
-                ->where('range.preset', 'this_month')
+                ->where('range.preset', 'all')
                 ->where('pipeline.0.stage', 'Proposal Sent')
                 ->where('pipeline.0.count', 1)
                 ->where('totalRegister', 1)
@@ -48,7 +48,7 @@ class EducationReportTest extends TestCase
 
         // It shows under its "New Leads" sales status immediately — no conversion
         // needed, because Section 01 mirrors the Leads list.
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertInertia(fn (Assert $p) => $p
                 ->where('pipeline.0.stage', 'New Leads')
                 ->where('pipeline.0.count', 1)
@@ -69,7 +69,7 @@ class EducationReportTest extends TestCase
             'student_converted_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('totalRegister', 0)          // not in the leads pipeline
@@ -99,7 +99,7 @@ class EducationReportTest extends TestCase
             'immigration_stage' => 'Request for Information', 'stage_updated_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('departments.english.total', 1)
@@ -124,7 +124,7 @@ class EducationReportTest extends TestCase
             'immigration_stage' => 'Request for Information', 'stage_updated_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('totalRegister', 0)
