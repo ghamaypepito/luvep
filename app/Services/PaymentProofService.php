@@ -92,7 +92,7 @@ class PaymentProofService
             ->with('invoicePayments')->latest('id')->get();
 
         return ['invoices' => $invoices->map(fn ($invoice) => ['id' => $invoice->id,
-            'number' => $invoice->invoice_number ?: $invoice->original_name, 'summary' => $this->invoiceSummary($invoice)])->values(),
+            'number' => $invoice->invoice_number ?: $invoice->original_name, 'currency_recorded' => ! empty($invoice->notes['engagement_currency']), 'summary' => $this->invoiceSummary($invoice)])->values(),
             'payments' => CaseFinancePayment::where('lead_id', $proof->lead_id)->orderByDesc('paid_at')->get()->map(fn ($payment) => [
                 'id' => $payment->id, 'invoice_id' => $payment->invoice_document_id, 'amount' => (float) $payment->amount,
                 'currency' => $this->receiptCurrency($payment), 'paid_at' => $payment->paid_at?->toDateString(), 'reference' => $payment->reference,
@@ -157,6 +157,13 @@ class PaymentProofService
                 }
                 if ($invoice->invoice_total === null || (float) $invoice->invoice_total <= 0) {
                     throw ValidationException::withMessages(['invoice_id' => 'Record a positive invoice total before verifying a payment.']);
+                }
+                if (empty($invoice->notes['engagement_currency'])) {
+                    $legacyCurrency = Validator::make($input, ['invoice_currency' => ['required', Rule::in(['NZD', 'USD'])]])->validate()['invoice_currency'];
+                    $invoice->update(['notes' => array_merge($invoice->notes ?? [], ['engagement_currency' => $legacyCurrency])]);
+                }
+                if (! empty($input['invoice_currency']) && $input['invoice_currency'] !== $this->currency($invoice)) {
+                    throw ValidationException::withMessages(['invoice_currency' => 'The invoice currency was updated. Reopen the proof and check the invoice before confirming.']);
                 }
                 $wasPaid = $this->invoiceSummary($invoice)['paid'];
                 $currency = $this->currency($invoice);

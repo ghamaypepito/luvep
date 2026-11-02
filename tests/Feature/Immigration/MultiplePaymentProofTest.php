@@ -478,4 +478,18 @@ class MultiplePaymentProofTest extends TestCase
         $this->confirm($this->proof(), $invoice, 'VALID-INVOICE-FULL', 1200)->assertRedirect();
         $this->get('/engagement/synthetic-payment-token')->assertOk()->assertInertia(fn ($page) => $page->where('invoice_paid', true)->has('documents', 1));
     }
+
+    public function test_legacy_invoice_currency_must_be_confirmed_before_recording_money(): void
+    {
+        $invoice = $this->invoice();
+        $invoice->update(['notes' => null]);
+        $proof = $this->proof();
+        $this->confirm($proof, $invoice, 'LEGACY-USD')->assertUnprocessable()->assertJsonValidationErrors('invoice_currency');
+        $this->assertDatabaseCount('case_finance_payments', 0);
+        $this->confirm($proof, $invoice, 'LEGACY-USD', 400, ['invoice_currency' => 'USD'])->assertRedirect();
+        $this->assertSame('USD', $invoice->fresh()->notes['engagement_currency']);
+        $this->assertSame('USD', CaseFinancePayment::first()->currency);
+        $this->confirm($this->proof(), $invoice, 'STALE-CURRENCY', 400, ['invoice_currency' => 'NZD'])->assertUnprocessable()->assertJsonValidationErrors('invoice_currency');
+        $this->assertDatabaseCount('case_finance_payments', 1);
+    }
 }

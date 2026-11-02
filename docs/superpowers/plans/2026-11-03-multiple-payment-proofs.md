@@ -41,7 +41,7 @@ Files: new resources/js/components/payments/ProofReviewModal.jsx; modify track/E
 
 Interfaces: ProofReviewModal({proof,leadId,invoiceId,onClose,onReviewed}) loads scoped options and posts existing proof status endpoint. Existing styles/frame/table retained. Client input accepts multiple, posts invoice_id and retains status/validation feedback.
 
-- [x] Write/run browser tests for batch selection, correct per-file review payload, rejection reason, existing receipt linking, errors, confirmed read-only state and mobile/keyboard behavior.
+- [x] Write/run browser tests for batch selection, correct per-file review payload, rejection reason, existing receipt linking, errors, confirmed read-only state and keyboard behavior, with responsive layout source review.
 - [x] Implement the approved additions using existing styles. Mount shared review from both current eye/verify actions and show reviewer/currency metadata. Write client and Finance steps.
 - [x] Build production assets and inspect desktop with synthetic data and review responsive source; fix material issues in one batch. Commit verified UI.
 

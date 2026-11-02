@@ -17,9 +17,9 @@ export default function ProofReviewModal({ proof, leadId, invoiceId = null, onCl
     const [loadError, setLoadError] = useState('');
     const [retry, setRetry] = useState(0);
     const [rejection, setRejection] = useState(false);
-    const form = useForm({ status: 'Approved', invoice_id: '', payment_mode: 'new', amount: '', paid_at: '', reference: '', finance_payment_id: '', note: '' });
+    const form = useForm({ status: 'Approved', invoice_id: '', invoice_currency: '', payment_mode: 'new', amount: '', paid_at: '', reference: '', finance_payment_id: '', note: '' });
     const invoice = options?.invoices.find(item => String(item.id) === String(form.data.invoice_id));
-    const currency = invoice?.summary.currency || 'NZD';
+    const currency = (invoice?.currency_recorded === false ? form.data.invoice_currency : invoice?.summary.currency) || 'NZD';
     const receipts = options?.payments.filter(item => (!item.invoice_id || String(item.invoice_id) === String(form.data.invoice_id)) && item.currency === currency) || [];
     const approved = (options?.status || proof.status) === 'Approved';
     const editable = !!options?.can_review && !approved;
@@ -48,7 +48,7 @@ export default function ProofReviewModal({ proof, leadId, invoiceId = null, onCl
                 setOptions(data);
                 const assigned = data.review?.invoice_id;
                 const selected = assigned || (data.invoices.some(item => item.id === invoiceId) ? invoiceId : null) || (data.invoices.length === 1 ? data.invoices[0].id : '');
-                form.setData({ status: 'Approved', invoice_id: String(selected || ''), payment_mode: 'new', amount: '',
+                form.setData({ status: 'Approved', invoice_id: String(selected || ''), invoice_currency: '', payment_mode: 'new', amount: '',
                     paid_at: data.today, reference: '', finance_payment_id: '', note: data.note || '' });
             }).catch(error => {
                 if (!controller.signal.aborted) setLoadError(error.response?.status === 403 ? 'You do not have access to this payment review.' : 'Could not load payment details. Try again.');
@@ -101,11 +101,16 @@ export default function ProofReviewModal({ proof, leadId, invoiceId = null, onCl
                     {editable ? <form id={`${id}-form`} onSubmit={submit} className="space-y-4" aria-busy={form.processing}>
                         <label className="block text-sm font-medium" htmlFor={`${id}-invoice`}>Invoice</label>
                         <select id={`${id}-invoice`} className={inputClass} disabled={form.processing || !!options.review?.invoice_id} value={form.data.invoice_id}
-                            onChange={event => { form.clearErrors(); form.setData({ ...form.data, invoice_id: event.target.value, finance_payment_id: '' }); }}>
+                            onChange={event => { form.clearErrors(); form.setData({ ...form.data, invoice_id: event.target.value, invoice_currency: '', finance_payment_id: '' }); }}>
                             <option value="">Select the matching invoice</option>{options.invoices.map(item => <option key={item.id} value={item.id}>{item.number} · {money(item.summary.total, item.summary.currency)}</option>)}
                         </select>
                         {invoice && <p className="text-xs text-gray-600">Remaining {money(invoice.summary.remaining, currency)}</p>}
                         {!rejection && <>
+                            {invoice?.currency_recorded === false && <div className="space-y-1.5"><label htmlFor={`${id}-currency`} className="block text-sm font-medium">Invoice currency</label>
+                                <select id={`${id}-currency`} className={inputClass} required disabled={form.processing} value={form.data.invoice_currency} onChange={event => form.setData({ ...form.data, invoice_currency: event.target.value, finance_payment_id: '' })}>
+                                    <option value="">Confirm currency from the invoice</option><option value="NZD">NZD</option><option value="USD">USD</option>
+                                </select><p className="text-xs text-gray-600">This older invoice has no saved currency. Check the invoice before recording money.</p></div>}
+
                             <div className="space-y-1.5"><label htmlFor={`${id}-mode`} className="block text-sm font-medium">Payment record</label>
                                 <select id={`${id}-mode`} className={inputClass} disabled={form.processing} value={form.data.payment_mode} onChange={event => { form.clearErrors(); form.setData('payment_mode', event.target.value); }}>
                                     <option value="new">Record a separate payment</option><option value="existing">Supporting file for an existing payment</option>
