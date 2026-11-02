@@ -77,9 +77,9 @@ class ClientPathwayTest extends TestCase
         $this->assertDatabaseHas('lead_notes', ['lead_id' => $lead->id, 'user_id' => $owner->id]);
         $this->actingAs(User::factory()->create(['role' => 'education']))
             ->get('/portal/education/students')->assertOk()->assertInertia(fn ($page) => $page
-                ->where('students', fn ($students) => collect($students)->contains(
-                    fn ($student) => $student['id'] === $lead->id && $student['education_stage'] === 'Proposal Sent'
-                ))
+            ->where('students', fn ($students) => collect($students)->contains(
+                fn ($student) => $student['id'] === $lead->id && $student['education_stage'] === 'Proposal Sent'
+            ))
             );
     }
 

@@ -2,7 +2,7 @@
 
 Ticket: TKT-T7PUED — Immigration to Education (Emma Ceballo).
 
-Status: approved by the user on 2 November 2026; implementation in progress.
+Status: approved by the user on 2 November 2026; implemented and verified locally. Deployment is pending.
 
 ## Intent and agreed direction
 

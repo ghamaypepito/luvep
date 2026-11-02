@@ -968,7 +968,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <div className="flex max-w-full flex-wrap items-center gap-2">
                         <button
                             type="button"
                             onClick={() => setComposeOpen(true)}

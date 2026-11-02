@@ -52,6 +52,6 @@
 
 **Files:** Record completion evidence in docs/superpowers/plans/2026-11-02-add-client-pathway-progress.md.
 
-- [ ] Run focused backend, relevant existing department tests, component interactions and production build. Inspect desktop/mobile using synthetic data only.
-- [ ] Run the design detector once over changed UI. Obtain one independent final code review against spec and diff; fix material findings with regression coverage.
-- [ ] Check git diff --check and summarize changes, validation and production limitations. Leave the implementation reviewable on codex/add-client-pathway; do not deploy or reconcile real duplicates.
+- [x] Run focused backend, relevant existing department tests, component interactions and production build. Inspect desktop/mobile using synthetic data only.
+- [x] Run the design detector once over changed UI. Obtain one independent final code review against spec and diff; fix material findings with regression coverage.
+- [x] Check git diff --check and summarize changes, validation and production limitations. Leave the implementation reviewable on codex/add-client-pathway; do not deploy or reconcile real duplicates.
