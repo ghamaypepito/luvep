@@ -27,7 +27,7 @@ export default function EducationReportInsights({ insights = {}, department = "E
             </button>
             {expanded && <>
                 <p className="flex items-start gap-2 mt-1 mb-3 text-[11px] leading-relaxed text-gray-500"><Info size={14} className="shrink-0 mt-0.5" /><span>{range.all ? "All shows current records in the cards above. The trend uses all available dated history; missing history stays unknown." : "Cards, supporting lists and insights follow the selected dates. Counts use recorded department-specific stage history."}</span></p>
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)] gap-3">
+                <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,1fr)] gap-3">
                     <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 min-w-0" aria-label={`${department} trend`}>
                         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                             <div><h3 className="text-[13px] font-bold text-gray-900">Recorded stage entries over time</h3><p className="text-[11px] text-gray-500 mt-1">{range.all ? "All recorded history" : dates(range.from, range.to)} · {department}</p></div>
