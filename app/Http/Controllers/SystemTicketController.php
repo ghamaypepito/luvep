@@ -94,6 +94,7 @@ class SystemTicketController extends Controller
         $mine = SystemTicket::where('submitted_by', $user->id);
 
         $tickets = (clone $mine)
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
             ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->with(['resolver:id,name', 'assignee:id,name'])
             ->orderByRaw("CASE WHEN status IN ('done','declined') THEN 1 ELSE 0 END")
@@ -103,6 +104,7 @@ class SystemTicketController extends Controller
 
         return inertia($this->myTicketsPage($user), [
             'tickets' => $tickets,
+            'updated_request' => $this->updatedRequestFor($request),
             'filters' => ['tab' => $request->query('tab', 'active')],
             'counts' => [
                 'open' => (clone $mine)->open()->count(),
@@ -136,6 +138,7 @@ class SystemTicketController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $base = SystemTicket::query()
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
             ->with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
             ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($status && in_array($status, SystemTicket::STATUSES, true), fn ($q) => $q->where('status', $status))
@@ -154,6 +157,7 @@ class SystemTicketController extends Controller
 
         return inertia('admin/SystemTickets', [
             'tickets' => $tickets,
+            'updated_request' => $this->updatedRequestFor($request),
             'assignees' => User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->orderBy('name')->get(['id', 'name']),
             'filters' => ['tab' => $request->query('tab', 'active'), 'status' => $status, 'department' => $dept, 'search' => $search],
             'meta' => [
@@ -248,9 +252,82 @@ class SystemTicketController extends Controller
         return TicketAttachments::stream($request, $ticket->attachments ?? [], $index);
     }
 
+    /** Original senders may update their request, including completed tickets. */
+    public function requesterUpdate(Request $request, SystemTicket $ticket)
+    {
+        $user = $request->user();
+        abort_unless($user && $user->is_active && ! in_array($user->role, ['lead', 'revoked_lead'], true)
+            && (int) $ticket->submitted_by === (int) $user->id, 403);
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:160'],
+            'description' => ['required', 'string', 'max:5000'],
+            'category' => ['required', Rule::in(SystemTicket::CATEGORIES)],
+            'priority' => ['required', Rule::in(SystemTicket::PRIORITIES)],
+            'request_version' => ['required', 'string', 'size:64'],
+        ] + TicketAttachments::rules());
+        $stored = [];
+        try {
+            DB::transaction(function () use ($ticket, $user, $request, $data, &$stored) {
+                $locked = SystemTicket::whereKey($ticket->id)->lockForUpdate()->firstOrFail();
+                abort_unless((int) $locked->submitted_by === (int) $user->id, 403);
+                abort_if($locked->archived_at, 422, 'Archived tickets are read-only.');
+                if (! hash_equals($locked->requestVersion(), $data['request_version'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'request_version' => 'This request changed since you opened the editor. Keep a copy of your draft, reload the ticket and try again.',
+                    ]);
+                }
+                $files = $request->file('attachments', []);
+                if (count($locked->images ?? []) + count($locked->attachments ?? []) + count($files) > TicketAttachments::MAX_FILES) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'This ticket can hold up to 10 files, including existing screenshots and attachments.']);
+                }
+                $changes = [];
+                foreach (['title', 'description', 'category', 'priority'] as $field) {
+                    if ($locked->{$field} !== $data[$field]) {
+                        $changes[$field] = ['from' => $locked->{$field}, 'to' => $data[$field]];
+                        $locked->{$field} = $data[$field];
+                    }
+                }
+                if (! $changes && ! $files) {
+                    return;
+                }
+                $stored = TicketAttachments::store($files, "system-tickets/{$locked->id}/attachments");
+                if ($stored) {
+                    $locked->attachments = array_merge($locked->attachments ?? [], $stored);
+                }
+                $locked->save();
+                $locked->events()->create(['actor_id' => $user->id, 'kind' => 'request_updated',
+                    'from_status' => $locked->status, 'to_status' => $locked->status,
+                    'metadata' => ['changes' => $changes, 'attachments_added' => count($stored)]]);
+            });
+        } catch (\Throwable $e) {
+            TicketAttachments::delete($stored);
+            throw $e;
+        }
+
+        return back()->with('success', "Ticket {$ticket->ticket_ref} updated.")
+            ->with('ticket_request_update', ['actor_id' => $user->id, 'ticket_id' => $ticket->id]);
+    }
+
+    /** Keep an edited drawer current even when its new title leaves the search results. */
+    private function updatedRequestFor(Request $request): ?array
+    {
+        $updated = $request->session()->get('ticket_request_update');
+        if (! is_array($updated) || (int) ($updated['actor_id'] ?? 0) !== (int) $request->user()->id) {
+            return null;
+        }
+        $ticket = SystemTicket::with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
+            ->find($updated['ticket_id'] ?? null);
+
+        return $ticket && $ticket->canEditRequest($request->user()) ? $this->serialize($ticket) : null;
+    }
+
     private function serialize(SystemTicket $t): array
     {
         return [
+            'can_edit_request' => auth()->user() && $t->canEditRequest(auth()->user()),
+            'request_version' => auth()->user() && $t->canEditRequest(auth()->user()) ? $t->requestVersion() : null,
+            'request_edited_at' => $t->request_edited_at ? \Illuminate\Support\Carbon::parse($t->request_edited_at)->toIso8601String() : null,
             'assigned_to' => $t->assigned_to,
             'assignee' => $t->assignee?->name,
             'waiting_on' => $t->waiting_on,

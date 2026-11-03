@@ -56,6 +56,20 @@ class SystemTicket extends Model
         return $this->belongsTo(User::class, 'submitted_by');
     }
 
+    public function canEditRequest(User $user): bool
+    {
+        return $user->is_active
+            && ! in_array($user->role, ['lead', 'revoked_lead'], true)
+            && (int) $this->submitted_by === (int) $user->id
+            && ! $this->archived_at;
+    }
+
+    /** Support triage must not invalidate a sender's unchanged request draft. */
+    public function requestVersion(): string
+    {
+        return hash('sha256', json_encode($this->only(['title', 'description', 'category', 'priority', 'images', 'attachments'])));
+    }
+
     public function resolver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'resolved_by');

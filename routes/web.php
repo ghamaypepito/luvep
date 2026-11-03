@@ -499,6 +499,7 @@ Route::middleware(['auth'])->group(function () {
     // blocked inside the controller).
     Route::get('/system-tickets/{ticket}/conversation', [\App\Http\Controllers\TicketConversationController::class, 'show']);
     Route::post('/system-tickets/{ticket}/messages', [\App\Http\Controllers\TicketConversationController::class, 'storeMessage'])->middleware('throttle:30,1');
+    Route::post('/system-tickets/{ticket}/request', [\App\Http\Controllers\SystemTicketController::class, 'requesterUpdate'])->middleware('throttle:30,1');
     Route::get('/system-tickets/{ticket}/attachments/{index}', [\App\Http\Controllers\SystemTicketController::class, 'attachment'])->whereNumber(['ticket', 'index']);
     Route::get('/system-tickets/{ticket}/messages/{message}/attachments/{index}', [\App\Http\Controllers\TicketConversationController::class, 'attachment'])->whereNumber(['ticket', 'message', 'index']);
     Route::get('/system-tickets/{ticket}/resolution', [\App\Http\Controllers\TicketConversationController::class, 'downloadResolution']);
