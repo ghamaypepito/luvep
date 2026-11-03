@@ -234,6 +234,8 @@ class AgreementGenerator
         // reference amounts from the ePathways template.
         $schoolFee = (int) ($overrides['school_enrolment_fee'] ?? $s['default_school_fee']);
         $englishFee = (int) ($overrides['english_proficiency_fee'] ?? 14500);
+        $customDescription = is_string($overrides['application_description'] ?? null)
+            ? trim($overrides['application_description']) : '';
 
         // Currency for the staff-entered fees (php | nzd). Only the symbol
         // changes — amounts are never converted. The static reference
@@ -293,7 +295,8 @@ class AgreementGenerator
             'scenario_number' => $s['number'],
             'scenario_title' => $s['title'],
             'scenario_applicant' => $applicantLabel,
-            'scenario_description' => $s['description'],
+            'scenario_description' => $customDescription !== '' ? $customDescription : $s['description'],
+            'scenario_description_custom' => $customDescription !== '',
             'scenario_has_voucher' => $s['has_voucher'],
             'applicant_mode' => $applicantMode,
             'supports_both' => $s['supports_both'],

@@ -119,6 +119,10 @@
     table.apptype td { border: 1px solid #b7ceac; background: #f4f8f0; padding: 10px 12px; font-size: 10pt; vertical-align: top; }
     table.apptype td.check-cell { width: 44px; text-align: center; font-size: 14pt; background: #fbfdf9; }
     table.apptype td.fee-cell { width: 150px; text-align: left; font-weight: bold; color: #2e7d32; font-size: 11pt; }
+    table.apptype.custom-description { border: 1px solid #b7ceac; }
+    table.apptype.custom-description tbody td { border-top: 0; border-bottom: 0; padding-top: 0; padding-bottom: 0; }
+    table.apptype.custom-description tr.application-summary td { padding-top: 10px; padding-bottom: 4px; }
+    table.apptype.custom-description tbody tr:last-child td { padding-bottom: 10px; border-bottom: 1px solid #b7ceac; }
     .voucher-strike { text-decoration: line-through; color: #555; font-weight: normal; display: block; margin-top: 8px; font-size: 10pt; }
     .voucher-note { color: #436235; font-weight: bold; font-size: 9pt; margin-top: 6px; }
 
@@ -188,6 +192,42 @@
     $s = $scenarios[(string) $scenario] ?? $scenarios['std_100'];
 @endphp
 
+@if ($scenario_description_custom ?? false)
+{{-- Dompdf paginates between rows, never inside a cell. Keep each explicit
+     custom line in its own row so long descriptions cannot cross the footer. --}}
+<table class="apptype custom-description">
+    <thead><tr><th colspan="2">APPLICATION TYPE</th></tr></thead>
+    <tbody>
+        <tr class="application-summary">
+            <td>
+                <div class="strong">{{ $s['title'] }}</div>
+                <div class="strong">{{ $scenario_applicant }}</div>
+            </td>
+            <td class="fee-cell">
+                {{ $fmtFee0($school_enrolment_fee) }}
+                @if ($s['has_voucher'])
+                    <span class="voucher-strike">{{ $fmt($inz_voucher_fee) }}</span>
+                @endif
+            </td>
+        </tr>
+        @foreach (preg_split('/\r\n|\r|\n/', $scenario_description) as $line)
+            <tr>
+                <td style="word-wrap: break-word;">{{ $line === '' ? "\u{00A0}" : $line }}</td>
+                <td class="fee-cell"></td>
+            </tr>
+        @endforeach
+        @if ($s['has_voucher'])
+            <tr>
+                <td>
+                    <div style="margin-top: 10px;"><strong>Immigration NZ Fee</strong></div>
+                    <div class="voucher-note">Already covered within the School Enrolment and Documentation Fee</div>
+                </td>
+                <td class="fee-cell"></td>
+            </tr>
+        @endif
+    </tbody>
+</table>
+@else
 <table class="apptype no-break">
     <thead>
         <tr><th colspan="2">APPLICATION TYPE</th></tr>
@@ -212,9 +252,13 @@
         </tr>
     </tbody>
 </table>
+@endif
 
 <p>It is explicitly acknowledged that the fees rendered for our services become <strong>non-refundable</strong> once work has commenced. Any refund requests will be assessed on an individual basis at the sole discretion of ePathways Philippines.</p>
 
+@if ($scenario_description_custom ?? false)
+<div class="no-break">
+@endif
 <h3>Section 1. Bank Details</h3>
 <div class="bank-box">
     <div class="heading">{{ $bank_heading ?? 'Payment for School Enrollment and Documentation Fee' }}</div>
@@ -223,6 +267,9 @@
     <div class="row"><span class="label">Account Number:</span> <strong>{{ $bank_account_number ?? '9045440503' }}</strong></div>
     <div class="row"><span class="label">Reference:</span> <span class="ref-red">#{{ $bank_reference ?? $client_reference }}</span></div>
 </div>
+@if ($scenario_description_custom ?? false)
+</div>
+@endif
 
 {{-- ── Page 3 ───────────────────────────────────────────────── --}}
 <div class="page-break"></div>
