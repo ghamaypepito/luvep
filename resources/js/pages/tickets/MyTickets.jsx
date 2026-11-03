@@ -1,6 +1,7 @@
 import { useState } from "react";
 import TicketConversation from "@/components/TicketConversation";
 import TicketAttachments from "@/components/TicketAttachments";
+import TicketRequestEditor from "@/components/TicketRequestEditor";
 import { Head } from "@inertiajs/react";
 import { Ticket, MessageSquare } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
@@ -77,6 +78,7 @@ export default function MyTickets({ tickets = { data: [], links: [] }, counts = 
                                 </div>
 
                                 <TicketAttachments attachments={t.attachments} />
+                                <TicketRequestEditor ticket={t} />
                                 {t.admin_response && (
                                     <div className="mt-3 flex gap-2 rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5">
                                         <MessageSquare size={15} className="text-gray-400 shrink-0 mt-0.5" />

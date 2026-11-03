@@ -3,6 +3,7 @@ import { Head, router } from "@inertiajs/react";
 import { Ticket, Search, X } from "lucide-react";
 import TicketConversation from "@/components/TicketConversation";
 import TicketAttachments from "@/components/TicketAttachments";
+import TicketRequestEditor from "@/components/TicketRequestEditor";
 import Pagination from "@/components/ui/Pagination";
 
 const STATUS_META = {
@@ -18,10 +19,13 @@ const CAT_LABEL = { change: "Change", feature: "Feature", bug: "Bug", other: "Ot
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const titleCase = (s) => (s || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-export default function SystemTickets({ tickets = { data: [], links: [] }, filters = {}, meta = {}, counts = {}, assignees = [] }) {
+export default function SystemTickets({ tickets = { data: [], links: [] }, filters = {}, meta = {}, counts = {}, assignees = [], updated_request = null }) {
     const rows = tickets?.data ?? [];
     const [search, setSearch] = useState(filters.search ?? "");
     const [active, setActive] = useState(null); // ticket open in the detail drawer
+    useEffect(() => {
+        if (updated_request) setActive((current) => current?.id === updated_request.id ? updated_request : current);
+    }, [updated_request]);
 
     const setFilter = (next = {}) => {
         const params = {
@@ -110,7 +114,7 @@ export default function SystemTickets({ tickets = { data: [], links: [] }, filte
 
             <Pagination links={tickets?.links ?? []} />
 
-            {active && <TicketDrawer ticket={rows.find((row) => row.id === active.id) ?? active} statuses={meta.statuses ?? []} assignees={assignees} onClose={() => setActive(null)} />}
+            {active && <TicketDrawer key={active.id} ticket={rows.find((row) => row.id === active.id) ?? (updated_request?.id === active.id ? updated_request : active)} statuses={meta.statuses ?? []} assignees={assignees} onClose={() => setActive(null)} />}
         </div>
     );
 }
@@ -156,6 +160,7 @@ function TicketDrawer({ ticket, statuses, assignees, onClose }) {
                 <section><h3 className="text-sm font-semibold mb-2">Request</h3><p className="text-sm text-gray-700 whitespace-pre-wrap">{ticket.description}</p></section>
                 {!!ticket.images?.length && <div className="flex flex-wrap gap-2">{ticket.images.map((src, i) => <a key={src} href={src} target="_blank" rel="noopener noreferrer"><img src={src} alt={`Screenshot ${i + 1}`} className="w-24 h-24 rounded-lg object-cover border" /></a>)}</div>}
                 <TicketAttachments attachments={ticket.attachments} />
+                <TicketRequestEditor ticket={ticket} />
                 {ticket.admin_response && <section className="rounded-xl bg-gray-50 p-3"><h3 className="text-xs font-semibold text-gray-500">Saved admin response</h3><p className="whitespace-pre-wrap text-sm mt-1">{ticket.admin_response}</p></section>}
                 <TicketConversation ticket={ticket} />
                 {!ticket.archived_at && <section className="space-y-4 border-t pt-5">
