@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
+import { PathwayDialog } from '@/components/leads/AddPathwayButton';
 import NoteProgramPicker, { NotePrograms } from '@/components/leads/NoteProgramPicker';
 import BulkEmailModal from "@/components/sales/BulkEmailModal";
 import Avatar from "@/components/ui/Avatar";
@@ -1715,6 +1716,10 @@ function ImportLeadsButton() {
 // ── Row "More" menu — portal invitation actions live here ────────────────
 
 function RowMenu({ lead, open, onToggle, onClose, onEdit, onRequestPortal, onViewFiles, isSaving, portalBase = "/portal/sales", canRequestInvite = true }) {
+    const { auth } = usePage().props;
+    const canAddPathway = auth?.modules?.includes('client_pathways')
+        && ['admin', 'super_admin', 'sales', 'education', 'immigration', 'immigration_manager', 'immigration_adviser'].includes(auth?.user?.role);
+    const [pathwayOpen, setPathwayOpen] = useState(false);
     const menuRef = useRef(null);
     const triggerRef = useRef(null);
     const [menuStyle, setMenuStyle] = useState(null);
@@ -1804,6 +1809,16 @@ function RowMenu({ lead, open, onToggle, onClose, onEdit, onRequestPortal, onVie
                         <Pencil size={12} className="text-gray-400" />
                         Edit lead
                     </button>
+                    {canAddPathway && <button
+                        type="button"
+                        role="menuitem"
+                        aria-haspopup="dialog"
+                        onClick={() => { onClose?.(); setPathwayOpen(true); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                    >
+                        <Plus size={12} className="text-gray-400" aria-hidden="true" />
+                        Add pathway
+                    </button>}
                     <Link
                         href={`${portalBase}/leads/${lead.id}?tab=documents`}
                         className="flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
@@ -1908,6 +1923,10 @@ function RowMenu({ lead, open, onToggle, onClose, onEdit, onRequestPortal, onVie
                 </div>,
                 document.body,
             )}
+            {pathwayOpen && <PathwayDialog key={lead.id} leadId={lead.id} onClose={() => {
+                setPathwayOpen(false);
+                triggerRef.current?.focus();
+            }} />}
         </div>
     );
 }

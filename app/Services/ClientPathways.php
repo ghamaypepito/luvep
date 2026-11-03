@@ -18,7 +18,7 @@ class ClientPathways
     {
         return [
             'education' => [
-                'label' => 'Education', 'flag' => 'is_student', 'prefix' => 'student',
+                'label' => 'Student', 'flag' => 'is_student', 'prefix' => 'student',
                 'column' => 'education_stage', 'stages' => Lead::EDUCATION_STAGES,
                 'default_stage' => 'New Lead', 'assignee_column' => null, 'assignees' => [],
                 'roles' => ['education'],
@@ -59,10 +59,24 @@ class ClientPathways
 
     public function canManage(User $user, Lead $lead): bool
     {
+        if (! $user->is_active) {
+            return false;
+        }
+
+        $hasPathway = collect(array_keys($this->definitions()))
+            ->contains(fn ($key) => $this->active($lead, $key));
+
+        // An individual grant permits the first handoff from List of Leads.
+        // It does not open unrelated department clients or their portals.
+        if (! $hasPathway && $user->canSeeModule('client_pathways')
+            && in_array($user->role, array_merge(['sales', 'education', 'immigration'], User::IMMIGRATION_ROLES), true)) {
+            return true;
+        }
+
         // Sales must not regain access to clients whose membership is derived
         // from a stage rather than a conversion flag.
         if ($user->role === 'sales') {
-            return ! collect(array_keys($this->definitions()))->contains(fn ($key) => $this->active($lead, $key));
+            return ! $hasPathway;
         }
 
         return LeadAccess::canView($user, $lead)

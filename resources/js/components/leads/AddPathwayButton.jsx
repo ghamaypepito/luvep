@@ -22,7 +22,7 @@ export default function AddPathwayButton({ leadId }) {
     </>;
 }
 
-function PathwayDialog({ leadId, onClose }) {
+export function PathwayDialog({ leadId, onClose }) {
     const dialog = useRef(null);
     const request = useRef(null);
     const id = useId();
