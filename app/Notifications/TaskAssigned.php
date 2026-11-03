@@ -34,9 +34,11 @@ class TaskAssigned extends Notification
             'body'       => "{$actor} assigned you: \"{$this->task->title}\"{$due}.",
             'task_id'    => $this->task->id,
             'lead_id'    => $this->task->lead_id,
-            'link'       => $this->task->lead_id
-                ? "/admin/leads/{$this->task->lead_id}"
-                : '/admin/tasks',
+            'link'       => ($notifiable->role ?? null) === 'finance'
+                ? '/portal/finance/tasks?task='.$this->task->id
+                : ($this->task->lead_id
+                    ? "/admin/leads/{$this->task->lead_id}"
+                    : '/admin/tasks'),
         ];
     }
 }

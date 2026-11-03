@@ -114,7 +114,9 @@ class FinanceController extends Controller
 
             $base = \App\Models\LeadTask::with(['lead:id,lead_id,first_name,last_name,email,status', 'assignee:id,name,avatar_path', 'creator:id,name,avatar_path', 'attachments'])
                 ->withCount('comments')
-                ->when($scope === 'mine', fn ($q) => $q->where('assignee_id', $userId))
+                ->when($scope === 'mine', fn ($q) => $q->where(fn ($assigned) => $assigned
+                    ->where('assignee_id', $userId)
+                    ->orWhereJsonContains('additional_assignee_ids', (int) $userId)))
                 ->when($scope === 'department', fn ($q) => $q->where('department', 'finance'));
 
             $serialize = fn ($t) => [
@@ -155,6 +157,17 @@ class FinanceController extends Controller
                 ] : null,
             ];
 
+            // A notification may point to an older task outside the board's
+            // first 1000 rows. Resolve it only within this user's own queue.
+            $selectedTask = null;
+            if ($request->filled('task')) {
+                $selected = (clone $base)->whereKey($request->integer('task'))
+                    ->where(fn ($assigned) => $assigned->where('assignee_id', $userId)
+                        ->orWhereJsonContains('additional_assignee_ids', (int) $userId))
+                    ->first();
+                $selectedTask = $selected ? $serialize($selected) : null;
+            }
+
             $allTasks = (clone $base)->orderByDesc('created_at')->limit(1000)->get()->map($serialize);
             $today = (clone $base)->where('completed', false)->whereBetween('due_at', [$now, $todayEnd])->orderBy('due_at')->get()->map($serialize);
             $overdue = (clone $base)->where('completed', false)->whereNotNull('due_at')->where('due_at', '<', $now)->orderBy('due_at')->get()->map($serialize);
@@ -165,6 +178,7 @@ class FinanceController extends Controller
             return inertia('portal/finance/Tasks', [
                 'portal' => 'finance',
                 'scope' => $scope,
+                'selected_task' => $selectedTask,
                 'all_tasks' => $allTasks,
                 'today' => $today,
                 'overdue' => $overdue,

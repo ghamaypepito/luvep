@@ -19,7 +19,7 @@ class NotificationFormatter
      *                                                                                                     A serialized notification (or an array with `type` short name + `data`).
      * @return array{icon:string,color:string,title:string,body:string,url:?string,type:string}
      */
-    public static function format(array $notification): array
+    public static function format(array $notification, ?string $recipientRole = null): array
     {
         $type = class_basename($notification['type'] ?? 'Notification');
         $data = $notification['data'] ?? [];
@@ -28,6 +28,13 @@ class NotificationFormatter
         }
 
         $url = $data['link'] ?? $data['url'] ?? null;
+
+        // Resolve historical task links at read time without rewriting stored
+        // notifications or granting Finance access to the Admin portal.
+        if ($type === 'TaskAssigned' && $recipientRole === 'finance') {
+            $taskId = filter_var($data['task_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $url = '/portal/finance/tasks'.($taskId ? '?task='.$taskId : '');
+        }
 
         $meta = match ($type) {
             'HrActionRequired' => ['icon' => 'Bell', 'color' => 'emerald', 'title' => $data['title'] ?? 'Luvep HR update'],
