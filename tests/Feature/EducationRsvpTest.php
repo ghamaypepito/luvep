@@ -47,6 +47,32 @@ class EducationRsvpTest extends TestCase
         $this->get('/education/register')->assertOk();
     }
 
+    private function dateOrderVisits(): array
+    {
+        $pending = $this->visit(['slug' => 'pending-date', 'school' => 'Pending date']);
+        $expected = [];
+        foreach ([10, 6, 7, 9, 4, 8] as $day) {
+            $visit = $this->visit(['slug' => 'event-'.$day, 'school' => 'Event '.$day, 'event_date' => sprintf('2026-11-%02d', $day), 'schedule_confirmed' => true]);
+            $expected[$day] = $visit->id;
+        }
+        ksort($expected);
+
+        return [...array_values($expected), $pending->id];
+    }
+
+    public function test_public_page_orders_events_by_published_date_with_unconfirmed_dates_last(): void
+    {
+        $expected = $this->dateOrderVisits();
+        $this->get('/education/rsvp')->assertOk()->assertViewHas('visits', fn ($visits) => $visits->pluck('id')->all() === $expected);
+    }
+
+    public function test_catalogue_orders_events_by_published_date_with_unconfirmed_dates_last(): void
+    {
+        $expected = $this->dateOrderVisits();
+        $response = $this->getJson('/education/rsvp/catalogue')->assertOk();
+        $this->assertSame($expected, array_column($response->json('visits'), 'id'));
+    }
+
     public function test_rsvp_has_optional_phone_no_lead_and_no_public_provisional_date(): void
     {
         $this->staff();
