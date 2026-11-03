@@ -40,6 +40,17 @@ class EducationManagedScheduleTest extends TestCase
         return $u;
     }
 
+    public function test_registration_event_choices_follow_date_order_instead_of_school_name(): void
+    {
+        $last = $this->visit(['slug' => 'clark-last', 'school' => 'Clark', 'event_date' => '2026-11-10']);
+        $first = $this->visit(['slug' => 'manila-first', 'school' => 'Metro Manila', 'event_date' => '2026-11-04']);
+        $middle = $this->visit(['slug' => 'davao-middle', 'school' => 'Davao', 'event_date' => '2026-11-06']);
+        $pending = $this->visit(['slug' => 'pending', 'school' => 'A pending event', 'event_date' => null, 'schedule_confirmed' => false]);
+        $this->visit(['slug' => 'hidden-old', 'school' => 'Hidden old visit', 'event_date' => '2026-11-03', 'is_hidden' => true]);
+        $expected = [$first->id, $middle->id, $last->id, $pending->id];
+        $this->get('/education/register')->assertOk()->assertViewHas('registrationVisits', fn ($visits) => $visits->pluck('id')->all() === $expected);
+    }
+
     public function test_staff_adds_a_schedule_that_appears_in_rsvp_and_registration_dropdowns(): void
     {
         $this->actingAs($this->staff())->postJson('/portal/education/rsvp-visits', $this->schedule())->assertCreated();
