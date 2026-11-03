@@ -12,7 +12,7 @@ try {
 } catch { /* Interaction tests can run before building; screenshots require the build. */ }
 
 const pathways = [
-    {key:'education',label:'Education',active:false,stage:null,stages:['New Lead','For Proposal','Proposal Sent'],default_stage:'New Lead',assignees:[],assignee:null,open_url:null},
+    {key:'education',label:'Student',active:false,stage:null,stages:['New Lead','For Proposal','Proposal Sent'],default_stage:'New Lead',assignees:[],assignee:null,open_url:null},
     {key:'immigration',label:'Immigration',active:true,stage:'Approved Visa',stages:['For Assessment','Approved Visa'],default_stage:'Approved Visa',assignees:['Hendry','Tarun'],assignee:'Hendry',open_url:'/portal/immigration/cases/4/profile'},
     {key:'english',label:'English',active:false,stage:null,stages:['PTE Review','DIY Review'],default_stage:'PTE Review',assignees:['Paula','Frank','DIY'],assignee:null,open_url:null},
     {key:'accommodation',label:'Accommodation',active:false,stage:null,stages:[],default_stage:null,assignees:[],assignee:null,open_url:null},
@@ -61,14 +61,14 @@ async function setup({width=1280,failLoad=false,postStatus=200,holdPost=false}={
     return {browser,page,calls,releasePost};
 }
 
-test('select Education Proposal Sent and submit without changing Immigration',async()=>{
+test('select Student pathway at Proposal Sent and submit without changing Immigration',async()=>{
     const {browser,page,calls}=await setup();
     try{
         await page.getByRole('button',{name:'Add pathway',exact:true}).click();
         await page.getByLabel('Pathway',{exact:true}).selectOption('education');
         await page.getByLabel('Starting stage').selectOption('Proposal Sent');
         await page.getByLabel('Handoff note').fill('Client now wants to study.');
-        await page.getByRole('button',{name:'Add Education pathway',exact:true}).click();
+        await page.getByRole('button',{name:'Add Student pathway',exact:true}).click();
         await page.getByRole('dialog').waitFor({state:'hidden'});
         assert.deepEqual(calls,[{pathway:'education',stage:'Proposal Sent',assignee:'',note:'Client now wants to study.'}]);
     }finally{await browser.close();}
@@ -105,7 +105,7 @@ test('validation error stays in the form and switching pathway clears it',async(
     try{
         await page.getByRole('button',{name:'Add pathway',exact:true}).click();
         await page.getByLabel('Pathway',{exact:true}).selectOption('education');
-        await page.getByRole('button',{name:'Add Education pathway',exact:true}).click();
+        await page.getByRole('button',{name:'Add Student pathway',exact:true}).click();
         await page.getByText('Choose a valid starting stage.').waitFor();
         await page.getByLabel('Pathway',{exact:true}).selectOption('english');
         assert.equal(await page.getByText('Choose a valid starting stage.').count(),0);
@@ -120,7 +120,7 @@ test('pending submission blocks a second add and dismissal until it finishes',as
     const {browser,page,calls,releasePost}=await setup({holdPost:true});
     try{
         await page.getByRole('button',{name:'Add pathway',exact:true}).click();
-        await page.getByRole('button',{name:'Add Education pathway',exact:true}).click();
+        await page.getByRole('button',{name:'Add Student pathway',exact:true}).click();
         const pending=page.getByRole('button',{name:'Adding pathway…',exact:true});
         await pending.waitFor();
         assert.equal(await pending.isDisabled(),true);
@@ -144,7 +144,7 @@ for (const width of [1280, 390]) {
             const box=await dialog.boundingBox();
             assert.ok(box.x>=0&&box.x+box.width<=width,'Dialog must fit horizontally');
             assert.ok(box.y>=0&&box.y+box.height<=800,'Dialog must fit vertically');
-            await page.getByRole('button',{name:'Add Education pathway',exact:true}).focus();
+            await page.getByRole('button',{name:'Add Student pathway',exact:true}).focus();
             await page.keyboard.press('Tab');
             assert.equal(await dialog.evaluate(el=>el.contains(document.activeElement)),true);
             assert.equal(await page.evaluate(()=>document.body.style.overflow),'hidden');

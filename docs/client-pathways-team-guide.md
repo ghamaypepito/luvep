@@ -6,10 +6,10 @@ Use the existing client profile when a client starts Education, Immigration, Eng
 
 1. Open **Immigration → Cases** and open the client's existing case profile. An administrator can also open the existing client profile from **Leads**.
 2. Click **Add pathway**.
-3. Choose **Education** from the Pathway list.
+3. Choose **Student** from the Pathway list.
 4. Choose the **Starting stage**. Use **New Lead** for a new Education enquiry. Select **Proposal Sent** only if the Education proposal has already been sent. Select the stage that reflects the work actually completed.
 5. Add an optional **Handoff note** explaining the client's new study request and what the Education team needs to do next.
-6. Click **Add Education pathway** and wait for the success message.
+6. Click **Add Student pathway** and wait for the success message.
 7. The Education team opens **Education → Students**, searches for the same client, and continues from the selected Education stage.
 8. Confirm that the original Immigration case still shows its existing outcome, such as **Approved Visa**. Personal information, the portal login, documents, and previous history remain attached to the same client.
 
@@ -30,3 +30,9 @@ Choose that pathway in the dialog to see its existing stage and adviser. Use **O
 Do not create another client account for a new pathway. If duplicate records already exist, ask Support to review and reconcile them. This feature does not automatically merge existing duplicates.
 
 Existing document verification and access rules still apply. Reusing a record does not automatically approve documents, complete tasks, or mark proposals, agreements, or invoices as paid. Existing financial records are preserved; adding a pathway does not itself create a charge.
+
+## From List of Leads
+
+Staff granted **Add client pathways** can open a lead’s three-dot **More actions** menu and choose **Add pathway**. Choose **Student** to place the same client in Education → Students, or choose Immigration, English or Accommodation. Select the starting stage that reflects completed work, optionally add a handoff note, then confirm. The client leaves List of Leads when the pathway is added; existing documents and login stay with that client.
+
+Super Admin manages this individual permission in **Module Management → Add client pathways**. It does not change a staff member’s role or grant another department’s portal access. Existing own-department pathway access remains available from the client profile. Previously converted clients must be handled from the department that already manages their pathway.

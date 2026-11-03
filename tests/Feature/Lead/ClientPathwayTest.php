@@ -194,6 +194,74 @@ class ClientPathwayTest extends TestCase
         $this->assertFalse($lead->fresh()->is_student);
     }
 
+    public function test_granted_lead_handling_staff_can_add_any_pathway_from_new_leads(): void
+    {
+        foreach (['education', 'immigration_manager'] as $role) {
+            $staff = User::factory()->create([
+                'role' => $role, 'module_permissions' => ['client_pathways'],
+            ]);
+            $before = $staff->fresh()->getAttributes();
+            foreach (['education' => 'is_student', 'immigration' => 'is_immigration_case',
+                'english' => 'is_english_student', 'accommodation' => 'is_accommodation_client'] as $key => $flag) {
+                $lead = $this->client();
+                $this->actingAs($staff)->getJson("/clients/{$lead->id}/pathways")
+                    ->assertOk()->assertJsonPath('pathways.0.label', 'Student')
+                    ->assertJsonCount(4, 'pathways');
+                $this->post("/clients/{$lead->id}/pathways", ['pathway' => $key])
+                    ->assertRedirect()->assertSessionHasNoErrors()->assertSessionHas('success');
+                $this->assertTrue((bool) $lead->fresh()->{$flag});
+                $this->assertFalse(Lead::inLeadPipeline()->whereKey($lead->id)->exists());
+                $this->assertSame(1, ActivityLog::where('action', 'client.pathway_added')
+                    ->where('user_id', $staff->id)->where('properties->subject_id', $lead->id)->count());
+            }
+            $this->assertSame($before, $staff->fresh()->getAttributes());
+            $this->assertFalse($staff->canAccessPortal($role === 'education' ? 'immigration' : 'education'));
+        }
+    }
+
+    public function test_new_lead_pathway_access_requires_an_explicit_grant(): void
+    {
+        $lead = $this->client();
+        foreach (['education', 'immigration_manager'] as $role) {
+            $staff = User::factory()->create(['role' => $role]);
+            $this->actingAs($staff)->getJson("/clients/{$lead->id}/pathways")->assertForbidden();
+            $this->postJson("/clients/{$lead->id}/pathways", ['pathway' => 'education'])->assertForbidden();
+        }
+        $this->assertFalse($lead->fresh()->is_student);
+        Notification::assertNothingSent();
+    }
+
+    public function test_pathway_grant_does_not_open_other_departments_or_implicit_memberships(): void
+    {
+        foreach ([['education', ['is_immigration_case' => true]],
+            ['education', ['english_stage' => 'DIY Review']],
+            ['immigration_manager', ['is_student' => true]],
+            ['immigration_manager', ['stage' => 'English Pro']]] as [$role, $attributes]) {
+            $lead = $this->client($attributes);
+            $before = $lead->fresh()->getAttributes();
+            $staff = User::factory()->create(['role' => $role, 'module_permissions' => ['client_pathways']]);
+            $this->actingAs($staff)->getJson("/clients/{$lead->id}/pathways")->assertForbidden();
+            $this->postJson("/clients/{$lead->id}/pathways", ['pathway' => 'accommodation'])->assertForbidden();
+            $this->assertSame($before, $lead->fresh()->getAttributes());
+        }
+    }
+
+    public function test_inactive_or_external_accounts_cannot_use_a_pathway_grant(): void
+    {
+        $lead = $this->client();
+        foreach (['lead', 'revoked_lead', 'agent', 'sub_agent', 'finance'] as $role) {
+            $staff = User::factory()->create([
+                'role' => $role, 'module_permissions' => ['client_pathways'], 'portal_access' => ['education'],
+            ]);
+            $this->actingAs($staff)->getJson("/clients/{$lead->id}/pathways")->assertForbidden();
+            $this->postJson("/clients/{$lead->id}/pathways", ['pathway' => 'education'])->assertForbidden();
+        }
+        $staff = User::factory()->create(['role' => 'education', 'is_active' => false, 'module_permissions' => ['client_pathways']]);
+        $this->assertFalse(app(\App\Services\ClientPathways::class)->canManage($staff, $lead));
+        $this->assertFalse(app(\App\Services\ClientPathways::class)->canManage($staff, $this->client(['is_student' => true])));
+        Notification::assertNothingSent();
+    }
+
     public function test_each_source_department_can_add_a_pathway_for_its_own_client(): void
     {
         foreach ([

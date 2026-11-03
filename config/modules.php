@@ -26,6 +26,11 @@ return [
     |
     */
     'restricted' => [
+        'client_pathways' => [
+            'label' => 'Add client pathways',
+            'description' => 'Allow lead-handling staff to add Student, Immigration, English or Accommodation pathways from List of Leads. Does not grant access to other department portals.',
+            'admin_default' => true,
+        ],
         'hr' => [
             'label' => 'Human Resources',
             'description' => 'Private employee services. Sensitive features require explicit individual grants.',
