@@ -701,6 +701,8 @@ class LeadDocumentController extends Controller
             }
 
             return back()->withErrors(['error' => "Unknown document type: {$type}"]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('Unified document generation failed', [
                 'lead_id' => $leadId,
@@ -1468,6 +1470,11 @@ class LeadDocumentController extends Controller
     private function feeOverridesFromRequest(Request $request): array
     {
         $out = [];
+        $data = $request->validate(['application_description' => ['nullable', 'string', 'max:1000']]);
+        $description = trim($data['application_description'] ?? '');
+        if ($description !== '') {
+            $out['application_description'] = $description;
+        }
         foreach (['school_enrolment_fee', 'english_proficiency_fee', 'english_fee', 'pte_fee'] as $key) {
             $val = $request->input($key);
             if ($val !== null && $val !== '' && is_numeric($val) && (int) $val > 0) {

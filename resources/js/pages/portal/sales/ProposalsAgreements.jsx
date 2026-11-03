@@ -1781,6 +1781,14 @@ const DOC_TYPES = [
 // engagement (those carry `englishFee` and route through their own fee/preview
 // branch, so they must not be treated as consultancy).
 const CONSULTANCY_TYPES = new Set(DOC_TYPES.filter((t) => t.backendType && ! t.free && ! t.englishFee).map((t) => t.value));
+// Plain-text counterparts of the Philippines templates' Application Type descriptions.
+// Default-equivalent values are omitted so the original voucher emphasis remains intact.
+const APPLICATION_DESCRIPTIONS = {
+    consultancy_std_100: 'School Enrollment and Documentation Fee',
+    consultancy_std_150: 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee',
+    consultancy_voucher_150: 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee',
+    consultancy_english_100: 'School Enrollment and Documentation Fee',
+};
 const MAX_PROPOSED_PROGRAMS = 5;
 const DEFAULT_ENGLISH_FEE = 14500;
 
@@ -1861,6 +1869,8 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     const [englishFee, setEnglishFee] = useState(DEFAULT_ENGLISH_FEE);
     // Offshore - Philippines carries a second, USD-priced PTE Examination fee.
     const [pteFee, setPteFee] = useState(240);
+    const [applicationDescription, setApplicationDescription] = useState('');
+    const [submitErrors, setSubmitErrors] = useState({});
     // Preview iframe loading state — flipped to true whenever the URL
     // changes, back to false when the iframe fires `onLoad`. Gives staff
     // a spinner instead of a suspicious white A4 while dompdf renders.
@@ -1894,6 +1904,9 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         setProgramSearch('');
         setNotify(true);
         setBank({ preset: 'rcbc', ...BANK_PRESETS.rcbc, reference: '' });
+        const openingType = DOC_TYPES.find((t) => t.value === prefill?.type);
+        setApplicationDescription(APPLICATION_DESCRIPTIONS[openingType?.backendType] || '');
+        setSubmitErrors({});
     }, [open, prefill]);
 
     // Reset the fee amounts to the scenario's defaults whenever the type
@@ -1905,6 +1918,8 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         setSchoolFee(meta?.defaultSchoolFee ?? meta?.defaultEnglishFee ?? 100000);
         setEnglishFee(DEFAULT_ENGLISH_FEE);
         setPteFee(meta?.defaultPteFee ?? 240);
+        setApplicationDescription(APPLICATION_DESCRIPTIONS[meta?.backendType] || '');
+        setSubmitErrors({});
         // Offshore uses the ANZ bank block; English agreements use BPI; other
         // PH consultancy uses RCBC.
         if (type === 'consultancy_offshore') {
@@ -1919,6 +1934,9 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     // Resolve the selected doc-type entry once — used for backendType +
     // applicantMode when building the preview URL and the submit body.
     const typeMeta = useMemo(() => DOC_TYPES.find((t) => t.value === type) || null, [type]);
+    const defaultApplicationDescription = APPLICATION_DESCRIPTIONS[typeMeta?.backendType];
+    const customApplicationDescription = defaultApplicationDescription && applicationDescription.trim() !== defaultApplicationDescription
+        ? applicationDescription.trim() : '';
 
     // Doc types available for the chosen category ('all' shows everywhere).
     const visibleTypes = useMemo(
@@ -1985,6 +2003,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                     school_enrolment_fee: schoolFee,
                     english_proficiency_fee: englishFee,
                     applicant_mode: typeMeta?.applicantMode || 'single',
+                    ...(customApplicationDescription ? { application_description: customApplicationDescription } : {}),
                     currency,
                     bank_heading: bank.heading,
                     bank_name: bank.bank_name,
@@ -2036,7 +2055,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                     finish();
                 }
             },
-            onError: finish,
+            onError: (errors) => { setSubmitErrors(errors); setSubmitting(false); },
         });
     };
 
@@ -2133,8 +2152,9 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
             bank_account_number: bank.account_number || '',
             bank_reference: bank.reference || '',
         });
+        if (customApplicationDescription) params.set('application_description', customApplicationDescription);
         return `${base}?${params.toString()}`;
-    }, [leadId, type, isConsultancyType, schoolFee, englishFee, pteFee, typeMeta, currency, bank]);
+    }, [leadId, type, isConsultancyType, schoolFee, englishFee, pteFee, typeMeta, currency, bank, customApplicationDescription]);
 
     // Reset the loading flag every time the URL swings — the iframe's
     // onLoad callback will clear it once the new content is painted.
@@ -2218,6 +2238,10 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                         <X size={18} />
                     </button>
                 </div>
+
+                {Object.keys(submitErrors).some((key) => key !== 'application_description') && (
+                    <div role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{Object.entries(submitErrors).filter(([key]) => key !== 'application_description').map(([key, value]) => <p key={key}>{Array.isArray(value) ? value.join(' ') : value}</p>)}</div>
+                )}
 
                 {/* ── BODY: fixed 380px sidebar + fluid preview ─────── */}
                 <div className="flex-1 flex min-h-0">
@@ -2405,6 +2429,18 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                         </div>
                                     </>
                                 )}
+                            </div>
+                        )}
+
+                        {defaultApplicationDescription && (
+                            <div className="px-5 py-4 border-b border-gray-100">
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <label htmlFor="agreement-application-description" className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Custom description</label>
+                                    <button type="button" disabled={submitting} onClick={() => { setApplicationDescription(defaultApplicationDescription); setSubmitErrors(({ application_description, ...other }) => other); }} className="text-[11px] font-semibold text-gray-600 underline underline-offset-2 hover:text-gray-900 disabled:opacity-50">Reset to default</button>
+                                </div>
+                                <textarea id="agreement-application-description" name="application_description" value={applicationDescription} maxLength={1000} rows={4} disabled={submitting} aria-describedby="agreement-description-help" aria-invalid={Boolean(submitErrors.application_description)} onChange={(event) => { setApplicationDescription(event.target.value); setSubmitErrors(({ application_description, ...other }) => other); }} className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400 resize-y disabled:opacity-60" />
+                                <div className="flex items-start justify-between gap-3 mt-1.5"><p id="agreement-description-help" className="text-[11px] text-gray-500 leading-relaxed">Optional. Leave blank to use the original template wording and formatting. Applies only to this document.</p><span className="shrink-0 text-[10px] text-gray-400 tabular-nums">{applicationDescription.length}/1000</span></div>
+                                {submitErrors.application_description && <p role="alert" className="mt-2 text-xs text-red-700">{Array.isArray(submitErrors.application_description) ? submitErrors.application_description.join(' ') : submitErrors.application_description}</p>}
                             </div>
                         )}
 
