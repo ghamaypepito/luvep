@@ -15,6 +15,7 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request)
     {
+        $filters = $request->validate(['work_period' => 'nullable|in:today,week,month', 'team_page' => 'nullable|integer|min:1|max:100000']);
         $context = app(HrContext::class);
         $actor = $request->user();
         $access = app(HrAccess::class);
@@ -51,6 +52,8 @@ class DashboardController extends Controller
         $milestoneUser = $preview ? $employee->user : $actor;
         $dueMilestones = app(\App\Services\Hr\MilestoneService::class)->visible($milestoneUser, ! $preview && $access->allows($actor, 'operations.manage'))->with('employee.schedule')->whereNull('completed_at')->get()->filter(fn ($m) => $m->due_date->toDateString() <= now($m->employee->schedule?->timezone ?? 'UTC')->toDateString())->count();
 
-        return Inertia::render('hr/Dashboard', ['dueMilestones' => $dueMilestones, 'profile' => EmployeeController::profileData($employee, $employee?->user ?? $actor), 'ownSummary' => $own, 'upcomingLeave' => $upcoming, 'reviews' => $review, 'absences' => $absences]);
+        $workInsights = app(\App\Services\Hr\WorkInsights::class)->summary($preview ? $employee->user : $actor, $filters['work_period'] ?? 'week', (int) ($filters['team_page'] ?? 1), $preview);
+
+        return Inertia::render('hr/Dashboard', ['workInsights' => $workInsights, 'dueMilestones' => $dueMilestones, 'profile' => EmployeeController::profileData($employee, $employee?->user ?? $actor), 'ownSummary' => $own, 'upcomingLeave' => $upcoming, 'reviews' => $review, 'absences' => $absences]);
     }
 }

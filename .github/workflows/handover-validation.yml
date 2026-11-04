@@ -49,6 +49,7 @@ jobs:
           node tests/Frontend/engagement-email-review.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
+          node tests/Frontend/hr-work-insights.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
           node tests/Frontend/ticket-attachments.cjs

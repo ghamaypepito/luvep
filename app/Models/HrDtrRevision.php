@@ -12,6 +12,11 @@ class HrDtrRevision extends Model
 
     protected $casts = ['changes' => 'array', 'created_at' => 'datetime', 'version' => 'integer'];
 
+    public function entry()
+    {
+        return $this->belongsTo(DtrEntry::class, 'dtr_entry_id');
+    }
+
     public function actor()
     {
         return $this->belongsTo(User::class, 'actor_id')->withTrashed();
