@@ -57,7 +57,7 @@ class TicketWorkflowTest extends TestCase
     {
         $u = User::factory()->create();
         $old = $this->ticket($u, ['status' => 'done', 'resolved_at' => now()->subMonths(4)]);
-        $recent = $this->ticket($u, ['status' => 'done', 'resolved_at' => now()->subMonths(2)]);
+        $recent = $this->ticket($u, ['status' => 'done', 'resolved_at' => now()->subMonth()]);
         $open = $this->ticket($u, ['created_at' => now()->subMonths(5)]);
         $unknown = $this->ticket($u, ['status' => 'done']);
         $this->artisan('tickets:archive')->assertSuccessful();

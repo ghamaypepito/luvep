@@ -92,7 +92,7 @@ class SystemTicket extends Model
 
     public function scopeOpen(Builder $query): Builder
     {
-        return $query->whereNotIn('status', ['done', 'declined']);
+        return $query->whereNull('archived_at')->whereNotIn('status', ['done', 'declined']);
     }
 
     /**

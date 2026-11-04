@@ -7,6 +7,7 @@ use App\Models\SystemTicketEvent;
 use App\Models\User;
 use App\Notifications\TicketSubmitted;
 use App\Notifications\TicketUpdated;
+use App\Services\Tickets\TicketArchiver;
 use App\Support\TicketAttachments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -133,15 +134,25 @@ class SystemTicketController extends Controller
     /** Admin / super-admin triage board of every ticket. */
     public function adminIndex(Request $request)
     {
-        $status = $request->query('status');
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
+        $request->validate([
+            'tab' => ['nullable', Rule::in(['active', 'archived'])],
+            'status' => ['nullable', Rule::in([...SystemTicket::STATUSES, 'all'])],
+            'department' => ['nullable', 'string', 'max:80'],
+            'search' => ['nullable', 'string', 'max:500'],
+        ]);
+        $archived = $request->query('tab') === 'archived';
+        $status = $archived ? 'all' : ($request->query('status') ?: 'open');
         $dept = $request->query('department');
         $search = trim((string) $request->query('search', ''));
 
         $base = SystemTicket::query()
             ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
             ->with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
-            ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
-            ->when($status && in_array($status, SystemTicket::STATUSES, true), fn ($q) => $q->where('status', $status))
+            ->when($archived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->when(! $archived, fn ($q) => $status === 'all'
+                ? $q->where('status', '!=', 'done')
+                : $q->where('status', $status))
             ->when($dept, fn ($q) => $q->where('department', $dept))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('title', 'like', "%{$search}%")
@@ -158,6 +169,7 @@ class SystemTicketController extends Controller
         return inertia('admin/SystemTickets', [
             'tickets' => $tickets,
             'updated_request' => $this->updatedRequestFor($request),
+            'can_manage' => true,
             'assignees' => User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->orderBy('name')->get(['id', 'name']),
             'filters' => ['tab' => $request->query('tab', 'active'), 'status' => $status, 'department' => $dept, 'search' => $search],
             'meta' => [
@@ -165,7 +177,7 @@ class SystemTicketController extends Controller
                 'priorities' => SystemTicket::PRIORITIES,
                 'statuses' => SystemTicket::STATUSES,
             ],
-            'counts' => ['open' => SystemTicket::open()->count()],
+            'counts' => ['open' => SystemTicket::whereNull('archived_at')->where('status', 'open')->count()],
         ]);
     }
 
@@ -174,6 +186,7 @@ class SystemTicketController extends Controller
         abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
         $data = $request->validate([
             'status' => ['required', Rule::in(SystemTicket::STATUSES)],
+            'expected_status' => ['sometimes', 'required', Rule::in(SystemTicket::STATUSES)],
             'admin_response' => ['nullable', 'string', 'max:5000'],
             'assigned_to' => ['nullable', Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN]))],
             'waiting_on' => ['nullable', Rule::in(['support', 'requester', 'external'])],
@@ -183,6 +196,10 @@ class SystemTicketController extends Controller
         $ticket = DB::transaction(function () use ($id, $request, $data) {
             $ticket = SystemTicket::whereKey($id)->lockForUpdate()->firstOrFail();
             abort_if($ticket->archived_at, 422, 'Archived tickets are read-only.');
+            if (isset($data['expected_status']) && $data['expected_status'] !== $ticket->status) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'This ticket changed. Refresh the list before trying again.']);
+            }
+            unset($data['expected_status']);
             $oldStatus = $ticket->status;
             if ($data['status'] === 'done' && $oldStatus !== 'done') {
                 foreach (['issue_summary', 'root_cause', 'resolution', 'verification', 'documentation_summary'] as $field) {
@@ -221,6 +238,15 @@ class SystemTicketController extends Controller
         }
 
         return back()->with('success', "Ticket {$ticket->ticket_ref} updated.");
+    }
+
+    public function archive(Request $request, int $ticket, TicketArchiver $archiver)
+    {
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
+        $data = $request->validate(['expected_status' => ['required', Rule::in(SystemTicket::STATUSES)]]);
+        $archiver->manually($ticket, $request->user(), $data['expected_status']);
+
+        return back()->with('success', 'Ticket moved to Archive.');
     }
 
     /**

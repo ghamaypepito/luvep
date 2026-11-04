@@ -180,7 +180,7 @@ class TicketSenderEditTest extends TestCase
     {
         $owner = User::factory()->create(['role' => 'admin']);
         $ticket = $this->ticket($owner, ['status' => 'done']);
-        $this->actingAs($owner)->get('/admin/system-tickets')->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($owner)->get('/admin/system-tickets?status=done')->assertInertia(fn (Assert $page) => $page
             ->where('tickets.data.0.can_edit_request', true)->where('tickets.data.0.request_version', $this->version($ticket)));
         $owner->update(['is_active' => false]);
         $this->post("/system-tickets/{$ticket->id}/request", $this->payload($ticket))->assertRedirect('/login');

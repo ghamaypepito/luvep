@@ -777,6 +777,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/admin/system-tickets/documentation', [\App\Http\Controllers\TicketConversationController::class, 'documentation']);
         Route::post('/admin/system-tickets/{ticket}/resolution', [\App\Http\Controllers\TicketConversationController::class, 'saveResolution']);
         Route::post('/admin/system-tickets/{ticket}/publish', [\App\Http\Controllers\TicketConversationController::class, 'publishDocumentation']);
+        Route::post('/admin/system-tickets/{ticket}/archive', [\App\Http\Controllers\SystemTicketController::class, 'archive'])->whereNumber('ticket');
         Route::get('/admin/system-tickets', [\App\Http\Controllers\SystemTicketController::class, 'adminIndex'])->name('admin.system-tickets');
         Route::post('/admin/system-tickets/{id}', [\App\Http\Controllers\SystemTicketController::class, 'adminUpdate'])->name('admin.system-tickets.update');
 
