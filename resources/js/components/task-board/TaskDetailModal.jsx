@@ -21,10 +21,11 @@ const DEPARTMENT_LABEL = {
     education:     "Education",
     immigration:   "Immigration",
     accommodation: "Accommodation",
+    finance:       "Finance",
     admin:         "Admin",
 };
 
-const ALL_DEPARTMENTS = ["sales", "education", "immigration", "accommodation", "admin"];
+const ALL_DEPARTMENTS = ["sales", "education", "immigration", "accommodation", "finance", "admin"];
 
 const TYPE_OPTIONS = [
     ["call",      "Call"],
@@ -58,6 +59,11 @@ const CATEGORIES_BY_DEPT = {
     accommodation: [
         "Template updates", "Task library maintenance", "Reporting",
         "Coordinator training", "Vendor management", "Other",
+    ],
+    finance: [
+        "Education", "English", "Immigration", "Accommodation", "Sales",
+        "Invoicing", "Receivables", "Payments", "Reconciliation",
+        "Reporting", "Department meeting prep", "Other",
     ],
     admin: [
         "User and role management", "System configuration",
@@ -337,7 +343,7 @@ export default function TaskDetailModal({ task, onClose }) {
     };
 
     return (
-        <div
+        <div role="dialog" aria-modal="true" aria-label="Task details"
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6"
             onClick={(e) => { if (e.target === e.currentTarget && ! saving) onClose?.(); }}
         >

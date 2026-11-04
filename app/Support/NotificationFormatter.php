@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\User;
+
 /**
  * Centralized notification type → UI mapping. Turns a stored database
  * notification (type + data) into the icon / color / title / body / url
@@ -19,7 +21,7 @@ class NotificationFormatter
      *                                                                                                     A serialized notification (or an array with `type` short name + `data`).
      * @return array{icon:string,color:string,title:string,body:string,url:?string,type:string}
      */
-    public static function format(array $notification): array
+    public static function format(array $notification, ?User $recipient = null): array
     {
         $type = class_basename($notification['type'] ?? 'Notification');
         $data = $notification['data'] ?? [];
@@ -28,6 +30,12 @@ class NotificationFormatter
         }
 
         $url = $data['link'] ?? $data['url'] ?? null;
+        // Repair legacy assignment destinations at read time, preserving the
+        // stored notification and its read state. The board scopes task data.
+        if ($type === 'TaskAssigned' && $recipient) {
+            $taskId = filter_var($data['task_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $url = TaskDestination::forUser($recipient, $taskId ?: null);
+        }
 
         $meta = match ($type) {
             'HrActionRequired' => ['icon' => 'Bell', 'color' => 'emerald', 'title' => $data['title'] ?? 'Luvep HR update'],

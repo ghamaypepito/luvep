@@ -67,6 +67,7 @@ class NotificationController extends Controller
             'education' => 'portal/education/Notifications',
             'english' => 'portal/english/Notifications',
             'accommodation' => 'portal/accommodation/Notifications',
+            'finance' => 'portal/finance/Notifications',
             'lead' => 'portal/lead/Notifications',
             'immigration_adviser' => 'portal/immigration-adviser/Notifications',
             'immigration', 'immigration_manager' => 'portal/immigration/Notifications',
@@ -145,7 +146,7 @@ class NotificationController extends Controller
         $formatted = NotificationFormatter::format([
             'type' => $n->type,
             'data' => $n->data,
-        ]);
+        ], request()->user());
 
         return [
             'id' => $n->id,
