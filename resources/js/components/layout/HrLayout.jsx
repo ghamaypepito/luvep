@@ -36,6 +36,8 @@ export default function HrLayout({ children }) {
     if (hr?.employee) links.push([hrPath("/dtr"), "My time records", Clock3]);
     if (hr?.permissions?.["dtr.review"])
         links.push([hrPath("/dtr/review"), "Time reviews", ClipboardCheck]);
+    if (hr?.can_view_dtr_changes)
+        links.push([hrPath("/dtr/changes"), "DTR changes", ClipboardCheck]);
     if (hr?.permissions?.["dtr.correct"])
         links.push([hrPath("/dtr/corrections"), "Time corrections", Clock3]);
     links.push([hrPath("/checklists"), "Onboarding & exits", ListChecks]);

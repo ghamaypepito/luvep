@@ -242,4 +242,148 @@ class HrDtrTest extends TestCase
         $this->actingAs($admin)->get($url)->assertOk()->assertInertia(fn (\Inertia\Testing\AssertableInertia $p) => $p->has('record.shifts', 1)->where('record.employee_name', $e->user->name));
         $this->withSession(['hr_preview_employee_id' => $e->id])->get($url)->assertForbidden();
     }
+
+    public function test_existing_past_draft_can_be_completed_on_original_work_date(): void
+    {
+        [$e,,$entry] = $this->fixture('2026-11-02');
+        Carbon::setTestNow(Carbon::parse('2026-11-04 03:00', 'UTC'));
+        $this->assertTrue(app(DtrService::class)->row($entry)['can_edit']);
+        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr', $this->data($entry))
+            ->assertOk()->assertJsonPath('entry.work_date', '2026-11-02');
+        $saved = $entry->fresh();
+        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/submit', ['version' => $saved->hr_version, 'declaration' => true])->assertOk();
+        $this->assertSame('2026-11-02', $entry->fresh()->work_date->toDateString());
+        $this->assertSame('2026-11-04 03:00:00', $entry->fresh()->submitted_at->format('Y-m-d H:i:s'));
+        $this->assertSame('08:00', $entry->fresh()->time_in);
+        $this->assertSame('16:00', $entry->fresh()->time_out);
+        $this->assertSame(1, DtrEntry::where('user_id', $e->user_id)->count());
+    }
+
+    public function test_draft_changes_have_immutable_before_after_history_visible_to_current_head(): void
+    {
+        [$e,$reviewer,$entry] = $this->fixture();
+        $head = User::factory()->create(['role' => 'education']);
+        HrEmployee::create(['user_id' => $head->id, 'status' => 'active']);
+        $e->update(['manager_user_id' => $head->id]);
+        $service = app(DtrService::class);
+        $saved = $service->saveDraft($e, $this->data($entry));
+        $saved = $service->saveDraft($e, [...$this->data($saved), 'work_location' => 'Remote']);
+        $url = 'https://hr.luvep.com/dtr/'.$entry->id.'/history';
+        $this->actingAs($head)->getJson($url)->assertOk()
+            ->assertJsonPath('history.data.0.actor', $e->user->name)
+            ->assertJsonPath('history.data.0.action', 'dtr.draft_saved')
+            ->assertJsonPath('history.data.0.changes.work_location.before', 'Office')
+            ->assertJsonPath('history.data.0.changes.work_location.after', 'Remote');
+        $this->assertFalse(app(\App\Services\Hr\HrAccess::class)->allows($head, 'dtr.review', $e));
+        $this->actingAs($reviewer)->getJson($url)->assertOk();
+        $this->actingAs($e->user)->getJson($url)->assertOk();
+        $e->update(['manager_user_id' => null]);
+        $this->actingAs($head)->getJson($url)->assertNotFound();
+        $this->expectException(\LogicException::class);
+        \App\Models\HrDtrRevision::first()->update(['action' => 'tampered']);
+    }
+
+    public function test_history_rejects_unrelated_staff_and_preview_and_is_paginated(): void
+    {
+        [$e,$reviewer,$entry] = $this->fixture();
+        $service = app(DtrService::class);
+        for ($i = 0; $i < 22; $i++) {
+            $entry = $service->saveDraft($e, [...$this->data($entry), 'remarks' => 'Revision '.$i]);
+        }
+        $url = 'https://hr.luvep.com/dtr/'.$entry->id.'/history';
+        $this->actingAs($e->user)->getJson($url)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonCount(20, 'history.data')->assertJsonPath('history.total', 22);
+        $this->getJson($url.'?page=2')->assertOk()->assertJsonCount(2, 'history.data');
+        $other = User::factory()->create(['role' => 'sales']);
+        HrEmployee::create(['user_id' => $other->id, 'status' => 'active']);
+        $this->actingAs($other)->getJson($url)->assertNotFound();
+        $this->get('https://hr.luvep.com/dtr/changes')->assertForbidden();
+        $this->withoutVite();
+        $this->actingAs($reviewer)->get('https://hr.luvep.com/dtr/changes')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $p) => $p->has('records.data', 1)->where('records.data.0.id', $entry->id));
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $this->actingAs($admin)->withSession(['hr_preview_employee_id' => $e->id])->getJson($url)->assertForbidden();
+        $this->get('https://hr.luvep.com/dtr/changes')->assertForbidden();
+    }
+
+    public function test_manager_can_see_draft_changes_but_not_other_teams_or_approve(): void
+    {
+        [$e,,$entry] = $this->fixture();
+        $manager = User::factory()->create(['role' => 'education']);
+        $managerEmployee = HrEmployee::create(['user_id' => $manager->id, 'status' => 'active']);
+        $e->update(['manager_user_id' => $manager->id]);
+        app(DtrService::class)->saveDraft($e, $this->data($entry));
+        $other = User::factory()->create(['role' => 'sales']);
+        HrEmployee::create(['user_id' => $other->id, 'status' => 'active']);
+        DtrEntry::create(['user_id' => $other->id, 'work_date' => '2026-10-19', 'remarks' => 'PRIVATE OTHER TEAM']);
+        $this->withoutVite();
+        $this->actingAs($manager)->get('https://hr.luvep.com/dtr/changes')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $p) => $p->has('records.data', 1)
+                ->where('hr.can_view_dtr_changes', true)->where('hr.permissions', fn ($permissions) => $permissions['dtr.review'] === false));
+        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/review', ['version' => $entry->fresh()->hr_version, 'decision' => 'reviewed'])->assertForbidden();
+        $managerEmployee->update(['status' => 'archived']);
+        $this->getJson('https://hr.luvep.com/dtr/'.$entry->id.'/history')->assertForbidden();
+    }
+
+    public function test_draft_history_is_atomic_and_stale_locked_or_clock_edits_cannot_add_revisions(): void
+    {
+        [$e,,$entry] = $this->fixture();
+        $service = app(DtrService::class);
+        $data = $this->data($entry);
+        $entry = $service->saveDraft($e, $data);
+        $count = \App\Models\HrDtrRevision::count();
+        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr', $data)->assertStatus(409);
+        $this->postJson('https://hr.luvep.com/dtr', [...$this->data($entry), 'time_in' => '02:00'])->assertUnprocessable();
+        $this->postJson('https://hr.luvep.com/dtr', [...$this->data($entry), 'work_date' => '2026-10-18', 'expected_version' => 0])->assertUnprocessable();
+        $this->assertSame($count, \App\Models\HrDtrRevision::count());
+        $entry = $service->submit($e->user, $entry, $entry->hr_version);
+        $this->postJson('https://hr.luvep.com/dtr', $this->data($entry))->assertStatus(409);
+        $this->assertSame($count + 1, \App\Models\HrDtrRevision::count());
+        $revision = \App\Models\HrDtrRevision::latest('id')->first();
+        $this->assertSame('submitted', $revision->changes['hr_status']['after']);
+        $this->assertArrayNotHasKey('time_in', $revision->changes);
+        $this->assertSame('submitted', $entry->fresh()->hr_status);
+        $reviewer = User::find($e->reviewer_user_id);
+        $entry = $service->review($reviewer, $entry, 'returned', 'Complete notes', $entry->hr_version);
+        $versions = \App\Models\HrDtrRevision::count();
+        \App\Models\HrDtrRevision::creating(function () {
+            throw new \RuntimeException('Storage failed');
+        });
+        try {
+            $service->saveDraft($e, [...$this->data($entry), 'work_location' => 'Should roll back']);
+            $this->fail('Save succeeded without its history');
+        } catch (\RuntimeException $ex) {
+            $this->assertSame('Storage failed', $ex->getMessage());
+        } finally {
+            \App\Models\HrDtrRevision::flushEventListeners();
+            \App\Models\HrDtrRevision::clearBootedModels();
+        }
+        $this->assertSame('Office', $entry->fresh()->work_location);
+        $this->assertSame($versions, \App\Models\HrDtrRevision::count());
+    }
+
+    public function test_own_date_lookup_reaches_older_drafts_without_exposing_other_users(): void
+    {
+        [$e,,$entry] = $this->fixture();
+        foreach (range(1, 65) as $day) {
+            DtrEntry::create(['user_id' => $e->user_id, 'work_date' => $entry->work_date->copy()->addDays($day)->toDateString()]);
+        }
+        $other = User::factory()->create(['role' => 'sales']);
+        DtrEntry::create(['user_id' => $other->id, 'work_date' => '2026-10-19', 'remarks' => 'PRIVATE DATE LOOKUP']);
+        $this->withoutVite();
+        $this->actingAs($e->user)->get('https://hr.luvep.com/dtr?date=2026-10-19')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $p) => $p->has('entries', 1)->where('entries.0.id', $entry->id));
+        $this->getJson('https://hr.luvep.com/dtr?date=not-a-date')->assertUnprocessable();
+    }
+
+    public function test_future_draft_cannot_be_edited_or_submitted_and_legacy_records_stay_locked(): void
+    {
+        [$e,,$entry] = $this->fixture();
+        $entry = app(DtrService::class)->saveDraft($e, $this->data($entry));
+        Carbon::setTestNow(Carbon::parse('2026-10-18 10:00', 'UTC'));
+        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr', $this->data($entry))->assertUnprocessable();
+        $this->postJson('https://hr.luvep.com/dtr/'.$entry->id.'/submit', ['version' => $entry->hr_version, 'declaration' => true])->assertUnprocessable();
+        $legacy = DtrEntry::create(['user_id' => $e->user_id, 'work_date' => '2026-10-17']);
+        $this->postJson('https://hr.luvep.com/dtr', $this->data($legacy->fresh()))->assertStatus(409);
+    }
 }

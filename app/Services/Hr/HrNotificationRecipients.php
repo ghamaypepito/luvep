@@ -95,6 +95,8 @@ class HrNotificationRecipients
                 $path = 'dtr';
             } elseif ($access->allows($user, 'dtr.review', $employee)) {
                 $path = 'dtr/review';
+            } elseif (app(DtrHistory::class)->team($user)->whereKey($employee->id)->exists()) {
+                $path = 'dtr/changes';
             }
         }
 

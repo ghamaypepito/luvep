@@ -1,5 +1,6 @@
+import DtrHistory from "@/components/hr/DtrHistory";
 import { hrPath } from "@/lib/hrPath";
-import { Head, useForm, usePage, router } from "@inertiajs/react";
+import { Head, Link, useForm, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 export const duration = (seconds) =>
     `${Math.floor((seconds || 0) / 3600)}h ${Math.floor(((seconds || 0) % 3600) / 60)}m`;
@@ -89,6 +90,7 @@ export function RecordDetails({ entry }) {
     );
 }
 function Editor({ entry, locked }) {
+    const [editing, setEditing] = useState(false);
     const form = useForm({
         work_date: entry.work_date,
         expected_version: entry.hr_version,
@@ -127,6 +129,7 @@ function Editor({ entry, locked }) {
                     <strong>Reviewer feedback:</strong> {entry.review_comment}
                 </p>
             )}
+            {editing ? <>
             <p>
                 Working time: <strong>{duration(entry.working_seconds)}</strong>{" "}
                 · Breaks: {duration(entry.break_seconds)}. Record actual work
@@ -325,7 +328,12 @@ function Editor({ entry, locked }) {
                         {form.processing ? "Saving…" : "Save draft"}
                     </button>
                 </div>
+                <button type="button" className="hr-button-secondary" disabled={form.processing} onClick={() => { form.reset(); form.clearErrors(); setEditing(false); }}>Cancel editing</button>
             </form>
+            </> : <>
+                <RecordDetails entry={entry} />
+                <button type="button" className="hr-button-secondary" onClick={() => setEditing(true)}>{entry.hr_status === "returned" ? "Edit returned report" : "Edit draft"}</button>
+            </>}
             <form
                 className="hr-form"
                 onSubmit={(e) => {
@@ -348,8 +356,7 @@ function Editor({ entry, locked }) {
                     attendance.
                 </label>
                 <p>
-                    Save all changes before submitting. Submitted records are
-                    locked for review.
+                    This report records your work for {entry.work_date}. Save all changes before submitting. The actual submission time is recorded, and the report is locked for review.
                 </p>
                 <div>
                     <button
@@ -361,20 +368,21 @@ function Editor({ entry, locked }) {
                             !declaration.data.declaration
                         }
                     >
-                        Submit for review
+                        Submit daily report
                     </button>
                 </div>
             </form>
         </>
     );
 }
-export default function Dtr({ entries, weeks, today }) {
+export default function Dtr({ entries, weeks, today, date_filter }) {
     const { hr } = usePage().props;
     useEffect(() => {
         const changed = () => router.reload({ only: ["entries", "today"] });
         window.addEventListener("hr-clock-changed", changed);
         return () => window.removeEventListener("hr-clock-changed", changed);
     }, []);
+    const [lookupDate, setLookupDate] = useState(date_filter || today);
     const [selected, select] = useState(entries[0]?.id);
     const entry = entries.find((e) => e.id === selected) || entries[0];
     const week = useForm({ week_start: "", declaration: false });
@@ -402,6 +410,14 @@ export default function Dtr({ entries, weeks, today }) {
                         </select>
                     </label>
                 </div>
+                <form className="hr-actions hr-dtr-date-search" onSubmit={e => {
+                    e.preventDefault();
+                    router.get(hrPath("/dtr"), { date: lookupDate }, { preserveScroll: true });
+                }}>
+                    <label className="hr-select-label">Find work date<input type="date" value={lookupDate || ""} max={today} required onChange={e => setLookupDate(e.target.value)} /></label>
+                    <button className="hr-button-secondary">Find record</button>
+                    {date_filter && <Link className="hr-button-secondary" href={hrPath("/dtr")}>Recent records</Link>}
+                </form>
                 {entry ? (
                     <>
                         <div className="hr-section-bar">
@@ -415,16 +431,17 @@ export default function Dtr({ entries, weeks, today }) {
                                 Print daily record
                             </a>
                         </div>
+                        <p className="hr-notice">Report date: <strong>{entry.work_date}</strong>. Work-report edits are logged for your direct head. Clock changes use the reviewed correction process.</p>
                         <Editor
                             key={`${entry.id}:${entry.hr_version}`}
                             entry={entry}
                             locked={!!hr.preview || !entry.can_edit}
                         />
+                        {!hr.preview && <DtrHistory key={`history:${entry.id}:${entry.hr_version}`} entry={entry} />}
                     </>
                 ) : (
                     <p>
-                        No time records yet. Clock in to begin your first
-                        working day.
+                        {date_filter ? `No time record was found for ${date_filter}. Choose another date or return to recent records.` : "No time records yet. Clock in to begin your first working day."}
                     </p>
                 )}
             </section>

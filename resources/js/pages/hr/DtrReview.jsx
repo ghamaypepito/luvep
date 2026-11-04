@@ -1,3 +1,4 @@
+import DtrHistory from "@/components/hr/DtrHistory";
 import { hrPath } from "@/lib/hrPath";
 import { Head, useForm } from "@inertiajs/react";
 import { Errors, RecordDetails } from "./Dtr";
@@ -29,6 +30,7 @@ function Review({ record, weekly = false }) {
             >
                 Open printable record
             </a>
+            {!weekly && <DtrHistory entry={record} />}
             <form
                 className="hr-form"
                 onSubmit={(e) => {

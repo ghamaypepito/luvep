@@ -71,8 +71,10 @@ class HrContext
             $abilities['dtr.review'] = $abilities['dtr.review'] || HrEmployee::where('reviewer_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
         }
 
+        $canViewDtrChanges = ! $preview && $actor && ($abilities['dtr.review'] || (($employee || $actor->isAdmin()) && HrEmployee::where('manager_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists()));
+
         return ['enabled' => (bool) config('hr.enabled'), 'url' => config('hr.portal_mode') ? rtrim(config('hr.main_url'), '/').'/portal/hr/' : $this->url(), 'portal_mode' => (bool) config('hr.portal_mode'), 'main_url' => config('hr.main_url'), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
-            'permissions' => $abilities,
+            'permissions' => $abilities, 'can_view_dtr_changes' => $canViewDtrChanges,
             'admin_return_url' => $actor?->isAdmin() ? rtrim(config('hr.main_url'), '/').'/admin/dashboard' : null,
             'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
     }

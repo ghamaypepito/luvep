@@ -61,6 +61,8 @@ $hrRoutes = function () {
         Route::get('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'index'])->name('dtr');
         Route::get('/dtr/corrections', [\App\Http\Controllers\Hr\DtrController::class, 'corrections'])->name('dtr.corrections');
         Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
+        Route::get('/dtr/changes', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'index'])->name('dtr.changes');
+        Route::get('/dtr/{entry}/history', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'show'])->name('dtr.history');
         Route::post('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'store'])->name('dtr.store');
         Route::post('/dtr/week/sign', [\App\Http\Controllers\Hr\DtrController::class, 'signWeek'])->name('dtr.week.sign');
         Route::post('/dtr/week/{week}/review', [\App\Http\Controllers\Hr\DtrController::class, 'reviewWeek'])->name('dtr.week.review');
