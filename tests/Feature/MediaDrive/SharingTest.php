@@ -224,4 +224,77 @@ class SharingTest extends TestCase
         $this->assertDatabaseCount('media_challenges', 0);
         $this->getJson($this->base($share).'/contents')->assertForbidden();
     }
+
+    public function test_a_successful_resend_replaces_codes_in_other_sessions(): void
+    {
+        [$share] = $this->share();
+        $model = MediaShare::findOrFail($share['id']);
+        $sharing = app(\App\Services\MediaDrive\Sharing::class);
+        $requests = [];
+        foreach (['first', 'second'] as $name) {
+            $request = \Illuminate\Http\Request::create('/');
+            $session = new \Illuminate\Session\Store($name, new \Illuminate\Session\ArraySessionHandler(120));
+            $session->start();
+            $request->setLaravelSession($session);
+            $requests[] = $request;
+        }
+        $sharing->requestCode($requests[0], $model, 'invited@example.test');
+        $old = Mail::sent(MediaDriveCode::class)->last()->code;
+        $this->travel(61)->seconds();
+        $sharing->requestCode($requests[1], $model, 'invited@example.test');
+        $new = Mail::sent(MediaDriveCode::class)->last()->code;
+        try {
+            $sharing->verify($requests[0], $model, $old);
+            $this->fail('A replaced code must not grant access.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->assertArrayHasKey('code', $e->errors());
+        }
+        $this->assertFalse($sharing->verified($requests[0], $model));
+        $sharing->verify($requests[1], $model, $new);
+        $this->assertTrue($sharing->verified($requests[1], $model));
+    }
+
+    public function test_verified_reads_are_audited_and_forbidden_reads_are_not(): void
+    {
+        [$share,$root,$child,$outside,$file,$secret] = $this->share();
+        $base = $this->base($share);
+        $this->verify($share);
+        $this->getJson($base.'/contents')->assertOk();
+        $this->get($base.'/files/'.$file.'?inline=1')->assertOk();
+        $this->get($base.'/files/'.$file)->assertOk();
+        foreach (['folder_opened', 'file_previewed', 'file_downloaded'] as $kind) {
+            $this->assertDatabaseHas('media_events', ['folder_id' => $child, 'share_id' => $share['id'], 'user_id' => null, 'kind' => $kind]);
+        }
+        $before = \App\Models\MediaEvent::count();
+        $this->get($base.'/files/'.$secret)->assertNotFound();
+        $this->assertSame($before, \App\Models\MediaEvent::count());
+    }
+
+    public function test_failed_verification_audit_cannot_leave_a_verified_session(): void
+    {
+        [$share] = $this->share();
+        $model = MediaShare::findOrFail($share['id']);
+        $sharing = app(\App\Services\MediaDrive\Sharing::class);
+        $request = \Illuminate\Http\Request::create('/');
+        $session = new \Illuminate\Session\Store('audit-failure', new \Illuminate\Session\ArraySessionHandler(120));
+        $session->start();
+        $request->setLaravelSession($session);
+        $sharing->requestCode($request, $model, 'invited@example.test');
+        $code = Mail::sent(MediaDriveCode::class)->last()->code;
+        \App\Models\MediaEvent::creating(function ($event) {
+            if ($event->kind === 'email_verified') {
+                throw new \RuntimeException('Synthetic audit failure');
+            }
+        });
+        try {
+            $sharing->verify($request, $model, $code);
+            $this->fail('Expected audit failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Synthetic audit failure', $e->getMessage());
+        } finally {
+            \App\Models\MediaEvent::flushEventListeners();
+        }
+        $this->assertFalse($sharing->verified($request, $model));
+        $this->assertNull(MediaChallenge::sole()->used_at);
+    }
 }

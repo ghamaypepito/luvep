@@ -114,6 +114,7 @@ class AttachmentsTest extends TestCase
         $file = $this->asset($client);
         $this->post('/admin/leads/'.$client->id.'/notes', ['body' => 'Attached from Media Drive', 'media_file_ids' => [$file->id]])->assertRedirect()->assertSessionHasNoErrors();
         $note = LeadNote::sole();
+        $this->assertDatabaseHas('media_events', ['file_id' => $file->id, 'kind' => 'note_attached']);
         $this->assertSame($file->id, $note->attachments[0]['media_file_id']);
         $this->get("/admin/leads/{$client->id}/notes/{$note->id}/attachments/0")->assertDownload('sample.pdf');
         $this->post('/admin/leads/'.$other->id.'/notes', ['body' => 'Forbidden reference', 'media_file_ids' => [$file->id]])->assertSessionHasErrors('media_file_ids');

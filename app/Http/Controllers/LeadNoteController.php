@@ -40,14 +40,14 @@ class LeadNoteController extends Controller
                 ->orderByDesc('created_at')
                 ->get()
                 ->map(fn ($n) => [
-                    'id'          => $n->id,
-                    'body'        => $n->body,
-                    'programs'    => $n->programs ?? [],
-                    'kind'        => $n->kind,
-                    'pinned'      => (bool) $n->pinned,
+                    'id' => $n->id,
+                    'body' => $n->body,
+                    'programs' => $n->programs ?? [],
+                    'kind' => $n->kind,
+                    'pinned' => (bool) $n->pinned,
                     'author_name' => $n->author_name,
                     'author_role' => $n->author_role,
-                    'created_at'  => $n->created_at,
+                    'created_at' => $n->created_at,
                 ]);
 
             return response()->json(['notes' => $rows]);
@@ -62,30 +62,33 @@ class LeadNoteController extends Controller
     {
         $this->authorizeLead($request, $leadId);
         $validated = $request->validate([
-            'body'                => 'required|string|max:2000',
+            'body' => 'required|string|max:2000',
             'programs' => 'nullable|array|max:50',
             'programs.*' => 'required|string|max:255|distinct|exists:programs,title',
-            'pinned'              => 'nullable|boolean',
+            'pinned' => 'nullable|boolean',
             // Reply to another note (threaded internal notes).
-            'parent_id'           => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_notes', 'id')->where('lead_id', $leadId)],
+            'parent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_notes', 'id')->where('lead_id', $leadId)],
             // Media attachments — images or PDFs, stored on the private disk.
-            'files'               => 'nullable|array|max:6',
+            'files' => 'nullable|array|max:6',
             'media_file_ids' => 'nullable|array|max:6',
             'media_file_ids.*' => 'required|integer|distinct',
-            'files.*'             => 'file|mimes:pdf,jpg,jpeg,png,webp,gif,heic|max:10240',
-            'kind'                => ['nullable', \Illuminate\Validation\Rule::in(['general', 'pre_screen', 'goal_setting', 'risk', 'client_contact'])],
-            'pre_screened_by'     => 'nullable|string|max:80',
-            'pre_screen_mode'     => ['nullable', \Illuminate\Validation\Rule::in(['gmeet', 'call'])],
-            'pre_screen_date'     => 'nullable|date',
+            'files.*' => 'file|mimes:pdf,jpg,jpeg,png,webp,gif,heic|max:10240',
+            'kind' => ['nullable', \Illuminate\Validation\Rule::in(['general', 'pre_screen', 'goal_setting', 'risk', 'client_contact'])],
+            'pre_screened_by' => 'nullable|string|max:80',
+            'pre_screen_mode' => ['nullable', \Illuminate\Validation\Rule::in(['gmeet', 'call'])],
+            'pre_screen_date' => 'nullable|date',
             'goal_setting_status' => ['nullable', \Illuminate\Validation\Rule::in([
                 'Consultation Done', 'For Proposal', 'Proposal Sent', 'No Show',
             ])],
-            'goal_setting_by'     => 'nullable|string|max:120',
+            'goal_setting_by' => 'nullable|string|max:120',
         ]);
 
         $lead = Lead::findOrFail($leadId);
         $mediaAttachments = app(\App\Services\MediaDrive\Attachments::class)->forNote($request->user(), $lead, $validated['media_file_ids'] ?? []);
-        if (count($mediaAttachments) + count($request->file('files', [])) > 6) throw \Illuminate\Validation\ValidationException::withMessages(['media_file_ids' => 'Attach up to six files per note.']);
+        if (count($mediaAttachments) + count($request->file('files', [])) > 6) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['media_file_ids' => 'Attach up to six files per note.']);
+        }
+        $newPaths = [];
         try {
             $lead = Lead::findOrFail($leadId);
             $user = Auth::user();
@@ -95,6 +98,10 @@ class LeadNoteController extends Controller
             $attachments = $mediaAttachments;
             foreach ($request->file('files', []) as $file) {
                 $path = $file->store("lead-notes/{$lead->id}", 'local');
+                if (! $path) {
+                    throw new \RuntimeException('Could not store note attachment.');
+                }
+                $newPaths[] = $path;
                 $attachments[] = [
                     'path' => $path,
                     'original_name' => $file->getClientOriginalName(),
@@ -103,28 +110,39 @@ class LeadNoteController extends Controller
                 ];
             }
 
-            $note = LeadNote::create([
-                'lead_id'             => $lead->id,
-                'parent_id'           => $validated['parent_id'] ?? null,
-                'user_id'             => $user?->id,
-                'author_name'         => $user?->name,
-                'author_role'         => $user?->role,
-                'body'                => $validated['body'],
-                // Snapshot catalogue titles so historical notes retain their meaning.
-                'programs'            => $validated['programs'] ?? [],
-                'attachments'         => $attachments ?: null,
-                'pinned'              => (bool) ($validated['pinned'] ?? false),
-                'kind'                => $validated['kind'] ?? 'general',
-                'pre_screened_by'     => $validated['pre_screened_by']     ?? null,
-                'pre_screen_mode'     => $validated['pre_screen_mode']     ?? null,
-                'pre_screen_date'     => $validated['pre_screen_date']     ?? null,
-                'goal_setting_status' => $validated['goal_setting_status'] ?? null,
-                'goal_setting_by'     => $validated['goal_setting_by']     ?? null,
-            ]);
+            \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $user, $validated, $attachments, $mediaAttachments) {
+                $note = LeadNote::create([
+                    'lead_id' => $lead->id,
+                    'parent_id' => $validated['parent_id'] ?? null,
+                    'user_id' => $user?->id,
+                    'author_name' => $user?->name,
+                    'author_role' => $user?->role,
+                    'body' => $validated['body'],
+                    // Snapshot catalogue titles so historical notes retain their meaning.
+                    'programs' => $validated['programs'] ?? [],
+                    'attachments' => $attachments ?: null,
+                    'pinned' => (bool) ($validated['pinned'] ?? false),
+                    'kind' => $validated['kind'] ?? 'general',
+                    'pre_screened_by' => $validated['pre_screened_by'] ?? null,
+                    'pre_screen_mode' => $validated['pre_screen_mode'] ?? null,
+                    'pre_screen_date' => $validated['pre_screen_date'] ?? null,
+                    'goal_setting_status' => $validated['goal_setting_status'] ?? null,
+                    'goal_setting_by' => $validated['goal_setting_by'] ?? null,
+                ]);
+
+                foreach ($mediaAttachments as $attachment) {
+                    $file = \App\Models\MediaFile::findOrFail($attachment['media_file_id']);
+                    app(\App\Services\MediaDrive\Library::class)->event($file->folder, 'note_attached', $user->id, null, $file, ['note_id' => $note->id]);
+                }
+            });
 
             return back()->with('success', 'Note added.');
         } catch (\Throwable $e) {
+            foreach ($newPaths as $path) {
+                Storage::disk('local')->delete($path);
+            }
             Log::error('Lead note create failed', ['lead_id' => $leadId, 'error' => $e->getMessage()]);
+
             return back()->withErrors(['error' => 'Could not save the note.']);
         }
     }
@@ -138,9 +156,10 @@ class LeadNoteController extends Controller
         $this->authorizeLead($request, $leadId);
         $note = LeadNote::where('lead_id', $leadId)->findOrFail($noteId);
         $att = ($note->attachments ?? [])[(int) $index] ?? null;
-        if (!empty($att['media_file_id'])) {
-            $files=app(\App\Services\MediaDrive\Attachments::class)->files($request->user(),'lead',(int)$leadId,[(int)$att['media_file_id']]);
-            return app(\App\Services\MediaDrive\Library::class)->stream($files->sole(),$request->boolean('inline'));
+        if (! empty($att['media_file_id'])) {
+            $files = app(\App\Services\MediaDrive\Attachments::class)->files($request->user(), 'lead', (int) $leadId, [(int) $att['media_file_id']]);
+
+            return app(\App\Services\MediaDrive\Library::class)->stream($files->sole(), $request->boolean('inline'));
         }
         abort_unless($att && ! empty($att['path']) && Storage::disk('local')->exists($att['path']), 404);
 
@@ -158,7 +177,7 @@ class LeadNoteController extends Controller
     {
         $this->authorizeLead($request, $leadId);
         $validated = $request->validate([
-            'body'   => 'sometimes|string|max:2000',
+            'body' => 'sometimes|string|max:2000',
             'pinned' => 'sometimes|boolean',
         ]);
 
@@ -182,6 +201,7 @@ class LeadNoteController extends Controller
             return back()->with('success', 'Note updated.');
         } catch (\Throwable $e) {
             Log::error('Lead note update failed', ['note_id' => $noteId, 'error' => $e->getMessage()]);
+
             return back()->withErrors(['error' => 'Could not update the note.']);
         }
     }
@@ -199,6 +219,7 @@ class LeadNoteController extends Controller
             return back()->with('success', 'Note deleted.');
         } catch (\Throwable $e) {
             Log::error('Lead note delete failed', ['note_id' => $noteId, 'error' => $e->getMessage()]);
+
             return back()->withErrors(['error' => 'Could not delete the note.']);
         }
     }

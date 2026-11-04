@@ -91,6 +91,8 @@ class Library
     public function stream(MediaFile $file, bool $inline = false)
     {
         abort_unless(Storage::disk('local')->exists($file->file_path), 404);
+        $share = request()->attributes->get('media_verified_share');
+        $this->event($file->folder, $inline ? 'file_previewed' : 'file_downloaded', $share ? null : request()->user()?->id, $share?->id, $file);
         $headers = ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer'];
         if ($inline && in_array($file->mime, ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'text/plain', 'text/csv'], true)) {
             return response()->file(Storage::disk('local')->path($file->file_path), [...$headers, 'Content-Type' => $file->mime, 'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $file->original_name, 'file')]);

@@ -91,7 +91,8 @@ class MediaDriveController extends Controller
         if (! empty($data['folder_id'])) {
             $folder = MediaFolder::findOrFail($data['folder_id']);
             $root = $this->access->assertFolder($r->user(), $folder);
-            $files = MediaFile::whereIn('folder_id', ($search !== '' || $r->boolean('review')) ? $root->subtree()->select('id') : [$folder->id])->with(['uploader:id,name', 'documents:id,media_file_id,status']);
+            $this->library->event($folder, 'folder_opened', $r->user()->id);
+            $files = MediaFile::whereIn('folder_id', ($search !== '' || $r->boolean('review')) ? $root->subtree()->select('id') : [$folder->id])->with(['uploader:id,name', 'documents:id,media_file_id,status,checklist_key']);
             $files->when($search !== '', fn ($q) => $q->where('original_name', 'like', "%{$search}%"));
             $files->when($r->boolean('review'), fn ($q) => $q->where(fn ($w) => $w->where(fn ($q) => $q->whereDoesntHave('documents')->where('initial_status', 'Submitted'))->orWhereHas('documents', fn ($d) => $d->whereIn('status', ['Submitted', 'UnderReview', 'Checked']))));
             $crumbIds = array_filter(explode('/', $folder->ancestry));
@@ -150,6 +151,6 @@ class MediaDriveController extends Controller
         $this->staff($r);
         $this->access->assertFolder($r->user(), $file->folder);
 
-        return $this->library->stream($file,$r->boolean('inline'));
+        return $this->library->stream($file, $r->boolean('inline'));
     }
 }

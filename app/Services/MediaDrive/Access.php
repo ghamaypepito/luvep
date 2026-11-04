@@ -52,7 +52,7 @@ class Access
             if ($user->canAccessPortal('accommodation')) {
                 $q->orWhere('is_accommodation_client', true);
             }
-            if ($user->role === 'finance') {
+            if ($user->canAccessPortal('finance')) {
                 $q->orWhereExists(fn ($w) => $w->selectRaw('1')->from('case_financials')->whereColumn('case_financials.lead_id', 'leads.id'));
                 $q->orWhereExists(fn ($w) => $w->selectRaw('1')->from('lead_documents')->whereColumn('lead_documents.lead_id', 'leads.id')->where(fn ($v) => $v->where('source_variant', 'invoice')->orWhere('source_variant', 'like', 'invoice:%')));
                 $q->orWhereExists(fn ($w) => $w->selectRaw('1')->from('lead_tasks')->whereColumn('lead_tasks.lead_id', 'leads.id')->where('assignee_id', $user->id));

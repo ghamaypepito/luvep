@@ -97,7 +97,7 @@ class Attachments
         if ($user->isLead()) {
             abort_unless((int) $user->lead_id === (int) $document->lead_id, 403);
         } else {
-            $this->access->assertFolder($user,$file->folder);
+            $this->access->assertFolder($user, $file->folder);
         }
 
         return $file;

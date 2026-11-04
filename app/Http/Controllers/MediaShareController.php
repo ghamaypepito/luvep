@@ -98,6 +98,7 @@ class MediaShareController extends Controller
         $data = $r->validate(['folder_id' => 'nullable|integer', 'search' => 'nullable|string|max:120']);
         $folder = $this->sharing->assertSubtree($share, $data['folder_id'] ?? $share->folder_id);
         $files = MediaFile::where('folder_id', $folder->id)->with('documents:id,media_file_id,status')->when(! empty($data['search']), fn ($q) => $q->where('original_name', 'like', '%'.$data['search'].'%'))->latest('id')->paginate(30)->through(fn ($f) => $this->library->fileData($f, $token));
+        $this->library->event($folder, 'folder_opened', null, $share->id);
         $crumbIds = array_filter(explode('/', $folder->ancestry));
 
         return $this->response(['folder' => $this->library->folderData($folder, false), 'breadcrumbs' => $share->folder->subtree()->whereIn('id', $crumbIds)->orderBy('id')->get()->map(fn ($f) => $this->library->folderData($f, false)), 'folders' => $share->folder->subtree()->where('parent_id', $folder->id)->orderBy('name')->get()->map(fn ($f) => $this->library->folderData($f, false)), 'files' => $files, 'permission' => $share->permission, 'expires_at' => $share->expires_at->toIso8601String()]);
@@ -108,6 +109,8 @@ class MediaShareController extends Controller
         $share = $this->sharing->resolve($token);
         $this->sharing->assertGrant($r, $share);
         $this->sharing->assertSubtree($share, $file->folder_id);
+
+        $r->attributes->set('media_verified_share', $share);
 
         return $this->library->stream($file, $r->boolean('inline'));
     }

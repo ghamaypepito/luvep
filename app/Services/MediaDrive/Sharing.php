@@ -98,33 +98,43 @@ class Sharing
         if (! hash_equals($share->email, mb_strtolower(trim($email)))) {
             return;
         }
-        $hour = 'media-code-hour:'.$share->id;
-        $cool = 'media-code-cool:'.$share->id;
-        abort_if(RateLimiter::tooManyAttempts($hour, 3) || RateLimiter::tooManyAttempts($cool, 1), 429, 'Please wait before requesting another code. Up to three codes can be sent per hour.');
-        RateLimiter::hit($hour, 3600);
-        RateLimiter::hit($cool, 60);
-        $prior = MediaChallenge::where('share_id', $share->id)->latest('created_at')->first();
-        do {
-            $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        } while ($prior && Hash::check($code, $prior->code_hash));
-        $challenge = MediaChallenge::create(['id' => (string) Str::uuid(), 'share_id' => $share->id, 'share_version' => $share->version, 'session_hash' => $this->sessionHash($r), 'code_hash' => Hash::make($code), 'expires_at' => now()->addMinutes(10)]);
-        $r->session()->put('media_challenges.'.$share->id, $challenge->id);
-        try {
-            Mail::to($share->email)->send(new MediaDriveCode($code));
-        } catch (\Throwable $e) {
-            $challenge->delete();
-            $r->session()->forget('media_challenges.'.$share->id);
-            RateLimiter::clear($cool);
-            \Illuminate\Support\Facades\Log::warning('Media Drive verification delivery failed', ['share_id' => $share->id, 'exception' => get_class($e)]);
-            abort(503, 'The verification email could not be sent. Please try again.');
-        }
-        $this->library->event($share->folder, 'verification_requested', null, $share->id);
+        DB::transaction(function () use ($r, $share, $email) {
+            // Serialize replacement with verification, revocation and permission changes.
+            $share = MediaShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
+            abort_unless($share->isAvailable(), 410, 'This sharing link is unavailable.');
+            if (! hash_equals($share->email, mb_strtolower(trim($email)))) {
+                return;
+            }
+            $hour = 'media-code-hour:'.$share->id;
+            $cool = 'media-code-cool:'.$share->id;
+            abort_if(RateLimiter::tooManyAttempts($hour, 3) || RateLimiter::tooManyAttempts($cool, 1), 429, 'Please wait before requesting another code. Up to three codes can be sent per hour.');
+            RateLimiter::hit($hour, 3600);
+            RateLimiter::hit($cool, 60);
+            $prior = MediaChallenge::where('share_id', $share->id)->latest('created_at')->first();
+            do {
+                $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            } while ($prior && Hash::check($code, $prior->code_hash));
+            $challenge = MediaChallenge::create(['id' => (string) Str::uuid(), 'share_id' => $share->id, 'share_version' => $share->version, 'session_hash' => $this->sessionHash($r), 'code_hash' => Hash::make($code), 'expires_at' => now()->addMinutes(10)]);
+            $r->session()->put('media_challenges.'.$share->id, $challenge->id);
+            try {
+                Mail::to($share->email)->send(new MediaDriveCode($code));
+            } catch (\Throwable $e) {
+                $challenge->delete();
+                $r->session()->forget('media_challenges.'.$share->id);
+                RateLimiter::clear($cool);
+                \Illuminate\Support\Facades\Log::warning('Media Drive verification delivery failed', ['share_id' => $share->id, 'exception' => get_class($e)]);
+                abort(503, 'The verification email could not be sent. Please try again.');
+            }
+            MediaChallenge::where('share_id', $share->id)->where('id', '!=', $challenge->id)->whereNull('used_at')->update(['used_at' => now()]);
+            $this->library->event($share->folder, 'verification_requested', null, $share->id);
+        });
     }
 
     public function verify(Request $r, MediaShare $share, string $code): void
     {
         $challengeId = $r->session()->get('media_challenges.'.$share->id);
-        $error = DB::transaction(function () use ($r, $share, $code, $challengeId) {
+        $grant = null;
+        $error = DB::transaction(function () use ($r, $share, $code, $challengeId, &$grant) {
             $locked = MediaShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
             $this->resolve($locked->token);
             $challenge = MediaChallenge::where('share_id', $locked->id)->whereKey($challengeId)->lockForUpdate()->first();
@@ -137,8 +147,7 @@ class Sharing
                 return 'Incorrect verification code. Please try again.';
             }
             $challenge->update(['used_at' => now()]);
-            $r->session()->migrate(true);
-            $r->session()->put('media_grants.'.$locked->id, ['version' => $locked->version, 'expires' => min(now()->addHour()->timestamp, $locked->expires_at->timestamp)]);
+            $grant = ['version' => $locked->version, 'expires' => min(now()->addHour()->timestamp, $locked->expires_at->timestamp)];
             $this->library->event($locked->folder, 'email_verified', null, $locked->id);
 
             return null;
@@ -146,5 +155,7 @@ class Sharing
         if ($error) {
             throw ValidationException::withMessages(['code' => $error]);
         }
+        $r->session()->migrate(true);
+        $r->session()->put('media_grants.'.$share->id, $grant);
     }
 }

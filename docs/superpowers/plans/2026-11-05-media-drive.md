@@ -39,17 +39,17 @@ Interfaces: Sharing manages hashed/encrypted links, challenge/code delivery, ses
 ### 3. Client attachment integration
 Files: Services/MediaDrive/Attachments; LeadDocument/TenantDocument model references; MediaDriveController attachment endpoint; LeadNoteController; LeadDocumentController lifecycle protections; TenantDocumentController download; tests.
 Interfaces: Attachments::toLead(files,lead,key,actor) / toTenant and note reference resolution, all reauthorize client/file IDs; repeated same-target references retain their review status and new targets start Submitted. Repeated same-target attachments are idempotent. Existing delete/replace does not remove Drive bytes.
-- [ ] Write and run failing cross-client, idempotence, review-preservation, note reference and delete/replace tests.
-- [ ] Implement reference attachments with no blob copies, compatible existing document serialization/downloads; run focused legacy document/note tests.
-- [ ] Commit integration.
+- [x] Write and run failing cross-client, idempotence, review-preservation, note reference and delete/replace tests.
+- [x] Implement reference attachments with no blob copies, compatible existing document serialization/downloads; run focused legacy document/note tests.
+- [x] Commit integration.
 
 ### 4. Approved UI and portal entry points
 Files: pages/media/{Drive,Shared,ClientLinks}; components/media/{MediaDialog,FileBrowser,UploadQueue,ShareDialog,MediaPicker,MediaAttachButton}; scoped media CSS; layouts/app resolver; shared LeadDetails/DocumentsTab/notes and TenantDetail.
-- [ ] Add frontend tests that fail for scoped picking, queue retries/progress/errors, sharing controls/OTP and permission-specific controls.
-- [ ] Build the approved EP green/neutral file library, real client/folder forms, navigation/search/list-grid, preview/activity/share/revoke flows and public email-code screen.
-- [ ] Add Media Drive navigation to each staff/recruiting portal; existing client portal links only to its own invited shares; HR link to main client library. Add picker beside Upload in shared client profiles/checklists/notes and tenant documents.
-- [ ] Run frontend tests/build, inspect desktop and mobile together, apply one bounded polish pass.
-- [ ] Commit UI.
+- [x] Add frontend tests that fail for scoped picking, queue retries/progress/errors, sharing controls/OTP and permission-specific controls.
+- [x] Build the approved EP green/neutral file library, real client/folder forms, navigation/search/list-grid, preview/activity/share/revoke flows and public email-code screen.
+- [x] Add Media Drive navigation to each staff/recruiting portal; existing client portal links only to its own invited shares; HR link to main client library. Add picker beside Upload in shared client profiles/checklists/notes and tenant documents.
+- [x] Run frontend tests/build, inspect desktop and mobile together, apply one bounded polish pass.
+- [x] Commit UI.
 
 ### 5. Verification and deployment
 - [ ] Independent whole-branch review; fix meaningful findings with regression tests.
@@ -67,3 +67,7 @@ Files: pages/media/{Drive,Shared,ClientLinks}; components/media/{MediaDialog,Fil
 
 - Ruling: avoid holding a folder lock before a share lock during uploads; recheck the locked share at commit, enforce unique payload-bound upload keys, then touch folders. This avoids lock-order cycles with verification audit foreign keys.
 - Production limits read-only check: nginx 512M, FPM override upload_max_filesize 50M/post_max_size 512M, free storage 74.3 GiB. Add a Luvep-public-directory .user.ini at 128M/512M; app still rejects >100 MiB. Verify effective FPM limit after deployment.
+
+- Integration/UI verification: 34 Media Drive feature tests / 525 assertions pass, plus scoped picker, deferred upload busy/target protection, attachment save/retry feedback, Drive share/revoke confirmation, OTP and Viewer/Editor frontend tests. Production SMTP confirmed; prerequisite tables present; additive migration completed in isolated SQLite from current schema.
+- Independent review identified cross-session code replacement, upload tab cancellation deadlock/destination drift, explicit finance grants and access audit coverage. Fixed with regression coverage; verification session grants now commit only after a successful audit transaction. Download/preview and folder-open events include staff or share identity, note reference events are atomic.
+- Browser local QA uses /private/tmp/luvep-media-qa.sqlite, synthetic Avery Sample client and log-only email. Verified library navigation, file preview/details/review retention, share controls, successful email-code flow, editor folder view and mobile 390px layout. No production client data or emails used.

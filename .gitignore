@@ -47,3 +47,6 @@ prod-db-latest.sql.gz
 .env.bak*
 
 /resources/social-workspace/exports/
+
+# Generated DomPDF font metrics cache
+/storage/fonts/*.afm.json

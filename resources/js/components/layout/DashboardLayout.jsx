@@ -186,6 +186,7 @@ export default function DashboardLayout({
     const handleLogout = () => router.post("/logout");
 
     const getPageTitle = () => {
+        if (url.split("?")[0].endsWith("/media-drive")) return user?.role === "lead" ? "Shared folders" : "Media Drive";
         for (const item of nav) {
             if (item.href && isPathMatch(item.href)) return item.name;
             const child = activeChildFor(item);

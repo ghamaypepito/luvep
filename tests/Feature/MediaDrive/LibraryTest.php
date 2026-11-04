@@ -183,4 +183,12 @@ class LibraryTest extends TestCase
         \App\Models\LeadDocument::sole()->update(['status' => 'Approved']);
         $this->getJson('/media-drive/api/folders?folder_id='.$root.'&review=1')->assertOk()->assertJsonCount(0, 'files.data');
     }
+
+    public function test_explicit_finance_portal_grant_can_use_its_finance_workflow_clients(): void
+    {
+        $lead = $this->client(['is_immigration_case' => true]);
+        \App\Models\CaseFinancial::create(['lead_id' => $lead->id]);
+        $user = User::factory()->create(['role' => 'sales', 'portal_access' => ['finance']]);
+        $this->actingAs($user)->getJson('/media-drive/api/clients')->assertOk()->assertJsonPath('clients.0.id', $lead->id);
+    }
 }
