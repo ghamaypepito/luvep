@@ -98,7 +98,9 @@ class TicketAnalyticsController extends Controller
                 $addWaiting($state, $cursor, $now);
 
             }
-            $timings[] = ['ticket_ref' => $t->ticket_ref, 'title' => $t->title, 'age_hours' => round($hours($t->created_at, $t->resolved_at ?? $now), 1), 'status' => $t->status, 'tracking_started_at' => $t->tracking_started_at?->toIso8601String(), 'status_hours' => array_map(fn ($n) => round($n, 1), $statusHours), 'waiting_hours' => array_map(fn ($n) => round($n, 1), $waitingHours)];
+            if (! $t->archived_at) {
+                $timings[] = ['ticket_ref' => $t->ticket_ref, 'title' => $t->title, 'age_hours' => round($hours($t->created_at, $t->resolved_at ?? $now), 1), 'status' => $t->status, 'tracking_started_at' => $t->tracking_started_at?->toIso8601String(), 'status_hours' => array_map(fn ($n) => round($n, 1), $statusHours), 'waiting_hours' => array_map(fn ($n) => round($n, 1), $waitingHours)];
+            }
         }
         $avg = fn ($values) => count($values) ? round(array_sum($values) / count($values), 1) : null;
         $median = function ($v) {
@@ -109,7 +111,7 @@ class TicketAnalyticsController extends Controller
 
             return round($n % 2 ? $v[intdiv($n, 2)] : ($v[$n / 2 - 1] + $v[$n / 2]) / 2, 1);
         };
-        $open = $tickets->whereNotIn('status', ['done', 'declined']);
+        $open = $tickets->whereNull('archived_at')->whereNotIn('status', ['done', 'declined']);
         $done = $tickets->where('status', 'done');
         $groups = [];
         foreach (['status', 'priority', 'category', 'department', 'topic'] as $key) {
@@ -134,7 +136,7 @@ class TicketAnalyticsController extends Controller
         $workload = $tickets->groupBy(fn ($t) => $t->assigned_to ?? 'unassigned')->map(function ($rows) use ($avg, $hours) {
             $done = $rows->where('status', 'done')->filter(fn ($t) => $t->resolved_at);
 
-            return ['name' => $rows->first()->assignee?->name ?? 'Unassigned', 'open' => $rows->whereNotIn('status', ['done', 'declined'])->count(), 'resolved' => $done->count(), 'avg_resolution_hours' => $avg($done->map(fn ($t) => $hours($t->created_at, $t->resolved_at))->all())];
+            return ['name' => $rows->first()->assignee?->name ?? 'Unassigned', 'open' => $rows->whereNull('archived_at')->whereNotIn('status', ['done', 'declined'])->count(), 'resolved' => $done->count(), 'avg_resolution_hours' => $avg($done->map(fn ($t) => $hours($t->created_at, $t->resolved_at))->all())];
         })->values();
 
         return inertia('admin/TicketAnalytics', ['filters' => $filters, 'options' => ['departments' => SystemTicket::whereNotNull('department')->distinct()->pluck('department'), 'assignees' => User::where('is_active', true)->whereIn('role', config('hr.internal_roles'))->get(['id', 'name'])], 'metrics' => ['created' => $tickets->count(), 'resolved' => $done->count(), 'unresolved' => $open->count(), 'unassigned' => $open->whereNull('assigned_to')->count(), 'reopened' => $reopened, 'documentation_coverage' => $done->count() ? round($done->filter(fn ($t) => ! empty($t->resolution_report['resolution']))->count() / $done->count() * 100, 1) : null, 'first_response_avg_hours' => $avg($responses), 'first_response_median_hours' => $median($responses), 'assignment_avg_hours' => $avg($assignments), 'resolution_avg_hours' => $avg($resolutions), 'resolution_median_hours' => $median($resolutions), 'overdue_response' => $overdue, 'total_with_response_target' => $targets], 'trends' => array_values($trend), 'groups' => $groups, 'workload' => $workload, 'timings' => array_slice($timings,0,100)]);
