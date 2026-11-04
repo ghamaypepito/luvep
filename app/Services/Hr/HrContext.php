@@ -66,12 +66,15 @@ class HrContext
             ? $access->menuPermissions($actor)
             : array_fill_keys(config('hr.abilities'), false);
 
+        $managesTeam = false;
         if (! $preview && $actor && ($employee || $actor->isAdmin())) {
-            $abilities['leave.review'] = $abilities['leave.review'] || $abilities['leave.fallback'] || $abilities['leave.emergency'] || HrEmployee::where('manager_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
+            $canReviewLeave = $abilities['leave.review'] || $abilities['leave.fallback'] || $abilities['leave.emergency'];
+            $managesTeam = (! $canReviewLeave || ! $abilities['dtr.review']) && HrEmployee::where('manager_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
+            $abilities['leave.review'] = $canReviewLeave || $managesTeam;
             $abilities['dtr.review'] = $abilities['dtr.review'] || HrEmployee::where('reviewer_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists();
         }
 
-        $canViewDtrChanges = ! $preview && $actor && ($abilities['dtr.review'] || (($employee || $actor->isAdmin()) && HrEmployee::where('manager_user_id', $actor->id)->where('user_id', '!=', $actor->id)->exists()));
+        $canViewDtrChanges = ! $preview && $actor && ($abilities['dtr.review'] || $managesTeam);
 
         return ['enabled' => (bool) config('hr.enabled'), 'url' => config('hr.portal_mode') ? rtrim(config('hr.main_url'), '/').'/portal/hr/' : $this->url(), 'portal_mode' => (bool) config('hr.portal_mode'), 'main_url' => config('hr.main_url'), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
             'permissions' => $abilities, 'can_view_dtr_changes' => $canViewDtrChanges,

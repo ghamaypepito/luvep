@@ -13,4 +13,6 @@ Implementation:
 
 Review focus: unauthorized employee history access; manager reassignment; stale edits; past/future dates; accidental attendance modification; submitted locks; new feature cannot reconstruct changes made before release.
 
-Review: independent reviewer found only the latest-60-record reachability gap. Added a validated own-date lookup with a regression test. Also blocked direct submissions for future work dates. Frontend interaction test and 25 focused backend/navigation tests pass; build passes. Full regression/CI and production verification pending.
+Review: independent reviewer found only the latest-60-record reachability gap. Added a validated own-date lookup with a regression test. Also blocked direct submissions for future work dates. Frontend interaction test and 26 focused backend/navigation tests pass; build passes. Full regression/CI and production verification pending.
+
+Validation edge: clearing optional meeting/people counters previously produced a database error; normalized them to zero with an HTTP/history regression test. Shared navigation reuses the manager lookup and retains the existing query budget.

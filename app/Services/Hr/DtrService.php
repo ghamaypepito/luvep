@@ -81,6 +81,11 @@ class DtrService
                 throw ValidationException::withMessages(['work_date' => 'Only existing drafts or returned records up to today can be edited. New records must be for today.']);
             }
             $before = app(DtrHistory::class)->snapshot($entry);
+            foreach (['meetings', 'people_assisted'] as $counter) {
+                if (array_key_exists($counter, $data)) {
+                    $data[$counter] = (int) ($data[$counter] ?? 0);
+                }
+            }
             $data['tasks'] = $this->tasks($entry, $data['tasks']);
             unset($data['expected_version'], $data['work_date']);
             $entry->forceFill([...$data, 'hr_status' => $entry->hr_status === 'returned' ? 'returned' : 'draft', 'hr_version' => (int) $entry->hr_version + 1])->save();

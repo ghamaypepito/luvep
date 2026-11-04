@@ -386,4 +386,15 @@ class HrDtrTest extends TestCase
         $legacy = DtrEntry::create(['user_id' => $e->user_id, 'work_date' => '2026-10-17']);
         $this->postJson('https://hr.luvep.com/dtr', $this->data($legacy->fresh()))->assertStatus(409);
     }
+    public function test_cleared_optional_counters_save_as_zero_in_the_report_history(): void
+    {
+        [$e,,$entry] = $this->fixture();
+        $entry = app(DtrService::class)->saveDraft($e, $this->data($entry));
+        $this->actingAs($e->user)->postJson('https://hr.luvep.com/dtr', [...$this->data($entry), 'meetings' => '', 'people_assisted' => ''])
+            ->assertOk()->assertJsonPath('entry.meetings', 0)->assertJsonPath('entry.people_assisted', 0);
+        $this->getJson('https://hr.luvep.com/dtr/'.$entry->id.'/history')->assertOk()
+            ->assertJsonPath('history.data.0.changes.meetings.before', 1)
+            ->assertJsonPath('history.data.0.changes.meetings.after', 0);
+    }
+
 }
