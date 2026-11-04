@@ -107,14 +107,15 @@ class FinanceController extends Controller
     {
         try {
             $userId = $request->user()->id;
-            $scope = $request->input('scope', 'mine');
+            $scope = in_array($request->input('scope'), ['mine', 'department'], true)
+                ? $request->input('scope') : 'mine';
             $now = now();
             $todayEnd = $now->copy()->endOfDay();
             $weekEnd = $now->copy()->endOfWeek();
 
             $base = \App\Models\LeadTask::with(['lead:id,lead_id,first_name,last_name,email,status', 'assignee:id,name,avatar_path', 'creator:id,name,avatar_path', 'attachments'])
                 ->withCount('comments')
-                ->when($scope === 'mine', fn ($q) => $q->where('assignee_id', $userId))
+                ->when($scope === 'mine', fn ($q) => $q->assignedTo($userId))
                 ->when($scope === 'department', fn ($q) => $q->where('department', 'finance'));
 
             $serialize = fn ($t) => [
