@@ -947,3 +947,32 @@
 
 .hr-dtr-date-search { margin-bottom: 24px; align-items: center; }
 .hr-dtr-date-search input { border: 1px solid #bdc8b9; border-radius: 7px; background: white; padding: 10px 12px; color: var(--hr-ink); }
+
+/* Overview work insights extend the existing HR surfaces and typography. */
+.hr-work-insights > .hr-section-bar { align-items: flex-start; margin-bottom: 12px; }
+.hr-work-insights h2 { margin-bottom: 8px; }
+.hr-work-insights p { font-size: 14px; line-height: 1.6; }
+.hr-work-context { color: var(--hr-muted); font-size: 13px !important; }
+.hr-work-periods { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--hr-line); border-radius: 8px; }
+.hr-work-periods button { border: 0; background: transparent; color: var(--hr-green); border-radius: 5px; padding: 8px 12px; font-size: 13px; font-weight: 600; }
+.hr-work-periods button[aria-pressed="true"] { background: var(--hr-green); color: white; }
+.hr-work-periods button:hover:not([aria-pressed="true"]) { background: #edf2e9; }
+.hr-work-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 24px 0 12px; border-top: 1px solid var(--hr-line); border-bottom: 1px solid var(--hr-line); }
+.hr-work-summary > div { padding: 20px 16px 20px 0; }
+.hr-work-summary dt { font-size: 14px; color: var(--hr-muted); }
+.hr-work-summary dd { font-size: 30px; font-weight: 600; margin: 8px 0; font-variant-numeric: tabular-nums; }
+.hr-work-summary small { color: var(--hr-muted); font-size: 12px; }
+.hr-work-subheading { font-size: 18px; font-weight: 600; margin: 28px 0 14px; }
+.hr-work-team { width: 100%; }
+.hr-work-team small { display: block; font-weight: 400; text-transform: capitalize; color: var(--hr-muted); margin-top: 5px; }
+.hr-work-team td { font-variant-numeric: tabular-nums; }
+.hr-work-feeds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+.hr-work-feeds > div { min-width: 0; }
+.hr-work-updates { padding: 0; list-style: none; }
+.hr-work-updates li { padding: 14px 0; border-bottom: 1px solid var(--hr-line); overflow-wrap: anywhere; }
+.hr-work-updates p { margin: 6px 0; }
+.hr-work-updates .hr-section-bar { margin-bottom: 8px; gap: 8px; }
+.hr-work-updates .hr-status { font-size: 12px; }
+.hr-work-pagination { align-items: center; margin-top: 16px; font-size: 13px; }
+@media (max-width: 1100px) { .hr-work-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hr-work-feeds { grid-template-columns: 1fr; gap: 0; } }
+@media (max-width: 500px) { .hr-work-summary { column-gap: 12px; } .hr-work-summary > div { padding-right: 0; } .hr-work-summary dd { font-size: 26px; } }

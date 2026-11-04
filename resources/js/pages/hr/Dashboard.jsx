@@ -1,3 +1,4 @@
+import WorkInsights from "@/components/hr/WorkInsights";
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, usePage } from "@inertiajs/react";
 import {
@@ -14,6 +15,7 @@ export default function Dashboard({
     reviews = {},
     absences = [],
     dueMilestones = 0,
+    workInsights,
 }) {
     const { hr } = usePage().props;
     const firstName = profile.user?.name?.split(" ")[0] || "there";
@@ -99,6 +101,7 @@ export default function Dashboard({
                     </div>
                 </section>
             )}
+            <WorkInsights data={workInsights} />
             <section className="hr-panel">
                 <div className="hr-section-bar">
                     <h2>Next steps</h2>
