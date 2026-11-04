@@ -1,3 +1,4 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
 import { useState } from "react";
 import { Head, Link, useForm, router } from "@inertiajs/react";
 import {
@@ -324,6 +325,7 @@ function TenantDocuments({ tenant, documents }) {
     return (
         <Card title="Tenant documents" icon={<ClipboardCheck size={18} />}>
             <p className="mb-4 text-sm text-gray-500">Upload files for this tenancy. Existing Google Drive status toggles remain separate from these uploads.</p>
+            <div className="mb-4"><MediaAttachButton clientType="tenant" clientId={tenant.id} category={form.data.category} /></div>
             <form onSubmit={upload} className="mb-6 space-y-3">
                 <label className={LABEL} htmlFor="tenant-doc-category">Document type</label>
                 <select id="tenant-doc-category" className={FIELD} value={form.data.category} onChange={(event) => form.setData("category", event.target.value)}>

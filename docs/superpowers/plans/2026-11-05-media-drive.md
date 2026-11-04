@@ -64,3 +64,6 @@ Files: pages/media/{Drive,Shared,ClientLinks}; components/media/{MediaDialog,Fil
 - Ruling (builder check): review decisions stay on contextual LeadDocument references; never propagate approvals across targets. Attachment identity includes checklist/request/dependent/category context. Public access rechecks soft-deleted owners, share version and subtree on every request and at upload commit. Asset storage is immutable; only new uploads become MediaFiles, not generated legacy files.
 
 - Foundation/verified-sharing verification: 18 feature tests / 225 assertions plus 7 existing ticket tests (combined 25 / 421) pass. Watched missing-route RED runs, then GREEN. Tests preserve browser session cookies for real OTP/session-binding behavior. Shared-route throttle prefixes are separate so nested limits do not share counters.
+
+- Ruling: avoid holding a folder lock before a share lock during uploads; recheck the locked share at commit, enforce unique payload-bound upload keys, then touch folders. This avoids lock-order cycles with verification audit foreign keys.
+- Production limits read-only check: nginx 512M, FPM override upload_max_filesize 50M/post_max_size 512M, free storage 74.3 GiB. Add a Luvep-public-directory .user.ini at 128M/512M; app still rejects >100 MiB. Verify effective FPM limit after deployment.

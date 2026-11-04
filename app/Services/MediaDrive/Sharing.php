@@ -45,6 +45,9 @@ class Sharing
 
         return DB::transaction(function () use ($user, $share, $data) {
             $locked = MediaShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
+            if (! $data && $locked->revoked_at) {
+                return $locked;
+            }
             if ($data) {
                 abort_if($locked->revoked_at, 422, 'This link was revoked. Create a new link.');
                 $locked->fill(['email' => mb_strtolower(trim($data['email'])), 'permission' => $data['permission'], 'expires_at' => now()->addDays($data['expires_in_days']), 'version' => $locked->version + 1])->save();
@@ -112,7 +115,7 @@ class Sharing
             $challenge->delete();
             $r->session()->forget('media_challenges.'.$share->id);
             RateLimiter::clear($cool);
-            report($e);
+            \Illuminate\Support\Facades\Log::warning('Media Drive verification delivery failed', ['share_id' => $share->id, 'exception' => get_class($e)]);
             abort(503, 'The verification email could not be sent. Please try again.');
         }
         $this->library->event($share->folder, 'verification_requested', null, $share->id);
@@ -136,7 +139,7 @@ class Sharing
             $challenge->update(['used_at' => now()]);
             $r->session()->migrate(true);
             $r->session()->put('media_grants.'.$locked->id, ['version' => $locked->version, 'expires' => min(now()->addHour()->timestamp, $locked->expires_at->timestamp)]);
-            $this->library->event($locked->folder,'email_verified',null,$locked->id);
+            $this->library->event($locked->folder, 'email_verified', null, $locked->id);
 
             return null;
         });

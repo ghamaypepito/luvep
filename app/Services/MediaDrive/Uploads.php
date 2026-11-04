@@ -24,6 +24,12 @@ class Uploads
         $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?: 'file';
         $existing = MediaFile::where('upload_key', $key)->first();
         if ($existing) {
+            if ($user) {
+                $this->access->assertFolder(User::findOrFail($user->id), $folder->fresh());
+            }
+            if ($recheck) {
+                $recheck();
+            }
             $this->assertRetry($existing, $folder, $actor, $hash, $name);
 
             return [$existing, false];
@@ -34,7 +40,7 @@ class Uploads
         }
         try {
             $saved = DB::transaction(function () use ($folder, $file, $key, $user, $share, $recheck, $actor, $hash, $name, $path) {
-                $locked = MediaFolder::whereKey($folder->id)->lockForUpdate()->firstOrFail();
+                $locked = MediaFolder::whereKey($folder->id)->firstOrFail();
                 if ($user) {
                     $this->access->assertFolder(User::findOrFail($user->id), $locked);
                 }
@@ -48,6 +54,10 @@ class Uploads
                     return [$existing, false];
                 }
                 $asset = MediaFile::create(['folder_id' => $locked->id, 'original_name' => $name, 'file_path' => $path, 'mime' => $file->getMimeType() ?: 'application/octet-stream', 'size' => $file->getSize(), 'sha256' => $hash, 'upload_key' => $key, 'actor_key' => $actor, 'uploaded_by' => $user?->id, 'uploaded_share_id' => $share?->id, 'initial_status' => $share ? 'Submitted' : 'StaffShared']);
+                $locked->touch();
+                if ($locked->root_id) {
+                    MediaFolder::whereKey($locked->root_id)->update(['updated_at' => now()]);
+                }
                 $this->library->event($locked, 'file_uploaded', $user?->id, $share?->id, $asset);
 
                 return [$asset, true];
@@ -56,15 +66,20 @@ class Uploads
                 Storage::disk('local')->delete($path);
             }
 
-return $saved;
+            return $saved;
         } catch (\Throwable $e) {
             Storage::disk('local')->delete($path);
+            if ($e instanceof \Illuminate\Database\QueryException && ($retry = MediaFile::where('upload_key', $key)->first())) {
+                $this->assertRetry($retry, $folder, $actor, $hash, $name);
+
+                return [$retry, false];
+            }
             throw $e;
         }
     }
 
     private function assertRetry(MediaFile $file, MediaFolder $folder, string $actor, string $hash, string $name): void
     {
-        abort_unless($file->folder_id === $folder->id && $file->actor_key === $actor && hash_equals($file->sha256,$hash) && $file->original_name === $name, 409, 'This upload key belongs to a different file. Choose the file again.');
+        abort_unless($file->folder_id === $folder->id && $file->actor_key === $actor && hash_equals($file->sha256, $hash) && $file->original_name === $name, 409, 'This upload key belongs to a different file. Choose the file again.');
     }
 }

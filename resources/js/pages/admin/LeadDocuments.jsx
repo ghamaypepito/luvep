@@ -1,3 +1,4 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
 import { useState, useMemo } from "react";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import {
@@ -60,6 +61,7 @@ export default function LeadDocuments({ lead, requests = [], orphans = [], templ
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
             <Head title={`Documents — ${lead.name}`} />
+            <div className="flex justify-end"><MediaAttachButton clientId={lead.id} /></div>
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">

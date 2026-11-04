@@ -4,7 +4,7 @@ import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
 import { Link, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
-import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen } from "lucide-react";
 
 // Admin-area restricted modules that, when granted via Module Management, should
 // surface as a sidebar link for a NON-admin staffer (admins already see them in
@@ -80,8 +80,13 @@ export default function DashboardLayout({
 
     // Append a "Tools" section for granted admin modules, plus a collapsible
     // "Portals" group when the user can reach more than one portal.
+    const driveRoles=['super_admin','admin','sales','education','english','immigration','immigration_manager','immigration_adviser','accommodation','finance','agent','sub_agent','lead'];
+    const portalPath=url.match(/^\/portal\/([a-z-]+)\//)?.[1];
+    const driveHref=user?.role==='lead'?'/portal/lead/media-drive':portalPath?`/portal/${portalPath}/media-drive`:'/admin/media-drive';
     const navWithPortals = [
-        ...nav,
+        ...nav.slice(0,1),
+        ...(driveRoles.includes(user?.role)?[{name:user.role==='lead'?'Shared folders':'Media Drive',href:driveHref,icon:<FolderOpen size={20}/>}]:[]),
+        ...nav.slice(1),
         ...(hr?.enabled && (hr?.employee || Object.values(hr?.permissions || {}).some(Boolean)) ? [{name: "HR Portal", href: "/portal/hr/dashboard", icon: <LayoutGrid size={20} />}]: []),
         ...(moduleExtras.length > 0 ? [{ section: true, name: "Tools" }, ...moduleExtras] : []),
         ...(portals.length > 1

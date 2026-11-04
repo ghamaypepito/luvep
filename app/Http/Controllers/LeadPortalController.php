@@ -592,7 +592,7 @@ class LeadPortalController extends Controller
         $dep = \App\Models\CaseDependent::where('id', $id)->where('lead_id', $lead->id)->firstOrFail();
         foreach ($dep->documents as $doc) {
             if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
-                \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
+                \App\Support\DocumentFiles::delete($doc->file_path, 'local');
             }
         }
         $dep->documents()->delete();
@@ -667,7 +667,7 @@ class LeadPortalController extends Controller
             })->firstOrFail();
         \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
         if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
+            \App\Support\DocumentFiles::delete($doc->file_path, 'local');
         }
         $doc->delete();
 

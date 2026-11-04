@@ -70,6 +70,8 @@ class LeadNoteController extends Controller
             'parent_id'           => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_notes', 'id')->where('lead_id', $leadId)],
             // Media attachments — images or PDFs, stored on the private disk.
             'files'               => 'nullable|array|max:6',
+            'media_file_ids' => 'nullable|array|max:6',
+            'media_file_ids.*' => 'required|integer|distinct',
             'files.*'             => 'file|mimes:pdf,jpg,jpeg,png,webp,gif,heic|max:10240',
             'kind'                => ['nullable', \Illuminate\Validation\Rule::in(['general', 'pre_screen', 'goal_setting', 'risk', 'client_contact'])],
             'pre_screened_by'     => 'nullable|string|max:80',
@@ -81,13 +83,16 @@ class LeadNoteController extends Controller
             'goal_setting_by'     => 'nullable|string|max:120',
         ]);
 
+        $lead = Lead::findOrFail($leadId);
+        $mediaAttachments = app(\App\Services\MediaDrive\Attachments::class)->forNote($request->user(), $lead, $validated['media_file_ids'] ?? []);
+        if (count($mediaAttachments) + count($request->file('files', [])) > 6) throw \Illuminate\Validation\ValidationException::withMessages(['media_file_ids' => 'Attach up to six files per note.']);
         try {
             $lead = Lead::findOrFail($leadId);
             $user = Auth::user();
 
             // Stash any uploaded media on the private disk; keep the metadata
             // on the note so the Overview can render + stream them back.
-            $attachments = [];
+            $attachments = $mediaAttachments;
             foreach ($request->file('files', []) as $file) {
                 $path = $file->store("lead-notes/{$lead->id}", 'local');
                 $attachments[] = [
@@ -133,6 +138,10 @@ class LeadNoteController extends Controller
         $this->authorizeLead($request, $leadId);
         $note = LeadNote::where('lead_id', $leadId)->findOrFail($noteId);
         $att = ($note->attachments ?? [])[(int) $index] ?? null;
+        if (!empty($att['media_file_id'])) {
+            $files=app(\App\Services\MediaDrive\Attachments::class)->files($request->user(),'lead',(int)$leadId,[(int)$att['media_file_id']]);
+            return app(\App\Services\MediaDrive\Library::class)->stream($files->sole(),$request->boolean('inline'));
+        }
         abort_unless($att && ! empty($att['path']) && Storage::disk('local')->exists($att['path']), 404);
 
         if ($request->boolean('inline')) {

@@ -6,6 +6,7 @@ use App\Models\Lead;
 use App\Models\MediaEvent;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
+use App\Models\MediaShare;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -21,11 +22,17 @@ class Library
 
     public function folderData(MediaFolder $folder, bool $staff = true): array
     {
-        $data = ['id' => $folder->id, 'name' => $folder->name, 'parent_id' => $folder->parent_id, 'root_id' => $folder->root_id ?: $folder->id];
+        $data = ['id' => $folder->id, 'name' => $folder->name, 'parent_id' => $folder->parent_id, 'root_id' => $folder->root_id ?: $folder->id, 'updated_at' => $folder->updated_at?->toIso8601String()];
         if ($staff) {
             $root = $folder->ownerRoot();
             $data['client'] = $this->clientData($root->lead ?: $root->tenant);
-            $data['shared'] = $folder->shares()->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
+            $ancestors = [...array_filter(explode('/', $folder->ancestry)), $folder->id];
+            $direct = $folder->shares()->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
+            $shared = MediaShare::whereIn('folder_id', $ancestors)->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
+            $partial = ! $shared && MediaShare::whereIn('folder_id', $folder->subtree()->select('id'))->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
+            $data['shared'] = $shared;
+            $data['sharing'] = $direct ? 'direct' : ($shared ? 'inherited' : ($partial ? 'partial' : 'private'));
+            $data['file_count'] = $folder->files_count ?? $folder->files()->count();
         }
 
         return $data;
@@ -36,12 +43,12 @@ class Library
         $base = $token ? '/shared/media/'.$token.'/files/'.$file->id : '/media-drive/api/files/'.$file->id.'/download';
         $statuses = $file->documents->pluck('status')->unique()->values();
         // Reviews stay on each attachment; a file is globally Approved only if all its references are Approved.
-        $status = $statuses->count() === 1 ? $statuses->first() : ($statuses->isEmpty() ? $file->initial_status : 'Submitted');
+        $status = $statuses->count() === 1 ? $statuses->first() : ($statuses->isEmpty() ? $file->initial_status : 'MixedReviews');
 
         return ['id' => $file->id, 'folder_id' => $file->folder_id, 'name' => $file->original_name, 'mime' => $file->mime, 'size' => $file->size,
             'status' => $token ? \App\Models\LeadDocument::clientStatus($status) : $status, 'download_url' => $base, 'preview_url' => $base.'?inline=1',
             'added_by' => $token ? ($file->uploaded_share_id ? 'Client upload' : 'EP team') : ($file->uploader?->name ?: 'Client upload'),
-            'created_at' => $file->created_at?->toIso8601String()];
+            'created_at' => $file->created_at?->toIso8601String(), ...($token ? [] : ['reviews' => $file->documents->map(fn ($d) => ['id' => $d->id, 'status' => $d->status, 'target' => $d->checklist_key ?: 'General documents'])->values()->all()])];
     }
 
     public function create(User $user, array $data): MediaFolder
@@ -75,6 +82,9 @@ class Library
 
     public function event(MediaFolder $folder, string $kind, ?int $user = null, ?int $share = null, ?MediaFile $file = null, array $metadata = []): void
     {
+        if ($actor = request()->attributes->get('user_view_actor')) {
+            $metadata['user_view'] = ['actor_id' => $actor->id, 'actor_name' => $actor->name, 'target_id' => $user];
+        }
         MediaEvent::create(['folder_id' => $folder->id, 'file_id' => $file?->id, 'user_id' => $user, 'share_id' => $share, 'kind' => $kind, 'metadata' => $metadata, 'created_at' => now()]);
     }
 
@@ -86,6 +96,6 @@ class Library
             return response()->file(Storage::disk('local')->path($file->file_path), [...$headers, 'Content-Type' => $file->mime, 'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $file->original_name, 'file')]);
         }
 
-        return Storage::disk('local')->download($file->file_path,$file->original_name,$headers);
+        return Storage::disk('local')->download($file->file_path, $file->original_name, $headers);
     }
 }

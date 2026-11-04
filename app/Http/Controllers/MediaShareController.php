@@ -58,7 +58,15 @@ class MediaShareController extends Controller
 
     public function show(Request $r, string $token)
     {
-        $share = $this->sharing->resolve($token);
+        try {
+            $share = $this->sharing->resolve($token);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            if (! in_array($e->getStatusCode(), [404, 410])) {
+                throw $e;
+            }
+
+            return inertia('media/Shared', ['unavailable' => 'This link is expired, revoked or unavailable.'])->toResponse($r)->setStatusCode($e->getStatusCode())->header('Cache-Control', 'private, no-store')->header('Referrer-Policy', 'no-referrer')->header('X-Robots-Tag', 'noindex, nofollow, noarchive');
+        }
         $parts = explode('@', $share->email);
         $hint = mb_substr($parts[0], 0, 1).'•••@'.$parts[1];
 
@@ -112,10 +120,10 @@ class MediaShareController extends Controller
         $data = $r->validate(['upload_key' => 'required|uuid', 'file' => 'required|file|mimes:'.Uploads::MIMES.'|extensions:'.Uploads::MIMES.'|max:102400']);
         [$file,$created] = $uploads->store($folder, $r->file('file'), $data['upload_key'], null, $share, function () use ($r, $share, $folder) {
             $locked = MediaShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
-            $this->sharing->assertGrant($r,$locked,true);
-            $this->sharing->assertSubtree($locked,$folder->id);
+            $this->sharing->assertGrant($r, $locked, true);
+            $this->sharing->assertSubtree($locked, $folder->id);
         });
 
-        return $this->response(['file' => $this->library->fileData($file,$token)],$created ? 201 : 200);
+        return $this->response(['file' => $this->library->fileData($file, $token)], $created ? 201 : 200);
     }
 }

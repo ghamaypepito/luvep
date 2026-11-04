@@ -47,6 +47,7 @@ export default function HrLayout({ children }) {
     links.push([hrPath("/requests"), "HR support", MessageSquareLock]);
     links.push([hrPath("/policies"), "Policies", BookOpen]);
     links.push([hrPath("/documents"), "Documents", FolderLock]);
+    links.push(["https://luvep.com/media-drive", "Client Media Drive", FolderLock]);
     if (hr?.permissions?.people) links.push([hrPath("/people"), "People", UsersRound]);
     if (hr?.permissions?.["access.manage"])
         links.push([hrPath("/access"), "Access", UsersRound]);

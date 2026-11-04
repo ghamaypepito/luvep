@@ -165,7 +165,22 @@ class LibraryTest extends TestCase
         } finally {
             \App\Models\MediaEvent::setEventDispatcher($dispatcher);
         }
-        $this->assertDatabaseCount('media_files',0);
-        $this->assertSame([],Storage::disk('local')->allFiles());
+        $this->assertDatabaseCount('media_files', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_subfolders_report_inherited_sharing_and_review_filter_follows_context_reviews(): void
+    {
+        $this->actingAs($this->admin());
+        $lead = $this->client();
+        $root = $this->root($lead);
+        $child = $this->postJson('/media-drive/api/folders', ['parent_id' => $root, 'name' => 'Child'])->assertCreated()->json('folder.id');
+        $this->postJson("/media-drive/api/folders/{$root}/shares", ['email' => 'sample@example.test', 'permission' => 'viewer', 'expires_in_days' => 30])->assertCreated();
+        $this->getJson('/media-drive/api/folders?folder_id='.$child)->assertOk()->assertJsonPath('folder.shared', true)->assertJsonPath('folder.sharing', 'inherited');
+        $id = $this->postJson("/media-drive/api/folders/{$root}/files", ['upload_key' => (string) Str::uuid(), 'file' => UploadedFile::fake()->create('sample.pdf', 5, 'application/pdf')])->assertCreated()->json('file.id');
+        MediaFile::findOrFail($id)->update(['initial_status' => 'Submitted']);
+        $this->postJson('/media-drive/api/attach', ['client_type' => 'lead', 'client_id' => $lead->id, 'file_ids' => [$id]])->assertOk();
+        \App\Models\LeadDocument::sole()->update(['status' => 'Approved']);
+        $this->getJson('/media-drive/api/folders?folder_id='.$root.'&review=1')->assertOk()->assertJsonCount(0, 'files.data');
     }
 }

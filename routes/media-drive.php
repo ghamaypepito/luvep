@@ -5,6 +5,10 @@ use App\Http\Controllers\MediaShareController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
+    Route::get('/media-drive', [MediaDriveController::class, 'entry']);
+    Route::get('/portal/lead/media-drive', [MediaDriveController::class, 'clientLinks']);
+    Route::get('/media-drive/api/folders/{folder}/activity', [MediaDriveController::class, 'activity']);
+    Route::post('/media-drive/api/attach', [MediaDriveController::class, 'attach']);
     Route::get('/media-drive/api/clients', [MediaDriveController::class, 'clients']);
     Route::get('/media-drive/api/folders', [MediaDriveController::class, 'folders']);
     Route::post('/media-drive/api/folders', [MediaDriveController::class, 'createFolder']);

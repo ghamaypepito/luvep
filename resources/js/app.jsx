@@ -90,8 +90,8 @@ createInertiaApp({
         <App {...props} />
         <UserViewControls initialPage={props.initialPage} />
         <FlashToaster />
-        <AssistantDock initialPage={props.initialPage} />
-        {!props.initialPage.component.startsWith('hr/') && (
+        {props.initialPage.component!=='media/Shared'&&<AssistantDock initialPage={props.initialPage} />}
+        {!props.initialPage.component.startsWith('hr/') && props.initialPage.component!=='media/Shared' && (
           <>
             <FloatingContact />
             <MobileStickyCTA />

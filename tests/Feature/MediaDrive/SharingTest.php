@@ -211,8 +211,17 @@ class SharingTest extends TestCase
         $this->verify($share);
         $model = MediaShare::findOrFail($share['id']);
         $model->update(['permission' => 'viewer', 'version' => $model->version + 1]);
-        $this->postJson($base.'/folders/'.$child.'/files', ['upload_key' => (string) Str::uuid(), 'file' => UploadedFile::fake()->create('late.pdf',5,'application/pdf')])->assertForbidden();
-        $this->assertDatabaseCount('media_files',2);
-        $this->assertCount(2,Storage::disk('local')->allFiles());
+        $this->postJson($base.'/folders/'.$child.'/files', ['upload_key' => (string) Str::uuid(), 'file' => UploadedFile::fake()->create('late.pdf', 5, 'application/pdf')])->assertForbidden();
+        $this->assertDatabaseCount('media_files', 2);
+        $this->assertCount(2, Storage::disk('local')->allFiles());
+    }
+
+    public function test_email_delivery_failure_cannot_leave_a_usable_code_or_false_success(): void
+    {
+        [$share] = $this->share();
+        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('Synthetic delivery failure'));
+        $this->postJson($this->base($share).'/code', ['email' => 'invited@example.test'])->assertStatus(503);
+        $this->assertDatabaseCount('media_challenges', 0);
+        $this->getJson($this->base($share).'/contents')->assertForbidden();
     }
 }

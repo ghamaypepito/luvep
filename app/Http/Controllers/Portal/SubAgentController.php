@@ -700,7 +700,7 @@ class SubAgentController extends Controller
             ->get()
             ->each(function (LeadDocument $old) {
                 if ($old->file_path && Storage::disk('local')->exists($old->file_path)) {
-                    Storage::disk('local')->delete($old->file_path);
+                    \App\Support\DocumentFiles::delete($old->file_path, 'local');
                 }
                 $old->delete();
             });

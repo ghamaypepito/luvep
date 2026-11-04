@@ -103,6 +103,7 @@ jobs:
             php artisan db:seed --class=OfficialInzFormsSeeder --force &&
             php artisan config:cache &&
             php artisan view:cache &&
+            bash scripts/install-media-drive-maintenance.sh &&
             php artisan queue:restart &&
             printf "%s\n" "{\"repository\":\"ghamaypepito/luvep\",\"commit\":\"${{ github.sha }}\",\"run_id\":\"${{ github.run_id }}\"}" > .deployment-source.json
           '

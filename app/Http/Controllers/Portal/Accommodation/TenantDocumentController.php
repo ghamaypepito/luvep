@@ -41,6 +41,12 @@ class TenantDocumentController extends Controller
     {
         TenantDocument::authorizeStaff($request->user());
         $document = $tenant->documents()->findOrFail($document);
+        if($document->media_file_id) {
+            $file=\App\Models\MediaFile::findOrFail($document->media_file_id);
+            $root=app(\App\Services\MediaDrive\Access::class)->assertFolder($request->user(),$file->folder);
+            abort_unless((int)$root->tenant_id===(int)$tenant->id,404);
+            return app(\App\Services\MediaDrive\Library::class)->stream($file);
+        }
         abort_unless(Storage::disk('tenant_private')->exists($document->path), 404);
 
         return Storage::disk('tenant_private')->download($document->path, $document->name, [
