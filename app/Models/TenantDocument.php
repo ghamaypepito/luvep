@@ -8,7 +8,7 @@ class TenantDocument extends Model
 {
     public const CATEGORIES = ['passport', 'tenancy_agreement', 'inspection_report', 'other'];
 
-    protected $fillable = ['category', 'name', 'path', 'size', 'uploaded_by'];
+    protected $fillable = ['category', 'name', 'path', 'size', 'uploaded_by', 'media_file_id', 'media_target_key'];
 
     protected $hidden = ['path'];
 

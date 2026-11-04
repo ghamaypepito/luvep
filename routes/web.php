@@ -2427,3 +2427,5 @@ if (app()->environment('local') && file_exists(__DIR__.'/dev-previews.php')) {
 }
 
 Route::get('/social/marketing/media/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'sharedMedia'])->middleware('signed')->name('marketing.media.shared');
+
+require __DIR__.'/media-drive.php';

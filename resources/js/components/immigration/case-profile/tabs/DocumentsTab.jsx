@@ -1,3 +1,4 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
 import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -1740,6 +1741,7 @@ function UploadSlot({ leadId, checklistKey, label = "Upload", empty = false }) {
 
     return (
         <>
+            <MediaAttachButton clientId={leadId} checklistKey={checklistKey} onAttached={()=>router.reload({only:['documents'],preserveScroll:true})} />
             <button
                 type="button"
                 onClick={onPick}
@@ -2075,6 +2077,7 @@ function RfiRequestTableRow({ req, leadId, caseStaff = [], threadsByDoc = new Ma
             {/* Attachment — the standard file card (View + menu) once uploaded,
                 or a staff upload button while awaiting. */}
             <td className="px-4 py-3">
+                <div className="mb-2"><MediaAttachButton clientId={leadId} requestId={req.id} onAttached={()=>router.reload({only:['documentRequests','documents'],preserveScroll:true})} /></div>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={onFile} />
                 {doc ? (
                     <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 max-w-[300px]">

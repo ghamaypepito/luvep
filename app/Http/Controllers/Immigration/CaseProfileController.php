@@ -676,7 +676,7 @@ class CaseProfileController extends Controller
         // Remove the dependant's document files, then the records.
         foreach ($dependent->documents as $doc) {
             if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
-                \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
+                \App\Support\DocumentFiles::delete($doc->file_path, 'local');
             }
         }
         $dependent->documents()->delete();
@@ -769,7 +769,7 @@ class CaseProfileController extends Controller
 
         \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($document);
         if ($document->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($document->file_path)) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($document->file_path);
+            \App\Support\DocumentFiles::delete($document->file_path, 'local');
         }
         $document->delete();
 

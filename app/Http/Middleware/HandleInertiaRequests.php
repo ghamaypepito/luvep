@@ -46,6 +46,7 @@ class HandleInertiaRequests extends Middleware
 
         return [
             ...parent::share($request), 'userView' => \App\Services\UserView::props($request),
+            'media_drive' => ['max_upload_mb' => \App\Services\MediaDrive\Limits::maxUploadMb()],
             'hr' => fn () => config('hr.enabled') && $request->user() ? app(\App\Services\Hr\HrContext::class)->props($request) : null,
             'auth' => [
                 'user' => $request->user(),

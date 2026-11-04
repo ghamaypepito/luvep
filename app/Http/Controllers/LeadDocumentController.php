@@ -897,7 +897,7 @@ class LeadDocumentController extends Controller
                     ->each(function (LeadDocument $old) {
                         if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
                             \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($old);
-                            Storage::disk(self::DISK)->delete($old->file_path);
+                            \App\Support\DocumentFiles::delete($old->file_path, 'local');
                         }
                         $old->delete();
                     });
@@ -917,7 +917,7 @@ class LeadDocumentController extends Controller
                             ->each(function (LeadDocument $old) {
                                 if ($old->file_path && Storage::disk(self::DISK)->exists($old->file_path)) {
                                     \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($old);
-                                    Storage::disk(self::DISK)->delete($old->file_path);
+                                    \App\Support\DocumentFiles::delete($old->file_path, 'local');
                                 }
                                 $old->delete();
                             });
@@ -1366,7 +1366,7 @@ class LeadDocumentController extends Controller
 
                 foreach ($docs as $doc) {
                     if ($doc->file_path && Storage::disk(self::DISK)->exists($doc->file_path)) {
-                        Storage::disk(self::DISK)->delete($doc->file_path);
+                        \App\Support\DocumentFiles::delete($doc->file_path, 'local');
                     }
                     $doc->delete();
                 }
@@ -1415,7 +1415,7 @@ class LeadDocumentController extends Controller
                 foreach ($docs as $doc) {
                     foreach ([$doc->file_path, $doc->client_signature_path] as $path) {
                         if ($path && Storage::disk(self::DISK)->exists($path)) {
-                            Storage::disk(self::DISK)->delete($path);
+                            \App\Support\DocumentFiles::delete($path, 'local');
                         }
                     }
                     $doc->delete();
@@ -2038,7 +2038,7 @@ class LeadDocumentController extends Controller
             \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
             try {
                 Storage::disk(self::DISK)->exists($doc->file_path)
-                    ? Storage::disk(self::DISK)->delete($doc->file_path)
+                    ? \App\Support\DocumentFiles::delete($doc->file_path, 'local')
                     : null;
                 $name = $doc->original_name ?: 'file';
                 $doc->delete();
@@ -2272,8 +2272,8 @@ class LeadDocumentController extends Controller
         }
 
         if ($doc->file_path) {
-            Storage::disk(self::DISK)->delete($doc->file_path);
-            Storage::disk('public')->delete($doc->file_path); // legacy fallback
+            \App\Support\DocumentFiles::delete($doc->file_path, 'local');
+            \App\Support\DocumentFiles::delete($doc->file_path, 'public'); // legacy fallback
         }
         $doc->delete();
 
@@ -2301,6 +2301,7 @@ class LeadDocumentController extends Controller
 
         $oldPath = $doc->file_path;
         $doc->update([
+            'media_file_id' => null, 'media_target_key' => null,
             'file_path' => $path,
             'original_name' => $displayName,
             'mime' => $file->getMimeType(),
@@ -2310,8 +2311,8 @@ class LeadDocumentController extends Controller
         ]);
 
         if ($oldPath && $oldPath !== $path) {
-            Storage::disk(self::DISK)->delete($oldPath);
-            Storage::disk('public')->delete($oldPath);
+            \App\Support\DocumentFiles::delete($oldPath, 'local');
+            \App\Support\DocumentFiles::delete($oldPath, 'public');
         }
 
         return back()->with('success', 'Document replaced.');
@@ -2519,6 +2520,14 @@ class LeadDocumentController extends Controller
     {
         $doc = LeadDocument::findOrFail($docId);
         $user = Auth::user();
+        if ($doc->media_file_id) {
+            $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
+            if ($user->isLead()) {
+                $hidden=app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
+                abort_if($doc->checklist_key && in_array($doc->checklist_key,$hidden,true),404);
+            }
+            return app(\App\Services\MediaDrive\Library::class)->stream($file,$request->boolean('inline'));
+        }
 
         // Lead users can only download files tied to their own lead record.
         if ($user->isLead()) {

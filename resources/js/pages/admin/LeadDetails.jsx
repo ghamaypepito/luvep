@@ -1,3 +1,5 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
+import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import React, { useContext, useEffect, useRef, useState } from 'react';
@@ -4011,6 +4013,7 @@ function ChecklistRow({ item, lead, entry, files = [], onSave, hidden = false, o
                     <input ref={fileInputRef} type="file" multiple onChange={handleFiles} className="hidden" />
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        <MediaAttachButton clientId={lead.id} checklistKey={item.id} />
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -5143,6 +5146,7 @@ function ChecklistCard({ item, lead, entry, onSave, files = [], currentUser = nu
                     </ul>
                 )}
 
+                <div className="mb-2"><MediaAttachButton clientId={lead.id} checklistKey={item.id} /></div>
                 {/* Upload button + hidden input */}
                 <input
                     ref={fileInputRef}
@@ -5350,6 +5354,9 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
     const [notePrograms, setNotePrograms] = useState([]);
     const writeBase = useWriteBase();
     const [body, setBody] = useState('');
+    const [mediaFiles,setMediaFiles]=useState([]);
+    const [mediaOpen,setMediaOpen]=useState(false);
+    const [noteError,setNoteError]=useState('');
     const [pinned, setPinned] = useState(false);
     const [kind, setKind] = useState('general');
     const [preScreenedBy, setPreScreenedBy] = useState('');
@@ -5375,7 +5382,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
     useEffect(() => { grow(editRef.current); }, [editBody, editingId]);
 
     const reset = () => {
-        setBody(''); setPinned(false); setKind('general'); setNotePrograms([]);
+        setBody(''); setMediaFiles([]); setPinned(false); setKind('general'); setNotePrograms([]);
         setPreScreenedBy(''); setPreScreenMode(''); setPreScreenDate('');
         setGoalStatus(''); setGoalBy('');
     };
@@ -5383,9 +5390,10 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
     const submit = (e) => {
         e.preventDefault();
         if (!body.trim()) return;
-        setSubmitting(true);
+        setSubmitting(true); setNoteError('');
         const payload = {
             body: body.trim(),
+            media_file_ids: mediaFiles.map(file=>file.id),
             programs: notePrograms,
             pinned,
             kind,
@@ -5399,6 +5407,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
             preserveScroll: true,
             preserveState: true,
             onSuccess: reset,
+            onError: errors=>setNoteError(Object.values(errors).flat()[0]||'Could not save the note. Please retry.'),
             onFinish: () => setSubmitting(false),
         });
     };
@@ -5571,6 +5580,9 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
                     className="w-full text-[13px] bg-transparent outline-none resize-none overflow-hidden placeholder-gray-400"
                     style={{ minHeight: '2.5rem' }}
                 />
+                {noteError&&<p role="alert" className="text-xs text-red-700">{noteError}</p>}
+                {mediaFiles.length>0&&<div className="mdrive md-selection">{mediaFiles.map(file=><span key={file.id}><Paperclip size={12}/>{file.name}<button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setMediaFiles(old=>old.filter(f=>f.id!==file.id))}><X size={12}/></button></span>)}</div>}
+                {mediaOpen&&<MediaPicker clientId={leadId} noteOnly maxFiles={6} onClose={()=>setMediaOpen(false)} onSelect={files=>{setMediaFiles(files);setMediaOpen(false);}}/>}
                 <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-100">
                     <button
                         type="button"
@@ -5580,6 +5592,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
                     >
                         <Pin size={13} />
                     </button>
+                    <button type="button" className="mdrive md-secondary md-attach-button" disabled={submitting} onClick={()=>setMediaOpen(true)}><Paperclip size={12}/>Media Drive / Upload</button>
                     <button
                         type="submit"
                         disabled={submitting || !body.trim()}
@@ -5600,6 +5613,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
                         const isEditing = editingId === n.id;
                         return (
                             <li key={n.id} className={`rounded-xl border p-3 ${n.kind === 'risk' ? 'border-red-100 bg-red-50/40' : n.pinned ? 'border-teal-100 bg-teal-50/40' : 'border-gray-100 bg-white'}`}>
+                                {n.attachments?.length>0&&<div className="mb-2 flex flex-wrap gap-2">{n.attachments.map((a,i)=><a key={i} href={`${writeBase}/leads/${leadId}/notes/${n.id}/attachments/${i}`} className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-emerald-800"><Paperclip size={12}/>{a.name||'Attachment'}</a>)}</div>}
                                 <div className="flex items-center justify-between gap-3 mb-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <div className="w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">

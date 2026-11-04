@@ -1365,6 +1365,7 @@ class LeadController extends Controller
                 'id' => $n->id,
                 'body' => $n->body,
                 'programs' => $n->programs ?? [],
+                'attachments' => collect($n->attachments ?? [])->map(fn ($a, $i) => ['name'=>$a['original_name'] ?? 'Attachment','mime'=>$a['mime'] ?? 'application/octet-stream','size'=>$a['size'] ?? 0,'url'=>url('/admin/leads/'.$n->lead_id.'/notes/'.$n->id.'/attachments/'.$i)]),
                 'author_name' => $n->author_name ?: 'Unknown',
                 'author_role' => $n->author_role ?: 'staff',
                 'user_id' => $n->user_id,
