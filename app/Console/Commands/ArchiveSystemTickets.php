@@ -14,18 +14,16 @@ class ArchiveSystemTickets extends Command
 
     public function handle(TicketArchiver $archiver): int
     {
-        $cutoff = now('Asia/Manila')->subMonthsNoOverflow(2)->utc();
-        $eligible = SystemTicket::where('status', 'done')->whereNull('archived_at')->whereNotNull('resolved_at')->where('resolved_at', '<=', $cutoff);
-        if ($this->option('dry-run')) {
-            $this->info('Eligible completed tickets: '.$eligible->count().'.');
-
-            return self::SUCCESS;
-        }
+        $asOf = now('Asia/Manila');
+        // Month-end clamping must use completion + two months (Dec 31 is due Feb 28).
+        // Select a broad candidate range, then check each exact anniversary.
+        $candidates = SystemTicket::where('status', 'done')->whereNull('archived_at')->whereNotNull('resolved_at')
+            ->where('resolved_at', '<=', $asOf->copy()->subMonthsNoOverflow(2)->endOfMonth()->utc());
         $count = 0;
-        foreach ($eligible->select('id')->lazyById(100) as $ticket) {
-            $count += (int) $archiver->completedBefore($ticket->id, $cutoff);
+        foreach ($candidates->select(['id', 'status', 'archived_at', 'resolved_at'])->lazyById(100) as $ticket) {
+            $count += (int) ($this->option('dry-run') ? $archiver->isDue($ticket, $asOf) : $archiver->whenDue($ticket->id, $asOf));
         }
-        $this->info("Archived {$count} completed tickets.");
+        $this->info($this->option('dry-run') ? "Eligible completed tickets: {$count}." : "Archived {$count} completed tickets.");
 
         return self::SUCCESS;
     }

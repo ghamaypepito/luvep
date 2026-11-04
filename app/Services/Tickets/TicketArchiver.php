@@ -28,17 +28,23 @@ class TicketArchiver
         });
     }
 
-    public function completedBefore(int $id, CarbonInterface $cutoff): bool
+    public function whenDue(int $id, CarbonInterface $asOf): bool
     {
-        return DB::transaction(function () use ($id, $cutoff) {
+        return DB::transaction(function () use ($id, $asOf) {
             $ticket = SystemTicket::whereKey($id)->lockForUpdate()->first();
             // Recheck under the lock: a ticket could have been reopened since selection.
-            if (! $ticket || $ticket->archived_at || $ticket->status !== 'done' || ! $ticket->resolved_at || $ticket->resolved_at->greaterThan($cutoff)) {
+            if (! $ticket || ! $this->isDue($ticket, $asOf)) {
                 return false;
             }
 
             return $this->record($ticket, null, 'two_month_retention');
         });
+    }
+
+    public function isDue(SystemTicket $ticket, CarbonInterface $asOf): bool
+    {
+        return ! $ticket->archived_at && $ticket->status === 'done' && $ticket->resolved_at
+            && $ticket->resolved_at->copy()->timezone('Asia/Manila')->addMonthsNoOverflow(2)->lessThanOrEqualTo($asOf);
     }
 
     private function record(SystemTicket $ticket, ?int $actorId, string $reason): bool

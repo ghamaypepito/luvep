@@ -76,7 +76,7 @@ class TicketBoardViewsTest extends TestCase
 
     public function test_retention_is_two_calendar_months_inclusive_and_repeatable(): void
     {
-        Carbon::setTestNow(Carbon::parse('2027-01-31 04:00:00', 'UTC'));
+        Carbon::setTestNow(Carbon::parse('2027-01-15 04:00:00', 'UTC'));
         $user = User::factory()->create(['role' => 'education']);
         $cutoff = now('Asia/Manila')->subMonthsNoOverflow(2)->utc();
         $old = $this->ticket($user, ['status' => 'done', 'resolved_at' => $cutoff->copy()->subSecond()]);
@@ -124,9 +124,26 @@ class TicketBoardViewsTest extends TestCase
         $deleted = $this->ticket($admin, ['status' => 'done', 'resolved_at' => now()->subMonths(3)]);
         $deleted->delete();
         $archiver = app(\App\Services\Tickets\TicketArchiver::class);
-        $this->assertFalse($archiver->completedBefore($reopened->id, now()->subMonths(2)));
-        $this->assertFalse($archiver->completedBefore($deleted->id, now()->subMonths(2)));
+        $this->assertFalse($archiver->whenDue($reopened->id, now()));
+        $this->assertFalse($archiver->whenDue($deleted->id, now()));
         $this->assertNull($reopened->fresh()->archived_at);
         $this->assertSame(0, SystemTicketEvent::where('kind', 'archived')->count());
+    }
+
+    public function test_month_end_anniversaries_archive_without_waiting_for_an_extra_day(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2027-02-28 04:00:00', 'UTC'));
+        $user = User::factory()->create(['role' => 'education']);
+        foreach ([28, 29, 30, 31] as $day) {
+            $this->ticket($user, ['status' => 'done', 'resolved_at' => Carbon::parse("2026-12-{$day} 12:00:00", 'Asia/Manila')->utc()]);
+        }
+        $notDue = $this->ticket($user, ['status' => 'done', 'resolved_at' => Carbon::parse('2026-12-31 12:00:01', 'Asia/Manila')->utc()]);
+        $this->artisan('tickets:archive --dry-run')->expectsOutput('Eligible completed tickets: 4.')->assertSuccessful();
+        $this->assertSame(0, SystemTicket::whereNotNull('archived_at')->count());
+        $this->artisan('tickets:archive')->expectsOutput('Archived 4 completed tickets.')->assertSuccessful();
+        $this->assertNull($notDue->fresh()->archived_at);
+        Carbon::setTestNow(Carbon::parse('2027-02-28 04:00:01', 'UTC'));
+        $this->artisan('tickets:archive')->expectsOutput('Archived 1 completed tickets.')->assertSuccessful();
+        $this->assertSame(5, SystemTicket::whereNotNull('archived_at')->count());
     }
 }
