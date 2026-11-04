@@ -52,16 +52,9 @@ class DtrService
         if (! in_array($entry->hr_status, ['draft', 'returned'], true)) {
             return false;
         }
-        if ($entry->hr_status === 'returned') {
-            return true;
-        }
         $setting = DtrSetting::where('user_id', $entry->user_id)->first();
-        $localNow = CarbonImmutable::instance(now($setting?->timezone ?? 'UTC'));
-        if ($entry->work_date->toDateString() === $localNow->toDateString()) {
-            return true;
-        }
 
-        return $entry->time_source === 'live' && HrShift::whereHas('employee', fn ($q) => $q->where('user_id', $entry->user_id))->whereDate('work_date', $entry->work_date)->where(fn ($q) => $q->whereNull('ended_at')->orWhereBetween('ended_at', [$localNow->startOfDay()->utc(), $localNow->utc()]))->exists();
+        return $entry->work_date->toDateString() <= now($setting?->timezone ?? 'UTC')->toDateString();
     }
 
     public function saveDraft(HrEmployee $employee, array $validated): DtrEntry
@@ -85,12 +78,20 @@ class DtrService
             abort_unless(! $entry->exists || in_array($entry->hr_status, ['draft', 'returned'], true), 409, 'This record is locked. Request a reviewed correction.');
             $today = now($employee->schedule?->timezone ?? 'UTC')->toDateString();
             if ($entry->exists && ! $this->canEditDraft($entry) || ! $entry->exists && $data['work_date'] !== $today) {
-                throw ValidationException::withMessages(['work_date' => 'Only current-day records, the current overnight shift or returned records can be edited.']);
+                throw ValidationException::withMessages(['work_date' => 'Only existing drafts or returned records up to today can be edited. New records must be for today.']);
+            }
+            $before = app(DtrHistory::class)->snapshot($entry);
+            foreach (['meetings', 'people_assisted'] as $counter) {
+                if (array_key_exists($counter, $data)) {
+                    $data[$counter] = (int) ($data[$counter] ?? 0);
+                }
             }
             $data['tasks'] = $this->tasks($entry, $data['tasks']);
             unset($data['expected_version'], $data['work_date']);
             $entry->forceFill([...$data, 'hr_status' => $entry->hr_status === 'returned' ? 'returned' : 'draft', 'hr_version' => (int) $entry->hr_version + 1])->save();
             $this->invalidateWeek($employee, $entry);
+            app(DtrHistory::class)->record($entry, $employee->user, 'dtr.draft_saved', $before);
+            app(HrAudit::class)->record($employee->user, 'dtr.draft_saved', $entry, ['employee_id' => $employee->id, 'version' => $entry->hr_version]);
 
             return $entry->fresh();
         });
@@ -103,6 +104,9 @@ class DtrService
 
         return $this->mutate($employee, $entry, $version, function ($entry) use ($actor) {
             abort_unless(in_array($entry->hr_status, ['draft', 'returned'], true), 409, 'The record is already submitted.');
+            if (! $this->canEditDraft($entry)) {
+                throw ValidationException::withMessages(['dtr' => 'Reports cannot be submitted for future work dates.']);
+            }
             if (! $entry->time_out || ! $entry->work_location || empty($entry->tasks)) {
                 throw ValidationException::withMessages(['dtr' => 'Clock out, add your work location and complete your tasks before submitting.']);
             }
@@ -134,10 +138,12 @@ class DtrService
             HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
             $entry = DtrEntry::whereKey($entry->id)->lockForUpdate()->firstOrFail();
             abort_unless((int) $entry->hr_version === $version, 409, 'This record changed. Refresh and try again.');
+            $before = app(DtrHistory::class)->snapshot($entry);
             $result = $change($entry);
             $entry->hr_version++;
             $entry->save();
             $this->invalidateWeek($employee, $entry);
+            app(DtrHistory::class)->record($entry, $result['actor'], $result['event'], $before);
             app(HrAudit::class)->record($result['actor'], $result['event'], $entry, ['employee_id' => $employee->id, 'version' => $entry->hr_version]);
             app(HrEvents::class)->record($result['event'], $entry, $result['actor'], 'dtr:'.$entry->id.':'.$entry->hr_version.':'.$result['event']);
 
