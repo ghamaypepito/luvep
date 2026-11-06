@@ -253,6 +253,8 @@ export default function DashboardLayout({
             </>}
             {props.auth?.ep_agent?.manager && <div className="px-3 pb-2"><Link href="/ep-manager" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#254b3e] hover:bg-[#edf2e9]"><Users size={18} />Ep Manager</Link></div>}
 
+            {props.auth?.ep_agent?.enabled && ['admin', 'super_admin'].includes(user?.role) && <div className="px-3 pb-2"><Link href="/admin/ep-agent" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#254b3e] hover:bg-[#edf2e9]"><LayoutGrid size={18} />Ep Admin</Link></div>}
+
             <div className="flex-1 overflow-y-auto px-3 py-1.5 flex flex-col gap-0.5 scrollbar-hide">
                 {navWithPortals.map((item) => {
                     if (item.children) {

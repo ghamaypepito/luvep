@@ -22,3 +22,10 @@ Route::middleware(['auth', PrivateResponse::class])->group(function () {
     Route::get('/api/ep-agent/manager/clients/{id}', [\App\Http\Controllers\Api\EpManagerController::class, 'client'])->whereNumber('id')->name('ep-agent.manager.client');
     Route::get('/api/ep-agent/manager/personnel/{id}', [\App\Http\Controllers\Api\EpManagerController::class, 'personnel'])->whereNumber('id')->name('ep-agent.manager.personnel');
 });
+
+Route::middleware(['auth', PrivateResponse::class])->group(function () {
+    Route::get('/admin/ep-agent', [\App\Http\Controllers\Admin\EpAgentOverviewController::class, 'page'])->name('ep-agent.admin.page');
+    Route::get('/api/ep-agent/admin/overview', [\App\Http\Controllers\Admin\EpAgentOverviewController::class, 'overview'])->name('ep-agent.admin.overview');
+    Route::get('/api/ep-agent/admin/runs', [\App\Http\Controllers\Admin\EpAgentOverviewController::class, 'runs'])->name('ep-agent.admin.runs');
+    Route::get('/api/ep-agent/admin/runs/{id}', [\App\Http\Controllers\Admin\EpAgentOverviewController::class, 'run'])->whereNumber('id')->name('ep-agent.admin.run');
+});
