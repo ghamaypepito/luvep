@@ -10,6 +10,7 @@ class Access
 {
     public function assertStaff(User $user): void
     {
+        abort_if(request()->attributes->has('user_view_actor'), 403, 'ep_private_identity_required');
         // Reload identity so queued or long-lived callers cannot use stale grants.
         $fresh = User::find($user->id);
         abort_unless(config('ep_agent.enabled') && $fresh && $fresh->is_active, 403, 'ep_unavailable');

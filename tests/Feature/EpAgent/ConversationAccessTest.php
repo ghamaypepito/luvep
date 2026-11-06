@@ -101,6 +101,21 @@ class ConversationAccessTest extends TestCase
         $this->getJson('/api/ep-agent/conversations')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_super_admin_user_view_cannot_read_or_write_staff_private_chat(): void
+    {
+        $owner = $this->staff();
+        $id = $this->conversation($owner);
+        $admin = $this->staff(['role' => 'super_admin']);
+        $this->actingAs($admin)->postJson('/admin/user-view/'.$owner->id)->assertOk();
+        $token = session('user_view.token');
+        $this->getJson('/api/ep-agent/conversations')->assertForbidden();
+        $this->getJson("/api/ep-agent/conversations/$id")->assertForbidden();
+        $this->withHeader('X-Luvep-User-View', $token)->postJson("/api/ep-agent/conversations/$id/messages", ['content' => 'impersonated'])->assertForbidden();
+        $this->postJson("/api/ep-agent/conversations/$id/runs", ['idempotency_key' => 'impersonated'])->assertForbidden();
+        $this->deleteJson("/api/ep-agent/conversations/$id")->assertForbidden();
+        $this->assertDatabaseCount('ep_messages', 0);
+    }
+
     public function test_archive_is_idempotent_and_hides_thread_with_bounded_ordered_history(): void
     {
         $owner = $this->staff();
