@@ -137,14 +137,16 @@ class EducationRsvpContactUpdateTest extends TestCase
         $this->assertNotNull($d->fresh()->cancelled_at);
     }
 
-    public function test_mail_has_secure_update_link_emma_reply_to_and_no_programme_signup(): void
+    public function test_mail_has_secure_update_link_support_reply_to_and_no_programme_signup(): void
     {
         $r = $this->attendee();
         $mail = new EducationRsvpContactRequest($r);
         $html = $mail->render();
         $this->assertStringContainsString('Add my contact number', $html);
         $this->assertStringContainsString('schedule and venue', $html);
-        $mail->assertHasReplyTo('emma@luvep.com');
+        $mail->assertHasReplyTo('support@luvep.com');
+        $this->assertStringContainsString('mailto:support@luvep.com', $html);
+        $this->assertStringNotContainsString('emma@luvep.com', $html);
         $this->assertTrue(URL::hasValidSignature(\Illuminate\Http\Request::create($mail->updateUrl)));
         $this->assertStringNotContainsString('/education/register', $html);
         $this->assertStringNotContainsString('signature=', $mail->logBody($html));
