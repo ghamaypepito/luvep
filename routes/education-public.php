@@ -12,6 +12,8 @@ Route::get('/education/rsvp/catalogue', [\App\Http\Controllers\EducationRsvpCont
 Route::post('/education/rsvp', [\App\Http\Controllers\EducationRsvpController::class, 'store'])->middleware('throttle:30,1');
 Route::post('/education/rsvp/recognize', [\App\Http\Controllers\EducationRsvpController::class, 'recognize'])->middleware('throttle:20,1');
 Route::get('/education/rsvp/verify/{rsvp:public_id}', [\App\Http\Controllers\EducationRsvpController::class, 'verify'])->middleware(['signed', 'throttle:30,1'])->name('education.rsvp.verify');
+Route::get('/education/rsvp/contact/{rsvp:public_id}', [\App\Http\Controllers\EducationRsvpContactController::class, 'show'])->middleware(['signed', 'throttle:30,1'])->name('education.rsvp.contact');
+Route::post('/education/rsvp/contact/{rsvp:public_id}', [\App\Http\Controllers\EducationRsvpContactController::class, 'update'])->middleware(['signed', 'throttle:10,1']);
 Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::get('/portal/education/rsvps', [\App\Http\Controllers\EducationRsvpAdminController::class, 'index'])->name('education.rsvps.manage');
     Route::get('/portal/education/rsvps/export', [\App\Http\Controllers\EducationAttendanceController::class, 'export'])->name('education.rsvps.export');

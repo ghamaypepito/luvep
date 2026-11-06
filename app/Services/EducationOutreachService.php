@@ -62,6 +62,10 @@ class EducationOutreachService
                     return;
                 }
             }
+            if ($d->kind === 'phone_request' && $r && ! app(EducationRsvpContactUpdate::class)->needsNumber($r)) {
+                $d->update(['cancelled_at' => now()]);
+                return;
+            }
             $slack = app(ProgramSlackNotifier::class);
             if ($d->channel === 'slack' && ! $slack->configured()) {
                 $d->update(['next_attempt_at' => now()->addMinutes(5), 'last_error' => 'Slack connection is pending.']);
@@ -71,9 +75,9 @@ class EducationOutreachService
             $d->increment('attempts');
             try {
                 if ($d->channel === 'mail' && $r) {
-                    $mail = new EducationRsvpMessage($r, $d->kind);
+                    $mail = $d->kind === 'phone_request' ? new \App\Mail\EducationRsvpContactRequest($r) : new EducationRsvpMessage($r, $d->kind);
                     $body = $mail->render();
-                    $log = MessageLog::create(['source' => 'education-rsvp', 'channel' => 'email', 'recipient_type' => 'education_rsvp', 'recipient_id' => $r->id, 'recipient_address' => $r->email, 'subject' => $mail->subject, 'body' => $body, 'status' => 'queued']);
+                    $log = MessageLog::create(['source' => 'education-rsvp', 'channel' => 'email', 'recipient_type' => 'education_rsvp', 'recipient_id' => $r->id, 'recipient_address' => $r->email, 'subject' => $mail->subject, 'body' => $mail instanceof \App\Mail\EducationRsvpContactRequest ? $mail->logBody($body) : $body, 'status' => 'queued']);
                     try {
                         Mail::to($r->email)->send($mail);
                         $log->update(['status' => 'sent', 'sent_at' => now()]);
