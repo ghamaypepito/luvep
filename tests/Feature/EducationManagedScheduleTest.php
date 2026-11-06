@@ -169,7 +169,7 @@ class EducationManagedScheduleTest extends TestCase
     {
         $v = $this->visit(['is_hidden' => true]);
         $this->postJson('/education/register', $this->contact(['visit_id' => $v->id]))->assertUnprocessable()->assertJsonValidationErrors('visit_id');
-        $this->postJson('/education/rsvp', ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Hidden Attendee', 'email' => 'hidden@example.test', 'consent' => true])->assertUnprocessable();
+        $this->postJson('/education/rsvp', ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Hidden Attendee', 'email' => 'hidden@example.test', 'phone' => '+639171234567', 'consent' => true])->assertUnprocessable();
         $this->assertDatabaseCount('leads', 0);
         $this->assertDatabaseCount('education_rsvps', 0);
         $this->assertDatabaseCount('education_outreach', 0);
@@ -195,7 +195,7 @@ class EducationManagedScheduleTest extends TestCase
         $v = $this->visit();
         $registration = $this->contact(['visit_id' => $v->id]);
         $this->postJson('/education/register', $registration)->assertCreated();
-        $rsvp = ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Original Attendee', 'email' => 'original@example.test', 'consent' => true];
+        $rsvp = ['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Original Attendee', 'email' => 'original@example.test', 'phone' => '+639171234567', 'consent' => true];
         $this->postJson('/education/rsvp', $rsvp)->assertCreated();
         $outreach = \App\Models\EducationOutreach::count();
         $v->update(['is_hidden' => true]);

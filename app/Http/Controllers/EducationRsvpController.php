@@ -25,7 +25,7 @@ class EducationRsvpController extends Controller
 
     public function store(Request $request, EducationRsvpWorkflow $workflow)
     {
-        $d = $request->validate(['submission_id' => 'required|uuid', 'visit_id' => 'required|integer|exists:education_visits,id', 'full_name' => 'required|string|max:150', 'email' => 'required|email:rfc|max:254', 'phone' => 'nullable|string|max:40', 'role' => 'nullable|string|max:100', 'consent' => 'required|accepted', 'email_reminders' => 'sometimes|boolean', 'future_invites' => 'sometimes|boolean', 'website' => 'nullable|string|max:0']);
+        $d = $request->validate(['submission_id' => 'required|uuid', 'visit_id' => 'required|integer|exists:education_visits,id', 'full_name' => 'required|string|max:150', 'email' => 'required|email:rfc|max:254', 'phone' => 'required|string|max:40', 'role' => 'nullable|string|max:100', 'consent' => 'required|accepted', 'email_reminders' => 'sometimes|boolean', 'future_invites' => 'sometimes|boolean', 'website' => 'nullable|string|max:0']);
         $d['email'] = strtolower(trim($d['email']));
         $d['full_name'] = preg_replace('/\s+/u', ' ', trim($d['full_name']));
         abort_unless(EducationRsvpWorkflow::nameKey($d['full_name']), 422, 'Please enter your name.');

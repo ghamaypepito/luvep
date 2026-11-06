@@ -29,7 +29,7 @@ class EducationRsvpTest extends TestCase
 
     private function payload(EducationVisit $v, array $data = []): array
     {
-        return array_merge(['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Maria Santos', 'email' => 'Maria@Example.com', 'consent' => true, 'email_reminders' => true, 'future_invites' => false], $data);
+        return array_merge(['submission_id' => (string) Str::uuid(), 'visit_id' => $v->id, 'full_name' => 'Maria Santos', 'email' => 'Maria@Example.com', 'phone' => '+639171234567', 'consent' => true, 'email_reminders' => true, 'future_invites' => false], $data);
     }
 
     private function staff(): User
@@ -73,15 +73,30 @@ class EducationRsvpTest extends TestCase
         $this->assertSame($expected, array_column($response->json('visits'), 'id'));
     }
 
-    public function test_rsvp_has_optional_phone_no_lead_and_no_public_provisional_date(): void
+    public function test_rsvp_saves_required_phone_without_creating_a_lead_or_publishing_provisional_dates(): void
     {
         $this->staff();
         $v = $this->visit();
         $this->getJson('/education/rsvp/catalogue')->assertOk()->assertJsonPath('visits.0.date', null)->assertDontSee('2026-11-05');
         $this->postJson('/education/rsvp', $this->payload($v))->assertCreated()->assertJson(['ok' => true]);
         $this->assertDatabaseCount('leads', 0);
-        $this->assertDatabaseHas('education_rsvps', ['email' => 'maria@example.com', 'phone' => null]);
+        $this->assertDatabaseHas('education_rsvps', ['email' => 'maria@example.com', 'phone' => '+639171234567']);
         $this->assertDatabaseCount('education_outreach', 4);
+    }
+
+    public function test_rsvp_rejects_missing_and_blank_contact_numbers_without_saving_or_sending(): void
+    {
+        $v = $this->visit();
+        foreach ([null, '', '   ', '__omitted__'] as $phone) {
+            $payload = $this->payload($v, ['phone' => $phone]);
+            if ($phone === '__omitted__') {
+                unset($payload['phone']);
+            }
+            $this->postJson('/education/rsvp', $payload)->assertUnprocessable()->assertJsonValidationErrors('phone');
+        }
+        $this->assertDatabaseCount('education_rsvps', 0);
+        $this->assertDatabaseCount('education_outreach', 0);
+        $this->assertDatabaseCount('leads', 0);
     }
 
     public function test_replays_are_idempotent_and_conflicting_uuid_cannot_change_contact(): void
