@@ -53,7 +53,7 @@ class AdminOverviewTest extends TestCase
         $this->actingAs($staff)->getJson('/api/ep-agent/admin/overview')->assertForbidden();
         $this->getJson('/admin/ep-agent')->assertForbidden();
         $admin = $this->admin('super_admin');
-        $this->actingAs($admin)->get('/admin/ep-agent')->assertOk()->assertInertia(fn ($p) => $p->component('admin/EpAgentOverview', false));
+        $this->actingAs($admin)->get('/admin/ep-agent')->assertOk()->assertInertia(fn ($p) => $p->component('admin/EpAgentOverview'));
         $this->postJson('/admin/user-view/'.$staff->id)->assertOk();
         $this->getJson('/api/ep-agent/admin/overview')->assertForbidden();
         $this->getJson('/admin/ep-agent')->assertForbidden();

@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import { utcDate } from '../../resources/js/lib/epAdminTime.js';
+test('UTC reporting timestamps never acquire the browser local offset',()=>{const previous=process.env.TZ;process.env.TZ='Asia/Manila';try{assert.match(utcDate('2026-11-01T00:00:00Z'),/00:00 UTC$/);assert.equal(utcDate(null),'Not recorded');assert.equal(utcDate('invalid'),'Not recorded');}finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}});
