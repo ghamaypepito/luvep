@@ -8,16 +8,18 @@ use Illuminate\Support\Facades\DB;
 
 class Access
 {
+    public const STAFF_ROLES = ['super_admin', 'admin', 'sales', 'education', 'english', 'immigration', 'immigration_manager', 'immigration_adviser', 'accommodation', 'finance'];
+
     public function assertStaff(User $user): void
     {
         abort_if(request()->attributes->has('user_view_actor'), 403, 'ep_private_identity_required');
         // Reload identity so queued or long-lived callers cannot use stale grants.
         $fresh = User::find($user->id);
         abort_unless(config('ep_agent.enabled') && $fresh && $fresh->is_active, 403, 'ep_unavailable');
-        abort_unless(in_array($fresh->role, [
-            'super_admin', 'admin', 'sales', 'education', 'english', 'immigration',
-            'immigration_manager', 'immigration_adviser', 'accommodation', 'finance',
-        ], true), 403, 'ep_access_denied');
+        abort_unless(in_array($fresh->role, self::STAFF_ROLES, true), 403, 'ep_access_denied');
+        if (config('ep_agent.ui_enabled')) {
+            abort_unless(app(Pilot::class)->state($fresh)['enabled'], 403, 'ep_pilot_unavailable');
+        }
     }
 
     public function assertPortal(User $user, string $portal): void
@@ -38,6 +40,23 @@ class Access
         abort_unless($fresh->isAdmin() || (int) $lead->assigned_to === $fresh->id
             || DB::table('ep_record_grants')->where('user_id', $fresh->id)
                 ->where('lead_id', $lead->id)->where('portal', $portal)->where('expires_at', '>', now())->exists(), 403, 'ep_access_denied');
+    }
+
+    public function leads(User $user, string $portal): \Illuminate\Database\Eloquent\Builder
+    {
+        $this->assertPortal($user, $portal);
+        $fresh = User::findOrFail($user->id);
+        $query = Lead::query()->where($portal === 'education' ? 'is_student' : 'is_immigration_case', true);
+        if (! $fresh->isAdmin()) {
+            $query->where(function ($scope) use ($fresh, $portal) {
+                $scope->where('assigned_to', $fresh->id)->orWhereExists(function ($grant) use ($fresh, $portal) {
+                    $grant->selectRaw('1')->from('ep_record_grants')->whereColumn('ep_record_grants.lead_id', 'leads.id')
+                        ->where('ep_record_grants.user_id', $fresh->id)->where('ep_record_grants.portal', $portal)->where('expires_at', '>', now());
+                });
+            });
+        }
+
+        return $query;
     }
 
     /** Scope is applied in SQL before private conversation titles are selected. */

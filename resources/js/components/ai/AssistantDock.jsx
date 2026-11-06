@@ -2,14 +2,17 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Sparkles, Minus, X, Maximize2, Loader2 } from 'lucide-react';
 import useGlobalPage from '../ui/useGlobalPage';
 
+const EpDock = lazy(() => import('../ep-agent/EpDock'));
 const Chat = lazy(() => import('../../pages/ai/Assistant'));
 
 export default function AssistantDock({ initialPage }) {
     const current = useGlobalPage();
     const page = current?.component || Object.hasOwn(current?.props || {}, 'auth') ? current : initialPage;
     const auth = page?.props?.auth;
-    const internal = /^\/(admin|portal|assistant)(\/|\?|$)/.test(page?.url || '') || page?.component?.startsWith('hr/');
-    if (!internal || !auth?.user || ['lead', 'revoked_lead'].includes(auth.user.role) || auth.ai_enabled === false) return null;
+    const internal = /^\/(admin|portal|assistant|ep-agent|ep-manager)(\/|\?|$)/.test(page?.url || '') || page?.component?.startsWith('hr/');
+    if (!internal || !auth?.user || ['lead', 'revoked_lead'].includes(auth.user.role)) return null;
+    if (auth.ep_agent?.enabled) return <Suspense fallback={null}><EpDock key={auth.user.id} portals={auth.ep_agent.portals} fullPage={['/ep-agent','/ep-manager'].includes(page?.url?.split('?')[0])} /></Suspense>;
+    if (auth.ai_enabled === false) return null;
     return <DockSession key={auth.user.id} />;
 }
 

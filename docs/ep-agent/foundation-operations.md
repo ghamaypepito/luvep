@@ -1,6 +1,6 @@
 # Ep foundation release operations
 
-This release adds backend infrastructure only. The current EP Assistant, public Pathy, staff navigation and Manager preview are unchanged. There is no new staff UI, model transport, retrieval, operational write tool, worker, scheduled agent or paid generation in this release.
+The initial foundation release added backend infrastructure only. The subsequent UI release is documented in `workspaces-operations.md`. The current EP Assistant, public Pathy, staff navigation and Manager preview are unchanged. There is no new staff UI, model transport, retrieval, operational write tool, worker, scheduled agent or paid generation in this release.
 
 ## Activation and privacy
 

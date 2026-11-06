@@ -17,7 +17,8 @@ export default function FloatingContact() {
         page?.component?.startsWith("hr/") ||
         url.startsWith("/admin") ||
         url.startsWith("/portal") ||
-        url.startsWith("/login");
+        url.startsWith("/login") ||
+        /^\/ep-(agent|manager)(\/|\?|$)/.test(url);
     if (isInternal) return null;
 
     const whatsappHref = contact?.whatsapp

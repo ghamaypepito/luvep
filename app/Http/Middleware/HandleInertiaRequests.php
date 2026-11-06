@@ -52,6 +52,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
                 // Drives the topbar AI button + lead health badge. True only
                 // when the config kill switch AND the tenant toggle are on.
+                'ep_agent' => app(\App\EpAgent\Pilot::class)->state($request->user()),
                 'ai_enabled' => (bool) config('ai.enabled') && (bool) \App\Models\Setting::get('ai_enabled', true),
                 // Restricted modules (config/modules.php) this user may see, so
                 // the sidebar can hide gated items. Grandfathered modules aren't

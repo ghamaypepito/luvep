@@ -209,6 +209,12 @@ export default function DashboardLayout({
                 </button>
             </div>
 
+            {props.auth?.ep_agent?.enabled ? <div className="px-3 pt-2 pb-1">
+                <Link href="/ep-agent" onClick={event => { event.preventDefault(); setSidebarOpen(false); window.dispatchEvent(new CustomEvent("ep-assistant-open")); }} title="Ep Agent" className="flex items-center gap-3 rounded-xl bg-[#edf2e9] px-3 py-2 text-[#254b3e]">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#254b3e] text-white"><Sparkles size={16} /></span>
+                    <span className="flex min-w-0 flex-col leading-tight"><span className="text-[13px] font-bold">Ep Agent</span><span className="text-[11px] text-[#52665b]">Your private workspace</span></span>
+                </Link>
+            </div> : <>
             {/* AI Assistant — pinned above the nav so it's always visible, and
                 styled distinctly (gradient) so it reads as the AI surface
                 rather than a regular menu row. Staff only, and hidden when AI
@@ -243,6 +249,9 @@ export default function DashboardLayout({
                     </Link>
                 </div>
             )}
+
+            </>}
+            {props.auth?.ep_agent?.manager && <div className="px-3 pb-2"><Link href="/ep-manager" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#254b3e] hover:bg-[#edf2e9]"><Users size={18} />Ep Manager</Link></div>}
 
             <div className="flex-1 overflow-y-auto px-3 py-1.5 flex flex-col gap-0.5 scrollbar-hide">
                 {navWithPortals.map((item) => {
