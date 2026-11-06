@@ -30,3 +30,8 @@ test('latest filter wins and access denial clears names, costs and detail state'
 test('usage shows individual budgets and unresolved holds without inventing a shared limit',async()=>{
  fake();await mount();await click(button('Usage & budgets'));assert.match(document.body.textContent,/No budget configured/);assert.match(document.body.textContent,/US\$0.50/);assert.doesNotMatch(document.body.textContent,/\$30/);
 });
+test('incomplete usage is visible without discarding its known recorded portion',async()=>{
+ const incomplete={...summary,ledger:{...summary.ledger,input_tokens:null,unknown_usage_count:1,meter_coverage:{input_tokens:{recorded:10,missing_entries:1}}}};
+ global.fetch=async(url)=>url.includes('/overview')?response(incomplete):response({data:[],next_before:null});await mount();await click(button('Usage & budgets'));
+ assert.match(document.body.textContent,/10 recorded.*1 missing/);assert.match(document.body.textContent,/missing usage/i);
+});

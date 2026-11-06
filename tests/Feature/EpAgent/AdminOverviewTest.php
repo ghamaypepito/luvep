@@ -130,9 +130,29 @@ class AdminOverviewTest extends TestCase
         $this->actingAs($this->admin('super_admin'))->getJson('/api/ep-agent/admin/overview')->assertOk()->assertJsonPath('connector.can_manage', true)->assertJsonPath('connector.legacy_configured', true)->assertJsonPath('connector.settings_url', '/admin/ai-connectors')->assertDontSee('SECRET-ENV');
     }
 
+    public function test_run_currency_is_explicit_and_non_usd_is_not_added_to_usd_totals(): void
+    {
+        $admin = $this->admin();
+        $account = $this->account(['currency' => 'EUR']);
+        $usage = $this->usage($account);
+        $id = $this->createRun($admin, ['reservation_id' => $usage, 'state' => 'succeeded']);
+        $this->actingAs($admin)->getJson('/api/ep-agent/admin/runs/'.$id)->assertOk()->assertJsonPath('run.currency', 'EUR');
+        $this->getJson('/api/ep-agent/admin/overview')->assertJsonPath('ledger.actual_micros', '0')->assertJsonPath('budgets.data.0.status', 'unsupported_currency');
+    }
+
+    public function test_missing_cost_does_not_erase_known_usage_and_nullable_units_stay_unknown(): void
+    {
+        $admin = $this->admin();
+        $account = $this->account();
+        $this->usage($account, ['actual_micros' => null]);
+        $this->actingAs($admin)->getJson('/api/ep-agent/admin/overview')->assertJsonPath('ledger.unknown_cost_count', 1)->assertJsonPath('ledger.input_tokens', 10);
+        $this->usage($account, ['actual_micros' => 50000, 'input_tokens' => null]);
+        $this->getJson('/api/ep-agent/admin/overview')->assertJsonPath('ledger.actual_micros', '50000')->assertJsonPath('ledger.input_tokens', null)->assertJsonPath('ledger.output_tokens', 40)->assertJsonPath('ledger.unknown_usage_count', 1)->assertJsonPath('ledger.meter_coverage.input_tokens.recorded', 10)->assertJsonPath('ledger.meter_coverage.input_tokens.missing_entries', 1);
+    }
+
     public function test_empty_ledger_and_unconfigured_budgets_are_explicit_and_disabled_module_denies(): void
     {
-        $this->actingAs($this->admin())->getJson('/api/ep-agent/admin/overview')->assertOk()->assertJsonPath('ledger.actual_micros', '0')->assertJsonPath('ledger.reconciled_count',0)->assertJsonCount(0,'budgets.data');
+        $this->actingAs($this->admin())->getJson('/api/ep-agent/admin/overview')->assertOk()->assertJsonPath('ledger.actual_micros', '0')->assertJsonPath('ledger.reconciled_count', 0)->assertJsonCount(0, 'budgets.data');
         config(['ep_agent.enabled' => false]);
         $this->getJson('/api/ep-agent/admin/overview')->assertForbidden();
     }

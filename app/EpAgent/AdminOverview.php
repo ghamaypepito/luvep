@@ -51,9 +51,19 @@ class AdminOverview
             $window = (clone $ledger)->where('u.created_at', '>=', $start);
             $sum = fn (string $field) => (clone $window)->where('u.state', 'reconciled')->whereNotNull('u.actual_micros')->sum('u.'.$field);
             $meters = [];
+            $coverage = [];
+            $reconciled = (clone $window)->where('u.state', 'reconciled');
             foreach (self::METER_FIELDS as $field) {
-                $meters[$field] = (int) $sum($field);
+                $missing = (clone $reconciled)->whereNull('u.'.$field)->count();
+                $recorded = (int) (clone $reconciled)->sum('u.'.$field);
+                $meters[$field] = $missing ? null : $recorded;
+                $coverage[$field] = ['recorded' => $recorded, 'missing_entries' => $missing];
             }
+            $unknownUsage = (clone $reconciled)->where(function ($query) {
+                foreach (self::METER_FIELDS as $field) {
+                    $query->orWhereNull('u.'.$field);
+                }
+            })->count();
             $open = (clone $ledger)->whereIn('u.state', ['reserved', 'sent', 'uncertain']);
             $budgets = DB::table('ep_budget_accounts')->orderByDesc('id')->limit(21)->get();
             $connector = ['can_manage' => $user->isSuperAdmin(), 'ep_transport_connected' => false, 'paid_enabled' => false];
@@ -65,7 +75,8 @@ class AdminOverview
             return ['as_of' => now('UTC')->toIso8601String(), 'period' => $period, 'period_start' => $start->toIso8601String(), 'paid_enabled' => false,
                 'runs' => ['total' => (clone $query)->count(), 'states' => $states],
                 'ledger' => array_merge(['actual_micros' => (string) $sum('actual_micros'),
-                    'reconciled_count' => (clone $window)->where('u.state', 'reconciled')->whereNotNull('u.actual_micros')->count(),
+                    'reconciled_count' => (clone $reconciled)->count(),
+                    'unknown_usage_count' => $unknownUsage, 'meter_coverage' => $coverage,
                     'open_hold_micros' => (string) (clone $open)->sum('u.upper_bound_micros'), 'unresolved_count' => (clone $open)->count(),
                     'unknown_cost_count' => (clone $window)->where('u.state', 'reconciled')->whereNull('u.actual_micros')->count(),
                     'unattributed_count' => (clone $window)->whereNotExists(fn ($q) => $q->selectRaw('1')->from('ep_runs')->whereColumn('ep_runs.reservation_id', 'u.id'))->count()], $meters),
@@ -121,9 +132,9 @@ class AdminOverview
 
     private function rows($query)
     {
-        return $query->leftJoin('users as actor', 'actor.id', '=', 'r.actor_id')->leftJoin('ep_usage_reservations as u', 'u.id', '=', 'r.reservation_id')
+        return $query->leftJoin('users as actor', 'actor.id', '=', 'r.actor_id')->leftJoin('ep_usage_reservations as u', 'u.id', '=', 'r.reservation_id')->leftJoin('ep_budget_accounts as a', 'a.id', '=', 'u.account_id')
             ->select(['r.id', 'r.actor_id', 'r.portal', 'r.state', 'r.reason', 'r.created_at', 'r.updated_at', 'actor.name as actor_name', 'actor.deleted_at as actor_deleted_at',
-                'u.state as usage_state', 'u.actual_micros', 'u.upper_bound_micros', 'u.provider', 'u.model', 'u.pricing_version', ...array_map(fn ($field) => 'u.'.$field, self::METER_FIELDS)]);
+                'a.currency as currency', 'u.state as usage_state', 'u.actual_micros', 'u.upper_bound_micros', 'u.provider', 'u.model', 'u.pricing_version', ...array_map(fn ($field) => 'u.'.$field, self::METER_FIELDS)]);
     }
 
     private function publicRun(object $row): array
@@ -135,7 +146,7 @@ class AdminOverview
             },
             'created_at' => Carbon::parse($row->created_at, 'UTC')->toIso8601String(), 'updated_at' => Carbon::parse($row->updated_at, 'UTC')->toIso8601String(),
             'actual_micros' => $row->actual_micros === null ? null : (string) $row->actual_micros, 'upper_bound_micros' => $row->upper_bound_micros === null ? null : (string) $row->upper_bound_micros,
-            'usage_state' => $row->usage_state, 'provider' => $row->provider, 'model' => $row->model, 'pricing_version' => $row->pricing_version];
+            'currency' => $row->currency, 'usage_state' => $row->usage_state, 'provider' => $row->provider, 'model' => $row->model, 'pricing_version' => $row->pricing_version];
         foreach (self::METER_FIELDS as $field) {
             $data[$field] = $row->$field === null ? null : (int) $row->$field;
         }

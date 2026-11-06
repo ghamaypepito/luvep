@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import { money } from '../../resources/js/lib/epMoney.js';
+import { money, runMoney } from '../../resources/js/lib/epMoney.js';
 import { epAdminClient } from '../../resources/js/lib/epAdminClient.js';
 test('money preserves unknown, zero, fractional and large integer micro-USD exactly',()=>{
  for(const [input,want] of [[null,'Not recorded'],[undefined,'Not recorded'],['0','US$0.00'],['1','US$0.000001'],['1250000','US$1.25'],['1000001','US$1.000001'],['9007199254740993123456','US$9,007,199,254,740,993.123456'],['secret','Not recorded'],['-1','Not recorded']])assert.equal(money(input),want);
@@ -11,3 +11,5 @@ test('admin client requests only metadata endpoints with no-store, session and c
  for(const call of calls){assert.equal(call.options.credentials,'same-origin');assert.equal(call.options.cache,'no-store');assert.equal(call.options.signal,signal);assert.ok(!call.url.includes('/conversations'));assert.ok(!call.options.body);}
 });
 test('failed non-json admin requests stay failures',async()=>{global.fetch=async()=>({ok:false,status:503,json:async()=>{throw Error()}});assert.deepEqual(await epAdminClient.overview('month'),{ok:false,status:503,data:{}});});
+
+test('per-run costs never label unsupported or missing currencies as USD',()=>{assert.equal(runMoney('125000','USD'),'US$0.125');assert.equal(runMoney('125000','EUR'),'Unsupported currency (EUR)');assert.equal(runMoney('125000',null),'Currency not recorded');assert.equal(runMoney(null,null),'Not recorded');});
