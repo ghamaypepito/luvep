@@ -30,7 +30,7 @@ class WorkspaceTest extends TestCase
         config(['ep_agent.enabled' => true, 'ep_agent.ui_enabled' => true]);
         $this->get('/ep-agent')->assertForbidden();
         $this->enable($user);
-        $this->get('/ep-agent')->assertOk()->assertInertia(fn ($p) => $p->component('ai/EpWorkspace', false)->where('ep.portals', ['education'])->where('ep.paid_enabled', false)->where('ep.context', null));
+        $this->get('/ep-agent')->assertOk()->assertInertia(fn ($p) => $p->component('ai/EpWorkspace')->where('ep.portals', ['education'])->where('ep.paid_enabled', false)->where('ep.context', null));
         $user->update(['is_active' => false]);
         $this->getJson('/ep-agent')->assertForbidden();
         Http::assertNothingSent();
