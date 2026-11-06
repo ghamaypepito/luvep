@@ -50,3 +50,5 @@ prod-db-latest.sql.gz
 
 # Generated DomPDF font metrics cache
 /storage/fonts/*.afm.json
+
+.env.testing
