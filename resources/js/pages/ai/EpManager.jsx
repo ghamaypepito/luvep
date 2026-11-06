@@ -8,19 +8,19 @@ const tabs = [{ id: 'today', label: 'Today', icon: CalendarDays }, { id: 'attent
 const date = value => value ? new Date(value).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Update not recorded';
 export function ManagerView({ ep }) {
     const [portal, setPortal] = useState(ep.portals[0]), [tab, setTab] = useState('today'), [data, setData] = useState(null);
-    const [error, setError] = useState(''), [loading, setLoading] = useState(false), [detail, setDetail] = useState(null), [locked, setLocked] = useState(false);
+    const [error, setError] = useState(''), [loading, setLoading] = useState(false), [detail, setDetail] = useState(null), [locked, setLocked] = useState(false), [cursor, setCursor] = useState(null);
     const alive = useRef(true), version = useRef(0), controllers = useRef(new Set());
     const accessLost = useCallback(() => { ++version.current; setData(null); setDetail(null); setLoading(false); setLocked(true); setError('Your access changed or your session ended. Reload the page to continue.'); }, []);
     const closeDetails = useCallback(() => setDetail(null), []);
     const load = useCallback(async (before) => {
         const current = ++version.current, controller = new AbortController(); controllers.current.add(controller);
-        setLoading(true); setError(''); if (!before) setData(null);
+        setLoading(true); setError(''); setDetail(null); setData(null); setCursor(before || null);
         try {
             const result = await api.manager(portal, { before, attention: tab === 'attention', signal: controller.signal });
             if (!alive.current || current !== version.current) return;
             if ([401, 403, 419].includes(result.status)) { accessLost(); return; }
             if (!result.ok) throw Error();
-            setData(previous => before && previous ? { ...result.data, records: [...previous.records, ...result.data.records.filter(row => !previous.records.some(item => item.id === row.id))] } : result.data);
+            setData(result.data);
         } catch (e) { if (alive.current && current === version.current && e.name !== 'AbortError') setError('Manager could not load. Refresh to try again.'); }
         finally { controllers.current.delete(controller); if (alive.current && current === version.current) setLoading(false); }
     }, [portal, tab, accessLost]);
@@ -44,7 +44,8 @@ export function ManagerView({ ep }) {
                     <div className="ep-record-meta"><span>Assigned personnel</span>{record.personnel ? <button type="button" className="ep-person-button" onClick={() => open('personnel', record.personnel.id)}><Users size={13} />{record.personnel.name}</button> : <p>{record.assignment_status === 'unavailable' ? 'Personnel unavailable' : 'Unassigned'}</p>}<small>{date(record.updated_at)}</small></div>
                     <a className="ep-record-chat" aria-label={`Open private chat for ${record.client.name}`} href={`/ep-agent?portal=${encodeURIComponent(portal)}&lead_id=${record.id}`}><ArrowUpRight size={18} /><span>Private chat</span></a>
                 </article>)}
-                {data.next_before && <button type="button" className="ep-text-button" disabled={loading} onClick={() => load(data.next_before)}>{loading ? 'Loading…' : 'More records'}</button>}
+                {cursor && <button type="button" className="ep-text-button" disabled={loading} onClick={() => load()}>First records</button>}
+                {data.next_before && <button type="button" className="ep-text-button" disabled={loading} onClick={() => load(data.next_before)}>{loading ? 'Loading…' : 'Next records'}</button>}
             </section> : tab === 'team' ? <section className="ep-team" aria-labelledby="ep-team-heading"><div className="ep-section-heading"><h2 id="ep-team-heading">Assigned personnel</h2></div><p className="ep-muted ep-section-note">Workloads count only the records you are authorized to access.</p>{data.team.map(person => <button key={person.id} type="button" className="ep-team-person" onClick={() => open('personnel', person.id)}><span className="ep-person-initial" aria-hidden="true">{person.name.charAt(0)}</span><span><strong>{person.name}</strong><small>{person.role.replaceAll('_', ' ')}</small></span><span className="ep-team-count">{person.workload}<small>records</small></span><ArrowUpRight size={18} /></button>)}{!data.team.length && <p className="ep-manager-empty">No assigned personnel in this scope.</p>}{data.team_limited && <p className="ep-muted">Showing the first 25 personnel. Open individual record assignments for more.</p>}</section> : <section className="ep-ask"><MessageSquare size={31} /><h2>Your private workspace</h2><p>Keep requests and working notes together, with the right portal context.</p><p className="ep-muted">AI generation is off. Ep cannot generate a briefing, follow-up or document yet. Your saved requests remain private.</p><a href={`/ep-agent?portal=${encodeURIComponent(portal)}`} className="ep-primary">Open private chat</a></section>}
             <footer className="ep-manager-foot"><span>Retrieved {date(data.as_of)}</span><span>Current permissions · No AI-generated totals</span></footer>
         </>}

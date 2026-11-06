@@ -14,7 +14,7 @@ export default function EpDock({ portals, fullPage = false }) {
     useEffect(() => {
         alive.current = true;
         const show = async event => {
-            if (fullPage) { window.location.assign('/ep-agent'); return; }
+            if (fullPage) { if (window.location.pathname !== '/ep-agent') window.location.assign('/ep-agent'); return; }
             setOpen(true);
             const id = event?.detail?.subjectId;
             if (!id) { setMounted(true); return; }

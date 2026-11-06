@@ -30,3 +30,16 @@ test('attention uses server filter and unknown timestamps stay unknown',async()=
  await click(find('button','Attention'));assert.ok(urls.some(url=>url.includes('attention=1')));
  await click(find('button','Ask Ep'));assert.match(document.body.textContent,/generation is off/i);assert.equal(document.querySelector('a[href="/ep-agent?portal=education"]').textContent,'Open private chat');
 });
+test('visibility refresh unmounts stale private details before refreshing record scope',async()=>{
+ Object.defineProperty(document,'hidden',{value:false,configurable:true});
+ global.fetch=async(url)=>url.includes('/clients/')?response({client:{id:9,name:'Maria Torres',email:'private@example.test'}}):response(base);
+ await mount();await click(find('button','Maria Torres'));assert.match(document.body.textContent,/private@example.test/);
+ global.fetch=async()=>response({...base,records:[],team:[],counts:{total:0,inactive:0,unassigned:0,unknown_update:0}});
+ await act(async()=>{document.dispatchEvent(new Event('visibilitychange'));await tick();});
+ assert.doesNotMatch(document.body.textContent,/private@example.test/);assert.equal(document.querySelector('dialog[open]'),null);
+});
+test('next-page fetch never keeps rows removed from the authorized response',async()=>{
+ global.fetch=async()=>response({...base,next_before:9});await mount();assert.match(document.body.textContent,/Maria Torres/);
+ global.fetch=async()=>response({...base,records:[],team:[],next_before:null,counts:{total:0,inactive:0,unassigned:0,unknown_update:0}});
+ await click(find('button','Next records'));assert.doesNotMatch(document.body.textContent,/Maria Torres/);
+});

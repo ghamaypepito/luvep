@@ -10,7 +10,7 @@ Object.defineProperty(global,'navigator',{value:dom.window.navigator,configurabl
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const React=require('react');const {act}=React;const {createRoot}=require('react-dom/client');
 function load(file){
- const result=buildSync({entryPoints:[path.resolve(file)],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:['react','react-dom','lucide-react','@inertiajs/react'],alias:{'@':path.resolve('resources/js')},loader:{'.css':'empty'}});
+ const result=buildSync({entryPoints:[path.resolve(file)],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:['react','react-dom','lucide-react'],alias:{'@':path.resolve('resources/js'),'@inertiajs/react':path.resolve('tests/Frontend/helpers/ep-inertia.cjs')},loader:{'.css':'empty'}});
  const module=new Module(path.resolve('tests/Frontend/ep-agent-bundle.cjs'));module.filename=module.id;module.paths=Module._nodeModulePaths(process.cwd());module._compile(result.outputFiles[0].text,module.filename);return module.exports;
 }
 const Panel=load('resources/js/components/ep-agent/ConversationPanel.jsx').default;
@@ -61,4 +61,27 @@ test('task-status outage after saving never reports a saved message as unsaved',
  };
  await mount();await input('Saved once');await click(byText('button','Save request'));
  assert.equal(document.querySelector('textarea').value,'');assert.match(document.body.textContent,/request is saved|request saved/i);assert.doesNotMatch(document.body.textContent,/Request not saved/);
+});
+test('switching from an archived conversation to an active one restores the composer',async()=>{
+ global.fetch=async(url)=>url.endsWith('/conversations')?reply({data:[{id:2,title:'Active thread',portal:'education'}]}):url.endsWith('/1')?reply({conversation:{id:1,title:'Archived',portal:'education',archived_at:'2026-11-06'},messages:[]}):reply({conversation:{id:2,title:'Active thread',portal:'education',archived_at:null},messages:[]});
+ await mount({initialConversationId:1});assert.equal(document.querySelector('textarea').disabled,true);
+ await click(byText('button','Active thread'));assert.equal(document.querySelector('textarea').disabled,false);
+});
+test('new chat restores matching initial record and portal after another portal thread',async()=>{
+ let sent;global.fetch=async(url,options)=>{
+  if(url.endsWith('/conversations')&&options.method==='GET')return reply({data:[{id:2,title:'Immigration thread',portal:'immigration'}]});
+  if(url.endsWith('/2'))return reply({conversation:{id:2,title:'Immigration thread',portal:'immigration'},messages:[]});
+  if(url.endsWith('/conversations')){sent=JSON.parse(options.body);return reply({id:8,portal:sent.portal},201);}
+  if(url.endsWith('/messages'))return reply({id:9,role:'user',content:'New scoped request'},201);
+  return reply({id:1,state:'blocked'},201);
+ };
+ await mount({portals:['education','immigration'],context:{id:5,label:'Education client',portal:'education'}});
+ await click(byText('button','Immigration thread'));await click(byText('button','New conversation'));await input('New scoped request');await click(byText('button','Save request'));
+ assert.equal(sent.portal,'education');assert.equal(sent.lead_id,5);
+});
+test('unsaved drafts warn on browser and Inertia navigation',async()=>{
+ global.fetch=async()=>reply({data:[]});await mount();await input('Unsaved work');
+ const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);assert.equal(event.defaultPrevented,true);
+ let prevented=false;window.confirm=()=>false;
+ for(const hook of global.__epBeforeHooks||[])hook({preventDefault:()=>prevented=true});assert.equal(prevented,true);
 });

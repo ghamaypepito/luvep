@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { router } from '@inertiajs/react';
 import { ArrowUp, BookOpen, History, LockKeyhole, MessageSquare, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { epAgentClient as api } from '../../lib/epAgentClient';
 
@@ -10,10 +11,22 @@ export default function ConversationPanel({ portal = 'education', portals = [por
     const [saving, setSaving] = useState(false), [loading, setLoading] = useState(false), [locked, setLocked] = useState(false), [accessLost, setAccessLost] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false), [moreHistory, setMoreHistory] = useState(false), [moreMessages, setMoreMessages] = useState(false);
     const alive = useRef(true), chatVersion = useRef(0), listVersion = useRef(0), controllers = useRef(new Set()), end = useRef(null);
+    const dirty = useRef({ draft: '', saving: false }); dirty.current = { draft, saving };
     const callback = useRef({ onConversationChange, onBusyChange }); callback.current = { onConversationChange, onBusyChange };
     useEffect(() => { callback.current.onConversationChange?.(active); }, [active]);
     useEffect(() => { callback.current.onBusyChange?.(saving || !!draft.trim() || loading); }, [saving, draft, loading]);
     useEffect(() => { end.current?.scrollIntoView?.({ block: 'nearest' }); }, [messages.length, notice]);
+    useEffect(() => {
+        const beforeUnload = event => {
+            if (dirty.current.draft.trim() || dirty.current.saving) { event.preventDefault(); event.returnValue = ''; }
+        };
+        const stop = router.on('before', event => {
+            if (dirty.current.saving) { event.preventDefault(); setError('Wait for saving to finish before leaving this page.'); }
+            else if (dirty.current.draft.trim() && !window.confirm('Leave this page? Your unsaved draft may be lost.')) event.preventDefault();
+        });
+        window.addEventListener('beforeunload', beforeUnload);
+        return () => { stop(); window.removeEventListener('beforeunload', beforeUnload); };
+    }, []);
     const deny = useCallback(() => {
         ++chatVersion.current; ++listVersion.current;
         setMessages([]); setHistory([]); setDraft(''); setActive(null); setContext(null); setTitle('Conversation unavailable');
@@ -59,7 +72,8 @@ export default function ConversationPanel({ portal = 'education', portals = [por
             const rows = result.data.messages || [];
             setMessages(previous => before ? [...rows.filter(row => !previous.some(item => item.id === row.id)), ...previous] : rows);
             setMoreMessages(rows.length === 50); setHistoryOpen(false);
-            if (conversation.archived_at) { setLocked(true); setNotice('This conversation is archived. Start a new conversation to save another request.'); }
+            setLocked(Boolean(conversation.archived_at));
+            if (conversation.archived_at) { setNotice('This conversation is archived. Start a new conversation to save another request.'); }
         } catch (e) { if (alive.current && version === chatVersion.current && e.name !== 'AbortError') setError('This conversation could not load. Refresh to try again.'); }
         finally { controllers.current.delete(controller); if (alive.current && version === chatVersion.current) setLoading(false); }
     }, [authorized]);
@@ -78,7 +92,7 @@ export default function ConversationPanel({ portal = 'education', portals = [por
     };
     const newChat = () => {
         if (accessLost || !canSwitch()) return;
-        ++chatVersion.current; setActive(null); setMessages([]); setContext(initialContext); setTitle('New conversation'); setNotice(''); setError(''); setLocked(false);
+        ++chatVersion.current; setActive(null); setMessages([]); setContext(initialContext); setPortal(initialContext?.portal || portal); setTitle('New conversation'); setNotice(''); setError(''); setLocked(false);
     };
     const refresh = () => { if (saving) return; list(); if (active) load(active); };
     const save = async event => {
@@ -116,7 +130,7 @@ export default function ConversationPanel({ portal = 'education', portals = [por
             if (!alive.current || !authorized(result)) return;
             if (!result.ok) throw Error();
             setHistory(previous => previous.filter(item => item.id !== id));
-            if (active === id) { setActive(null); setMessages([]); setContext(initialContext); setTitle('New conversation'); setNotice(''); }
+            if (active === id) { setActive(null); setMessages([]); setContext(initialContext); setPortal(initialContext?.portal || portal); setTitle('New conversation'); setNotice(''); }
         } catch { if (alive.current) setError('Could not archive the conversation. Refresh and try again.'); }
         finally { if (alive.current) setSaving(false); }
     };

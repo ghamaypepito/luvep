@@ -24,3 +24,11 @@ test('new internal screens hide public contact overlays while public pages retai
  }
 });
 test('Manager navigation is not covered by a floating chat trigger',async()=>{await mount(true,true,'/ep-manager');assert.equal(document.querySelector('.ep-dock-trigger'),null);});
+test('sidebar event on the full workspace keeps the current conversation URL',async()=>{
+ await mount(true,true,'/ep-agent?conversation_id=42');
+ // JSDOM reports attempted location changes as errors, so intercept that observable browser signal.
+ dom.reconfigure({url:'http://localhost/ep-agent?conversation_id=42'});
+ const seen=[];const listener=e=>seen.push(e.message);dom.virtualConsole.on('jsdomError',listener);
+ await act(async()=>{window.dispatchEvent(new CustomEvent('ep-assistant-open'));await tick();});
+ dom.virtualConsole.removeListener('jsdomError',listener);dom.reconfigure({url:'http://localhost/admin'});assert.equal(seen.length,0);
+});

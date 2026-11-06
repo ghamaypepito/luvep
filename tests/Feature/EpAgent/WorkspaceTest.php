@@ -36,6 +36,16 @@ class WorkspaceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_admin_pilot_restricts_foundation_apis_as_well_as_navigation(): void
+    {
+        config(['ep_agent.enabled' => true, 'ep_agent.ui_enabled' => true, 'ep_agent.pilot_admins' => true]);
+        $staff = User::factory()->create(['role' => 'education']);
+        $this->actingAs($staff)->postJson('/api/ep-agent/conversations', ['portal' => 'education'])->assertForbidden();
+        $this->getJson('/api/ep-agent/conversations')->assertForbidden();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->postJson('/api/ep-agent/conversations', ['portal' => 'education'])->assertCreated();
+    }
+
     public function test_page_and_context_are_scoped_and_conversation_ownership_wins_over_query(): void
     {
         $user = User::factory()->create(['role' => 'education']);

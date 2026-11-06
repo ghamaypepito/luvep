@@ -17,6 +17,9 @@ class Access
         $fresh = User::find($user->id);
         abort_unless(config('ep_agent.enabled') && $fresh && $fresh->is_active, 403, 'ep_unavailable');
         abort_unless(in_array($fresh->role, self::STAFF_ROLES, true), 403, 'ep_access_denied');
+        if (config('ep_agent.ui_enabled')) {
+            abort_unless(app(Pilot::class)->state($fresh)['enabled'], 403, 'ep_pilot_unavailable');
+        }
     }
 
     public function assertPortal(User $user, string $portal): void
