@@ -12,5 +12,5 @@ Your secure link expires in 7 days. It updates your RSVP record directly, and yo
 Thank you,
 Emma and the EP Education team
 
-Need help? Reply to this email or contact emma@luvep.com.
+Need help? Reply to this email or contact support@luvep.com.
 This is a one-time contact-detail request for your event RSVP.

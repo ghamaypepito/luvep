@@ -21,7 +21,7 @@ class EducationRsvpContactRequest extends Mailable
 
     public function build()
     {
-        return $this->subject('Add your contact number for EP Education event updates')->replyTo('emma@luvep.com')
+        return $this->subject('Add your contact number for EP Education event updates')->replyTo('support@luvep.com')
             ->view('emails.education-rsvp-contact-request')->text('emails.education-rsvp-contact-request-text');
     }
 
