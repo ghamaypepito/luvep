@@ -17,7 +17,12 @@ class ConversationService
             $this->access->assertLead($user, $portal, Lead::findOrFail($leadId));
         }
 
-        return Conversation::create(['user_id' => $user->id, 'portal' => $portal, 'lead_id' => $leadId, 'title' => $title]);
+        return DB::transaction(function () use ($user, $portal, $leadId, $title) {
+            $conversation = Conversation::create(['user_id' => $user->id, 'portal' => $portal, 'lead_id' => $leadId, 'title' => $title]);
+            $this->event($user, $conversation->id, 'conversation_created');
+
+            return $conversation;
+        });
     }
 
     public function read(User $user, int $id): Conversation
@@ -58,9 +63,15 @@ class ConversationService
                 'conversation_id' => $id, 'role' => 'user', 'content' => $content, 'created_at' => now(),
             ]);
             $conversation->touch();
+            $this->event($user, $id, 'message_saved');
 
             return DB::table('ep_messages')->where('id', $messageId)->first(['id', 'role', 'content', 'created_at']);
         });
+    }
+
+    private function event(User $user, int $id, string $type): void
+    {
+        DB::table('ep_events')->insert(['actor_id' => $user->id, 'conversation_id' => $id, 'type' => $type, 'created_at' => now()]);
     }
 
     public function archive(User $user, int $id): void
@@ -70,6 +81,7 @@ class ConversationService
             $conversation = $this->read($user, $id);
             if (! $conversation->archived_at) {
                 $conversation->update(['archived_at' => now()]);
+                $this->event($user, $id, 'conversation_archived');
             }
         });
     }
