@@ -117,13 +117,13 @@ export default function DashboardLayout({
     // Match `/leads` against `/leads/123` (lead detail) but NOT against
     // `/leads/proposals-agreements` — otherwise sibling children share
     // a prefix and both light up. Path must either equal the href or
-    // continue with a `/`. When a `?nav=` hint is present it wins: ONLY the
+    // continue with a `/` or a query string. A `?nav=` hint still wins: ONLY the
     // item whose href slug equals the hint is active, so the shared page lights
     // up the section it was opened from rather than the one its URL sits under.
     const isPathMatch = (href) =>
         navHint
             ? hrefSlug(href) === navHint
-            : url === href || url.startsWith(href + "/");
+            : url === href || url.startsWith(href + "/") || url.startsWith(href + "?");
 
     // The single best top-level match — the item whose href is the LONGEST
     // prefix of the current URL — so sibling prefixes don't both light up
