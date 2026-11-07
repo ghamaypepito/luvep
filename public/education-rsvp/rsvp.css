@@ -3,3 +3,7 @@
 .destination p,.help details p{white-space:pre-line}
 
 .date small{display:block;color:var(--muted);font-size:13px;margin-top:4px}
+
+.education-email-choices{min-inline-size:0;margin:20px 0 0;padding:12px 0 0;border:0;border-top:1px solid var(--muted)}
+.education-email-choices legend{padding:0 8px 0 0;font-weight:600}
+.education-email-choices p{margin:8px 0 0;color:var(--muted);font-size:.875em;line-height:1.5}

@@ -40,7 +40,9 @@ class EducationLandingController extends Controller
             'event_period' => [Rule::excludeIf($managed), 'required', Rule::in(['AM', 'PM'])], 'event_timezone' => [Rule::excludeIf($managed), 'required', Rule::in(['Asia/Manila', 'Pacific/Auckland'])],
             'country' => ['required', 'string', 'max:100'], 'school' => [Rule::excludeIf($managed), 'required', 'string', 'max:180'],
             'planning_timeline' => ['required', Rule::in(self::TIMELINES)], 'education_level' => ['required', Rule::in(self::LEVELS)],
-            'consent' => ['required', 'accepted'], 'website' => ['nullable', 'string', 'max:0'],
+            'consent' => ['required', 'accepted'],
+            'email_follow_up' => ['sometimes', 'boolean'], 'email_newsletter' => ['sometimes', 'boolean'],
+            'website' => ['nullable', 'string', 'max:0'],
         ]);
         $data['email'] = mb_strtolower(trim($data['email']));
         foreach (['first_name', 'last_name', 'event_name', 'country', 'school', 'phone'] as $field) {
@@ -50,6 +52,14 @@ class EducationLandingController extends Controller
         }
         if ($managed) {
             $data['visit_id'] = (int) $data['visit_id'];
+        }
+        // Keep retries from older forms compatible when neither option was selected.
+        foreach (['email_follow_up', 'email_newsletter'] as $choice) {
+            if (! empty($data[$choice])) {
+                $data[$choice] = true;
+            } else {
+                unset($data[$choice]);
+            }
         }
         $fingerprint = hash('sha256', json_encode(collect($data)->except(['submission_id', 'website', 'consent'])->sortKeys()->all()));
 
@@ -93,6 +103,7 @@ class EducationLandingController extends Controller
                         'country' => $data['country'], 'school' => $data['school'], 'goal' => $data['goal'],
                         'planning_timeline' => $data['planning_timeline'], 'education_level' => $data['education_level'],
                         'contact_details' => collect($data)->only(['first_name', 'last_name', 'email', 'phone'])->all(), 'consented_at' => now(),
+                        'email_follow_up' => $data['email_follow_up'] ?? false, 'email_newsletter' => $data['email_newsletter'] ?? false,
                     ]);
                     $lead->educationExps()->firstOrCreate(['institution' => $data['school'], 'level' => $data['education_level']]);
                     if (! $lead->studyPlans()->exists()) {

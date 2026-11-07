@@ -12,6 +12,7 @@ class EducationEventRegistration extends Model
     protected $casts = [
         'event_date' => 'date', 'contact_details' => 'array', 'notified_user_ids' => 'array',
         'consented_at' => 'datetime', 'prepared_at' => 'datetime',
+        'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean',
     ];
 
     public function lead(): BelongsTo
