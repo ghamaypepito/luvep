@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\SendEducationOutreach;
 use App\Models\EducationOutreach;
+use App\Services\EducationAttendance;
 use App\Services\EducationOutreachService;
 use Illuminate\Console\Command;
 
@@ -11,10 +12,15 @@ class DispatchEducationRsvps extends Command
 {
     protected $signature = 'education:dispatch-rsvps';
 
-    protected $description = 'Plan confirmed RSVP schedule notices/reminders and retry pending Education outreach';
+    protected $description = 'Update Education RSVP attendance and dispatch schedule notices and reminders';
 
-    public function handle(EducationOutreachService $service): int
+    public function handle(EducationOutreachService $service, EducationAttendance $attendance): int
     {
+        $marked = $attendance->markPastVisitsAttended();
+        if ($marked > 0) {
+            $this->info("Marked {$marked} Education RSVPs as attended.");
+        }
+
         $service->plan();
         foreach (['mail' => 100, 'staff' => 100, 'slack' => 20] as $channel => $limit) {
             if ($channel === 'slack' && ! app(\App\Services\ProgramSlackNotifier::class)->configured()) {

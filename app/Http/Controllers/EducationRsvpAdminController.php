@@ -91,7 +91,7 @@ class EducationRsvpAdminController extends Controller
     public function attendance(Request $request, EducationRsvp $rsvp)
     {
         $d = $request->validate(['attendance_status' => ['required', Rule::in(['rsvp', 'attended', 'cancelled'])]]);
-        $rsvp->update($d);
+        EducationRsvp::whereKey($rsvp->id)->update($d + ['attendance_source' => 'manual']);
         ActivityLog::record('education.rsvp.attendance_updated', ['portal' => 'education', 'properties' => ['rsvp_id' => $rsvp->id, 'status' => $d['attendance_status']]]);
 
         return back()->with('status', 'Attendance updated.');

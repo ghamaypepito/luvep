@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EducationRsvp;
 use App\Models\EducationRsvpSavedList;
+use App\Models\EducationVisit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -11,6 +12,24 @@ use Illuminate\Validation\Rule;
 class EducationAttendance
 {
     public const KEYS = ['folder_id', 'school', 'visit_id', 'email', 'attendance_status', 'verification', 'kind'];
+
+    private const AUTO_ATTENDANCE_START = '2026-11-04';
+
+    public function markPastVisitsAttended(): int
+    {
+        $visits = EducationVisit::query()->where('schedule_confirmed', true)
+            ->where('status', '!=', 'cancelled')
+            ->where('event_date', '>=', self::AUTO_ATTENDANCE_START);
+
+        return (clone $visits)->distinct()->pluck('timezone')->sum(function (string $timezone) use ($visits) {
+            $pastVisits = (clone $visits)->select('id')->where('timezone', $timezone)
+                ->where('event_date', '<', now($timezone)->toDateString());
+
+            return EducationRsvp::whereIn('education_visit_id', $pastVisits)
+                ->where('attendance_status', 'rsvp')->whereNull('attendance_source')
+                ->update(['attendance_status' => 'attended', 'attendance_source' => 'automatic']);
+        });
+    }
 
     public function filters(array $input): array
     {
