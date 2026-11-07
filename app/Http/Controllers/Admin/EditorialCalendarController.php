@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EditorialArticle;
+use App\Models\EditorialSocialDelivery;
+use App\Services\Ghl\GhlSocialReader;
+use App\Support\Seo;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -117,12 +120,13 @@ class EditorialCalendarController extends Controller
         });
     }
 
-    public function publish(Request $request, EditorialArticle $article): JsonResponse
+    public function publish(Request $request, EditorialArticle $article, Seo $seo): JsonResponse
     {
         abort_unless($request->user()->isSuperAdmin(), 403);
 
-        return $this->withCurrentRevision($request, $article, function (EditorialArticle $current) {
+        return $this->withCurrentRevision($request, $article, function (EditorialArticle $current) use ($seo) {
             abort_unless($current->status === 'approved' && $current->approved_revision === $current->revision, 409, 'Approve this revision before publishing.');
+            $firstPublication = $current->published_at === null;
             $current->update([
                 'status' => 'published',
                 'published_slug' => $current->published_slug ?? $current->slug,
@@ -130,6 +134,9 @@ class EditorialCalendarController extends Controller
                 'published_at' => $current->published_at ?? now(),
                 'published_updated_at' => now(),
             ]);
+            if ($firstPublication && config('services.ghl.article_facebook_enabled')) {
+                EditorialSocialDelivery::queueFacebook($current, $seo);
+            }
         });
     }
 
@@ -196,8 +203,15 @@ class EditorialCalendarController extends Controller
 
     private function respond(EditorialArticle $article, int $status = 200): JsonResponse
     {
-        return response()->json($article->only([
-            ...self::SUMMARY, ...EditorialArticle::PUBLIC_FIELDS, 'slug', 'brief',
-        ]), $status);
+        $delivery = $article->published_at ? EditorialSocialDelivery::query()
+            ->where('editorial_article_id', $article->id)
+            ->where('account_id', GhlSocialReader::ACCOUNT)
+            ->first(['status', 'waiting_for_connection', 'provider_post_id']) : null;
+
+        return response()->json([
+            ...$article->only([...self::SUMMARY, ...EditorialArticle::PUBLIC_FIELDS, 'slug', 'brief']),
+            'facebook_delivery' => $delivery,
+            'share_on_first_publish' => ! $article->published_at && config('services.ghl.article_facebook_enabled'),
+        ], $status);
     }
 }

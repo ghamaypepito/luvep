@@ -11,6 +11,12 @@ const statuses = {
     approved: ['Approved', 'bg-blue-100 text-blue-900'],
     published: ['Published', 'bg-green-100 text-green-900'],
 };
+const facebookDeliveryLabels = {
+    pending: 'Queued for GoHighLevel.',
+    sending: 'Handoff in progress. If this persists, check Social Planner before posting manually.',
+    scheduled: 'Scheduled in GoHighLevel. Check Social Planner for the Facebook result.',
+    uncertain: 'GoHighLevel did not confirm the schedule. Check Social Planner before posting manually.',
+};
 const actionLabels = { submit: 'Submit for review', approve: 'Approve', publish: 'Publish' };
 const successMessages = {
     save: 'Draft saved.',
@@ -104,6 +110,7 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
     const [customSlug, setCustomSlug] = useState(false);
     const [previewUrl, setPreviewUrl] = useState('');
     const status = article?.status ?? 'draft';
+    const facebookDelivery = article?.facebook_delivery;
     const dateLocked = status !== 'draft' || Boolean(article?.published_slug);
     const dirty = draftFields.some((field) => form[field] !== (article?.[field] ?? ''));
     const stageAction = {
@@ -234,6 +241,14 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
                                 </a>
                             )}
                         </div>
+                        {facebookDelivery && (
+                            <p className="mt-1.5 text-xs text-gray-700">
+                                <strong>Luv, Ep Facebook</strong>{' '}
+                                {facebookDelivery.waiting_for_connection
+                                    ? 'Waiting for the GoHighLevel connection and active Page.'
+                                    : facebookDeliveryLabels[facebookDelivery.status]}
+                            </p>
+                        )}
                     </div>
                     <button type="button" ref={closeButton} onClick={close} disabled={Boolean(pending)} aria-label="Close article editor"
                         className={`grid size-9 shrink-0 place-items-center rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 ${focusClass}`}>
@@ -313,7 +328,10 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
                         <footer className="shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
                             {confirmPublish && (
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-green-50 px-3 py-2.5">
-                                    <p className="text-sm text-green-950">Publish approved revision {article.revision} on the Luvep website?</p>
+                                    <p className="text-sm text-green-950">
+                                        Publish approved revision {article.revision} on the Luvep website?
+                                        {article.share_on_first_publish && ' This also queues a share to Luv, Ep Facebook.'}
+                                    </p>
                                     <div className="flex gap-2">
                                         <button type="button" autoFocus className={secondaryButton} onClick={() => setConfirmPublish(false)} disabled={Boolean(pending)}>Cancel</button>
                                         <button type="button" className={primaryButton} onClick={() => write('publish')} disabled={Boolean(pending)}>{pending === 'publish' ? 'Publishing…' : 'Confirm publish'}</button>
