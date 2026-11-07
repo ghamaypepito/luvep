@@ -99,6 +99,24 @@ class EditorialCalendarTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('image_url');
     }
 
+    public function test_inline_images_survive_publication_with_safe_attributes(): void
+    {
+        $this->withoutVite()->actingAs(User::factory()->create(['role' => 'super_admin']));
+        $draft = $this->postJson(self::BASE, $this->article([
+            'body_html' => '<img src="https://example.com/campus.jpg" alt="Campus courtyard" onerror="danger()"><img src="data:image/png;base64,invalid" srcset="http://example.com/tracker.png">',
+        ]))->assertCreated()->json();
+        $this->assertStringContainsString('src="https://example.com/campus.jpg"', $draft['body_html'] ?? '');
+        $this->assertStringContainsString('alt="Campus courtyard"', $draft['body_html']);
+        $this->assertStringNotContainsString('danger', $draft['body_html']);
+        $this->assertStringNotContainsString('data:', $draft['body_html']);
+        $this->assertStringNotContainsString('srcset', $draft['body_html']);
+
+        $this->stage($this->stage($this->stage($draft, 'submit'), 'approve'), 'publish');
+        $this->get('/articles/nz-study-checklist')->assertOk()
+            ->assertSee('src="https://example.com/campus.jpg"', false)
+            ->assertSee('alt="Campus courtyard"', false);
+    }
+
     public function test_multibyte_body_keeps_its_end_after_sanitizing(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin']));
@@ -155,6 +173,31 @@ class EditorialCalendarTest extends TestCase
             ->expectsOutput('An article already uses a URL slug in this plan. No briefs were imported.')
             ->assertFailed();
         $this->assertDatabaseCount('editorial_articles', 1);
+    }
+
+    public function test_only_unpublished_drafts_can_be_moved_to_a_new_calendar_date(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'super_admin']));
+        $draft = $this->postJson(self::BASE, $this->article())->assertCreated()->json();
+        $url = self::BASE.'/'.$draft['id'];
+        $move = ['planned_date' => '2026-11-19', 'revision' => $draft['revision']];
+        $moved = $this->patchJson($url.'/planned-date', $move)->assertOk()
+            ->assertJsonPath('planned_date', '2026-11-19')
+            ->assertJsonPath('revision', $draft['revision'] + 1)->json();
+        $this->patchJson($url.'/planned-date', $move)->assertConflict();
+        $move['revision'] = $moved['revision'];
+        $move['planned_date'] = '2026-11-20';
+        $submitted = $this->stage($moved, 'submit');
+        $this->patchJson($url.'/planned-date', $move)->assertConflict();
+        $published = $this->stage($this->stage($submitted, 'approve'), 'publish');
+        $this->patchJson($url.'/planned-date', $move)->assertConflict();
+        $this->putJson($url, $this->article(['revision' => $published['revision'], 'planned_date' => '2026-11-20']))
+            ->assertUnprocessable()->assertJsonValidationErrors('planned_date');
+        $edited = $this->putJson($url, $this->article([
+            'revision' => $published['revision'], 'planned_date' => '2026-11-19', 'title' => 'New draft revision',
+        ]))->assertOk()->assertJsonPath('status', 'draft')->json();
+        $move['revision'] = $edited['revision'];
+        $this->patchJson($url.'/planned-date', $move)->assertConflict();
     }
 
     public function test_calendar_returns_month_topics_and_an_undated_list(): void

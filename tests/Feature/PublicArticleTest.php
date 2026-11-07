@@ -46,7 +46,12 @@ class PublicArticleTest extends TestCase
             ->assertSee('<meta property="og:type" content="article">', false)
             ->assertSee('<meta property="og:image" content="https://example.com/study.jpg">', false)
             ->assertSee('<meta property="og:image:alt" content="A campus courtyard">', false)
-            ->assertSee('alt="A campus courtyard"', false)
+            ->assertSeeInOrder([
+                '<img src="https://example.com/study.jpg"',
+                'All articles',
+                '<h1',
+                '<img src="https://example.com/library.jpg"',
+            ], false)
             ->assertSeeText('Mere Rangi')
             ->assertSeeText('9 November 2026')
             ->assertDontSee('Unreleased revision', false);
@@ -102,7 +107,7 @@ class PublicArticleTest extends TestCase
             'published' => [
                 'title' => 'Study in New Zealand </script>',
                 'summary' => 'Start planning your study in New Zealand.',
-                'body_html' => '<h2>Choosing a programme</h2><p>Compare your options.</p>',
+                'body_html' => '<h2>Choosing a programme</h2><p>Compare your options.</p><img src="https://example.com/library.jpg" alt="A campus library">',
                 'primary_keyword' => 'study in New Zealand',
                 'meta_title' => 'Plan your study in NZ',
                 'meta_description' => 'Decide where to study.',

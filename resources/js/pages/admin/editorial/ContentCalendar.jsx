@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import axios from 'axios';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import ArticleDialog, { ArticleStatus } from '@/components/editorial/ArticleDialog';
@@ -17,12 +18,17 @@ const dayKey = (date) => date.toISOString().slice(0, 10);
 const monthUrl = (month) => `${calendarPath}?month=${month}`;
 const navClass = 'inline-flex min-h-10 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-green-700';
 
-function TopicButton({ topic, onClick }) {
+function TopicButton({ topic, onClick, onDragStart, onDragEnd }) {
+    const movable = topic.status === 'draft' && !topic.published_slug;
+
     return (
         <button
             type="button"
             onClick={onClick}
-            className="w-full min-w-0 rounded-md bg-white px-2.5 py-2 text-left ring-1 ring-inset ring-gray-200 hover:bg-green-50 hover:ring-green-300 focus-visible:outline-2 focus-visible:outline-green-700"
+            draggable={movable}
+            onDragStart={movable ? (event) => onDragStart(event, topic) : undefined}
+            onDragEnd={movable ? onDragEnd : undefined}
+            className="[&[draggable=true]]:cursor-grab w-full min-w-0 rounded-md bg-white px-2.5 py-2 text-left ring-1 ring-inset ring-gray-200 hover:bg-green-50 hover:ring-green-300 focus-visible:outline-2 focus-visible:outline-green-700"
         >
             <span className="block wrap-anywhere text-sm font-semibold leading-snug text-gray-900">{topic.title}</span>
             {topic.pillar && <span className="mt-1 block wrap-anywhere text-xs leading-snug text-gray-600">{topic.pillar}</span>}
@@ -38,6 +44,10 @@ function TopicButton({ topic, onClick }) {
 
 export default function ContentCalendar({ month, topics, undated, canPublish }) {
     const [selection, setSelection] = useState(null);
+    const [dragging, setDragging] = useState(null);
+    const [dropDate, setDropDate] = useState(null);
+    const [moveMessage, setMoveMessage] = useState('');
+    const moving = useRef(false);
     const opener = useRef(null);
     const newArticle = useRef(null);
     const [year, monthNumber] = month.split('-').map(Number);
@@ -65,6 +75,44 @@ export default function ContentCalendar({ month, topics, undated, canPublish }) 
             const target = opener.current?.isConnected ? opener.current : newArticle.current;
             target?.focus();
         });
+    }
+
+    function startDrag(event, topic) {
+        if (moving.current) {
+            event.preventDefault();
+            return;
+        }
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(topic.id));
+        setMoveMessage('');
+        setDragging(topic);
+    }
+
+    function endDrag() {
+        setDragging(null);
+        setDropDate(null);
+    }
+
+    async function moveDraft(event, date) {
+        if (!dragging) return;
+        event.preventDefault();
+        const topic = dragging;
+        const plannedDate = dayKey(date);
+        endDrag();
+        if (topic.planned_date === plannedDate || moving.current) return;
+
+        moving.current = true;
+        try {
+            await axios.patch(`${calendarPath}/articles/${topic.id}/planned-date`, {
+                revision: topic.revision,
+                planned_date: plannedDate,
+            }, { headers: { Accept: 'application/json' } });
+            setMoveMessage(`Moved to ${dayLabel.format(date)}.`);
+        } catch (error) {
+            setMoveMessage(error.response?.data?.message ?? 'The draft could not be moved. Try again.');
+        } finally {
+            router.reload({ only: ['topics', 'undated'], onFinish: () => { moving.current = false; } });
+        }
     }
 
     return (
@@ -102,6 +150,10 @@ export default function ContentCalendar({ month, topics, undated, canPublish }) 
                         <Link className={navClass} href={monthUrl(nextMonth)} aria-label="Next month"><ChevronRight size={16} aria-hidden="true" /></Link>
                     </nav>
                 </div>
+                <p className="mb-3 text-xs text-gray-600">
+                    Drag an unpublished draft to another day, or open the draft to edit its planned date.
+                </p>
+                {moveMessage && <p role="status" className="mb-3 text-sm text-gray-800">{moveMessage}</p>}
                 {topics.length === 0 && (
                     <p className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
                         No articles are planned for this month. Set a planned date on a draft to add it to the calendar.
@@ -120,7 +172,22 @@ export default function ContentCalendar({ month, topics, undated, canPublish }) 
                         const dayTopics = topicsByDate.get(dateKey) ?? [];
                         const isToday = dateKey === today;
                         return (
-                            <div key={dateKey} className={`editorial-calendar-day ${dayTopics.length ? '' : 'editorial-calendar-day-empty'} min-w-0 p-2.5 ${inMonth ? 'bg-white' : 'bg-gray-50'}`}>
+                            <div
+                                key={dateKey}
+                                data-drop-target={dropDate === dateKey ? 'true' : undefined}
+                                onDragOver={(event) => {
+                                    if (!dragging) return;
+                                    event.preventDefault();
+                                    event.dataTransfer.dropEffect = 'move';
+                                    setDropDate(dateKey);
+                                }}
+                                onDragLeave={(event) => {
+                                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                                        setDropDate((current) => current === dateKey ? null : current);
+                                    }
+                                }}
+                                onDrop={(event) => moveDraft(event, date)}
+                                className={`editorial-calendar-day ${dayTopics.length ? '' : 'editorial-calendar-day-empty'} min-w-0 p-2.5 ${inMonth ? 'bg-white' : 'bg-gray-50'}`}>
                                 <time
                                     dateTime={dateKey}
                                     aria-current={isToday ? 'date' : undefined}
@@ -132,7 +199,7 @@ export default function ContentCalendar({ month, topics, undated, canPublish }) 
                                 {dayTopics.length > 0 && (
                                     <ul className="mt-1.5 space-y-2">
                                         {dayTopics.map((topic) => (
-                                            <li key={topic.id}><TopicButton topic={topic} onClick={(event) => openArticle(event, topic.id)} /></li>
+                                            <li key={topic.id}><TopicButton topic={topic} onClick={(event) => openArticle(event, topic.id)} onDragStart={startDrag} onDragEnd={endDrag} /></li>
                                         ))}
                                     </ul>
                                 )}
@@ -150,7 +217,7 @@ export default function ContentCalendar({ month, topics, undated, canPublish }) 
                 {undated.length ? (
                     <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                         {undated.map((topic) => (
-                            <li key={topic.id}><TopicButton topic={topic} onClick={(event) => openArticle(event, topic.id)} /></li>
+                            <li key={topic.id}><TopicButton topic={topic} onClick={(event) => openArticle(event, topic.id)} onDragStart={startDrag} onDragEnd={endDrag} /></li>
                         ))}
                     </ul>
                 ) : (

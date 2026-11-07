@@ -21,7 +21,7 @@ class EditorialCalendarController extends Controller
 {
     private const MAX_BODY_CHARACTERS = 200000;
 
-    private const SUMMARY = ['id', 'title', 'planned_date', 'pillar', 'status', 'published_slug'];
+    private const SUMMARY = ['id', 'title', 'planned_date', 'pillar', 'status', 'published_slug', 'revision'];
 
     public function index(Request $request): Response
     {
@@ -71,6 +71,18 @@ class EditorialCalendarController extends Controller
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['slug' => 'That URL slug is already in use.']);
         }
+    }
+
+    public function move(Request $request, EditorialArticle $article): JsonResponse
+    {
+        $date = $request->validate(['planned_date' => 'required|date_format:Y-m-d'])['planned_date'];
+
+        return $this->withCurrentRevision($request, $article, function (EditorialArticle $current) use ($date) {
+            abort_unless($current->canMove(), 409, 'Only unpublished drafts can be moved.');
+            if ($current->planned_date !== $date) {
+                $current->update(['planned_date' => $date, 'revision' => $current->revision + 1]);
+            }
+        });
     }
 
     public function submit(Request $request, EditorialArticle $article): JsonResponse
@@ -158,16 +170,25 @@ class EditorialCalendarController extends Controller
         if ($article?->published_slug && $draft['slug'] !== $article->published_slug) {
             throw ValidationException::withMessages(['slug' => 'The URL slug is fixed after first publication.']);
         }
+        if ($article && ! $article->canMove() && array_key_exists('planned_date', $draft) && $draft['planned_date'] !== $article->planned_date) {
+            throw ValidationException::withMessages(['planned_date' => 'Only unpublished drafts can be moved.']);
+        }
         if (! empty($draft['body_html'])) {
             $config = (new HtmlSanitizerConfig)->withMaxInputLength(self::MAX_BODY_CHARACTERS * 4)
-                ->allowLinkSchemes(['https', 'http', 'mailto'])->allowRelativeLinks();
+                ->allowLinkSchemes(['https', 'http', 'mailto'])->allowRelativeLinks()
+                ->allowMediaSchemes(['https']);
             foreach (['p', 'h2', 'h3', 'h4', 'blockquote', 'ul', 'ol', 'li', 'strong', 'em', 's', 'u', 'br', 'hr', 'pre', 'code', 'table', 'thead', 'tbody', 'tr', 'th', 'td'] as $element) {
                 $config = $config->allowElement($element);
             }
-            $config = $config->allowElement('a', ['href', 'title'])->dropElement('script')->dropElement('style');
+            $config = $config->allowElement('a', ['href', 'title'])
+                ->allowElement('img', ['src', 'alt'])
+                ->forceAttribute('img', 'loading', 'lazy')
+                ->forceAttribute('img', 'referrerpolicy', 'no-referrer')
+                ->dropElement('script')->dropElement('style');
             $safeHtml = (new HtmlSanitizer($config))->sanitize($draft['body_html']);
             $text = html_entity_decode(strip_tags($safeHtml), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            $draft['body_html'] = preg_match('/[^\s\p{Z}\p{Cf}]/u', $text) ? $safeHtml : null;
+            $hasContent = preg_match('/[^\s\p{Z}\p{Cf}]/u', $text) || preg_match('/<img\b[^>]*\ssrc="/i', $safeHtml);
+            $draft['body_html'] = $hasContent ? $safeHtml : null;
         }
 
         return $draft;
@@ -176,7 +197,7 @@ class EditorialCalendarController extends Controller
     private function respond(EditorialArticle $article, int $status = 200): JsonResponse
     {
         return response()->json($article->only([
-            ...self::SUMMARY, ...EditorialArticle::PUBLIC_FIELDS, 'slug', 'brief', 'revision',
+            ...self::SUMMARY, ...EditorialArticle::PUBLIC_FIELDS, 'slug', 'brief',
         ]), $status);
     }
 }

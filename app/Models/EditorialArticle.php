@@ -32,6 +32,11 @@ class EditorialArticle extends Model
         ];
     }
 
+    public function canMove(): bool
+    {
+        return $this->status === 'draft' && $this->published_slug === null;
+    }
+
     public function scopePublished(Builder $query): Builder
     {
         return $query->whereNotNull('published_slug')

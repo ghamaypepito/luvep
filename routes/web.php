@@ -810,6 +810,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');
             Route::post('/articles', 'store')->name('store');
             Route::put('/articles/{article}', 'update')->whereNumber('article')->name('update');
+            Route::patch('/articles/{article}/planned-date', 'move')->whereNumber('article')->name('move');
             Route::post('/articles/{article}/submit', 'submit')->whereNumber('article')->name('submit');
             Route::post('/articles/{article}/approve', 'approve')->whereNumber('article')->name('approve');
             Route::post('/articles/{article}/publish', 'publish')->whereNumber('article')->name('publish');

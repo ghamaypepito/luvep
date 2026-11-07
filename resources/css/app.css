@@ -164,5 +164,6 @@ body {
 .published-article-body a { color: var(--color-brand-green); text-decoration: underline; text-underline-offset: .15em; }
 .published-article-body blockquote { border-inline-start: 1px solid var(--color-brand-green); padding-inline-start: 1.2em; }
 .published-article-body pre { overflow-x: auto; background: var(--color-stone-100); padding: 1em; }
+.published-article-body img { display: block; max-inline-size: 100%; block-size: auto; border-radius: .5rem; }
 .published-article-body table { display: block; overflow-x: auto; border-collapse: collapse; }
 .published-article-body :is(th, td) { border: 1px solid var(--color-stone-200); padding: .55em .75em; text-align: start; }

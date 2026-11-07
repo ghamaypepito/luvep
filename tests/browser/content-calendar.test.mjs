@@ -45,7 +45,7 @@ const article = {
 };
 const articlesPath = '/admin/content-calendar/articles';
 
-async function withCalendar(run, { canPublish = false } = {}) {
+async function withCalendar(run, { canPublish = false, topics = [article] } = {}) {
     const channel = process.env.PLAYWRIGHT_CHANNEL;
     const browser = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
     try {
@@ -61,7 +61,7 @@ async function withCalendar(run, { canPublish = false } = {}) {
         await page.addStyleTag({ content: calendarCss });
         await page.evaluate(props => window.renderCalendar(props), {
             month: '2026-11',
-            topics: [article],
+            topics,
             undated: [{ id: 2, title: 'Unscheduled article', status: 'draft', planned_date: null }],
             canPublish,
         });
@@ -106,6 +106,7 @@ test('manual article creation preserves pasted article structure', async () => {
             assert.match(draft.body_html, /<ul><li>/);
             assert.match(draft.body_html, /href="https:\/\/example.com\/guide"/);
             assert.match(draft.body_html, /<table>.*<th><p>Option<\/p><\/th>.*<td><p>Study<\/p><\/td>.*<\/table>/);
+            assert.match(draft.body_html, /<img[^>]*src="https:\/\/example.com\/campus.jpg"[^>]*alt="Campus courtyard"/);
             await route.fulfill({ json: { ...article, ...draft, id: 3 } });
         });
 
@@ -119,6 +120,10 @@ test('manual article creation preserves pasted article structure', async () => {
             clipboardData.setData('text/html', '<h2>Planning</h2><ul><li>See the <a href="https://example.com/guide">guide</a></li></ul><table><tr><th>Option</th><th>Next step</th></tr><tr><td>Study</td><td>Compare schools</td></tr></table>');
             element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
         });
+        await dialog.getByRole('button', { name: 'Add image' }).click();
+        await dialog.getByLabel('Image URL', { exact: true }).fill('https://example.com/campus.jpg');
+        await dialog.getByLabel('Image description', { exact: true }).fill('Campus courtyard');
+        await dialog.getByRole('button', { name: 'Insert image' }).click();
         await dialog.getByRole('button', { name: 'Save draft' }).click();
         await dialog.getByRole('status').getByText('Draft saved.').waitFor();
     });
@@ -137,4 +142,25 @@ test('review uses the saved revision and hides approval from a staff editor', as
         assert.equal(await dialog.getByRole('button', { name: 'Approve' }).count(), 0);
         assert.equal(await dialog.getByRole('button', { name: 'Publish' }).count(), 0);
     });
+});
+
+
+test('dragging a draft moves its planned date and a draft with a live version stays locked', async () => {
+    await withCalendar(async page => {
+        let requested = false;
+        await page.route('http://calendar.test' + articlesPath + '/1/planned-date', async route => {
+            assert.equal(route.request().method(), 'PATCH');
+            assert.deepEqual(route.request().postDataJSON(), { revision: 1, planned_date: '2026-11-12' });
+            requested = true;
+            await route.fulfill({ json: { ...article, planned_date: '2026-11-12', revision: 2 } });
+        });
+        const draft = page.getByRole('button', { name: /Writing a study plan/ });
+        const locked = page.getByRole('button', { name: /Live article/ });
+        assert.equal(await draft.getAttribute('draggable'), 'true');
+        assert.notEqual(await locked.getAttribute('draggable'), 'true');
+        const target = page.locator('.editorial-calendar-day').filter({ has: page.locator('time[datetime="2026-11-12"]') });
+        await draft.dragTo(target);
+        await page.getByRole('status').getByText(/Moved to.*November 12/).waitFor();
+        assert.equal(requested, true);
+    }, { topics: [article, { ...article, id: 9, title: 'Live article', published_slug: 'live-article' }] });
 });

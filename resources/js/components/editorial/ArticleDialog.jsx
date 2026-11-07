@@ -80,7 +80,7 @@ function FeaturedImage({ url, alt }) {
     return (
         <figure className="mt-4">
             <img src={url} alt={alt || 'Featured image preview'} referrerPolicy="no-referrer" onError={() => setFailed(true)}
-                className="aspect-video w-full max-w-md rounded-md border border-gray-200 bg-gray-50 object-contain" />
+                className="aspect-[1200/630] w-full max-w-md rounded-md border border-gray-200 bg-gray-50 object-contain" />
             <figcaption className="mt-1.5 text-xs text-gray-600">Featured image preview</figcaption>
         </figure>
     );
@@ -104,6 +104,7 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
     const [customSlug, setCustomSlug] = useState(false);
     const [previewUrl, setPreviewUrl] = useState('');
     const status = article?.status ?? 'draft';
+    const dateLocked = status !== 'draft' || Boolean(article?.published_slug);
     const dirty = draftFields.some((field) => form[field] !== (article?.[field] ?? ''));
     const stageAction = {
         draft: 'submit',
@@ -277,7 +278,7 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
 
                                     <section aria-labelledby="article-image-heading" className="space-y-4 border-t border-gray-200 pt-5">
                                         <h3 id="article-image-heading" className="text-base font-semibold">Featured image</h3>
-                                        {field('image_url', 'Featured image URL', { type: 'url', maxLength: 2000, hint: 'Use an HTTPS link to the image.' })}
+                                        {field('image_url', 'Featured image URL', { type: 'url', maxLength: 2000, hint: 'Use a public HTTPS link. Recommended cover and social preview size is 1200 × 630 px.' })}
                                         {field('image_alt', 'Image alt text', { maxLength: 250, hint: 'Describe the image for readers who use assistive technology.' })}
                                         {previewUrl && <FeaturedImage key={previewUrl} url={previewUrl} alt={form.image_alt} />}
                                     </section>
@@ -285,7 +286,10 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved 
 
                                 <aside aria-labelledby="article-planning-heading" className="min-w-0 space-y-4 border-t border-gray-200 bg-gray-50 px-4 py-5 sm:px-6 md:border-t-0 md:border-l">
                                     <h3 id="article-planning-heading" className="text-base font-semibold">Planning</h3>
-                                    {field('planned_date', 'Planned date', { type: 'date', hint: 'Manila time. This is your editorial target.' })}
+                                    {field('planned_date', 'Planned date', {
+                                        type: 'date', readOnly: dateLocked,
+                                        hint: dateLocked ? 'The date is locked while this article is in review or has a live version.' : 'Manila time. This is your editorial target.',
+                                    })}
                                     {field('pillar', 'Content pillar', { options: pillars })}
                                     <div className="border-t border-gray-200 pt-4">
                                         <h4 className="text-sm font-semibold">Editorial brief</h4>

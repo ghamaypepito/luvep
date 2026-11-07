@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { EditorContent, Node, useEditor, useEditorState } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
-import { Bold, Heading2, Heading3, Italic, Link, List, ListOrdered, Quote } from 'lucide-react';
+import { Bold, Heading2, Heading3, ImagePlus, Italic, Link, List, ListOrdered, Quote } from 'lucide-react';
 
 // These nodes keep pasted comparison tables editable without a separate table builder.
 const Table = Node.create({
@@ -30,11 +30,34 @@ function tableCell(name, tag) {
     });
 }
 
+function imageUrl(value) {
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+    } catch {
+        return null;
+    }
+}
+
+const ArticleImage = Node.create({
+    name: 'articleImage',
+    group: 'block',
+    atom: true,
+    draggable: true,
+    addAttributes: () => ({ src: { default: null }, alt: { default: '' } }),
+    parseHTML: () => [{
+        tag: 'img[src]',
+        getAttrs: (element) => imageUrl(element.getAttribute('src')) ? null : false,
+    }],
+    renderHTML: ({ HTMLAttributes }) => ['img', { ...HTMLAttributes, referrerpolicy: 'no-referrer' }],
+});
+
 const extensions = [
     StarterKit.configure({
         heading: { levels: [2, 3, 4] },
         link: { openOnClick: false },
     }),
+    ArticleImage,
     Table,
     TableRow,
     tableCell('articleTableHeader', 'th'),
@@ -54,6 +77,8 @@ const tools = [
 export default function ArticleBodyEditor({ value, onChange, disabled, error }) {
     const [link, setLink] = useState(null);
     const [linkError, setLinkError] = useState(false);
+    const [image, setImage] = useState(null);
+    const [imageError, setImageError] = useState(false);
     const editor = useEditor({
         extensions,
         content: value ?? '',
@@ -99,6 +124,19 @@ export default function ArticleBodyEditor({ value, onChange, disabled, error }) 
         setLink(null);
     }
 
+    function insertImage() {
+        const src = imageUrl(image.src.trim());
+        if (!src) {
+            setImageError(true);
+            return;
+        }
+        editor.chain().focus().insertContent({
+            type: 'articleImage',
+            attrs: { src, alt: image.alt.trim() },
+        }).run();
+        setImage(null);
+    }
+
     return (
         <div>
             <p id="article-body-label" className="mb-1.5 text-sm font-medium text-gray-900">Article body</p>
@@ -115,9 +153,19 @@ export default function ArticleBodyEditor({ value, onChange, disabled, error }) 
                         className="grid size-9 place-items-center rounded text-gray-700 hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-green-700 aria-expanded:bg-green-100 aria-expanded:text-green-900 disabled:opacity-50"
                         onMouseDown={(event) => event.preventDefault()} onClick={() => {
                             setLinkError(false);
+                            setImage(null);
                             setLink(link === null ? editor.getAttributes('link').href ?? '' : null);
                         }}>
                         <Link size={17} aria-hidden="true" />
+                    </button>
+                    <button type="button" title="Add image" aria-label="Add image" aria-expanded={image !== null} disabled={!editor || disabled}
+                        className="grid size-9 place-items-center rounded text-gray-700 hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-green-700 aria-expanded:bg-green-100 aria-expanded:text-green-900 disabled:opacity-50"
+                        onMouseDown={(event) => event.preventDefault()} onClick={() => {
+                            setLink(null);
+                            setImageError(false);
+                            setImage(image ? null : { src: '', alt: '' });
+                        }}>
+                        <ImagePlus size={17} aria-hidden="true" />
                     </button>
                 </div>
                 {link !== null && (
@@ -143,9 +191,41 @@ export default function ArticleBodyEditor({ value, onChange, disabled, error }) 
                         {linkError && <p id="article-link-error" role="alert" className="basis-full text-xs text-red-800">Enter a valid link URL.</p>}
                     </div>
                 )}
+                {image && (
+                    <div className="flex flex-wrap items-end gap-2 border-b border-gray-200 p-2">
+                        <label className="min-w-36 flex-1 text-xs font-medium text-gray-800">
+                            Image URL
+                            <input type="text" inputMode="url" value={image.src} autoFocus
+                                aria-invalid={imageError}
+                                aria-describedby={imageError ? 'article-image-url-error' : undefined}
+                                onChange={(event) => {
+                                    setImage({ ...image, src: event.target.value });
+                                    setImageError(false);
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') { event.preventDefault(); insertImage(); }
+                                }}
+                                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-green-700"
+                            />
+                        </label>
+                        <label className="min-w-36 flex-1 text-xs font-medium text-gray-800">
+                            Image description
+                            <input type="text" value={image.alt} maxLength={250}
+                                onChange={(event) => setImage({ ...image, alt: event.target.value })}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') { event.preventDefault(); insertImage(); }
+                                }}
+                                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-green-700"
+                            />
+                        </label>
+                        <button type="button" onClick={insertImage} className="min-h-9 rounded-md bg-gray-100 px-2.5 text-sm font-medium text-gray-900 hover:bg-gray-200">Insert image</button>
+                        <button type="button" onClick={() => { setImage(null); editor.commands.focus(); }} className="min-h-9 px-2 text-sm text-gray-700 hover:underline">Cancel</button>
+                        {imageError && <p id="article-image-url-error" role="alert" className="basis-full text-xs text-red-800">Enter a public HTTPS image URL.</p>}
+                    </div>
+                )}
                 <EditorContent
                     editor={editor}
-                    className="overflow-x-auto [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:min-w-24 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_th]:min-w-24 [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:text-left"
+                    className="overflow-x-auto [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-md [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:min-w-24 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_th]:min-w-24 [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:text-left"
                 />
             </div>
             {error && <p id="article-body-error" className="mt-1.5 text-sm text-red-800">{error}</p>}
