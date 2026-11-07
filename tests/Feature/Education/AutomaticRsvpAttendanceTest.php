@@ -69,6 +69,30 @@ class AutomaticRsvpAttendanceTest extends TestCase
         $this->assertSame('manual', $rsvp->fresh()->attendance_source);
     }
 
+    public function test_staff_can_mark_only_eligible_selected_rsvps_attended_in_bulk(): void
+    {
+        $visit = $this->visit(null, ['schedule_confirmed' => false]);
+        $selected = $this->rsvp($visit);
+        $unselected = $this->rsvp($visit);
+        $cancelled = $this->rsvp($visit, ['attendance_status' => 'cancelled']);
+        $cancelledVisit = $this->rsvp($this->visit(null, ['status' => 'cancelled', 'schedule_confirmed' => false]));
+        $url = '/portal/education/rsvps/bulk-attendance';
+        $selection = ['rsvp_ids' => [$selected->id, $cancelled->id, $cancelledVisit->id]];
+
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->postJson($url, $selection)->assertForbidden();
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $this->postJson($url, ['rsvp_ids' => []])->assertUnprocessable();
+        $this->postJson($url, $selection)->assertOk()->assertJson(['updated' => 1]);
+        $this->postJson($url, $selection)->assertOk()->assertJson(['updated' => 0]);
+
+        $this->assertSame('attended', $selected->fresh()->attendance_status);
+        $this->assertSame('manual', $selected->fresh()->attendance_source);
+        $this->assertSame('rsvp', $unselected->fresh()->attendance_status);
+        $this->assertSame('cancelled', $cancelled->fresh()->attendance_status);
+        $this->assertSame('rsvp', $cancelledVisit->fresh()->attendance_status);
+        $this->get('/portal/education/rsvps')->assertOk()->assertSee('Mark selected as Attended');
+    }
+
     private function visit(?string $date, array $attributes = []): EducationVisit
     {
         return EducationVisit::create($attributes + [

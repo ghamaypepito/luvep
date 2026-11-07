@@ -97,6 +97,42 @@ class EducationRsvpAdminController extends Controller
         return back()->with('status', 'Attendance updated.');
     }
 
+    public function bulkAttendance(Request $request)
+    {
+        $data = $request->validate([
+            'rsvp_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'rsvp_ids.*' => ['required', 'integer', 'distinct', 'exists:education_rsvps,id'],
+        ]);
+
+        $updated = DB::transaction(function () use ($data) {
+            $ids = EducationRsvp::whereKey($data['rsvp_ids'])
+                ->where('attendance_status', 'rsvp')
+                ->whereHas('visit', fn ($visit) => $visit->where('status', '!=', 'cancelled'))
+                ->orderBy('id')->lockForUpdate()->pluck('id');
+
+            if ($ids->isEmpty()) {
+                return 0;
+            }
+
+            $updated = EducationRsvp::whereKey($ids->all())
+                ->update(['attendance_status' => 'attended', 'attendance_source' => 'manual']);
+            ActivityLog::record('education.rsvp.attendance_bulk_updated', [
+                'portal' => 'education',
+                'properties' => ['rsvp_ids' => $ids->all(), 'status' => 'attended', 'updated' => $updated],
+            ]);
+
+            return $updated;
+        });
+
+        if ($request->expectsJson()) {
+            return response()->json(['updated' => $updated]);
+        }
+
+        return back()->with('status', $updated
+            ? trans_choice('Marked :count selected RSVP as Attended.|Marked :count selected RSVPs as Attended.', $updated)
+            : 'The selected RSVPs already have a final status or belong to a cancelled event.');
+    }
+
     public function logo(Request $request, EducationVisit $visit)
     {
         $request->validate(['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:max_width=4096,max_height=4096']]);
