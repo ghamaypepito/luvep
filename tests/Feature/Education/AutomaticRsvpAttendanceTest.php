@@ -57,7 +57,11 @@ class AutomaticRsvpAttendanceTest extends TestCase
         $this->assertSame('attended', $rsvp->fresh()->attendance_status);
 
         $this->actingAs(User::factory()->create(['role' => 'education']))
-            ->put('/portal/education/rsvps/'.$rsvp->id.'/attendance', ['attendance_status' => 'rsvp'])
+            ->get('/portal/education/rsvps?attendance_status=attended')
+            ->assertOk()
+            ->assertSee('Marked automatically after the event date.');
+
+        $this->put('/portal/education/rsvps/'.$rsvp->id.'/attendance', ['attendance_status' => 'rsvp'])
             ->assertRedirect();
         $this->artisan('education:dispatch-rsvps')->assertSuccessful();
 
