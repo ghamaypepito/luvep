@@ -1720,6 +1720,7 @@ Route::middleware(['auth'])->group(function () {
             // Email module — shared Bulk Mail / SMS / Replies (same feature as
             // the sales + admin screens, rendered under this portal's layout).
             // Templates live at /email-templates (registered for every portal).
+            Route::get('/email-series', \App\Http\Controllers\EducationEventEmailSeriesController::class)->name('email-series');
             Route::get('/bulk-email', [\App\Http\Controllers\BulkEmailController::class, 'index'])->name('bulk-email');
             Route::post('/bulk-email', [\App\Http\Controllers\BulkEmailController::class, 'store'])->name('bulk-email.store');
             Route::get('/bulk-email/{id}', [\App\Http\Controllers\BulkEmailController::class, 'show'])->name('bulk-email.show');

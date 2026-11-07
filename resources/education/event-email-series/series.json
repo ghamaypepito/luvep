@@ -1,0 +1,50 @@
+{
+    "01-day-1": {
+        "label": "Day 1",
+        "timing": "1 day after enrolment",
+        "subject": "A next step after your Luvep Education event",
+        "preheader": "Start with one question about studying in New Zealand."
+    },
+    "02-day-3": {
+        "label": "Day 3",
+        "timing": "3 days after enrolment",
+        "subject": "Three things to know before choosing a course",
+        "preheader": "A short checklist to make your first shortlist easier."
+    },
+    "03-day-7": {
+        "label": "Day 7",
+        "timing": "7 days after enrolment",
+        "subject": "Want to talk through your study options?",
+        "preheader": "Bring a goal and a question to your first conversation."
+    },
+    "04-week-2": {
+        "label": "Week 2",
+        "timing": "14 days after enrolment",
+        "subject": "What to prepare before you apply",
+        "preheader": "Start with a simple list of what you already have."
+    },
+    "05-week-3": {
+        "label": "Week 3",
+        "timing": "21 days after enrolment",
+        "subject": "How to compare two study options",
+        "preheader": "Compare start dates, costs and what each course covers."
+    },
+    "06-week-4": {
+        "label": "Week 4",
+        "timing": "28 days after enrolment",
+        "subject": "What is your next small step?",
+        "preheader": "Choose one action that matches where you are now."
+    },
+    "07-monthly": {
+        "label": "Monthly",
+        "timing": "Every 30 days, from day 58 to day 328",
+        "subject": "Your Luvep Education planning check-in",
+        "preheader": "Revisit one part of your New Zealand study plan."
+    },
+    "08-yearly": {
+        "label": "Yearly",
+        "timing": "Every 365 days, starting on day 365",
+        "subject": "Is studying in New Zealand still on your mind?",
+        "preheader": "Reconnect with Luvep Education when the time feels right."
+    }
+}
