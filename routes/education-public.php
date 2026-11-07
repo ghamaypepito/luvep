@@ -30,6 +30,7 @@ Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::post('/portal/education/rsvp-visits', [\App\Http\Controllers\EducationRsvpAdminController::class, 'create']);
     Route::put('/portal/education/rsvp-visits/{visit}', [\App\Http\Controllers\EducationRsvpAdminController::class, 'update']);
     Route::post('/portal/education/rsvp-visits/{visit}/logo', [\App\Http\Controllers\EducationRsvpAdminController::class, 'logo']);
+    Route::post('/portal/education/rsvps/bulk-attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'bulkAttendance'])->name('education.rsvps.bulk-attendance');
     Route::put('/portal/education/rsvps/{rsvp}/attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'attendance']);
     Route::post('/portal/education/rsvps/slack', [\App\Http\Controllers\EducationRsvpAdminController::class, 'slack']);
 });

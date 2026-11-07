@@ -9,6 +9,25 @@ const links=Array.from(document.querySelectorAll('.section-nav a'));if('Intersec
 const schoolFilter=document.querySelector('[data-attendance-school]'),eventFilter=document.querySelector('[data-attendance-event]');
 if(schoolFilter&&eventFilter){const syncEvents=(changed=false)=>{const school=schoolFilter.value.trim().toLowerCase();for(const option of eventFilter.options){const mismatch=Boolean(school&&option.dataset.school&&option.dataset.school!==school);option.hidden=mismatch;option.disabled=mismatch;if(changed&&mismatch&&option.selected)eventFilter.value='';}};syncEvents();schoolFilter.addEventListener('change',()=>syncEvents(true));}
 const groupMembers=Array.from(document.querySelectorAll('[data-group-member]')),groupPage=document.querySelector('[data-group-page]'),groupCount=document.querySelector('[data-group-count]'),groupAdd=document.querySelector('[data-group-add]');
-function syncGroupSelection(){const selected=groupMembers.filter(input=>input.checked).length;if(groupCount)groupCount.textContent=String(selected);if(groupAdd)groupAdd.disabled=selected===0;if(groupPage){groupPage.checked=selected>0&&selected===groupMembers.length;groupPage.indeterminate=selected>0&&selected<groupMembers.length;groupPage.disabled=groupMembers.length===0;}}
+const bulkAttendance = document.querySelector('[data-attendance-bulk]');
+const bulkAttendanceSubmit = document.querySelector('[data-attendance-bulk-submit]');
+
+bulkAttendance?.addEventListener('formdata', ({ formData }) => {
+    for (const member of groupMembers) {
+        if (member.checked) formData.append(member.name, member.value);
+    }
+});
+
+function syncGroupSelection() {
+    const selected = groupMembers.filter(input => input.checked).length;
+    if (groupCount) groupCount.textContent = String(selected);
+    if (groupAdd) groupAdd.disabled = selected === 0;
+    if (bulkAttendanceSubmit) bulkAttendanceSubmit.disabled = selected === 0;
+    if (groupPage) {
+        groupPage.checked = selected > 0 && selected === groupMembers.length;
+        groupPage.indeterminate = selected > 0 && selected < groupMembers.length;
+        groupPage.disabled = groupMembers.length === 0;
+    }
+}
 for(const input of groupMembers)input.addEventListener('change',syncGroupSelection);if(groupPage)groupPage.addEventListener('change',()=>{for(const input of groupMembers)input.checked=groupPage.checked;syncGroupSelection();});syncGroupSelection();window.addEventListener('pageshow',syncGroupSelection);
 })();
