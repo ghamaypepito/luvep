@@ -7,6 +7,11 @@ Route::get('/education/register', [EducationLandingController::class, 'show'])->
 Route::post('/education/register', [EducationLandingController::class, 'store'])->middleware('throttle:120,1');
 Route::post('/education/register/next-step', [EducationLandingController::class, 'prepare'])->middleware('throttle:30,1');
 
+Route::get('/education/register/email-preferences/{registration:submission_id}', [\App\Http\Controllers\EducationEventEmailPreferencesController::class, 'show'])
+    ->middleware(['signed', 'throttle:30,1'])->name('education.register.email-preferences');
+Route::post('/education/register/email-preferences/{registration:submission_id}', [\App\Http\Controllers\EducationEventEmailPreferencesController::class, 'store'])
+    ->middleware(['signed', 'throttle:10,1']);
+
 Route::get('/education/rsvp', [\App\Http\Controllers\EducationRsvpController::class, 'show'])->name('education.rsvp');
 Route::get('/education/rsvp/catalogue', [\App\Http\Controllers\EducationRsvpController::class, 'catalogue']);
 Route::post('/education/rsvp', [\App\Http\Controllers\EducationRsvpController::class, 'store'])->middleware('throttle:30,1');
