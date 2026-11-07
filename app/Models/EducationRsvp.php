@@ -8,7 +8,7 @@ class EducationRsvp extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'linked_at' => 'datetime', 'email_reminders' => 'boolean', 'future_invites' => 'boolean'];
+    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'linked_at' => 'datetime', 'email_reminders' => 'boolean', 'future_invites' => 'boolean', 'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean'];
 
     public function folders()
     {

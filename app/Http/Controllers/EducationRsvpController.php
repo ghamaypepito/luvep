@@ -25,13 +25,19 @@ class EducationRsvpController extends Controller
 
     public function store(Request $request, EducationRsvpWorkflow $workflow)
     {
-        $d = $request->validate(['submission_id' => 'required|uuid', 'visit_id' => 'required|integer|exists:education_visits,id', 'full_name' => 'required|string|max:150', 'email' => 'required|email:rfc|max:254', 'phone' => 'required|string|max:40', 'role' => 'nullable|string|max:100', 'consent' => 'required|accepted', 'email_reminders' => 'sometimes|boolean', 'future_invites' => 'sometimes|boolean', 'website' => 'nullable|string|max:0']);
+        $d = $request->validate(['submission_id' => 'required|uuid', 'visit_id' => 'required|integer|exists:education_visits,id', 'full_name' => 'required|string|max:150', 'email' => 'required|email:rfc|max:254', 'phone' => 'required|string|max:40', 'role' => 'nullable|string|max:100', 'consent' => 'required|accepted', 'email_reminders' => 'sometimes|boolean', 'future_invites' => 'sometimes|boolean', 'email_follow_up' => 'sometimes|boolean', 'email_newsletter' => 'sometimes|boolean', 'website' => 'nullable|string|max:0']);
         $d['email'] = strtolower(trim($d['email']));
         $d['full_name'] = preg_replace('/\s+/u', ' ', trim($d['full_name']));
         abort_unless(EducationRsvpWorkflow::nameKey($d['full_name']), 422, 'Please enter your name.');
         $v = EducationVisit::findOrFail($d['visit_id']);
         abort_unless($v->status === 'open', 422, 'This visit is not accepting RSVPs.');
         $fields = ['full_name' => $d['full_name'], 'name_key' => EducationRsvpWorkflow::nameKey($d['full_name']), 'email' => $d['email'], 'phone' => trim($d['phone'] ?? '') ?: null, 'role' => $v->kind === 'partnership' ? (trim($d['role'] ?? '') ?: null) : null, 'email_reminders' => (bool) ($d['email_reminders'] ?? false), 'future_invites' => (bool) ($d['future_invites'] ?? false), 'education_visit_id' => $v->id];
+        // Omitted and unchecked options retain the previous idempotency fingerprint.
+        foreach (['email_follow_up', 'email_newsletter'] as $choice) {
+            if (! empty($d[$choice])) {
+                $fields[$choice] = true;
+            }
+        }
         $hash = hash('sha256', json_encode($fields));
 
         return Cache::lock('rsvp:email:'.hash('sha256', $d['email']), 20)->block(5, function () use ($d, $fields, $hash, $v, $workflow) {

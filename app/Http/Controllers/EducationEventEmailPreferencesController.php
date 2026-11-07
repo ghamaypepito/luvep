@@ -4,16 +4,32 @@ namespace App\Http\Controllers;
 
 use App\Models\EducationEventEmailSubscription;
 use App\Models\EducationEventRegistration;
+use App\Models\EducationRsvp;
 use App\Models\Lead;
+use App\Services\EducationRsvpWorkflow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class EducationEventEmailPreferencesController extends Controller
 {
-    public function show()
+    public function show(EducationEventRegistration $registration)
     {
-        return $this->page(false);
+        $details = $registration->contact_details;
+        $rsvp = $registration->education_visit_id
+            ? EducationRsvp::where('lead_id', $registration->lead_id)
+                ->where('education_visit_id', $registration->education_visit_id)
+                ->where('email', mb_strtolower(trim($details['email'])))
+                ->where('name_key', EducationRsvpWorkflow::nameKey(($details['first_name'] ?? '').' '.($details['last_name'] ?? '')))
+                ->whereNotNull('verified_at')
+                ->where('attendance_status', '!=', 'cancelled')
+                ->first()
+            : null;
+
+        return $this->page(false, [
+            'follow_up' => $registration->email_follow_up || $rsvp?->email_follow_up,
+            'newsletter' => $registration->email_newsletter || $rsvp?->email_newsletter,
+        ]);
     }
 
     public function store(Request $request, EducationEventRegistration $registration)
@@ -51,9 +67,9 @@ class EducationEventEmailPreferencesController extends Controller
         return $this->page(true);
     }
 
-    private function page(bool $saved)
+    private function page(bool $saved, array $choices = [])
     {
-        return response()->view('education.event-email-preferences', ['saved' => $saved])
+        return response()->view('education.event-email-preferences', ['saved' => $saved, 'choices' => $choices])
             ->header('Cache-Control', 'no-store, private')
             ->header('Referrer-Policy', 'no-referrer');
     }

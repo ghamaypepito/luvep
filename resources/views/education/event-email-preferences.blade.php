@@ -32,8 +32,8 @@
         @endif
         <form method="post">
             @csrf
-            <label><input type="checkbox" name="follow_up" value="1"> Email me study tips and adviser follow-ups after my event.</label>
-            <label><input type="checkbox" name="newsletter" value="1"> Subscribe me to the Luvep Education newsletter.</label>
+            <label><input type="checkbox" name="follow_up" value="1" @checked($choices['follow_up'])> Email me study tips and adviser follow-ups after my event.</label>
+            <label><input type="checkbox" name="newsletter" value="1" @checked($choices['newsletter'])> Subscribe me to the Luvep Education newsletter.</label>
             <button type="submit">Confirm my choices</button>
         </form>
     @endif
