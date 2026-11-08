@@ -13,6 +13,7 @@ $hrRoutes = function () {
         Route::post('/access/{user}', [\App\Http\Controllers\Hr\AccessController::class, 'update'])->name('access.update');
         Route::get('/audit', [\App\Http\Controllers\Hr\AuditController::class, 'index'])->name('audit');
         Route::get('/reports', [\App\Http\Controllers\Hr\ReportController::class, 'index'])->name('reports');
+        Route::post('/reports/note', [\App\Http\Controllers\Hr\ReportController::class, 'saveWeeklyNote'])->name('reports.note');
         Route::post('/reports/exports', [\App\Http\Controllers\Hr\ReportController::class, 'store'])->name('reports.export');
         Route::get('/reports/exports/{export}', [\App\Http\Controllers\Hr\ReportController::class, 'download'])->name('reports.download');
         Route::get('/milestones', [\App\Http\Controllers\Hr\MilestoneController::class, 'index'])->name('milestones');

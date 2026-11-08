@@ -1,3 +1,4 @@
+import WeeklyReport, { WeekButtons } from "@/components/WeeklyReport";
 import { Head, router } from "@inertiajs/react";
 import { useState } from "react";
 import { Printer, Download, TrendingUp, TrendingDown, Wallet } from "lucide-react";
@@ -27,13 +28,13 @@ function downloadCsv(filename, rows) {
 const pad = (n) => String(n).padStart(2, "0");
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-export default function Reports({ report = "income", start, end, currency = "NZD", data = {} }) {
+export default function Reports({ report = "income", start, end, preset: activePreset, weeklyReport, currency = "NZD", data = {} }) {
     const [range, setRange] = useState({ start, end });
     const isAging = report.endsWith("_aging");
 
     const go = (params) => router.get("/portal/finance/reports", { report, start: range.start, end: range.end, ...params }, { preserveScroll: true });
 
-    const preset = (kind) => {
+    const selectPreset = (kind) => {
         const now = new Date();
         let s;
         let e = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -49,8 +50,8 @@ export default function Reports({ report = "income", start, end, currency = "NZD
     const label = REPORTS.find((r) => r.key === report)?.label || "Report";
 
     const exportCsv = () => {
-        const fname = `${report}_${range.start}_${range.end}.csv`;
-        let rows = [[label], [`${range.start} to ${range.end}`], []];
+        const fname = `${report}_${start}_${end}.csv`;
+        let rows = [[label], [isAging ? "Current snapshot" : `${start} to ${end}`], []];
         if (report === "income") {
             rows.push(["Revenue", data.revenue], ["Expenses", data.expenses], ["Net profit", data.net], [], ["Expense breakdown", ""], ["Category", "Amount"]);
             (data.expense_breakdown || []).forEach((b) => rows.push([b.category, b.amount]));
@@ -86,7 +87,7 @@ export default function Reports({ report = "income", start, end, currency = "NZD
             {/* Report tabs */}
             <div className="flex items-center gap-1.5 flex-wrap">
                 {REPORTS.map((r) => (
-                    <button key={r.key} onClick={() => go({ report: r.key })}
+                    <button key={r.key} onClick={() => go({ report: r.key, ...(activePreset ? { preset: activePreset } : {}) })}
                         className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${report === r.key ? "bg-indigo-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
                         {r.label}
                     </button>
@@ -95,27 +96,30 @@ export default function Reports({ report = "income", start, end, currency = "NZD
 
             {/* Date range (income & collections only) */}
             {!isAging && (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
                     <div className="flex items-center gap-2">
                         <input type="date" value={range.start} onChange={(e) => setRange((p) => ({ ...p, start: e.target.value }))} className="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" />
                         <span className="text-gray-400 text-sm">to</span>
                         <input type="date" value={range.end} onChange={(e) => setRange((p) => ({ ...p, end: e.target.value }))} className="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" />
                         <button onClick={() => go({})} className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700">Apply</button>
                     </div>
-                    <div className="flex items-center gap-1.5 sm:ml-auto">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+                        <WeekButtons preset={activePreset} onChange={(preset) => go({ preset })} />
                         {[["month", "This month"], ["quarter", "This quarter"], ["year", "This year"], ["last_month", "Last month"]].map(([k, lbl]) => (
-                            <button key={k} onClick={() => preset(k)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100">{lbl}</button>
+                            <button key={k} onClick={() => selectPreset(k)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100">{lbl}</button>
                         ))}
                     </div>
                 </div>
             )}
             {isAging && <p className="text-xs text-gray-400">Aging is a live snapshot of everything still outstanding, as of today.</p>}
 
+            <WeeklyReport report={weeklyReport} saveUrl="/portal/finance/reports/note" />
+
             {/* Report body */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
                 <div className="mb-5">
                     <h2 className="text-lg font-bold text-gray-900">{label}</h2>
-                    {!isAging && <p className="text-xs text-gray-400">{range.start} — {range.end}</p>}
+                    {!isAging && <p className="text-xs text-gray-400">{start} — {end}</p>}
                 </div>
 
                 {report === "income" && <IncomeReport data={data} currency={currency} />}

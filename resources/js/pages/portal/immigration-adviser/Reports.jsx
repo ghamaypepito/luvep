@@ -1,14 +1,15 @@
-import { Head } from "@inertiajs/react";
+import WeeklyReport, { WeekButtons } from "@/components/WeeklyReport";
+import { Head, router } from "@inertiajs/react";
 import { Globe, UserCheck, Clock, CheckCircle2, XCircle } from "lucide-react";
 
 // Adviser reports — verification throughput + casework distribution at a glance.
-export default function Reports({ stats = {}, byStage = [], licence = {} }) {
+export default function Reports({ stats = {}, byStage = [], licence = {}, preset, weeklyReport }) {
     const cards = [
         { label: "All cases", value: stats.total_cases ?? 0, icon: <Globe size={16} />, tone: "teal" },
         { label: "My cases", value: stats.my_cases ?? 0, icon: <UserCheck size={16} />, tone: "teal" },
         { label: "Awaiting verification", value: stats.pending_verification ?? 0, icon: <Clock size={16} />, tone: "amber" },
-        { label: "Approved by me", value: stats.approved_by_me ?? 0, icon: <CheckCircle2 size={16} />, tone: "emerald" },
-        { label: "Rejected by me", value: stats.rejected_by_me ?? 0, icon: <XCircle size={16} />, tone: "red" },
+        { label: "Approved in period", value: stats.approved_by_me ?? 0, icon: <CheckCircle2 size={16} />, tone: "emerald" },
+        { label: "Rejected in period", value: stats.rejected_by_me ?? 0, icon: <XCircle size={16} />, tone: "red" },
     ];
     const maxStage = Math.max(1, ...byStage.map((s) => s.total));
 
@@ -20,6 +21,9 @@ export default function Reports({ stats = {}, byStage = [], licence = {} }) {
                 <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Reports</h1>
                 <p className="text-sm text-gray-500 mt-1">Your verification activity and the casework across the practice.</p>
             </div>
+
+            <WeekButtons preset={preset} onChange={(selected) => router.get("/portal/immigration-adviser/reports", { preset: selected }, { preserveScroll: true })} />
+            <WeeklyReport report={weeklyReport} saveUrl="/portal/immigration-adviser/reports/note" />
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 {cards.map((c) => <StatCard key={c.label} {...c} />)}

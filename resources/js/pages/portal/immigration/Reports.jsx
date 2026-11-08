@@ -1,3 +1,4 @@
+import WeeklyReport, { WEEK_PRESETS } from "@/components/WeeklyReport";
 import { useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -18,7 +19,7 @@ const TEAL = "#0f766e";
 
 const PRESETS = [
     { key: "today", label: "Today" },
-    { key: "this_week", label: "This week" },
+    ...WEEK_PRESETS,
     { key: "two_weeks", label: "Last 2 weeks" },
     { key: "this_month", label: "This month" },
     { key: "last_month", label: "Last month" },
@@ -38,7 +39,7 @@ export default function ImmigrationReports({
     range = { preset: "this_week", label: "This week" },
     pipeline = {}, namedIntake = {}, submissions = {}, outcomes = {}, conclusion = {},
     activity = {}, stageDistribution = [], totalCases = 0, trend = [], ytd = {},
-    generated_at, generated_by,
+    generated_at, generated_by, weeklyReport,
 }) {
     const [from, setFrom] = useState(range.from || "");
     const [to, setTo] = useState(range.to || "");
@@ -62,6 +63,7 @@ export default function ImmigrationReports({
                         <button
                             key={p.key}
                             type="button"
+                            aria-pressed={range.preset === p.key}
                             onClick={() => setPreset(p.key)}
                             className={`px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors ${
                                 range.preset === p.key ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
@@ -76,6 +78,8 @@ export default function ImmigrationReports({
                     {range.days ? <span className="text-gray-300"> · {range.days} days</span> : null}
                 </p>
             </div>
+
+            <WeeklyReport report={weeklyReport} saveUrl="/portal/immigration/reports/note" />
 
             {range.preset === "custom" && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">

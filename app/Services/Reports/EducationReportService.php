@@ -182,7 +182,7 @@ class EducationReportService
         $current = $this->latest($events, $period, $stage);
         $previous = $period->isAll() ? [] : $this->latest($events, $period, $stage, true);
         $points = [];
-        $priorStart = $period->start->subDays($period->days());
+        $priorStart = $period->previousStart();
         for ($offset = 0; $offset < $period->days(); $offset += $period->bucketDays()) {
             $span = min($period->bucketDays(), $period->days() - $offset);
             $start = $period->start->addDays($offset);

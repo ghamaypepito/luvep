@@ -7,6 +7,8 @@ use App\Models\HrExport;
 use App\Services\Hr\HrAudit;
 use App\Services\Hr\HrContext;
 use App\Services\Hr\ReportService;
+use App\Services\Reports\ReportPeriod;
+use App\Services\Reports\ReportWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -20,7 +22,10 @@ class ReportController extends Controller
         $actor = $preview ? $c->subject($r)->user : $r->user();
         $s = app(ReportService::class);
         $type = $r->input('type', 'attendance');
-        $filters = $s->filters($type, ['from' => now()->startOfMonth()->toDateString(), 'to' => now()->toDateString(), ...$r->only(['from', 'to', 'employee_id', 'department', 'status'])]);
+        $week = $type === 'employee_status' ? null : ReportWeek::forPreset($r->input('preset'));
+        $dates = $week ? array_combine(['from', 'to'], $week->dates()) : [];
+        $today = now(ReportPeriod::TIMEZONE);
+        $filters = $s->filters($type, ['from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString(), ...$r->only(['from', 'to', 'employee_id', 'department', 'status']), ...$dates]);
         if ($preview) {
             $subject = $c->subject($r);
             abort_if(isset($filters['employee_id']) && (int) $filters['employee_id'] !== $subject->id, 404);
@@ -33,7 +38,14 @@ class ReportController extends Controller
         $employees = $s->employees($actor, $type)->when($preview, fn ($items) => $items->where('id', $c->subject($r)->id))->values()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user->name, 'department' => $e->department]);
         $exports = $preview ? [] : HrExport::where('user_id', $actor->id)->latest('id')->limit(20)->get()->map(fn ($x) => ['id' => $x->id, 'type' => $x->type, 'status' => $x->status === 'ready' && ! $s->authorized($x) ? 'revoked' : $x->status, 'created_at' => $x->created_at, 'expires_at' => $x->expires_at]);
 
-        return Inertia::render('hr/Reports', ['type' => $type, 'types' => $preview ? array_values(array_filter(ReportService::TYPES, fn ($t) => $s->employees($r->user(), $t)->contains('id', $c->subject($r)->id))) : ReportService::TYPES, 'filters' => $filters, 'rows' => $rows, 'truncated' => $truncated, 'employees' => $employees, 'exports' => $exports, 'preview' => $preview]);
+        return Inertia::render('hr/Reports', ['type' => $type, 'types' => $preview ? array_values(array_filter(ReportService::TYPES, fn ($t) => $s->employees($r->user(), $t)->contains('id', $c->subject($r)->id))) : ReportService::TYPES, 'filters' => $filters, 'rows' => $rows, 'truncated' => $truncated, 'employees' => $employees, 'exports' => $exports, 'preview' => $preview, 'preset' => $week?->preset, 'weeklyReport' => $week && ! $preview ? $week->notes('hr:'.$actor->id) : null]);
+    }
+
+    public function saveWeeklyNote(Request $request)
+    {
+        abort_if(app(HrContext::class)->isPreview($request), 403);
+
+        return ReportWeek::save($request, 'hr:'.$request->user()->id);
     }
 
     public function store(Request $r)

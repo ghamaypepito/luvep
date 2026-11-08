@@ -7,8 +7,11 @@ use App\Models\Booking;
 use App\Models\Event;
 use App\Models\Lead;
 use App\Models\Program;
+use App\Services\Reports\ReportPeriod;
+use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -1339,22 +1342,36 @@ class SalesController extends Controller
     public function report(Request $request)
     {
         try {
-            // Week anchor — default to the current ISO week. URL query
-            // `?week_start=YYYY-MM-DD` lets the selector jump around.
-            $weekStart = $request->filled('week_start')
-                ? \Illuminate\Support\Carbon::parse($request->input('week_start'))->startOfDay()
-                : now()->startOfWeek();
-            $weekEnd = $weekStart->copy()->endOfWeek();
-            $prevStart = $weekStart->copy()->subWeek();
-            $prevEnd = $weekEnd->copy()->subWeek();
+            $now = CarbonImmutable::now(ReportPeriod::TIMEZONE);
+            $currentWeek = ReportWeek::forPreset('this_week', $now);
+            $lastWeek = ReportWeek::forPreset('last_week', $now);
+            $week = match ($request->input('preset')) {
+                'this_week' => $currentWeek,
+                'last_week' => $lastWeek,
+                default => $currentWeek,
+            };
+            if (! $request->filled('preset') && $request->filled('week_start')) {
+                $monday = CarbonImmutable::parse($request->input('week_start'), ReportPeriod::TIMEZONE)
+                    ->startOfWeek(CarbonImmutable::MONDAY);
+                $week = match ($monday->toDateString()) {
+                    $currentWeek->start->toDateString() => $currentWeek,
+                    $lastWeek->start->toDateString() => $lastWeek,
+                    default => new ReportWeek('custom', $monday, $monday->addWeek()),
+                };
+            }
+            $weekStart = $week->start;
+            $weekEnd = $week->end->subMicrosecond();
+            $window = [$weekStart->utc(), $weekEnd->utc()];
+            $prevStart = $weekStart->subWeek()->utc();
+            $prevEnd = $weekEnd->subWeek()->utc();
 
             // ── Section 1 — Week at a glance ───────────────────────────
-            $newLeads = Lead::whereBetween('created_at', [$weekStart, $weekEnd])->count();
+            $newLeads = Lead::whereBetween('created_at', $window)->count();
             $newLeadsPrev = Lead::whereBetween('created_at', [$prevStart, $prevEnd])->count();
 
             $convertedStages = ['Consultancy Agreement', 'English Pro', 'School Enrollment', 'Visa Process'];
             $converted = Lead::whereIn('status', $convertedStages)
-                ->whereBetween('updated_at', [$weekStart, $weekEnd])->count();
+                ->whereBetween('updated_at', $window)->count();
             $convertedPrev = Lead::whereIn('status', $convertedStages)
                 ->whereBetween('updated_at', [$prevStart, $prevEnd])->count();
 
@@ -1363,9 +1380,9 @@ class SalesController extends Controller
 
             $lostStages = ['Not Qualified', 'Did Not Book Consultation', 'No Show'];
             $lost = Lead::whereIn('status', $lostStages)
-                ->whereBetween('updated_at', [$weekStart, $weekEnd])->count();
+                ->whereBetween('updated_at', $window)->count();
             $topLostStage = Lead::whereIn('status', $lostStages)
-                ->whereBetween('updated_at', [$weekStart, $weekEnd])
+                ->whereBetween('updated_at', $window)
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')
                 ->orderByDesc('c')
@@ -1399,28 +1416,28 @@ class SalesController extends Controller
             ];
 
             // ── Section 5 — Lead sources ────────────────────────────────
-            $bySource = Lead::whereBetween('created_at', [$weekStart, $weekEnd])
+            $bySource = Lead::whereBetween('created_at', $window)
                 ->selectRaw("COALESCE(source, 'Unknown') as source, COUNT(*) as c")
                 ->groupBy('source')->orderByDesc('c')->limit(8)
                 ->get()->map(fn ($r) => ['label' => $this->prettifySource((string) $r->source), 'count' => (int) $r->c])->all();
 
             // ── Section 6 — Bookings & meetings ─────────────────────────
             $bookings = [
-                'booked_this_week' => Booking::whereBetween('created_at', [$weekStart, $weekEnd])->count(),
-                'completed_this_week' => Booking::where('status', 'Completed')->whereBetween('updated_at', [$weekStart, $weekEnd])->count(),
-                'no_shows_this_week' => Booking::whereIn('status', ['No Show', 'Cancelled'])->whereBetween('updated_at', [$weekStart, $weekEnd])->count(),
-                'cancelled_this_week' => Booking::where('status', 'Cancelled')->whereBetween('updated_at', [$weekStart, $weekEnd])->count(),
-                'scheduled_next_week' => Booking::whereBetween('appointment_date', [$weekStart->copy()->addWeek(), $weekEnd->copy()->addWeek()])->count(),
+                'booked_this_week' => Booking::whereBetween('created_at', $window)->count(),
+                'completed_this_week' => Booking::where('status', 'Completed')->whereBetween('updated_at', $window)->count(),
+                'no_shows_this_week' => Booking::whereIn('status', ['No Show', 'Cancelled'])->whereBetween('updated_at', $window)->count(),
+                'cancelled_this_week' => Booking::where('status', 'Cancelled')->whereBetween('updated_at', $window)->count(),
+                'scheduled_next_week' => Booking::whereBetween('appointment_date', [$weekStart->addWeek()->toDateString(), $weekStart->addDays(13)->toDateString()])->count(),
             ];
 
             // ── Section 7 — Lost analysis ───────────────────────────────
             $lostBreakdown = Lead::whereIn('status', $lostStages)
-                ->whereBetween('updated_at', [$weekStart, $weekEnd])
+                ->whereBetween('updated_at', $window)
                 ->selectRaw('status, COUNT(*) as c')
                 ->groupBy('status')->orderByDesc('c')
                 ->get()->map(fn ($r) => ['label' => $r->status, 'count' => (int) $r->c])->all();
             $lostBySource = Lead::whereIn('status', $lostStages)
-                ->whereBetween('updated_at', [$weekStart, $weekEnd])
+                ->whereBetween('updated_at', $window)
                 ->selectRaw("COALESCE(source, 'Unknown') as source, COUNT(*) as c")
                 ->groupBy('source')->orderByDesc('c')->limit(6)
                 ->get()->map(fn ($r) => ['label' => $this->prettifySource((string) $r->source), 'count' => (int) $r->c])->all();
@@ -1428,18 +1445,20 @@ class SalesController extends Controller
             // ── Section 9 — 8-week trend ───────────────────────────────
             $trend = [];
             for ($i = 7; $i >= 0; $i--) {
-                $wStart = now()->copy()->startOfWeek()->subWeeks($i);
-                $wEnd = $wStart->copy()->endOfWeek();
+                $wStart = $weekStart->subWeeks($i);
+                $trendWindow = $i === 0 ? $window : [$wStart->utc(), $wStart->endOfWeek()->utc()];
                 $trend[] = [
                     'label' => $wStart->format('d M'),
-                    'new_leads' => Lead::whereBetween('created_at', [$wStart, $wEnd])->count(),
-                    'conversions' => Lead::whereIn('status', $convertedStages)->whereBetween('updated_at', [$wStart, $wEnd])->count(),
-                    'active' => Lead::whereIn('status', $openStages)->whereBetween('created_at', [$wStart, $wEnd])->count(),
+                    'new_leads' => Lead::whereBetween('created_at', $trendWindow)->count(),
+                    'conversions' => Lead::whereIn('status', $convertedStages)->whereBetween('updated_at', $trendWindow)->count(),
+                    'active' => Lead::whereIn('status', $openStages)->whereBetween('created_at', $trendWindow)->count(),
                 ];
             }
 
             return inertia('portal/sales/Reports', [
                 'portal' => 'sales',
+                'preset' => $week->preset,
+                'weeklyReport' => $weekStart->lte($now) && ReportWeek::canUseNotes($request->user()) ? $week->notes('sales') + ['tasks' => $week->tasks('sales')] : null,
                 'week_start' => $weekStart->toDateString(),
                 'week_end' => $weekEnd->toDateString(),
 
@@ -1472,7 +1491,7 @@ class SalesController extends Controller
                 'ai_activity' => null, // needs AI activity tracking
                 'trend' => $trend,
                 'notable' => [
-                    'wins' => $this->reportWins($weekStart, $weekEnd, $convertedStages),
+                    'wins' => $this->reportWins($window[0], $window[1], $convertedStages),
                     'concerns' => $this->reportConcerns($openStages),
                 ],
                 'generated_at' => now()->toIso8601String(),
@@ -1501,7 +1520,7 @@ class SalesController extends Controller
         return 'Closed';
     }
 
-    private function reportWins(\Carbon\Carbon $weekStart, \Carbon\Carbon $weekEnd, array $convertedStages): array
+    private function reportWins(CarbonImmutable $weekStart, CarbonImmutable $weekEnd, array $convertedStages): array
     {
         return Lead::whereIn('status', $convertedStages)
             ->whereBetween('updated_at', [$weekStart, $weekEnd])
