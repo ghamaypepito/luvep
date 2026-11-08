@@ -11,6 +11,7 @@ use App\Services\Reports\ReportPeriod;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
@@ -981,18 +982,13 @@ class EducationController extends Controller
                 'referral' => $data['referral'] ?? null,
                 'agent_id' => $data['agent_id'] ?? null,
                 'residence_country' => $data['location'] ?? null,
-                'education_stage' => $data['education_stage'] ?? null,
-                'english_stage' => $data['english_stage'] ?? null,
-                'immigration_stage' => $data['immigration_stage'] ?? null,
-                'english_assignee' => $data['english_assignee'] ?? null,
-                'immigration_assignee' => $data['immigration_assignee'] ?? null,
                 'student_payment' => $data['payment'] ?? null,
                 'student_coop' => $data['coop'] ?? null,
                 'student_oop' => $data['oop'] ?? null,
                 'student_comments' => $data['internal_note'] ?? null,
                 'school_id' => $data['school_id'] ?? null,
                 'student_school' => $data['school_text'] ?? null,
-            ]);
+            ] + Arr::only($data, ['education_stage', 'english_stage', 'immigration_stage', 'english_assignee', 'immigration_assignee']));
             if (array_key_exists('date_of_engagement', $data)) {
                 $lead->date_of_engagement = $data['date_of_engagement'] ?: null;
             }

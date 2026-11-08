@@ -21,7 +21,7 @@ const STAGES_BY_DEPARTMENT = {
             "Engagement Sent", "Goal Setting Done", "School Enrolment",
             "Conditional Offer", "Unconditional Offer", "Endorsed to Immigration",
             "Visa Lodged", "Approved Visa", "Started Course",
-            "For Relodgement", "Declined Visa",
+            "For Relodgement", "Declined Visa", "On Hold",
         ],
     },
     english: {
@@ -157,12 +157,12 @@ export default function AddEditStudentModal({
         }
         // Detect which department track the student is currently on by
         // looking at which of the three *_stage columns has a value.
-        // Immigration wins if multiple are set (most-downstream signal).
-        const seedDept = student.immigration_stage
-            ? "immigration"
-            : student.english_stage
-                ? "english"
-                : "education";
+        // Keep an Education hold selected even when another team is active.
+        const seedDept = student.education_stage === "On Hold"
+            ? "education"
+            : student.immigration_stage
+                ? "immigration"
+                : student.english_stage ? "english" : "education";
         const seedStage = student[STAGES_BY_DEPARTMENT[seedDept].field] ?? "";
         const seedAssignee = seedDept === "english"
             ? (student.english_assignee ?? "")
@@ -309,7 +309,7 @@ export default function AddEditStudentModal({
         // Translate the UI's department + stage pair into the right
         // *_stage column on the wire. The two columns the user *didn't*
         // pick are sent as null so a department switch in edit mode
-        // clears the previous track's stage.
+        // clears the previous track's stage, except during a hold edit.
         const cfg = STAGES_BY_DEPARTMENT[form.department] || STAGES_BY_DEPARTMENT.education;
         const { department, stage, assignee, ...rest } = form;
         const payload = {
@@ -324,6 +324,20 @@ export default function AddEditStudentModal({
             date_of_engagement:   form.date_of_engagement || null,
             actual_course_started_on: form.actual_course_started_on || null,
         };
+
+        // Holding or resuming Education leaves parallel work in place.
+        // The server preserves omitted fields and still accepts explicit clears.
+        if (editing && (student.education_stage === "On Hold" || (department === "education" && stage === "On Hold"))) {
+            if (department !== "education") delete payload.education_stage;
+            if (department !== "english") {
+                delete payload.english_stage;
+                delete payload.english_assignee;
+            }
+            if (department !== "immigration") {
+                delete payload.immigration_stage;
+                delete payload.immigration_assignee;
+            }
+        }
 
         // Per-program schools (aligned with program_text order) drive everything:
         // the study plan stores the aligned array; student_school keeps the
