@@ -46,6 +46,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index']);
 
+Route::view('/international-student-program-guide', 'education.program-guide')
+    ->withoutMiddleware(\App\Http\Middleware\HandleInertiaRequests::class)
+    ->name('education.program-guide');
+
 // Public XML sitemap for search engines. Lists only public/indexable pages;
 // URLs use the fixed canonical base (never the request host). See SitemapController.
 Route::get('/sitemap.xml', [\App\Http\Controllers\SitemapController::class, 'index'])->name('sitemap');
