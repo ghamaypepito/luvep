@@ -21,7 +21,7 @@ const STAGES_BY_DEPARTMENT = {
             "Engagement Sent", "Goal Setting Done", "School Enrolment",
             "Conditional Offer", "Unconditional Offer", "Endorsed to Immigration",
             "Visa Lodged", "Approved Visa", "Started Course",
-            "For Relodgement", "Declined Visa",
+            "For Relodgement", "Declined Visa", "On Hold",
         ],
     },
     english: {

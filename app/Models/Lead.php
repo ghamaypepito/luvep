@@ -46,6 +46,7 @@ class Lead extends Model
         'Completed',
         'For Relodgement',
         'Declined Visa',
+        'On Hold',
     ];
 
     /** Default stage a newly-converted education student starts on. */

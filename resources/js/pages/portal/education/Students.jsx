@@ -239,6 +239,7 @@ const EDUCATION_STAGES = [
     "Completed",
     "For Relodgement",
     "Declined Visa",
+    "On Hold",
 ];
 
 // Subset of EDUCATION_STAGES that hand the lead off to Immigration.
@@ -343,6 +344,7 @@ const EDUCATION_STAGE_STYLES = {
     "Started Course":           "bg-teal-100 text-teal-800 border-teal-200",
     "Course Ongoing":           "bg-blue-100 text-blue-800 border-blue-200",
     "Completed":                "bg-lime-100 text-lime-800 border-lime-200",
+    "On Hold":                  "bg-amber-100 text-amber-800 border-amber-200",
 };
 const educationStageClass = (s) => EDUCATION_STAGE_STYLES[s] || stageClass(s);
 
@@ -1371,12 +1373,13 @@ const TEAM_COLOURS = {
 // stage gets a larger filled dot + bold label; everything before is
 // shown as completed (filled), everything after as muted gray.
 function UnifiedJourney({ student }) {
+    const onHold = student.education_stage === "On Hold";
     const position = resolveJourneyPosition(student);
     const currentIdx = position?.index ?? -1;
     const declined = !! position?.declined;
     const currentNode = currentIdx > -1 ? UNIFIED_JOURNEY[currentIdx] : null;
     const currentTeam = declined ? null : (currentNode?.team || "education");
-    const currentLabel = declined
+    const currentLabel = onHold ? "On Hold" : declined
         ? "Visa Declined"
         : currentNode?.stage || "Not started yet";
 
@@ -1392,7 +1395,7 @@ function UnifiedJourney({ student }) {
                 </span>
                 <span
                     className={`text-[10px] font-bold ${
-                        declined
+                        onHold ? "text-amber-800" : declined
                             ? "text-red-700"
                             : currentTeam
                                 ? TEAM_COLOURS[currentTeam].text
@@ -1564,6 +1567,7 @@ const EDUCATION_STAGE_HEX = {
     "Request for Information": "#f97316", // orange
     "Approved Visa":           "#22c55e", // green
     "Started Course":          "#14b8a6", // teal
+    "On Hold":                 "#d97706", // amber
 };
 const educationStageHex = (s) => EDUCATION_STAGE_HEX[s] || "#9ca3af";
 
