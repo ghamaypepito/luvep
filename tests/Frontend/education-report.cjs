@@ -14,7 +14,11 @@ const { act } = React;
 const { createRoot } = require('react-dom/client');
 const requests = [], reloads = [], posts = [], listeners = {};
 // Only transport and document-title effects are replaced; render and interact with the real report.
-const inertia = { Head: () => null, router: {
+const inertia = { Head: () => null, useForm: initial => {
+    const [data, update] = React.useState(initial);
+    return { data, setData: (field, value) => update(current => ({ ...current, [field]: value })),
+        post: (url, options) => posts.push({ url, data, options }), clearErrors: () => {}, errors: {} };
+}, router: {
     get: (url, data, options) => requests.push({ url, data, options }),
     reload: options => reloads.push(options),
     post: (url, data, options) => posts.push({ url, data, options }),
@@ -38,7 +42,7 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     // Catches legacy-only presets, absent server insights and accidentally showing current catalogue totals for dated filters.
     await render(props);
     assert.match(document.querySelector('h1').nextElementSibling.textContent, /1 Nov – 2 Nov/, 'NZ calendar date labels must not shift date-only boundaries into tomorrow');
-    assert.deepEqual([...document.querySelectorAll('[aria-label="Report period"] button')].map(n => n.textContent), ['Today', 'This week', 'This month', 'This year', 'Custom', 'All']);
+    assert.deepEqual([...document.querySelectorAll('[aria-label="Report period"] button')].map(n => n.textContent), ['Today', 'This week', 'Last week', 'This month', 'This year', 'Custom', 'All']);
     assert.ok(document.querySelector('svg[aria-label*="6 distinct students"]'), 'Uses the server metric count rather than reconstructing client dates');
     assert.match(document.querySelector('table').textContent, /6/);
     assert.match(document.body.textContent, /4 records lack.*3 have no current stage/s);
@@ -115,6 +119,22 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     assert.match(document.querySelector('[role=alert]').textContent, /Initial report unavailable/);
     assert.equal(document.querySelector('[aria-label="Department"]'), null, 'An initial failure has no trusted report to show');
     assert.equal(document.querySelector('[aria-label="Program totals"]'), null, 'An initial failure must not invent zero programme totals');
+    await render({ ...props, range: { ...props.range, preset: 'this_week', label: 'This week' }, weeklyReport: { from: '2026-11-02', to: '2026-11-04', note: '' } });
+    const notes = [...document.querySelectorAll('section')].find(node => node.querySelector('h2')?.textContent === 'Weekly notes');
+    await click(notes.querySelector('button'));
+    await change(notes.querySelector('textarea'), 'Follow up with Education');
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    assert.ok(reloads.at(-1).only.includes('weeklyReport'));
+    await render({ ...props, range: { ...props.range, preset: 'this_week', label: 'This week' }, weeklyReport: { from: '2026-11-02', to: '2026-11-05', note: '' } });
+    assert.equal(notes.querySelector('textarea').value, 'Follow up with Education');
+    await act(async () => notes.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    assert.deepEqual(posts.at(-1).data, { week_start: '2026-11-02', note: 'Follow up with Education' });
+    await click(button('Last week'));
+    assert.deepEqual(requests.at(-1).data, { preset: 'last_week' });
+    await render({ ...props, range: { ...props.range, preset: 'last_week', label: 'Last week' }, weeklyReport: { from: '2026-10-26', to: '2026-11-01', note: 'Previous weekly report' } });
+    assert.equal(button('Last week').getAttribute('aria-pressed'), 'true');
+    assert.match(document.body.textContent, /Previous weekly report/);
+    assert.equal(document.querySelector('textarea[placeholder*="Record updates"]'), null);
     await act(async () => root.unmount());
     console.log('Education report: server insights, matching drilldowns, presets, custom native fields/validation, live refresh errors and preserved department/metric/commentary, All and program scope verified.');
 })().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });

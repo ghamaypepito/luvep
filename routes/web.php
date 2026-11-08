@@ -1402,6 +1402,7 @@ Route::middleware(['auth'])->group(function () {
 
             // Sales Weekly Report — 11 sections; ?week_start=YYYY-MM-DD steps weeks.
             Route::get('/reports', [SalesController::class, 'report'])->name('reports');
+            Route::post('/reports/note', [\App\Http\Controllers\Portal\WeeklyReportController::class, 'save'])->defaults('department', 'sales')->name('reports.note');
 
             // Public assessment submissions (free-assessment + education-enrolment).
             Route::get('/assessments', [SalesController::class, 'assessments'])->name('assessments');
@@ -1869,6 +1870,7 @@ Route::middleware(['auth'])->group(function () {
             // AI "document vs client record" scan for the review page.
             Route::post('/verification/{document}/ai-scan', [\App\Http\Controllers\Portal\ImmigrationAdviserController::class, 'aiScanDocument'])->name('verification.ai-scan');
             Route::get('/reports', [\App\Http\Controllers\Portal\ImmigrationAdviserController::class, 'reports'])->name('reports');
+            Route::post('/reports/note', [\App\Http\Controllers\Portal\WeeklyReportController::class, 'save'])->defaults('department', 'immigration-adviser')->name('reports.note');
             Route::get('/sign-off', [\App\Http\Controllers\Portal\ImmigrationAdviserController::class, 'signOff'])->name('sign-off');
             Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications');
             Route::get('/profile', [\App\Http\Controllers\Portal\ImmigrationAdviserController::class, 'profile'])->name('profile');
@@ -2305,13 +2307,6 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/forms/agreements/{agreement}/resend', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'resend'])->name('forms.agreements.resend');
             Route::delete('/forms/agreements/{agreement}', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'destroy'])->name('forms.agreements.destroy');
 
-            // ----------------------------------------------------------------
-            // Scaffolded sections — sidebar nav is live, real features ship
-            // incrementally. Each points at the shared Placeholder page until
-            // its controller/model/pages are built.
-            // ----------------------------------------------------------------
-            $stub = fn (string $title, string $description) => fn () => inertia('portal/accommodation/Placeholder', ['title' => $title, 'description' => $description]);
-
             // Work (Tenants + Onboarding + Calendar are real above; Task Tracker
             // uses the shared Task Board; the rest are scaffolded placeholders).
             // Calendar consolidates the old Viewers & Contract-End screens and
@@ -2334,7 +2329,8 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/message-templates/{template}', [MessageTemplateController::class, 'destroy'])->name('message-templates.destroy');
 
             // Reports & Account ('/profile' is a real page defined above.)
-            Route::get('/reports', $stub('Reports', 'Weekly, monthly, quarterly and custom reports.'))->name('reports');
+            Route::get('/reports', [\App\Http\Controllers\Portal\WeeklyReportController::class, 'accommodation'])->name('reports');
+            Route::post('/reports/note', [\App\Http\Controllers\Portal\WeeklyReportController::class, 'save'])->defaults('department', 'accommodation')->name('reports.note');
             Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
         });
 
@@ -2363,6 +2359,7 @@ Route::middleware(['auth'])->group(function () {
 
             // Reports — income statement, aging, collections
             Route::get('/reports', [\App\Http\Controllers\Portal\FinanceReportController::class, 'index'])->name('reports');
+            Route::post('/reports/note', [\App\Http\Controllers\Portal\WeeklyReportController::class, 'save'])->defaults('department', 'finance')->name('reports.note');
         });
 
         // Lead Portal — external client-facing dashboard. Each lead-role user

@@ -1,3 +1,4 @@
+import WeeklyReport, { WEEK_PRESETS } from "../../../components/WeeklyReport";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { BookOpen, CheckCircle2, FileText, PencilLine, Save, X, RefreshCw } from "lucide-react";
@@ -6,7 +7,7 @@ import EducationReportInsights from "../../../components/EducationReportInsights
 // Public report presets. Legacy URL aliases are resolved by the server.
 const PRESETS = [
     { key: "today", label: "Today" },
-    { key: "this_week", label: "This week" },
+    ...WEEK_PRESETS,
     { key: "this_month", label: "This month" },
     { key: "this_year", label: "This year" },
     { key: "custom", label: "Custom" },
@@ -40,7 +41,7 @@ export default function EducationReports(props) {
     return <EducationReportContent {...(displayed || { range: props.range })} error={props.error} hasTrustedData={Boolean(displayed)} />;
 }
 
-function EducationReportContent({ range = {}, pipeline = [], summary = {}, summaryLists = {}, totalRegister = 0, movements = 0, register = {}, departments = {}, programs = {}, conclusion = {}, generated_at = null, generated_by = null, error = null, errors = {}, pipeline_history = {}, hasTrustedData = false }) {
+function EducationReportContent({ range = {}, pipeline = [], summary = {}, summaryLists = {}, totalRegister = 0, movements = 0, register = {}, departments = {}, programs = {}, conclusion = {}, generated_at = null, generated_by = null, error = null, errors = {}, pipeline_history = {}, weeklyReport, hasTrustedData = false }) {
     const [customFrom, setCustomFrom] = useState(range.from || "");
     const [customTo, setCustomTo] = useState(range.to || "");
     const [customOpen, setCustomOpen] = useState(range.preset === "custom");
@@ -97,7 +98,7 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
     useEffect(() => {
         const refresh = () => router.reload({
             ...visitOptions(),
-            only: ["range", "pipeline", "pipeline_history", "summary", "summaryLists", "register", "departments", "totalRegister", "movements", "programs", "conclusion", "generated_at", "generated_by", "error", "errors"],
+            only: ["range", "pipeline", "pipeline_history", "summary", "summaryLists", "register", "departments", "totalRegister", "movements", "programs", "conclusion", "weeklyReport", "generated_at", "generated_by", "error", "errors"],
         });
         const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
         const id = setInterval(refresh, 20000);
@@ -147,6 +148,8 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                     {hasTrustedData && <span>Showing <span className="font-semibold text-gray-600">{range.label}</span>{range.all ? " · current register" : ` · ${range.days} day${range.days === 1 ? "" : "s"}`}</span>}
                 </span>
             </div>
+
+            {!customOpen && <WeeklyReport report={weeklyReport} saveUrl="/portal/education/reports/note" />}
 
             {customOpen && (
                 <form noValidate onSubmit={applyCustom} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 flex flex-wrap items-end gap-3">

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FinancePayable;
 use App\Models\FinancePayment;
 use App\Models\FinanceReceivable;
+use App\Services\Reports\ReportWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -26,9 +27,11 @@ class FinanceReportController extends Controller
             $report = 'income';
         }
 
+        $week = ReportWeek::forPreset($request->input('preset'));
+        [$weekStart, $weekEnd] = $week?->dates() ?? [null, null];
         $tz = config('app.timezone', 'UTC');
-        $start = Carbon::parse($request->query('start') ?: now($tz)->startOfMonth())->startOfDay();
-        $end = Carbon::parse($request->query('end') ?: now($tz)->endOfMonth())->endOfDay();
+        $start = Carbon::parse($weekStart ?? ($request->query('start') ?: now($tz)->startOfMonth()))->startOfDay();
+        $end = Carbon::parse($weekEnd ?? ($request->query('end') ?: now($tz)->endOfMonth()))->endOfDay();
 
         $data = match ($report) {
             'receivables_aging' => $this->aging(FinanceReceivable::class),
@@ -39,6 +42,8 @@ class FinanceReportController extends Controller
 
         return inertia('portal/finance/Reports', [
             'report' => $report,
+            'preset' => $week?->preset,
+            'weeklyReport' => $week && ! str_ends_with($report, '_aging') && ReportWeek::canUseNotes($request->user()) ? $week->notes('finance') + ['tasks' => $week->tasks('finance')] : null,
             'start' => $start->toDateString(),
             'end' => $end->toDateString(),
             'currency' => strtoupper(config('services.booking.currency', 'nzd')),

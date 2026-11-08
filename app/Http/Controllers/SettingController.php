@@ -13,7 +13,7 @@ class SettingController extends Controller
      * or `tracker.enabled` here would take a public surface down with no
      * confirmation or context. Both live on the super-admin Maintenance page.
      */
-    private const MANAGED_ELSEWHERE = ['maintenance.', 'tracker.', 'claude_connector.', 'ghl_connector.'];
+    private const MANAGED_ELSEWHERE = ['maintenance.', 'tracker.', 'claude_connector.', 'ghl_connector.', 'weekly_report_note:'];
 
     /**
      * Admin index — lists every settings row grouped by `group`.

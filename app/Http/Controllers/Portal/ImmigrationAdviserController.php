@@ -9,6 +9,7 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Reports\ReportWeek;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -305,11 +306,17 @@ class ImmigrationAdviserController extends Controller
     {
         $user = $request->user();
         $myIds = (clone $this->caseScope($user))->pluck('id');
+        $week = ReportWeek::forPreset($request->input('preset', 'this_week')) ?? ReportWeek::forPreset('this_week');
 
         $verified = LeadDocument::whereIn('status', [LeadDocument::STATUS_APPROVED, LeadDocument::STATUS_REJECTED])
-            ->where('reviewed_by', $user->id);
+            ->where('reviewed_by', $user->id)
+            ->where('reviewed_at', '>=', $week->start->utc())
+            ->where('reviewed_at', '<', $week->end->utc());
 
         return inertia('portal/immigration-adviser/Reports', [
+            'preset' => $week->preset,
+            'weeklyReport' => ReportWeek::canUseNotes($user) ? $week->notes('immigration-adviser:'.$user->id)
+                + ['tasks' => $week->tasks(null, $user->id)] : null,
             'stats' => [
                 'total_cases' => Lead::immigrationCase()->count(),
                 'my_cases' => $myIds->count(),

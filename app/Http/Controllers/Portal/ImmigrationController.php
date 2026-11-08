@@ -11,8 +11,10 @@ use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
 use App\Models\UserReview;
+use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -4631,9 +4633,13 @@ class ImmigrationController extends Controller
         abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
 
         // ── Date range (default: this week) ───────────────────────────
-        [$preset, $from, $to] = $this->resolveReportRange($request);
+        $week = ReportWeek::forPreset($request->input('preset', 'this_week'));
+        [$preset, $from, $to] = $week
+            ? [$week->preset, Carbon::instance($week->start->utc()), Carbon::instance($week->end->subMicrosecond()->utc())]
+            : $this->resolveReportRange($request);
+        [$rangeFrom, $rangeTo] = $week?->dates() ?? [$from->toDateString(), $to->toDateString()];
         $now = now();
-        $rangeDays = max(1, (int) $from->diffInDays($to) + 1);
+        $rangeDays = $week ? (int) $week->start->diff($week->end)->days : max(1, (int) $from->diffInDays($to) + 1);
 
         // Stage groupings (based on the case's current immigration_stage).
         $awaitingStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
@@ -4805,7 +4811,7 @@ class ImmigrationController extends Controller
         ];
 
         // Conclusion — auto factual summary (no interpretation), editable per period.
-        $noteKey = 'imm_report_note:'.$from->toDateString().':'.$to->toDateString();
+        $noteKey = 'imm_report_note:'.$rangeFrom.':'.$rangeTo;
         $autoSummary = sprintf(
             '%d application%s lodged with INZ and %d new client record%s opened this period. %d approved, %d declined. %d file%s currently sit with INZ awaiting a decision.',
             $activity['apps_lodged'], $activity['apps_lodged'] === 1 ? '' : 's',
@@ -4833,11 +4839,12 @@ class ImmigrationController extends Controller
             'conclusion' => $conclusion,
             'range' => [
                 'preset' => $preset,
-                'from' => $from->toDateString(),
-                'to' => $to->toDateString(),
+                'from' => $rangeFrom,
+                'to' => $rangeTo,
                 'days' => $rangeDays,
                 'label' => $this->reportRangeLabel($preset, $from, $to),
             ],
+            'weeklyReport' => $week && ReportWeek::canUseNotes($request->user()) ? $week->notes('immigration') + ['tasks' => $week->tasks('immigration')] : null,
             'kpis' => $kpis,
             'activity' => $activity,
             'stageDistribution' => $stageDistribution,
@@ -4860,6 +4867,10 @@ class ImmigrationController extends Controller
     {
         abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
 
+        if ($request->has('week_start')) {
+            return ReportWeek::save($request, 'immigration');
+        }
+
         $data = $request->validate([
             'note_key' => ['required', 'string', 'starts_with:imm_report_note:', 'max:120'],
             'note' => ['nullable', 'string', 'max:4000'],
@@ -4871,7 +4882,7 @@ class ImmigrationController extends Controller
     }
 
     /**
-     * Resolve the report window from the request. Default is this week.
+     * Resolve non-weekly report windows from the request.
      * Presets: two_weeks | this_month | last_month | quarter | custom(from,to).
      *
      * @return array{0: string, 1: \Illuminate\Support\Carbon, 2: \Illuminate\Support\Carbon}
@@ -4879,16 +4890,14 @@ class ImmigrationController extends Controller
     private function resolveReportRange(Request $request): array
     {
         $now = now();
-        $preset = $request->input('preset', 'this_week');
-        if (! in_array($preset, ['today', 'this_week', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
+        $preset = $request->input('preset');
+        if (! in_array($preset, ['today', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
             $preset = 'two_weeks';
         }
 
         switch ($preset) {
             case 'today':
                 return [$preset, $now->copy()->startOfDay(), $now->copy()->endOfDay()];
-            case 'this_week':
-                return [$preset, $now->copy()->startOfWeek(), $now->copy()->endOfDay()];
             case 'this_month':
                 return [$preset, $now->copy()->startOfMonth(), $now->copy()->endOfDay()];
             case 'last_month':
@@ -4919,6 +4928,7 @@ class ImmigrationController extends Controller
         return match ($preset) {
             'today' => 'Today',
             'this_week' => 'This week',
+            'last_week' => 'Last week',
             'this_month' => $from->format('F Y'),
             'last_month' => $from->format('F Y'),
             'quarter' => 'Last 3 months',

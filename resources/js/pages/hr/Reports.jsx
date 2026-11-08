@@ -1,3 +1,4 @@
+import WeeklyReport, { WeekButtons } from "@/components/WeeklyReport";
 import { hrPath } from "@/lib/hrPath";
 import { Head, router, useForm } from "@inertiajs/react";
 import { useEffect } from "react";
@@ -12,6 +13,8 @@ export default function Reports({
     employees,
     exports,
     preview,
+    preset,
+    weeklyReport,
 }) {
     const f = useForm({
         type,
@@ -48,6 +51,12 @@ export default function Reports({
                     reviewed daily records only.
                 </p>
             </div>
+            {type !== "employee_status" && (
+                <WeekButtons preset={preset} onChange={(selected) =>
+                    router.get(hrPath("/reports"), { ...filters, type, preset: selected }, { preserveScroll: true })
+                } />
+            )}
+            <WeeklyReport report={weeklyReport} saveUrl={hrPath("/reports/note")} />
             <section className="hr-panel">
                 <form
                     className="hr-form"
@@ -66,6 +75,7 @@ export default function Reports({
                                     type: e.target.value,
                                     from: filters.from,
                                     to: filters.to,
+                                    ...(preset ? { preset } : {}),
                                 })
                             }
                         >

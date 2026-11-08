@@ -33,8 +33,9 @@ class ReportPeriod
             $end = CarbonImmutable::parse($data['to'], self::TIMEZONE)->startOfDay()->addDay();
         } elseif ($preset === 'today') {
             $start = $now->startOfDay();
-        } elseif ($preset === 'this_week') {
-            $start = $now->startOfWeek(1)->startOfDay();
+        } elseif ($week = ReportWeek::forPreset($preset, $now)) {
+            $start = $week->start;
+            $end = $week->end;
         } elseif ($preset === 'this_year') {
             $start = $now->startOfYear();
         } elseif ($preset === 'all') {
@@ -71,10 +72,15 @@ class ReportPeriod
         return $this->days() <= 31 ? 1 : ($this->days() <= 186 ? 7 : max(30, (int) ceil($this->days() / 60)));
     }
 
+    public function previousStart(): CarbonImmutable
+    {
+        return $this->start->subDays($this->preset === 'this_week' ? 7 : $this->days());
+    }
+
     public function contains(CarbonImmutable $at, bool $previous = false): bool
     {
-        $start = $previous ? $this->start->subDays($this->days()) : $this->start;
-        $end = $previous ? $this->start : $this->end;
+        $start = $previous ? $this->previousStart() : $this->start;
+        $end = $previous ? $start->addDays($this->days()) : $this->end;
 
         return $at->gte($start) && $at->lt($end) && $at->lte($this->now);
     }
@@ -108,7 +114,7 @@ class ReportPeriod
         return [
             'preset' => $this->preset, 'from' => $this->start->toDateString(), 'to' => $this->end->subDay()->toDateString(),
             'label' => match ($this->preset) {
-                'today' => 'Today', 'this_week' => 'This week', 'this_year' => 'This year', 'all' => 'All',
+                'today' => 'Today', 'this_week' => 'This week', 'last_week' => 'Last week', 'this_year' => 'This year', 'all' => 'All',
                 'custom' => 'Custom', default => 'This month',
             },
             'days' => $this->days(), 'timezone' => self::TIMEZONE, 'all' => $this->isAll(), 'compare' => ! $this->isAll(),
@@ -116,7 +122,7 @@ class ReportPeriod
             'bucket_label' => match ($this->bucketDays()) {
                 1 => 'Daily', 7 => 'Weekly', default => $this->bucketDays().'-day'
             },
-            'previous' => ['from' => $this->start->subDays($this->days())->toDateString(), 'to' => $this->start->subDay()->toDateString()],
+            'previous' => ['from' => $this->previousStart()->toDateString(), 'to' => $this->previousStart()->addDays($this->days() - 1)->toDateString()],
         ];
     }
 }

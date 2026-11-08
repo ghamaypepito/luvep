@@ -10,6 +10,7 @@ use App\Models\HrExport;
 use App\Models\HrPolicyAcknowledgement;
 use App\Models\HrPolicyVersion;
 use App\Models\User;
+use App\Services\Reports\ReportPeriod;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -123,7 +124,11 @@ class ReportService
 
                 return;
             }
-            foreach (HrPolicyAcknowledgement::whereIn('user_id', $ids)->whereDate('acknowledged_at', '>=', $filters['from'])->whereDate('acknowledged_at', '<=', $filters['to'])->lazyById(100) as $ack) {
+            $start = CarbonImmutable::parse($filters['from'], ReportPeriod::TIMEZONE)->startOfDay();
+            $end = CarbonImmutable::parse($filters['to'], ReportPeriod::TIMEZONE)->startOfDay()->addDay();
+            $acknowledgements = HrPolicyAcknowledgement::whereIn('user_id', $ids)
+                ->where('acknowledged_at', '>=', $start->utc())->where('acknowledged_at', '<', $end->utc());
+            foreach ($acknowledgements->lazyById(100) as $ack) {
                 $v = HrPolicyVersion::find($ack->hr_policy_version_id);
                 yield [...$base($byUser[$ack->user_id]), 'policy' => $v?->title ?? '', 'version' => $v?->version ?? '', 'acknowledged_at' => $ack->acknowledged_at->toIso8601String()];
             }

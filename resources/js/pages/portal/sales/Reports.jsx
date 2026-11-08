@@ -1,3 +1,4 @@
+import WeeklyReport, { WeekButtons } from "@/components/WeeklyReport";
 import { useMemo, useState } from "react";
 import { Head, router, Link } from "@inertiajs/react";
 import {
@@ -29,7 +30,7 @@ const BUCKET_COLOR = {
 };
 
 export default function SalesReports({
-    week_start, week_end,
+    week_start, week_end, preset, weeklyReport,
     glance = {}, pipeline = {}, cold_buckets = {}, per_agent = null,
     by_source = [], bookings = {}, lost_analysis = {}, ai_activity = null,
     trend = [], notable = {}, generated_at, generated_by,
@@ -39,9 +40,7 @@ export default function SalesReports({
         d.setDate(d.getDate() + (delta * 7));
         router.get('/portal/sales/reports', { week_start: fmtIso(d) }, { preserveScroll: true });
     };
-    const jumpToCurrent = () => {
-        router.get('/portal/sales/reports', {}, { preserveScroll: true });
-    };
+    const selectWeek = (preset) => router.get("/portal/sales/reports", { preset }, { preserveScroll: true });
 
     return (
         <div className="space-y-6 max-w-[1500px] mx-auto pb-12">
@@ -60,16 +59,18 @@ export default function SalesReports({
                     <button type="button" onClick={() => stepWeek(1)} className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100">
                         <ChevronRight size={16} />
                     </button>
-                    <button type="button" onClick={jumpToCurrent} className="ml-2 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-200">
-                        This week
-                    </button>
+
                 </div>
+
+                <WeekButtons preset={preset} onChange={selectWeek} />
 
                 <div className="flex items-center gap-2">
                     <DisabledAction icon={<Download size={13} />} label="Export PDF" />
                     <DisabledAction icon={<Share2 size={13} />}   label="Share with…" />
                 </div>
             </div>
+
+            <WeeklyReport report={weeklyReport} saveUrl="/portal/sales/reports/note" />
 
             {/* Section 1 — Week at a glance */}
             <Section title="Week at a glance">
@@ -126,7 +127,7 @@ export default function SalesReports({
             <Section title="Lead sources" subtitle="Where this week's leads came from.">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                     {by_source.length === 0 ? (
-                        <p className="text-sm text-gray-400 italic text-center py-6">No leads this week.</p>
+                        <p className="text-sm text-gray-400 italic text-center py-6">No leads in the selected week.</p>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
                             <DonutSvg slices={by_source} />
@@ -251,7 +252,7 @@ function GlanceTile({ label, value, prev = null, hint = null, tone = "default", 
             {showDelta && delta != null && (
                 <p className={`text-[11px] mt-1 inline-flex items-center gap-1 font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-rose-600" : "text-gray-400"}`}>
                     {delta > 0 ? <TrendingUp size={11} /> : delta < 0 ? <TrendingDown size={11} /> : <Minus size={11} />}
-                    {delta > 0 ? "+" : ""}{delta}{deltaPct != null ? ` (${deltaPct > 0 ? "+" : ""}${deltaPct}%)` : ""} vs last week
+                    {delta > 0 ? "+" : ""}{delta}{deltaPct != null ? ` (${deltaPct > 0 ? "+" : ""}${deltaPct}%)` : ""} vs prior week
                 </p>
             )}
             {hint && <p className="text-[10px] text-gray-400 mt-1 italic">{hint}</p>}

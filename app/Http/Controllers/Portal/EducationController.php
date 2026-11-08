@@ -8,6 +8,7 @@ use App\Models\Lead;
 use App\Models\Program;
 use App\Services\Reports\EducationReportService;
 use App\Services\Reports\ReportPeriod;
+use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
 use Illuminate\Http\Request;
@@ -1323,7 +1324,11 @@ class EducationController extends Controller
         $this->authorizeReport($request);
         $period = ReportPeriod::fromRequest($request);
         try {
-            return inertia('portal/education/Reports', app(EducationReportService::class)->build($period));
+            $week = ReportWeek::forPreset($period->preset, $period->now);
+
+            return inertia('portal/education/Reports', app(EducationReportService::class)->build($period) + [
+                'weeklyReport' => $week ? $week->notes('education') + ['tasks' => $week->tasks('education')] : null,
+            ]);
         } catch (\Throwable $e) {
             Log::error('Education reports failed', ['error' => $e->getMessage()]);
 
@@ -1346,6 +1351,10 @@ class EducationController extends Controller
     public function saveReportNote(Request $request)
     {
         $this->authorizeReport($request);
+        if ($request->has('week_start')) {
+            return ReportWeek::save($request, 'education');
+        }
+
         $data = $request->validate([
             'note_key' => ['required', 'string', 'starts_with:edu_report_note:', 'max:120'],
             'note' => ['nullable', 'string', 'max:4000'],
