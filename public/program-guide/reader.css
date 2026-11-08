@@ -1,0 +1,144 @@
+@font-face {
+    font-family: Poppins;
+    src: url("./poppins-regular.ttf") format("truetype");
+    font-display: swap;
+}
+
+:root {
+    color-scheme: light;
+    --green: #436235;
+    --charcoal: #282728;
+    --sage: #e7efdf;
+    --white: #fff;
+    font-family: Poppins, system-ui, sans-serif;
+    color: var(--charcoal);
+    background: #f7f9f4;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: var(--green); }
+button, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
+.masthead {
+    display: flex;
+    align-items: center;
+    gap: clamp(12px, 3vw, 30px);
+    max-width: 1440px;
+    min-height: 89px;
+    margin: 0 auto;
+    padding: 12px clamp(12px, 4vw, 56px);
+}
+
+.brand { flex: none; }
+.brand img { display: block; width: clamp(53px, 8vw, 93px); height: auto; }
+.heading { border-inline-start: 1px solid #cbd8c3; padding-inline-start: clamp(12px, 3vw, 30px); }
+.heading h1 { margin: 0; font-size: clamp(15px, 2.2vw, 28px); line-height: 1.22; letter-spacing: -.035em; }
+.heading p { margin: 4px 0 0; font-size: 12px; color: #4b5847; }
+
+.pdf-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 6px;
+    min-height: 44px;
+    margin-inline-start: auto;
+    padding: 0 12px;
+    border: 1px solid #cbd8c3;
+    border-radius: 8px;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.pdf-link:hover { background: var(--sage); }
+
+main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px; }
+
+.stage {
+    height: max(320px, calc(100svh - 166px));
+    padding: clamp(8px, 2vw, 22px);
+    overflow: auto;
+    border: 1px solid #d3dfcb;
+    border-radius: 12px;
+    background: var(--sage);
+}
+
+.spread {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    perspective: 1400px;
+}
+
+.spread img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1132 / 1600;
+    background: var(--white);
+    object-fit: contain;
+    box-shadow: 0 5px 18px #24361c29, 0 1px 3px #24361c26;
+}
+
+.spread.paired img { max-width: 50%; }
+.spread.paired img:first-child { transform-origin: right center; }
+.spread.paired img:last-child { transform-origin: left center; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .spread[data-direction="next"] img:last-child { animation: turn-in 240ms ease-out; }
+    .spread[data-direction="previous"] img:first-child { animation: turn-back 240ms ease-out; }
+}
+
+@keyframes turn-in {
+    from { transform: translateX(6px) rotateY(-18deg); opacity: .7; }
+}
+
+@keyframes turn-back {
+    from { transform: translateX(-6px) rotateY(18deg); opacity: .7; }
+}
+
+.stage.zoomed .spread { align-items: start; height: auto; width: max-content; min-width: 100%; }
+.stage.zoomed img { width: clamp(600px, 78vw, 920px); max-width: none; max-height: none; }
+
+.toolbar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.toolbar[hidden] { display: none; }
+
+.toolbar button, .position {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    border: 1px solid #cbd8c3;
+    border-radius: 8px;
+    background: var(--white);
+    color: var(--green);
+}
+
+.toolbar button { width: 44px; cursor: pointer; }
+.toolbar button:hover:not(:disabled), .toolbar button[aria-pressed="true"] { background: var(--sage); }
+.toolbar button:disabled { color: #7a8474; background: #eff2ec; cursor: default; }
+.position { padding: 0 10px 0 5px; gap: 5px; font-size: 13px; }
+.position select { min-height: 42px; border: 0; background: transparent; color: var(--charcoal); cursor: pointer; }
+.no-script { text-align: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 520px) {
+    .masthead { min-height: 80px; gap: 9px; }
+    .heading { padding-inline-start: 9px; }
+    .heading p { display: none; }
+    .pdf-link { padding: 0 7px; gap: 3px; font-size: 11px; }
+    .pdf-link svg { width: 13px; }
+    .stage { height: max(285px, calc(100svh - 155px)); }
+}
