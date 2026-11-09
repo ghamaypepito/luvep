@@ -38,7 +38,8 @@ class ReportLiaEndorsementTest extends TestCase
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-21 12:00:00'));
         foreach (['Interim Visa Issued', 'Request for Information', 'Approved Visa', 'Decline Visa'] as $stage) {
             Lead::create(['first_name' => $stage, 'last_name' => 'Client', 'is_immigration_case' => true,
-                'immigration_stage' => $stage, 'immigration_converted_at' => now()->subDay(), 'stage_updated_at' => now()->subDay()]);
+                'immigration_stage' => $stage, 'immigration_converted_at' => now()->subDay(),
+                'stage_history' => [['department' => 'immigration', 'stage' => $stage, 'at' => now()->subDay()->toIso8601String()]]]);
         }
         Lead::create(['first_name' => 'Previous', 'last_name' => 'Week', 'is_immigration_case' => true,
             'immigration_converted_at' => now()->subWeek(), 'immigration_stage' => 'For Assessment']);
@@ -51,6 +52,63 @@ class ReportLiaEndorsementTest extends TestCase
             ->where('outcomes.approved.0.name', 'Approved Visa Client')
             ->where('outcomes.declined.0.name', 'Decline Visa Client'));
     }
+
+    public function test_education_updates_do_not_recount_old_or_undated_immigration_approvals(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T00:00:00Z'));
+        $educationUpdate = ['department' => 'education', 'stage' => 'Approved Visa', 'at' => '2026-11-07T03:01:46Z'];
+        $approved = Lead::create([
+            'first_name' => 'Previously', 'last_name' => 'Approved', 'is_immigration_case' => true,
+            'immigration_stage' => 'Approved Visa', 'stage_updated_at' => '2026-11-07 03:01:46',
+            'stage_history' => [
+                ['department' => 'immigration', 'stage' => 'Approved Visa', 'at' => '2026-09-29T00:12:46Z'],
+                $educationUpdate,
+            ],
+        ]);
+        Lead::create([
+            'first_name' => 'Undated', 'last_name' => 'Approval', 'is_immigration_case' => true,
+            'immigration_stage' => 'Approved Visa', 'stage_updated_at' => '2026-11-07 03:01:46',
+            'stage_history' => [array_replace($educationUpdate, ['stage' => 'Started Course'])],
+        ]);
+
+        $url = '/portal/immigration/reports?preset=custom';
+        $this->actingAs(User::factory()->create(['role' => 'immigration_manager']))
+            ->get($url.'&from=2026-11-02&to=2026-11-08')->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('outcomes.approved', 0)->where('activity.visas_approved', 0)->where('conclusion.stats.approved', 0)
+                ->where('trend.3.approved', 1)->where('trend.5.approved', 0));
+        $this->get($url.'&from=2026-09-29&to=2026-09-29')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('outcomes.approved', 1)->where('outcomes.approved.0.id', $approved->id)
+            ->where('activity.visas_approved', 1)->where('conclusion.stats.approved', 1));
+    }
+
+    public function test_immigration_history_and_handoffs_use_the_same_nz_reporting_window(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T00:00:00Z'));
+        $handoff = Lead::create([
+            'first_name' => 'Education', 'last_name' => 'Handoff', 'is_immigration_case' => true,
+            'education_stage' => 'Endorsed to Immigration', 'immigration_converted_at' => '2026-11-01 11:00:00',
+            'stage_history' => [['department' => 'education', 'stage' => 'Endorsed to Immigration', 'at' => '2026-11-01T11:00:00Z']],
+        ]);
+        $lodged = Lead::create([
+            'first_name' => 'Visa', 'last_name' => 'Applicant', 'is_immigration_case' => true,
+            'immigration_stage' => 'Approved Visa', 'stage_updated_at' => '2026-11-08 11:00:00',
+            'stage_history' => [
+                ['department' => 'immigration', 'stage' => 'Visa Lodged', 'at' => '2026-11-01T11:00:00Z'],
+                ['department' => 'immigration', 'stage' => 'Request for Information', 'at' => '2026-11-08T10:59:59Z'],
+                ['department' => 'immigration', 'stage' => 'Approved Visa', 'at' => '2026-11-08T11:00:00Z'],
+            ],
+        ]);
+
+        $this->actingAs(User::factory()->create(['role' => 'immigration']));
+        foreach (['custom&from=2026-11-02&to=2026-11-08', 'last_week'] as $preset) {
+            $this->get('/portal/immigration/reports?preset='.$preset)->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('range.from', '2026-11-02')->where('range.to', '2026-11-08')
+                ->has('namedIntake.new_clients', 1)->where('namedIntake.new_clients.0.id', $handoff->id)
+                ->where('activity.apps_lodged', 1)->where('submissions.lodged.0.id', $lodged->id)
+                ->has('outcomes.rfis', 1)->has('outcomes.approved', 0)->where('pipeline.endorsed_lia', 0));
+        }
+    }
+
     public function test_external_portal_grants_cannot_read_named_case_reports(): void
     {
         foreach (['lead', 'agent', 'sub_agent', 'revoked_lead', 'sales'] as $role) {
