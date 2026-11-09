@@ -95,6 +95,11 @@ class AppServiceProvider extends ServiceProvider
             }
         });
         \App\Models\CaseFinancePayment::created(fn ($p) => $financeSync()->mirrorPayment($p));
+        \App\Models\CaseFinancePayment::updated(function ($p) use ($financeSync) {
+            if ($p->wasChanged('invoice_document_id')) {
+                $financeSync()->mirrorPayment($p);
+            }
+        });
         \App\Models\CaseFinancePayment::deleted(function ($p) use ($financeSync) {
             $financeSync()->removeMirroredPayment($p);
             $this->app->make(\App\Services\Immigration\InstallmentPlanService::class)->forgetPayment($p);

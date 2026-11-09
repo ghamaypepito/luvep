@@ -28,11 +28,11 @@ function downloadCsv(filename, rows) {
 const pad = (n) => String(n).padStart(2, "0");
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-export default function Reports({ report = "income", start, end, preset: activePreset, weeklyReport, currency = "NZD", data = {} }) {
+export default function Reports({ report = "income", start, end, preset: activePreset, weeklyReport, currency = "NZD", currencies = [], data = {} }) {
     const [range, setRange] = useState({ start, end });
     const isAging = report.endsWith("_aging");
 
-    const go = (params) => router.get("/portal/finance/reports", { report, start: range.start, end: range.end, ...params }, { preserveScroll: true });
+    const go = (params) => router.get("/portal/finance/reports", { report, currency, start: range.start, end: range.end, ...params }, { preserveScroll: true });
 
     const selectPreset = (kind) => {
         const now = new Date();
@@ -50,8 +50,8 @@ export default function Reports({ report = "income", start, end, preset: activeP
     const label = REPORTS.find((r) => r.key === report)?.label || "Report";
 
     const exportCsv = () => {
-        const fname = `${report}_${start}_${end}.csv`;
-        let rows = [[label], [isAging ? "Current snapshot" : `${start} to ${end}`], []];
+        const fname = `${report}_${currency}_${start}_${end}.csv`;
+        let rows = [[label], ["Currency", currency], [isAging ? "Current snapshot" : `${start} to ${end}`], []];
         if (report === "income") {
             rows.push(["Revenue", data.revenue], ["Expenses", data.expenses], ["Net profit", data.net], [], ["Expense breakdown", ""], ["Category", "Amount"]);
             (data.expense_breakdown || []).forEach((b) => rows.push([b.category, b.amount]));
@@ -76,9 +76,16 @@ export default function Reports({ report = "income", start, end, preset: activeP
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Reports</h1>
-                    <p className="text-sm text-gray-500 mt-1">Income statement, aging and collections — straight from the ledger.</p>
+                    <p className="text-sm text-gray-500 mt-1">Income statement, aging and collections in {currency}.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {currencies.length > 1 && (
+                        <select aria-label="Report currency" value={currency}
+                            onChange={(e) => go({ currency: e.target.value, ...(activePreset ? { preset: activePreset } : {}) })}
+                            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700">
+                            {currencies.map((code) => <option key={code} value={code}>{code}</option>)}
+                        </select>
+                    )}
                     <button onClick={exportCsv} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"><Download size={15} /> CSV</button>
                     <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"><Printer size={15} /> Print</button>
                 </div>

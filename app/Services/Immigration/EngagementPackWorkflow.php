@@ -10,6 +10,7 @@ use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\CommunicationService;
+use App\Services\Finance\PortalInvoiceReceivables;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -119,7 +120,7 @@ class EngagementPackWorkflow
             if (($existing->first()->notes['engagement_type'] ?? 'immigration_advice') !== $type) {
                 $this->fail('Create a new engagement to use a different engagement type.');
             }
-            if ($existing->contains(fn ($doc) => $doc->client_signed_at || ! empty($doc->notes['engagement_sent_at']))) {
+            if ($existing->contains(fn ($doc) => $doc->client_signed_at || $doc->status === LeadDocument::STATUS_STAFF_SHARED || ! empty($doc->notes['engagement_sent_at']))) {
                 $this->fail('This pack contains a signed agreement. Create a new engagement instead of replacing it.');
             }
         }
@@ -128,6 +129,7 @@ class EngagementPackWorkflow
         $currency = $type === 'initial_consultation' ? 'USD' : 'NZD';
         foreach ($types as $key) {
             $snapshot = null;
+            $invoiceFinance = null;
             $number = null;
             if ($key === 'invoice') {
                 $number = Cache::lock('engagement:invoice-number', 10)->block(5, function () {
@@ -139,7 +141,9 @@ class EngagementPackWorkflow
                 });
                 $options = array_merge($this->invoiceOptions($lead, $type, $settings), ['invoice_number' => $number]);
                 $pdf = $this->invoices->pdfBinary($lead, $options);
-                $invoiceTotal = $this->invoices->payload($lead, $options)['total'];
+                $payload = $this->invoices->payload($lead, $options);
+                $invoiceTotal = $payload['total'];
+                $invoiceFinance = PortalInvoiceReceivables::snapshot($payload['invoice'], true);
                 $name = "Invoice-{$number}";
             } else {
                 $snapshot = $this->generator->snapshot($lead, $key, $settings);
@@ -150,7 +154,7 @@ class EngagementPackWorkflow
             $files[] = [
                 'type' => $key, 'name' => "{$name}-{$safeName}.pdf", 'bytes' => base64_encode($pdf),
                 'size' => strlen($pdf), 'snapshot' => $snapshot, 'invoice_number' => $number,
-                'invoice_total' => $key === 'invoice' ? $invoiceTotal : null,
+                'invoice_total' => $key === 'invoice' ? $invoiceTotal : null, 'invoice_finance' => $invoiceFinance,
             ];
         }
         $feeExcl = match ($type) {
@@ -186,7 +190,7 @@ class EngagementPackWorkflow
                 $packToken = Str::random(48);
                 $old = LeadDocument::where('lead_id', $lead->id)->where('notes->engagement_pack_id', $data['pack_id'])
                     ->where(fn ($q) => $q->where('source_variant', 'like', 'engagement:%')->orWhere('source_variant', 'invoice'))->lockForUpdate()->get();
-                if ($old->contains(fn ($d) => $d->client_signed_at || ! empty($d->notes['engagement_sent_at']))) {
+                if ($old->contains(fn ($d) => $d->client_signed_at || $d->status === LeadDocument::STATUS_STAFF_SHARED || ! empty($d->notes['engagement_sent_at']))) {
                     $this->fail('A signed or emailed pack cannot be replaced. Create a new engagement.');
                 }
                 // Keep old private files for queued/historical references; replace only rows in this draft.
@@ -210,6 +214,7 @@ class EngagementPackWorkflow
                             'engagement_signing_token' => $packToken, 'engagement_pack_id' => $data['pack_id'], 'engagement_type' => $data['settings']['engagement_type'],
                             'engagement_settings' => $data['settings'], 'engagement_payload' => $file['snapshot'],
                             'engagement_total' => $data['total'], 'engagement_currency' => $data['currency'], 'engagement_fee_excl' => $data['feeExcl'],
+                            'invoice_finance' => $file['invoice_finance'] ?? null,
                         ],
                     ]);
                 }
@@ -355,6 +360,7 @@ class EngagementPackWorkflow
                 $notes = $doc->notes ?? [];
                 $notes['engagement_sent_at'] = now()->toIso8601String();
                 $doc->update(['notes' => $notes]);
+                app(PortalInvoiceReceivables::class)->post($doc);
             }
             $lead->forceFill(['engagement_sent_at' => now()])->save();
             if ($docs->contains(fn ($doc) => $doc->source_variant === 'engagement:written_agreement')) {

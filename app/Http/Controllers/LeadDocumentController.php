@@ -333,6 +333,9 @@ class LeadDocumentController extends Controller
             ]);
 
             if (\App\Services\PaymentProofService::isInvoice($doc)) {
+                if ($validated['status'] === LeadDocument::STATUS_REJECTED && $doc->receivable()->where('status', '!=', 'void')->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'Ask Finance to void the issued invoice before rejecting the document.']);
+                }
                 if ($doc->invoicePayments()->exists()) {
                     throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'This invoice has recorded payments. Use Finance payment review instead of changing its document status.']);
                 }
@@ -452,6 +455,7 @@ class LeadDocumentController extends Controller
                 ]);
             }
 
+            app(\App\Services\Finance\PortalInvoiceReceivables::class)->post($doc);
             $doc->lead?->recordStaffActivity('Sent to client: '.($doc->original_name ?: 'document'));
 
             return back()->with('success', 'Document sent to the client.');

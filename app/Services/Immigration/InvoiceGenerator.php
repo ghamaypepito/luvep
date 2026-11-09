@@ -4,6 +4,7 @@ namespace App\Services\Immigration;
 
 use App\Models\Lead;
 use App\Models\LeadDocument;
+use App\Services\Finance\PortalInvoiceReceivables;
 use App\Models\VisaType;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -317,12 +318,16 @@ class InvoiceGenerator
             'source_variant' => 'invoice',
             'invoice_number' => $number,
             'invoice_total' => $payload['total'] ?? null,
-            'notes' => ['engagement_currency' => $payload['currency']],
+            'notes' => [
+                'engagement_currency' => $payload['currency'],
+                'invoice_finance' => PortalInvoiceReceivables::snapshot($payload['invoice'], (bool) ($o['silent'] ?? false)),
+            ],
             'uploaded_by' => Auth::id(),
         ]);
 
         // Email automation — invoice sent.
         if (! ($o['silent'] ?? false)) {
+            app(PortalInvoiceReceivables::class)->post($doc);
             app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
                 'invoice_number' => $number,
                 'invoice_total' => $payload['total'] ?? null,
