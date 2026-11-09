@@ -33,7 +33,7 @@ const stageColor = (stage) =>
         : stage === "Unassigned" ? "bg-gray-300"
         : "bg-gray-700";
 
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : "");
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "short", timeZone: "Pacific/Auckland" }) : "");
 
 export default function ImmigrationReports({
     range = { preset: "this_week", label: "This week" },
@@ -130,6 +130,7 @@ export default function ImmigrationReports({
 
             {/* ── 04 · Decision outcomes ─────────────────────────────────── */}
             <DeckHeader n="04" eyebrow="Updates and reporting" title="Decision outcomes" />
+            <p className="text-xs text-gray-500">Period totals use dated Immigration records in New Zealand time. Outcomes without a recorded Immigration date are excluded.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <OutcomeCard icon={<Award size={18} />} value={(outcomes.approved || []).length} label="Visas approved" items={outcomes.approved} hint={outcomes.approved?.length ? outcomes.approved.map((o) => o.visa).filter(Boolean).slice(0, 2).join(", ") : "None in the period"} tone="emerald" />
                 <OutcomeCard icon={<Clock size={18} />} value={(outcomes.interim || []).length} label="Interim visa granted" items={outcomes.interim} hint={outcomes.interim?.[0]?.visa || "—"} tone="teal" />

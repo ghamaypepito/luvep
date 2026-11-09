@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Assessment;
 use App\Models\Booking;
 use App\Models\Event;
@@ -11,6 +12,7 @@ use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
 use App\Models\UserReview;
+use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
 use Illuminate\Http\Request;
@@ -1281,9 +1283,9 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead = Lead::create([
+        $lead = new Lead([
             'lead_id' => 'IC-'.strtoupper(uniqid()),
             'first_name' => $data['first_name'],
             'middle_name' => $data['middle_name'] ?? null,
@@ -1310,6 +1312,8 @@ class ImmigrationController extends Controller
             'status' => 'New',
             'stage' => 'Visa Process',
         ]);
+        $lead->pushStageHistory('immigration', $lead->immigration_stage);
+        $lead->save();
 
         // Internal note → LeadNote so it surfaces in the same notes feed
         // the rest of the system writes to, rather than getting buried in
@@ -1355,9 +1359,9 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead->update([
+        $lead->fill([
             'first_name' => $data['first_name'],
             'middle_name' => $data['middle_name'] ?? null,
             'last_name' => $data['last_name'],
@@ -1371,6 +1375,12 @@ class ImmigrationController extends Controller
             'student_payment' => $data['payment'] ?? null,
             'agent_id' => $data['agent_id'] ?? null,
         ]);
+        if ($lead->isDirty('immigration_stage')) {
+            $lead->stage_updated_at = now();
+            $lead->stage_updated_by = auth()->id();
+            $lead->pushStageHistory('immigration', $lead->immigration_stage, $lead->immigration_assignee);
+        }
+        $lead->save();
 
         // A note is optional on edit — only append when the staffer typed one.
         if (! empty($data['internal_note'])) {
@@ -4635,11 +4645,15 @@ class ImmigrationController extends Controller
         // ── Date range (default: this week) ───────────────────────────
         $week = ReportWeek::forPreset($request->input('preset', 'this_week'));
         [$preset, $from, $to] = $week
-            ? [$week->preset, Carbon::instance($week->start->utc()), Carbon::instance($week->end->subMicrosecond()->utc())]
+            ? [$week->preset, Carbon::instance($week->start), Carbon::instance($week->end->subMicrosecond())]
             : $this->resolveReportRange($request);
-        [$rangeFrom, $rangeTo] = $week?->dates() ?? [$from->toDateString(), $to->toDateString()];
-        $now = now();
-        $rangeDays = $week ? (int) $week->start->diff($week->end)->days : max(1, (int) $from->diffInDays($to) + 1);
+        $rangeFrom = $from->toDateString();
+        $rangeTo = $to->toDateString();
+        $rangeLabel = $this->reportRangeLabel($preset, $from, $to);
+        $rangeDays = (int) $from->copy()->startOfDay()->diff($to->copy()->startOfDay())->days + 1;
+        $from->utc();
+        $to->utc();
+        $now = now(ReportPeriod::TIMEZONE);
 
         // Stage groupings (based on the case's current immigration_stage).
         $awaitingStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
@@ -4648,21 +4662,71 @@ class ImmigrationController extends Controller
         $engagedStages = ['Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
         $terminalStages = ['Approved Visa', 'Decline Visa'];
 
-        $count = fn ($stages) => Lead::immigrationCase()->whereIn('immigration_stage', (array) $stages)->count();
-        // Movements INTO a set of stages within the window (by stage_updated_at).
-        $inWindow = fn ($stages) => Lead::immigrationCase()
-            ->whereIn('immigration_stage', (array) $stages)
-            ->whereBetween('stage_updated_at', [$from, $to])
-            ->count();
+        $inCase = fn () => Lead::immigrationCase();
+        $count = fn ($stages) => $inCase()->whereIn('immigration_stage', (array) $stages)->count();
+        $newCases = fn () => $inCase()->whereBetween('immigration_converted_at', [$from, $to]);
+        $reportRow = fn (Lead $case, ?string $date) => [
+            'id' => $case->id,
+            'name' => trim("{$case->first_name} {$case->last_name}") ?: 'Case',
+            'visa' => $case->inz_visa_type,
+            'assignee' => $case->immigration_assignee,
+            'date' => $date,
+        ];
+
+        // The shared stage timestamp can move when Education updates the same client.
+        $trendStart = $now->copy()->startOfMonth()->subMonths(5);
+        $earliest = $from->lt($trendStart) ? $from : $trendStart;
+        // Older pathway entries have no intake marker. Match the dated audit entry for that initialization.
+        $pathwayIntakes = [];
+        foreach (ActivityLog::where('action', 'client.pathway_added')->where('properties->pathway', 'immigration')
+            ->where('created_at', '>=', $earliest->copy()->utc())->get(['created_at', 'properties']) as $intake) {
+            $properties = $intake->properties;
+            if (isset($properties['subject_id'], $properties['stage'])) {
+                $pathwayIntakes[$properties['subject_id']][$properties['stage']][$intake->created_at->timestamp] = true;
+            }
+        }
+        $stageEvents = [];
+        foreach ($inCase()->whereNotNull('stage_history')->select(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])->lazyById() as $case) {
+            foreach ($case->stage_history ?? [] as $event) {
+                $stage = $event['stage'] ?? null;
+                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage)) {
+                    continue;
+                }
+                $date = ReportPeriod::eventDate($event['at'] ?? null);
+                if (! $date || ! $date->betweenIncluded($earliest, $now)) {
+                    continue;
+                }
+                if (($event['pathway_intake'] ?? false) || isset($pathwayIntakes[$case->id][$stage][$date->timestamp])) {
+                    unset($pathwayIntakes[$case->id][$stage][$date->timestamp]);
+
+                    continue;
+                }
+                $stageEvents[$stage][] = $reportRow($case, $date->utc()->toIso8601String());
+            }
+        }
+        $rowsInPeriod = function (array $stages, Carbon $start, Carbon $end) use ($stageEvents) {
+            $first = $start->toIso8601String();
+            $last = $end->toIso8601String();
+
+            return collect($stages)->flatMap(fn ($stage) => $stageEvents[$stage] ?? [])
+                ->filter(fn ($row) => $row['date'] >= $first && $row['date'] <= $last)
+                ->sortByDesc('date')->unique('id')->values();
+        };
+        $stageRows = fn (...$stages) => $rowsInPeriod($stages, $from, $to);
+        $liaEndorsements = $stageRows('Endorsed');
+        $lodgements = $stageRows('Visa Lodged');
+        $approvals = $stageRows('Approved Visa');
+        $declines = $stageRows('Decline Visa');
+        $signatures = $stageRows('Agreement Signed');
 
         // ── Activity in the selected window ──────────────────────────────
         $activity = [
-            'new_clients' => Lead::immigrationCase()->whereBetween('immigration_converted_at', [$from, $to])->count(),
-            'files_endorsed' => $inWindow(['For Assessment', 'Endorsed']),
-            'agreements_signed' => $inWindow('Agreement Signed'),
-            'apps_lodged' => $inWindow('Visa Lodged'),
-            'visas_approved' => $inWindow('Approved Visa'),
-            'visas_declined' => $inWindow('Decline Visa'),
+            'new_clients' => $newCases()->count(),
+            'files_endorsed' => $stageRows('For Assessment', 'Endorsed')->count(),
+            'agreements_signed' => $signatures->count(),
+            'apps_lodged' => $lodgements->count(),
+            'visas_approved' => $approvals->count(),
+            'visas_declined' => $declines->count(),
         ];
 
         // ── Cases by stage — current snapshot ────────────────────────────
@@ -4684,14 +4748,14 @@ class ImmigrationController extends Controller
 
         // ── 6-month trend — new cases vs visas approved per month ────────
         $trend = [];
-        for ($i = 5; $i >= 0; $i--) {
-            $m = $now->copy()->subMonths($i);
-            $mStart = $m->copy()->startOfMonth();
-            $mEnd = $m->copy()->endOfMonth();
+        for ($i = 0; $i < 6; $i++) {
+            $m = $trendStart->copy()->addMonths($i);
+            $mStart = $m->copy()->utc();
+            $mEnd = $m->copy()->endOfMonth()->utc();
             $trend[] = [
                 'label' => $m->format('M'),
                 'new_cases' => Lead::immigrationCase()->whereBetween('immigration_converted_at', [$mStart, $mEnd])->count(),
-                'approved' => Lead::immigrationCase()->where('immigration_stage', 'Approved Visa')->whereBetween('stage_updated_at', [$mStart, $mEnd])->count(),
+                'approved' => $rowsInPeriod(['Approved Visa'], $mStart, $mEnd)->count(),
             ];
         }
 
@@ -4722,52 +4786,17 @@ class ImmigrationController extends Controller
         // ─────────────────────────────────────────────────────────────────
         $withInzStages = ['Visa Lodged', 'Interim Visa Issued', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
 
-        // Named-detail rows. Pass which date column labels the row.
-        $named = function ($query, string $dateField = 'stage_updated_at') {
+        $named = function ($query, bool $includeConversionDate = false) use ($reportRow) {
             return $query
-                ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'stage_updated_at', 'immigration_converted_at', 'immigration_assignee'])
-                ->map(fn ($l) => [
-                    'id' => $l->id,
-                    'name' => trim("{$l->first_name} {$l->last_name}") ?: 'Case',
-                    'visa' => $l->inz_visa_type,
-                    'assignee' => $l->immigration_assignee,
-                    'date' => optional($l->{$dateField})->toIso8601String(),
-                ])->values();
+                ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_converted_at', 'immigration_assignee'])
+                ->map(fn ($case) => $reportRow($case, $includeConversionDate ? $case->immigration_converted_at?->toIso8601String() : null))
+                ->values();
         };
-        $inCase = fn () => Lead::immigrationCase();
-
-        // Endorsements are dated events, not the case's current adviser name.
-        // Count each case once using its latest recorded endorsement in this period.
-        $liaEndorsements = $inCase()->whereNotNull('stage_history')
-            ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])
-            ->map(function ($case) use ($from, $to) {
-                $dates = collect($case->stage_history ?? [])->filter(fn ($event) => ($event['department'] ?? null) === 'immigration'
-                    && ($event['stage'] ?? null) === 'Endorsed'
-                    && ! empty($event['at']))->map(function ($event) {
-                        try {
-                            return \Illuminate\Support\Carbon::parse($event['at']);
-                        } catch (\Throwable) {
-                            return null;
-                        }
-                    })->filter(fn ($date) => $date && $date->betweenIncluded($from, $to));
-                $date = $dates->sortByDesc(fn ($date) => $date->timestamp)->first();
-                if (! $date) {
-                    return null;
-                }
-
-                return [
-                    'id' => $case->id,
-                    'name' => trim("{$case->first_name} {$case->last_name}") ?: 'Case',
-                    'visa' => $case->inz_visa_type,
-                    'assignee' => $case->immigration_assignee,
-                    'date' => $date->toIso8601String(),
-                ];
-            })->filter()->sortByDesc('date')->values();
 
         // Pipeline position — mostly current snapshots (new_clients is in-window).
         // "For quotation" = the pricing/invoice stage; "on hold" is omitted.
         $pipeline = [
-            'new_clients' => $inCase()->whereBetween('immigration_converted_at', [$from, $to])->count(),
+            'new_clients' => $activity['new_clients'],
             'in_progress' => $inCase()->whereNotIn('immigration_stage', array_merge($withInzStages, $terminalStages))
                 ->where(fn ($q) => $q->whereNotNull('immigration_stage'))->count(),
             'for_quotation' => $count('For Agreement & Invoice'),
@@ -4783,25 +4812,25 @@ class ImmigrationController extends Controller
 
         // Intake & engagements — named, movements within the window.
         $namedIntake = [
-            'new_clients' => $named($inCase()->whereBetween('immigration_converted_at', [$from, $to])->orderBy('immigration_converted_at'), 'immigration_converted_at'),
-            'agreements_issued' => $named($inCase()->where('immigration_stage', 'Agreement Sent')->whereBetween('stage_updated_at', [$from, $to])),
+            'new_clients' => $named($newCases()->orderBy('immigration_converted_at'), true),
+            'agreements_issued' => $stageRows('Agreement Sent'),
             'endorsed_lia' => $liaEndorsements,
-            'engagement_signed' => $named($inCase()->where('immigration_stage', 'Agreement Signed')->whereBetween('stage_updated_at', [$from, $to])),
+            'engagement_signed' => $signatures,
         ];
 
         // Submissions & information requests.
         $submissions = [
-            'lodged' => $named($inCase()->where('immigration_stage', 'Visa Lodged')->whereBetween('stage_updated_at', [$from, $to])),
+            'lodged' => $lodgements,
             'rfis' => $named($inCase()->where('immigration_stage', 'Request for Information')),          // current open
             'also_assessing' => $named($inCase()->whereIn('immigration_stage', ['Approved in Principle', 'Interim Visa Issued'])),
         ];
 
         // Decision outcomes — within the window; plus the with-INZ breakdown.
         $outcomes = [
-            'approved' => $named($inCase()->where('immigration_stage', 'Approved Visa')->whereBetween('stage_updated_at', [$from, $to])),
-            'interim' => $named($inCase()->where('immigration_stage', 'Interim Visa Issued')->whereBetween('stage_updated_at', [$from, $to])),
-            'rfis' => $named($inCase()->where('immigration_stage', 'Request for Information')->whereBetween('stage_updated_at', [$from, $to])),
-            'declined' => $named($inCase()->where('immigration_stage', 'Decline Visa')->whereBetween('stage_updated_at', [$from, $to])),
+            'approved' => $approvals,
+            'interim' => $stageRows('Interim Visa Issued'),
+            'rfis' => $stageRows('Request for Information'),
+            'declined' => $declines,
             'with_inz_breakdown' => collect($withInzStages)
                 // Include the named cases per state so the report can reveal WHO
                 // is in each INZ queue (shown on hover).
@@ -4842,7 +4871,7 @@ class ImmigrationController extends Controller
                 'from' => $rangeFrom,
                 'to' => $rangeTo,
                 'days' => $rangeDays,
-                'label' => $this->reportRangeLabel($preset, $from, $to),
+                'label' => $rangeLabel,
             ],
             'weeklyReport' => $week && ReportWeek::canUseNotes($request->user()) ? $week->notes('immigration') + ['tasks' => $week->tasks('immigration')] : null,
             'kpis' => $kpis,
@@ -4889,7 +4918,7 @@ class ImmigrationController extends Controller
      */
     private function resolveReportRange(Request $request): array
     {
-        $now = now();
+        $now = now(ReportPeriod::TIMEZONE);
         $preset = $request->input('preset');
         if (! in_array($preset, ['today', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
             $preset = 'two_weeks';
@@ -4908,10 +4937,10 @@ class ImmigrationController extends Controller
                 return [$preset, $now->copy()->subMonthsNoOverflow(3)->startOfDay(), $now->copy()->endOfDay()];
             case 'custom':
                 $from = $request->filled('from')
-                    ? \Illuminate\Support\Carbon::parse($request->input('from'))->startOfDay()
+                    ? Carbon::parse($request->input('from'), ReportPeriod::TIMEZONE)->setTimezone(ReportPeriod::TIMEZONE)->startOfDay()
                     : $now->copy()->subDays(14)->startOfDay();
                 $to = $request->filled('to')
-                    ? \Illuminate\Support\Carbon::parse($request->input('to'))->endOfDay()
+                    ? Carbon::parse($request->input('to'), ReportPeriod::TIMEZONE)->setTimezone(ReportPeriod::TIMEZONE)->endOfDay()
                     : $now->copy()->endOfDay();
                 if ($from->gt($to)) {
                     [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];

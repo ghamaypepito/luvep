@@ -240,7 +240,7 @@ class Lead extends Model
         return $status === 'approved' || $status === null;
     }
 
-    public function pushStageHistory(string $department, ?string $stage, ?string $assignee = null): void
+    public function pushStageHistory(string $department, ?string $stage, ?string $assignee = null, bool $pathwayIntake = false): void
     {
         $history = $this->stage_history ?? [];
         $user = auth()->user();
@@ -252,7 +252,7 @@ class Lead extends Model
             'at' => now()->toIso8601String(),
             'by_id' => $user?->id,
             'by_name' => $user?->name,
-        ];
+        ] + ($pathwayIntake ? ['pathway_intake' => true] : []);
 
         $this->stage_history = $history;
     }
