@@ -4,18 +4,28 @@ namespace App\Services;
 
 use App\Mail\EducationRsvpMessage;
 use App\Models\EducationOutreach;
+use App\Models\EducationRsvp;
 use App\Models\EducationVisit;
+use App\Models\EmailReply;
 use App\Models\MessageLog;
 use App\Models\User;
 use App\Notifications\EducationRsvpReceived;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 class EducationOutreachService
 {
+    // Avoid sending a launch-day batch for orientations that already took place.
+    private const THANK_YOU_START_DATE = '2026-11-09';
+
+    private const THANK_YOU_TEMPLATE = 'education-rsvp-thank-you';
+
     public function plan(): void
     {
+        $this->planThankYous();
+
         EducationVisit::with(['rsvps' => fn ($q) => $q->whereNotNull('verified_at')->where('attendance_status', '!=', 'cancelled')])->each(function ($v) {
             foreach ($v->rsvps as $r) {
                 $kind = null;
@@ -36,13 +46,85 @@ class EducationOutreachService
         });
     }
 
+    private function planThankYous(): void
+    {
+        EducationVisit::where('schedule_confirmed', true)->where('status', '!=', 'cancelled')
+            ->whereBetween('event_date', [self::THANK_YOU_START_DATE, now('Pacific/Auckland')->toDateString()])
+            ->eachById(function (EducationVisit $visit) {
+                $due = $this->thankYouAt($visit);
+                if (! $due || $due->isFuture()) {
+                    return;
+                }
+
+                $planned = EducationOutreach::select('education_rsvp_id')->where('kind', 'thank_you')
+                    ->whereNotNull('education_rsvp_id');
+                $visit->rsvps()->where('attendance_status', '!=', 'cancelled')->whereNotNull('consented_at')
+                    ->where('created_at', '<=', $due)->whereNotIn('id', $planned)
+                    ->eachById(fn (EducationRsvp $rsvp) => app(EducationRsvpWorkflow::class)->receipt(
+                        'rsvp:'.$rsvp->id.':thank_you',
+                        ['education_rsvp_id' => $rsvp->id, 'channel' => 'mail', 'kind' => 'thank_you'],
+                    ));
+            });
+    }
+
+    private function thankYouAt(EducationVisit $visit): ?Carbon
+    {
+        if ($visit->status === 'cancelled' || $visit->event_date?->toDateString() < self::THANK_YOU_START_DATE) {
+            return null;
+        }
+
+        return $visit->startsAt()?->utc()->addHours(5);
+    }
+
+    private function canSendThankYou(EducationOutreach $delivery, ?EducationRsvp $rsvp): bool
+    {
+        $due = $rsvp ? $this->thankYouAt($rsvp->visit) : null;
+        if (! $due || $rsvp->attendance_status === 'cancelled' || ! $rsvp->consented_at
+            || $rsvp->created_at->gt($due) || ! filter_var($rsvp->email, FILTER_VALIDATE_EMAIL)) {
+            $delivery->update(['cancelled_at' => now()]);
+
+            return false;
+        }
+
+        if ($due->isFuture()) {
+            $delivery->update(['next_attempt_at' => $due]);
+
+            return false;
+        }
+
+        $email = mb_strtolower(trim($rsvp->email));
+        $mailLog = MessageLog::where('channel', 'email')->whereRaw('LOWER(TRIM(recipient_address)) = ?', [$email]);
+        if ((clone $mailLog)->where('template_key', self::THANK_YOU_TEMPLATE)
+            ->where('recipient_id', $rsvp->id)->where('status', MessageLog::STATUS_SENT)->exists()) {
+            $delivery->update(['sent_at' => now(), 'last_error' => null, 'next_attempt_at' => null]);
+
+            return false;
+        }
+
+        if ($mailLog->where('status', MessageLog::STATUS_BOUNCED)->exists()
+            || EmailReply::where('direction', 'inbound')->whereRaw('LOWER(TRIM(from_email)) = ?', [$email])
+                ->where(fn ($query) => $query->whereRaw('LOWER(subject) LIKE ?', ['%unsubscribe%'])
+                    ->orWhereRaw('LOWER(TRIM(body_text)) IN (?, ?, ?, ?)', ['unsubscribe', 'please unsubscribe me', 'stop', 'remove me']))
+                ->exists()) {
+            $delivery->update(['cancelled_at' => now()]);
+
+            return false;
+        }
+
+        return true;
+    }
+
     public function process(EducationOutreach $delivery): void
     {
         Cache::lock('education-outreach:'.$delivery->id, 90)->get(function () use ($delivery) {
             $d = $delivery->fresh();
             if (! $d || $d->sent_at || $d->cancelled_at || $d->attempts >= 8 || ($d->next_attempt_at && $d->next_attempt_at->isFuture())) {
                 return;
-            }$r = $d->rsvp?->load('visit');
+            }
+            $r = $d->rsvp?->load('visit');
+            if ($d->kind === 'thank_you' && ! $this->canSendThankYou($d, $r)) {
+                return;
+            }
             if ($r && in_array($d->kind, ['schedule', 'cancelled', 'reminder_24h', 'reminder_2h'], true)) {
                 $v = $r->visit;
                 $cancel = $d->schedule_version !== $v->schedule_version || ! $r->verified_at || $r->attendance_status === 'cancelled';
@@ -77,7 +159,7 @@ class EducationOutreachService
                 if ($d->channel === 'mail' && $r) {
                     $mail = $d->kind === 'phone_request' ? new \App\Mail\EducationRsvpContactRequest($r) : new EducationRsvpMessage($r, $d->kind);
                     $body = $mail->render();
-                    $log = MessageLog::create(['source' => 'education-rsvp', 'channel' => 'email', 'recipient_type' => 'education_rsvp', 'recipient_id' => $r->id, 'recipient_address' => $r->email, 'subject' => $mail->subject, 'body' => $mail instanceof \App\Mail\EducationRsvpContactRequest ? $mail->logBody($body) : $body, 'status' => 'queued']);
+                    $log = MessageLog::create(['template_key' => $d->kind === 'thank_you' ? self::THANK_YOU_TEMPLATE : null, 'source' => 'education-rsvp', 'channel' => 'email', 'recipient_type' => 'education_rsvp', 'recipient_id' => $r->id, 'recipient_address' => $r->email, 'subject' => $mail->subject, 'body' => $mail instanceof \App\Mail\EducationRsvpContactRequest ? $mail->logBody($body) : $body, 'status' => 'queued']);
                     try {
                         Mail::to($r->email)->send($mail);
                         $log->update(['status' => 'sent', 'sent_at' => now()]);

@@ -15,6 +15,18 @@ class EducationRsvpMessage extends Mailable
 
     public function build()
     {
+        if ($this->notice === 'thank_you') {
+            $message = $this->subject('Thank you for attending your eP Education orientation')
+                ->replyTo('emma@luvep.com', 'Emma')
+                ->view('emails.education-rsvp-thank-you');
+
+            if ($from = config('services.contact.event_from_email')) {
+                $message->from($from, 'eP Education');
+            }
+
+            return $message;
+        }
+
         $subject = match ($this->notice) {
             'schedule' => 'Your EP Education schedule is confirmed','cancelled' => 'EP Education visit cancellation','reminder_24h','reminder_2h' => 'Reminder: your EP Education visit',default => 'Your EP Education RSVP is received'
         };
