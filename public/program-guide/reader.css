@@ -65,12 +65,13 @@ main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px
     background: var(--sage);
 }
 
+.reader-frame { position: relative; height: 100%; }
+
 .spread {
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100%;
-    perspective: 1400px;
 }
 
 .spread img {
@@ -86,21 +87,7 @@ main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px
 }
 
 .spread.paired img { max-width: 50%; }
-.spread.paired img:first-child { transform-origin: right center; }
-.spread.paired img:last-child { transform-origin: left center; }
-
-@media (prefers-reduced-motion: no-preference) {
-    .spread[data-direction="next"] img:last-child { animation: turn-in 240ms ease-out; }
-    .spread[data-direction="previous"] img:first-child { animation: turn-back 240ms ease-out; }
-}
-
-@keyframes turn-in {
-    from { transform: translateX(6px) rotateY(-18deg); opacity: .7; }
-}
-
-@keyframes turn-back {
-    from { transform: translateX(-6px) rotateY(18deg); opacity: .7; }
-}
+.outgoing-spread { position: absolute; inset: 0; pointer-events: none; }
 
 .stage.zoomed .spread { align-items: start; height: auto; width: max-content; min-width: 100%; }
 .stage.zoomed img { width: clamp(600px, 78vw, 920px); max-width: none; max-height: none; }
@@ -131,7 +118,8 @@ main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px
 .toolbar button:disabled { color: #7a8474; background: #eff2ec; cursor: default; }
 .position { padding: 0 10px 0 5px; gap: 5px; font-size: 13px; }
 .position select { min-height: 42px; border: 0; background: transparent; color: var(--charcoal); cursor: pointer; }
-.no-script { text-align: center; }
+.page-error, .no-script { text-align: center; }
+.page-error { font-size: 13px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 @media (max-width: 520px) {
