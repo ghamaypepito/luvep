@@ -66,6 +66,10 @@ main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px
 }
 
 .reader-frame { position: relative; height: 100%; }
+.stage:not(.zoomed) { overflow: hidden; touch-action: pan-y pinch-zoom; }
+.stage:not(.zoomed) #spread img { cursor: grab; user-select: none; }
+.stage.is-grabbing, .stage.is-grabbing #spread img { cursor: grabbing; }
+.reader-frame.is-turning > #spread { opacity: 0; }
 
 .spread {
     display: flex;
@@ -87,7 +91,18 @@ main { max-width: 1440px; margin: 0 auto; padding: 0 clamp(12px, 4vw, 56px) 16px
 }
 
 .spread.paired img { max-width: 50%; }
-.outgoing-spread { position: absolute; inset: 0; pointer-events: none; }
+.turn-preview, .turn-preview .spread { position: absolute; inset: 0; pointer-events: none; }
+.turning-sheet { position: absolute; transform-style: preserve-3d; }
+.turning-sheet img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    background: var(--white);
+    box-shadow: 0 5px 18px #24361c29;
+}
+.turning-sheet img + img { transform: rotateY(180deg); }
 
 .stage.zoomed .spread { align-items: start; height: auto; width: max-content; min-width: 100%; }
 .stage.zoomed img { width: clamp(600px, 78vw, 920px); max-width: none; max-height: none; }
