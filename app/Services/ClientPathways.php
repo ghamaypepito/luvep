@@ -145,7 +145,7 @@ class ClientPathways
             }
             $stage = $column ? $lead->{$column} : null;
             $assignee = $assigneeColumn ? $lead->{$assigneeColumn} : null;
-            $lead->pushStageHistory($key, $stage, $assignee);
+            $lead->pushStageHistory($key, $stage, $assignee, pathwayIntake: $key === 'immigration');
 
             // Initializing a department is not a new visa/status event. Avoid
             // stage-email observers, inferred lodgement dates, and owner changes.

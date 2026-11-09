@@ -118,4 +118,43 @@ class ReportLiaEndorsementTest extends TestCase
         }
     }
 
+    public function test_adding_an_immigration_pathway_counts_as_intake_without_recounting_an_approval(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-05T00:00:00Z'));
+        $student = Lead::create(['first_name' => 'Already', 'last_name' => 'Approved', 'is_student' => true,
+            'education_stage' => 'Started Course', 'immigration_stage' => 'Approved Visa']);
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->post("/clients/{$student->id}/pathways", ['pathway' => 'immigration'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pipeline.new_clients', 1)->where('namedIntake.new_clients.0.id', $student->id)
+            ->has('outcomes.approved', 0));
+
+        $student->refresh();
+        $history = $student->stage_history;
+        unset($history[0]['pathway_intake']);
+        $student->updateQuietly(['stage_history' => $history]);
+
+        $this->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pipeline.new_clients', 1)->has('outcomes.approved', 0));
+    }
+
+    public function test_manually_recorded_immigration_case_stages_remain_reportable(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-03T00:00:00Z'));
+        $staff = User::factory()->create(['role' => 'immigration']);
+        $this->actingAs($staff)->post('/portal/immigration/cases', [
+            'first_name' => 'Manual', 'last_name' => 'Case', 'immigration_stage' => 'Visa Lodged', 'visa_type_id' => null,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $case = Lead::where('first_name', 'Manual')->sole();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-04T00:00:00Z'));
+        $this->post("/portal/immigration/cases/{$case->id}", [
+            'first_name' => 'Manual', 'last_name' => 'Case', 'immigration_stage' => 'Approved Visa', 'visa_type_id' => null,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('submissions.lodged.0.id', $case->id)->where('submissions.lodged.0.date', '2026-11-03T00:00:00+00:00')
+            ->where('outcomes.approved.0.id', $case->id)->where('outcomes.approved.0.date', '2026-11-04T00:00:00+00:00'));
+    }
+
 }

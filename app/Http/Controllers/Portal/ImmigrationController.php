@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Assessment;
 use App\Models\Booking;
 use App\Models\Event;
@@ -1282,9 +1283,9 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead = Lead::create([
+        $lead = new Lead([
             'lead_id' => 'IC-'.strtoupper(uniqid()),
             'first_name' => $data['first_name'],
             'middle_name' => $data['middle_name'] ?? null,
@@ -1311,6 +1312,8 @@ class ImmigrationController extends Controller
             'status' => 'New',
             'stage' => 'Visa Process',
         ]);
+        $lead->pushStageHistory('immigration', $lead->immigration_stage);
+        $lead->save();
 
         // Internal note → LeadNote so it surfaces in the same notes feed
         // the rest of the system writes to, rather than getting buried in
@@ -1356,9 +1359,9 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead->update([
+        $lead->fill([
             'first_name' => $data['first_name'],
             'middle_name' => $data['middle_name'] ?? null,
             'last_name' => $data['last_name'],
@@ -1372,6 +1375,12 @@ class ImmigrationController extends Controller
             'student_payment' => $data['payment'] ?? null,
             'agent_id' => $data['agent_id'] ?? null,
         ]);
+        if ($lead->isDirty('immigration_stage')) {
+            $lead->stage_updated_at = now();
+            $lead->stage_updated_by = auth()->id();
+            $lead->pushStageHistory('immigration', $lead->immigration_stage, $lead->immigration_assignee);
+        }
+        $lead->save();
 
         // A note is optional on edit — only append when the staffer typed one.
         if (! empty($data['internal_note'])) {
@@ -4667,6 +4676,15 @@ class ImmigrationController extends Controller
         // The shared stage timestamp can move when Education updates the same client.
         $trendStart = $now->copy()->startOfMonth()->subMonths(5);
         $earliest = $from->lt($trendStart) ? $from : $trendStart;
+        // Older pathway entries have no intake marker. Match the dated audit entry for that initialization.
+        $pathwayIntakes = [];
+        foreach (ActivityLog::where('action', 'client.pathway_added')->where('properties->pathway', 'immigration')
+            ->where('created_at', '>=', $earliest->copy()->utc())->get(['created_at', 'properties']) as $intake) {
+            $properties = $intake->properties;
+            if (isset($properties['subject_id'], $properties['stage'])) {
+                $pathwayIntakes[$properties['subject_id']][$properties['stage']][$intake->created_at->timestamp] = true;
+            }
+        }
         $stageEvents = [];
         foreach ($inCase()->whereNotNull('stage_history')->select(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])->lazyById() as $case) {
             foreach ($case->stage_history ?? [] as $event) {
@@ -4675,9 +4693,15 @@ class ImmigrationController extends Controller
                     continue;
                 }
                 $date = ReportPeriod::eventDate($event['at'] ?? null);
-                if ($date && $date->betweenIncluded($earliest, $now)) {
-                    $stageEvents[$stage][] = $reportRow($case, $date->utc()->toIso8601String());
+                if (! $date || ! $date->betweenIncluded($earliest, $now)) {
+                    continue;
                 }
+                if (($event['pathway_intake'] ?? false) || isset($pathwayIntakes[$case->id][$stage][$date->timestamp])) {
+                    unset($pathwayIntakes[$case->id][$stage][$date->timestamp]);
+
+                    continue;
+                }
+                $stageEvents[$stage][] = $reportRow($case, $date->utc()->toIso8601String());
             }
         }
         $rowsInPeriod = function (array $stages, Carbon $start, Carbon $end) use ($stageEvents) {
