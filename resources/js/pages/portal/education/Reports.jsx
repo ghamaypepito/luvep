@@ -20,6 +20,7 @@ const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(
 const errorText = (errors) => Object.values(errors || {}).flat().join(" ") || "The report could not be refreshed. Please try again.";
 
 const SUMMARY_TITLES = { __new_students: "New students", __total_students: "Total students", __new_leads: "New leads", __register: "In the pipeline" };
+const CONTACT_CARD_STATUSES = { "Contact Attempted": "Contact Attempted", Contacted: "Contacted for Booking" };
 
 // Each Students tab (Education / English / Immigration) tracks its own status
 // set. Literal class strings only — Tailwind v4 JIT can't see concatenated names.
@@ -173,7 +174,7 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                         department: Education / English / Immigration, each under its
                         own real status set) */}
                     <Section n="01" title="Education">
-                        <DepartmentBreakdown departments={departments} range={range} />
+                        <DepartmentBreakdown departments={departments} range={range} leadRegister={register} />
                     </Section>
 
                     {/* Section 02 — Pipeline overview. Graph only by default; a
@@ -292,14 +293,23 @@ function Section({ n, title, children }) {
 // Immigration) has its OWN status set; a client can appear under more than one
 // department, matching the Students-page tab badges. Click a status card to
 // reveal the clients sitting at it.
-function DepartmentBreakdown({ departments = {}, range = {} }) {
+function DepartmentBreakdown({ departments = {}, range = {}, leadRegister = {} }) {
     const keys = ["education", "english", "immigration"].filter((k) => departments[k]);
     const [active, setActive] = useState(keys[0] || "education");
     const [openStage, setOpenStage] = useState(null);
     const activeKey = departments[active] ? active : keys[0] || "education";
     const dept = departments[activeKey] || { total: 0, event_count: 0, stages: [] };
     const meta = DEPT_META[activeKey] || DEPT_META.education;
-    const open = openStage ? dept.stages.find((s) => s.stage === openStage) || null : null;
+    const studentStages = dept.stages.filter(({ stage }) => stage !== "No stage set");
+    const stages = activeKey === "education" ? [
+        studentStages.find(({ stage }) => stage === "New Lead") || { stage: "New Lead", count: 0, clients: [] },
+        ...Object.entries(CONTACT_CARD_STATUSES).map(([stage, status]) => {
+            const clients = leadRegister[status] || [];
+            return { stage, count: clients.length, clients, leadStatus: true };
+        }),
+        ...studentStages.filter(({ stage }) => stage !== "New Lead" && !Object.hasOwn(CONTACT_CARD_STATUSES, stage)),
+    ] : studentStages;
+    const open = openStage ? stages.find((s) => s.stage === openStage) || null : null;
     const switchTo = (k) => { setActive(k); setOpenStage(null); };
 
     // Cap the reveal panel to the cards' height so the two columns stay uniform
@@ -316,7 +326,7 @@ function DepartmentBreakdown({ departments = {}, range = {} }) {
         ro.observe(el);
         window.addEventListener("resize", update);
         return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-    }, [active, openStage, dept.stages.length]);
+    }, [active, openStage, stages.length]);
 
     if (keys.length === 0) {
         return <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center text-[13px] text-gray-400">No department data.</div>;
@@ -340,27 +350,31 @@ function DepartmentBreakdown({ departments = {}, range = {} }) {
                 <span className="ml-auto pr-2 text-[12px] text-gray-400">{range.all ? `${dept.total} current records` : `${dept.total} students · ${dept.event_count ?? 0} stage events`}</span>
             </div>
 
-            <p className="text-[11px] leading-relaxed text-gray-500">{range.all ? "All shows the current register, including records with missing dates or stages." : `Cards count distinct students who entered each stage during ${fmtDate(range.from)} – ${fmtDate(range.to)}. A student can appear in multiple stages; the tab total counts each student once. Missing dates are excluded.`}</p>
+            <p className="text-[11px] leading-relaxed text-gray-500">
+                {range.all ? "All shows the current register, including records with missing dates or stages." : `Student cards count distinct students who entered each stage during ${fmtDate(range.from)} – ${fmtDate(range.to)}. A student can appear in multiple stages; the tab total counts each student once. Missing dates are excluded.`}
+                {activeKey === "education" && (range.all ? " Contact cards show the current lead queue." : " Contact cards use recorded lead status changes in those dates.")}
+            </p>
 
             {/* Status cards on the left; the client list opens as a panel on the
                 right when a card is clicked (matching the pipeline position). */}
             <div className="flex flex-col lg:flex-row gap-4 items-start">
                 <div className="w-full min-w-0 lg:flex-1" ref={cardsRef}>
-                    {dept.stages.length === 0 ? (
+                    {stages.length === 0 ? (
                         <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center text-[13px] text-gray-400">No {meta.label.toLowerCase()} clients in this period.</div>
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                            {dept.stages.map((s) => {
+                            {stages.map((s) => {
                                 const selected = openStage === s.stage;
+                                const people = s.leadStatus ? "leads" : "students";
                                 return (
                                     <button key={s.stage} type="button" onClick={() => setOpenStage(selected ? null : s.stage)}
-                                        title={range.all ? "Click to see current students at this stage" : "Click to see students with a recorded entry during these dates"}
+                                        title={range.all ? `Click to see current ${people} at this stage` : `Click to see ${people} with a recorded entry during these dates`}
                                         aria-pressed={selected}
-                                        aria-label={`${s.stage}: ${s.count} ${range.all ? "current students" : "students with recorded entries"}`}
+                                        aria-label={`${s.stage}: ${s.count} ${range.all ? `current ${people}` : `${people} with recorded entries`}`}
                                         className={`text-left rounded-2xl border shadow-sm p-4 bg-white transition-all ${selected ? `ring-2 ${meta.ring} ring-offset-1 border-transparent` : "border-gray-100 hover:border-gray-300 hover:shadow-md"}`}>
                                         <div className="flex items-center justify-between">
-                                            <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${meta.chip}`}>{range.all ? "Current" : "Period"}</span>
-                                            <span className="text-3xl font-black tabular-nums leading-none text-gray-900">{s.count}</span>
+                                            {range.all && <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${meta.chip}`}>Current</span>}
+                                            <span className="ml-auto text-3xl font-black tabular-nums leading-none text-gray-900">{s.count}</span>
                                         </div>
                                         <p className="text-[12.5px] font-bold mt-2 text-gray-900">{s.stage}</p>
                                     </button>
