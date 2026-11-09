@@ -69,6 +69,29 @@ class ResidentIntakeUploadTest extends TestCase
         $this->assertStringContainsString("resident-intakes/{$intake->intake_id}", $path);
     }
 
+    public function test_qualification_evidence_can_be_saved_and_reopened_without_test_results(): void
+    {
+        $qualification = $this->payload(['english_evidence' => 'Qualification(s)']);
+        $this->post('/resident-interest', $qualification)->assertSessionHas('intake_submitted')->assertSessionHasNoErrors();
+
+        $intake = ResidentIntake::sole();
+        $this->assertSame('Qualification(s)', $intake->english_evidence);
+        $intake->update(['edit_token' => 'test-qualification-edit-token']);
+        $editUrl = '/resident-interest/edit/'.$intake->edit_token;
+
+        $this->post($editUrl, $this->payload(['english_evidence' => 'IELTS']))
+            ->assertSessionHasErrors(['english_test_score', 'english_test_date']);
+        $this->post($editUrl, $this->payload([
+            'english_evidence' => 'IELTS', 'english_test_score' => '7', 'english_test_date' => '2026-10-01',
+        ]))->assertSessionHas('edited', true)->assertSessionHasNoErrors();
+        $this->post($editUrl, $qualification + ['english_test_score' => '', 'english_test_date' => ''])
+            ->assertSessionHas('edited', true)->assertSessionHasNoErrors();
+        $this->get($editUrl)->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->where('editIntake.english_evidence', 'Qualification(s)')
+            ->where('editIntake.english_test_score', null)
+            ->where('editIntake.english_test_date', null));
+    }
+
     public function test_multiple_pdfs_per_key_and_other_bucket_are_stored(): void
     {
         Storage::fake('local');

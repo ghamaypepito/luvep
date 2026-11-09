@@ -31,6 +31,7 @@ const TEAL = '#00A693';
 const TEAL_DARK = '#008c7c';
 const DARK = '#0c1611';
 
+const ENGLISH_TEST_OPTIONS = ['IELTS', 'TOEFL', 'PTE Academic'];
 const TOTAL_STEPS = 9;
 const DRAFT_STORAGE_KEY = 'epathways_resident_intake_draft';
 // Tracks the user's in-flight assessment after a successful form submit, so
@@ -503,7 +504,7 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
                 break;
             case 7:
                 if (!data.english_evidence) errs.english_evidence = 'Please select an English evidence type';
-                if (['IELTS', 'TOEFL', 'PTE Academic'].includes(data.english_evidence)) {
+                if (ENGLISH_TEST_OPTIONS.includes(data.english_evidence)) {
                     if (!data.english_test_score.toString().trim()) errs.english_test_score = 'Test score is required';
                     if (!isValidDmy(isoToDmy(data.english_test_date))) errs.english_test_date = 'Test date is required (DD/MM/YYYY)';
                 }
@@ -606,6 +607,7 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
     const confirmSubmit = () => {
         // Convert DD/MM/YYYY values to ISO (YYYY-MM-DD) for the server, and only
         // send document_files entries that actually hold a File.
+        const hasEnglishTest = ENGLISH_TEST_OPTIONS.includes(data.english_evidence);
         transform((d) => ({
             ...d,
             dob:                  dmyToIso(d.dob),
@@ -613,7 +615,8 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
             current_visa_expiry:  dmyToIso(d.current_visa_expiry),
             nz_arrival_date:      dmyToIso(d.nz_arrival_date),
             employment_start:     dmyToIso(d.employment_start),
-            english_test_date:    dmyToIso(d.english_test_date),
+            english_test_score:   hasEnglishTest ? d.english_test_score : '',
+            english_test_date:    hasEnglishTest ? dmyToIso(d.english_test_date) : '',
             family_members: (d.family_members || []).map((m) => ({
                 ...m,
                 dob: dmyToIso(m.dob),
@@ -1236,7 +1239,7 @@ function StepExperience({ data, setData, errors }) {
 }
 
 function StepEnglishFamily({ data, setData, errors }) {
-    const options = ['IELTS', 'TOEFL', 'PTE Academic', 'Passport (exempt country)', 'Occupational registration'];
+    const options = [...ENGLISH_TEST_OPTIONS, 'Qualification(s)', 'Passport (exempt country)', 'Occupational registration'];
     return (
         <div className="space-y-12">
             <section className="space-y-8">
@@ -1252,7 +1255,7 @@ function StepEnglishFamily({ data, setData, errors }) {
                     </div>
                 </Field>
 
-                {['IELTS', 'TOEFL', 'PTE Academic'].includes(data.english_evidence) && (
+                {ENGLISH_TEST_OPTIONS.includes(data.english_evidence) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <Field label="Test Score / Band *" error={errors.english_test_score}>
                             <input
