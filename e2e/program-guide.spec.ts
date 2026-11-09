@@ -46,3 +46,71 @@ test('a failed page load preserves the current page and allows retry', async ({ 
   await expect(page.getByText('That page couldn’t load.', { exact: false })).toBeHidden();
   await expect(page.locator('.outgoing-spread')).toHaveCount(0);
 });
+
+test('clicking the paper turns forward and backward', async ({ page }) => {
+  await page.goto(guide);
+  const spread = page.locator('#spread');
+  await spread.locator('img').click();
+  await expect(spread).toHaveAttribute('data-pages', '2,3');
+  await spread.locator('img').first().click();
+  await expect(spread).toHaveAttribute('data-pages', '1');
+});
+
+test('drag follows the pointer and commits only when pulled far enough', async ({ page }) => {
+  await page.goto(guide);
+  const spread = page.locator('#spread');
+  await spread.locator('img').click();
+  await expect(spread).toHaveAttribute('data-pages', '2,3');
+  await expect(page.locator('.turn-preview')).toHaveCount(0);
+
+  const right = await spread.locator('img').last().boundingBox();
+  if (!right) throw new Error('Expected a visible right-hand page');
+  const x = right.x + right.width - 12;
+  const y = right.y + right.height / 2;
+  const sheet = page.locator('.turning-sheet');
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 35, y, { steps: 4 });
+  await expect(sheet).toBeVisible();
+  const firstAngle = await sheet.evaluate((element: HTMLElement) => element.style.transform);
+  await page.mouse.move(x - 55, y, { steps: 4 });
+  await expect.poll(() => sheet.evaluate((element: HTMLElement) => element.style.transform)).not.toBe(firstAngle);
+  await expect(spread).toHaveAttribute('data-pages', '2,3');
+  await page.mouse.move(x - 15, y, { steps: 4 });
+  await page.mouse.up();
+  await expect(sheet).toHaveCount(0);
+  await expect(spread).toHaveAttribute('data-pages', '2,3');
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - right.width * 1.4, y, { steps: 12 });
+  await expect(sheet.locator('img').last()).toHaveAttribute('src', /04\.webp$/);
+  await expect(spread).toHaveAttribute('data-pages', '2,3');
+  await page.mouse.up();
+  await expect(spread).toHaveAttribute('data-pages', '4,5');
+  await expect(sheet).toHaveCount(0);
+});
+
+test('touch drag moves the paper before release', async ({ browser }) => {
+  const page = await browser.newPage({
+    viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+  });
+  try {
+    const base = test.info().project.use.baseURL;
+    await page.goto(new URL(guide, base).href);
+    const spread = page.locator('#spread');
+    const bounds = await spread.locator('img').boundingBox();
+    if (!bounds) throw new Error('Expected a visible cover');
+    const y = bounds.y + bounds.height / 2;
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 320, y }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 190, y }] });
+    await expect(page.locator('.outgoing-spread img')).toHaveAttribute('style', /rotateY/);
+    await expect(spread).toHaveAttribute('data-pages', '1');
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(spread).toHaveAttribute('data-pages', '2');
+  } finally {
+    await page.close();
+  }
+});

@@ -1,5 +1,6 @@
 const stage = document.querySelector("#stage");
 const spread = document.querySelector("#spread");
+const frame = spread.parentElement;
 const toolbar = document.querySelector("#toolbar");
 const previous = document.querySelector("#previous");
 const next = document.querySelector("#next");
@@ -15,8 +16,8 @@ const pageImages = new Map();
 let page = 1;
 let shownPage = 1;
 let revision = 0;
-let outgoing;
-let touchStart;
+let activeTurn;
+let gesture;
 
 function visiblePages(number) {
     if (number === 1 || !desktop.matches || stage.classList.contains("zoomed")) {
@@ -55,34 +56,84 @@ function prepareNeighbours(pages) {
 }
 
 function clearTurn() {
-    if (!outgoing) return;
-    outgoing.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
-    outgoing.remove();
-    outgoing = undefined;
+    if (!activeTurn) return;
+    activeTurn.preview.remove();
+    frame.classList.remove("is-turning");
+    activeTurn = undefined;
 }
 
-function animateTurn(direction) {
+function previewSpread(images, className) {
     const layer = document.createElement("div");
-    layer.className = `${spread.className} outgoing-spread`;
-    layer.setAttribute("aria-hidden", "true");
-    layer.append(...spread.children);
-    spread.after(layer);
-    outgoing = layer;
+    layer.className = `spread ${className}`;
+    layer.classList.toggle("paired", images.length === 2);
+    layer.append(...images.map((image) => image.cloneNode()));
+    return layer;
+}
 
+function createTurn(direction, images) {
+    clearTurn();
     const forward = direction === "next";
-    const leaf = forward ? layer.lastElementChild : layer.firstElementChild;
+    const current = [...spread.children];
+    const turningIndex = forward ? current.length - 1 : 0;
+    const doubleSided = current.length === 2 && images.length === 2;
+    const preview = document.createElement("div");
+    preview.className = "turn-preview";
+    preview.setAttribute("aria-hidden", "true");
+    const outgoing = previewSpread(current, "outgoing-spread");
+    preview.append(previewSpread(images, "incoming-spread"), outgoing);
+
+    let leaf = outgoing.children[turningIndex];
     const other = forward ? leaf.previousElementSibling : leaf.nextElementSibling;
+    if (doubleSided) {
+        const sheet = document.createElement("div");
+        sheet.className = "turning-sheet";
+        const bounds = current[turningIndex].getBoundingClientRect();
+        const book = frame.getBoundingClientRect();
+        sheet.style.left = `${bounds.left - book.left}px`;
+        sheet.style.top = `${bounds.top - book.top}px`;
+        sheet.style.width = `${bounds.width}px`;
+        sheet.style.height = `${bounds.height}px`;
+        sheet.append(leaf.cloneNode(), images[forward ? 0 : 1].cloneNode());
+        leaf.style.visibility = "hidden";
+        leaf = sheet;
+        preview.append(sheet);
+    }
+
     leaf.style.transformOrigin = forward ? "left center" : "right center";
-    const timing = { duration: 260, easing: "cubic-bezier(0.23, 1, 0.32, 1)", fill: "forwards" };
-    const angle = forward ? -89.9 : 89.9;
-    const turn = leaf.animate([
-        { transform: "perspective(2200px) rotateY(0deg)" },
-        { transform: `perspective(2200px) rotateY(${angle}deg)` },
-    ], timing);
-    other?.animate([{ opacity: 1 }, { opacity: 0 }], timing);
-    turn.finished.then(() => {
-        if (outgoing === layer) clearTurn();
-    }, () => {});
+    activeTurn = {
+        preview, leaf, other: doubleSided ? null : other,
+        angle: (forward ? -1 : 1) * (doubleSided ? 180 : 89.9),
+        progress: 0,
+    };
+    frame.append(preview);
+    frame.classList.add("is-turning");
+    return activeTurn;
+}
+
+function moveTurn(flip, progress) {
+    flip.progress = progress;
+    flip.leaf.style.transform = `perspective(2200px) rotateY(${flip.angle * progress}deg)`;
+    if (flip.other) flip.other.style.opacity = 1 - progress;
+}
+
+function settleTurn(flip, end) {
+    const start = flip.progress;
+    const duration = 125 + 155 * Math.abs(end - start);
+    const started = performance.now();
+    function advance(now) {
+        if (activeTurn !== flip) return;
+        const time = Math.min(1, (now - started) / duration);
+        const eased = 1 - (1 - time) ** 3;
+        moveTurn(flip, start + (end - start) * eased);
+        if (time < 1) requestAnimationFrame(advance);
+        else clearTurn();
+    }
+    requestAnimationFrame(advance);
+}
+
+function canAnimate() {
+    return !reducedMotion.matches && !stage.classList.contains("zoomed") &&
+        [...spread.children].every((image) => image.complete && image.naturalWidth);
 }
 
 function updateControls(pages) {
@@ -94,7 +145,8 @@ function updateControls(pages) {
         : `Page ${pages[0]} of ${total}`;
 }
 
-async function render(direction) {
+async function render(direction, dragTurn) {
+    resetGesture();
     const request = ++revision;
     const target = page;
     const pages = visiblePages(target);
@@ -114,10 +166,9 @@ async function render(direction) {
         }
         if (request !== revision) return;
 
-        clearTurn();
-        const currentReady = Array.from(spread.children).every((image) => image.complete && image.naturalWidth);
-        if (direction && currentReady && spread.animate && !reducedMotion.matches && !stage.classList.contains("zoomed")) {
-            animateTurn(direction);
+        if (!dragTurn || dragTurn !== activeTurn) {
+            clearTurn();
+            if (direction && canAnimate()) settleTurn(createTurn(direction, images), 1);
         }
         spread.replaceChildren(...images);
         spread.dataset.pages = pages.join(",");
@@ -129,14 +180,18 @@ async function render(direction) {
     prepareNeighbours(pages);
 }
 
-function turn(direction) {
-    const pages = visiblePages(page);
-    const target = direction === "next" ? pages.at(-1) + 1 : pages[0] - 1;
+function turnTarget(direction, number) {
+    const pages = visiblePages(number);
+    return direction === "next" ? pages.at(-1) + 1 : pages[0] - 1;
+}
+
+function turn(direction, dragTurn) {
+    const target = turnTarget(direction, page);
     if (target < 1 || target > total) return;
 
     page = target;
     stage.scrollTo(0, 0);
-    render(direction);
+    render(direction, dragTurn);
 }
 
 previous.addEventListener("click", () => turn("previous"));
@@ -145,7 +200,10 @@ desktop.addEventListener("change", () => {
     clearTurn();
     render();
 });
-reducedMotion.addEventListener("change", clearTurn);
+reducedMotion.addEventListener("change", () => {
+    resetGesture();
+    clearTurn();
+});
 pageSelect.addEventListener("change", () => {
     page = Number(pageSelect.value);
     stage.scrollTo(0, 0);
@@ -171,21 +229,104 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
-stage.addEventListener("touchstart", (event) => {
-    touchStart = event.touches.length === 1 ? event.touches[0] : null;
-}, { passive: true });
-stage.addEventListener("touchcancel", () => { touchStart = null; });
-stage.addEventListener("touchend", (event) => {
-    const start = touchStart;
-    touchStart = null;
-    if (!start || event.touches.length || stage.classList.contains("zoomed")) return;
+function resetGesture() {
+    if (!gesture) return;
+    const current = gesture;
+    gesture = undefined;
+    stage.classList.remove("is-grabbing");
+    if (stage.hasPointerCapture(current.id)) stage.releasePointerCapture(current.id);
+    if (current.flip === activeTurn) clearTurn();
+}
 
-    const dx = event.changedTouches[0].clientX - start.clientX;
-    const dy = event.changedTouches[0].clientY - start.clientY;
-    if (Math.abs(dx) > 48 && Math.abs(dx) > 1.5 * Math.abs(dy)) {
-        turn(dx < 0 ? "next" : "previous");
+function dragDistance(current) {
+    return current.direction === "next" ? current.startX - current.x : current.x - current.startX;
+}
+
+function scrubGesture(current) {
+    const distance = Math.max(0, dragDistance(current));
+    const grip = current.direction === "next"
+        ? current.startX - current.left
+        : current.left + current.width - current.startX;
+    const travel = Math.max(current.width * 0.35, grip) * Math.abs(current.flip.angle) / 90;
+    const fraction = Math.min(1, distance / travel);
+    // The sheet's projected width follows cosine as it rotates around the spine.
+    const cosine = Math.cos(Math.abs(current.flip.angle) * Math.PI / 180);
+    const progress = Math.acos(1 - (1 - cosine) * fraction) / (Math.abs(current.flip.angle) * Math.PI / 180);
+    moveTurn(current.flip, progress);
+}
+
+stage.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.button !== 0 || page !== shownPage ||
+        stage.classList.contains("zoomed") || !event.target.matches("#spread img")) return;
+
+    const paired = spread.classList.contains("paired");
+    const bounds = event.target.getBoundingClientRect();
+    const previousSide = paired
+        ? event.target === spread.firstElementChild
+        : shownPage > 1 && event.clientX < bounds.left + bounds.width / 2;
+    gesture = {
+        id: event.pointerId, startX: event.clientX, startY: event.clientY,
+        x: event.clientX, left: bounds.left, width: bounds.width, paired,
+        clickDirection: previousSide ? "previous" : "next",
+    };
+    stage.setPointerCapture(event.pointerId);
+    stage.classList.add("is-grabbing");
+});
+
+stage.addEventListener("pointermove", async (event) => {
+    const current = gesture;
+    if (!current || current.id !== event.pointerId) return;
+
+    current.x = event.clientX;
+    if (current.flip) {
+        scrubGesture(current);
+        return;
     }
-}, { passive: true });
+    if (current.direction || Math.abs(current.x - current.startX) < 8 ||
+        Math.abs(current.x - current.startX) <= Math.abs(event.clientY - current.startY)) return;
+
+    current.direction = current.paired
+        ? current.clickDirection
+        : current.x < current.startX ? "next" : "previous";
+    const target = turnTarget(current.direction, shownPage);
+    if (target < 1 || target > total || !canAnimate()) return;
+
+    let images;
+    try {
+        images = await Promise.all(visiblePages(target).map(preparePage));
+    } catch {
+        return;
+    }
+    if (gesture !== current) return;
+    current.flip = createTurn(current.direction, images);
+    scrubGesture(current);
+});
+
+function endGesture(event, cancelled) {
+    const current = gesture;
+    if (!current || current.id !== event.pointerId) return;
+
+    gesture = undefined;
+    stage.classList.remove("is-grabbing");
+    current.x = event.clientX;
+    const click = !current.direction && Math.hypot(
+        current.x - current.startX, event.clientY - current.startY,
+    ) < 8;
+    if (!cancelled && click) {
+        turn(current.clickDirection);
+        return;
+    }
+
+    const threshold = event.pointerType === "touch" ? 48 : 72;
+    const commit = !cancelled && current.direction &&
+        dragDistance(current) >= Math.min(threshold, current.width * 0.22);
+    if (current.flip) settleTurn(current.flip, commit ? 1 : 0);
+    if (commit) turn(current.direction, current.flip);
+}
+
+stage.addEventListener("pointerup", (event) => endGesture(event, false));
+stage.addEventListener("pointercancel", (event) => endGesture(event, true));
+stage.addEventListener("lostpointercapture", (event) => endGesture(event, true));
 
 updateControls([1]);
 toolbar.hidden = false;
