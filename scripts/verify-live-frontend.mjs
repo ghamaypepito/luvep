@@ -34,6 +34,21 @@ try {
             assert.equal(await page.evaluate(() => [...document.styleSheets].some(sheet => sheet.href && new URL(sheet.href).pathname.startsWith('/build/'))), true, 'Production stylesheet loaded');
             assert.deepEqual(errors, [], 'No frontend runtime errors');
             console.log(`Frontend render check passed on attempt ${attempt}: login form visible, stylesheet loaded, recovery screen hidden.`);
+            const rsvpResponse = await page.goto(origin + '/education/rsvp', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            assert.equal(rsvpResponse?.status(), 200, 'Education RSVP HTTP response');
+            const rsvp = page.locator('#education-rsvp');
+            await rsvp.waitFor({ state: 'visible' });
+            const layout = await rsvp.evaluate(element => ({
+                maxWidth: getComputedStyle(element).maxWidth,
+                left: element.getBoundingClientRect().left,
+                background: getComputedStyle(document.body, '::before').backgroundImage,
+            }));
+            assert.equal(layout.maxWidth, '1080px', 'Education RSVP uses the boxed layout');
+            assert.ok(layout.left > 0, 'Education RSVP leaves space for the background');
+            assert.match(layout.background, /ep-event-collage\.webp/, 'Education RSVP uses the collage');
+            const collage = await page.request.get(origin + '/education-rsvp/assets/ep-event-collage.webp');
+            assert.ok(collage.ok(), 'Education RSVP collage asset is available');
+            console.log('Education RSVP check passed: boxed layout and collage are live.');
             failure = null;
             break;
         } catch (error) {
