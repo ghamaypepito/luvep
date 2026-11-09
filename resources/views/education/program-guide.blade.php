@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#e7efdf">
     <meta name="description" content="Read the ePathways International Student Program Guide for studying in New Zealand.">
     <title>International Student Program Guide | ePathways</title>
-    <link rel="stylesheet" href="/program-guide/reader.css">
-    <script src="/program-guide/reader.js" defer></script>
+    <link rel="stylesheet" href="/program-guide/reader.css?v={{ filemtime(public_path('program-guide/reader.css')) }}">
+    <script src="/program-guide/reader.js?v={{ filemtime(public_path('program-guide/reader.js')) }}" defer></script>
 </head>
 <body>
     <header class="masthead">
@@ -24,8 +24,10 @@
 
     <main>
         <div class="stage" id="stage" role="region" aria-label="Guide pages">
-            <div class="spread" id="spread">
-                <img src="/program-guide/pages/01.webp" width="1132" height="1600" alt="Cover of the International Student Program Guide" fetchpriority="high" draggable="false">
+            <div class="reader-frame">
+                <div class="spread" id="spread" data-pages="1">
+                    <img src="/program-guide/pages/01.webp" width="1132" height="1600" alt="Cover of the International Student Program Guide" fetchpriority="high" draggable="false">
+                </div>
             </div>
         </div>
 
@@ -51,6 +53,7 @@
             </button>
         </nav>
 
+        <p class="page-error" id="page-error" role="status" hidden>That page couldn’t load. Try again or open the PDF.</p>
         <noscript><p class="no-script">Open the PDF to read the full guide.</p></noscript>
     </main>
 </body>
