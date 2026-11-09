@@ -77,6 +77,11 @@ class LeadDocument extends Model
         return $this->hasOne(PaymentProofReview::class, 'document_id');
     }
 
+    public function receivable()
+    {
+        return $this->hasOne(FinanceReceivable::class, 'invoice_document_id');
+    }
+
     public function invoicePayments()
     {
         return $this->hasMany(CaseFinancePayment::class, 'invoice_document_id');

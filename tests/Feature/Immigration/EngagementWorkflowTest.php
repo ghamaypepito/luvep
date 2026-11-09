@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Immigration;
 
+use App\Models\FinanceReceivable;
 use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
@@ -9,6 +10,7 @@ use App\Services\Immigration\EngagementDocumentGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class EngagementWorkflowTest extends TestCase
@@ -84,6 +86,28 @@ class EngagementWorkflowTest extends TestCase
         $this->assertDatabaseCount('lead_documents', 2);
         $this->assertNull($this->lead->fresh()->engagement_sent_at);
         Mail::assertNothingOutgoing();
+    }
+
+    public function test_finance_lists_saved_draft_and_posts_only_after_the_reviewed_send(): void
+    {
+        $pack = $this->save();
+        $doc = LeadDocument::whereNotNull('invoice_number')->sole();
+        $url = '/portal/finance/receivables?q='.$doc->invoice_number;
+        $this->get($url)->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)->where('rows.0.invoice_no', $doc->invoice_number)
+            ->where('rows.0.payment_status', 'draft')->where('summary.outstanding', 0));
+        $this->assertDatabaseCount('finance_receivables', 0);
+        $review = $this->postJson("/admin/leads/{$this->lead->id}/engagement/review", ['pack_id' => $pack['pack_id']])->assertOk()->json();
+        $this->postJson("/admin/leads/{$this->lead->id}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+
+        $entry = FinanceReceivable::sole();
+        $this->assertSame($doc->id, $entry->invoice_document_id);
+        $this->assertSame($doc->invoice_number, $entry->invoice_no);
+        $this->assertSame('USD', $entry->currency);
+        $this->assertSame('250.00', $entry->amount);
+        $this->get($url)->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 1)->where('rows.0.invoice_no', $doc->invoice_number)
+            ->where('rows.0.payment_status', 'open'));
     }
 
     public function test_oia_and_consultation_are_separate_packs_with_correct_invoice_totals(): void

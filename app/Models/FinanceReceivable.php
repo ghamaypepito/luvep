@@ -16,7 +16,7 @@ class FinanceReceivable extends Model
     use HasPaymentLedger;
 
     protected $fillable = [
-        'invoice_no', 'lead_id', 'client_name', 'description', 'currency',
+        'invoice_no', 'lead_id', 'invoice_document_id', 'client_name', 'description', 'currency',
         'amount', 'issue_date', 'due_date', 'status', 'notes', 'created_by',
     ];
 

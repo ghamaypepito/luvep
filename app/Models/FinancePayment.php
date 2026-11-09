@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -20,6 +21,11 @@ class FinancePayment extends Model
         'amount' => 'decimal:2',
         'paid_on' => 'date',
     ];
+
+    public function scopeForLedger(Builder $query, string $model, string $currency): Builder
+    {
+        return $query->whereHasMorph('paymentable', [$model], fn (Builder $ledger) => $ledger->where('currency', $currency));
+    }
 
     public function paymentable(): MorphTo
     {

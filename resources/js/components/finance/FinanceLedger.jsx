@@ -32,7 +32,10 @@ const STATUS_BADGE = {
     overdue: "bg-rose-100 text-rose-700",
     open: "bg-amber-100 text-amber-700",
     void: "bg-gray-100 text-gray-500",
+    draft: "bg-gray-100 text-gray-700",
+    review: "bg-orange-100 text-orange-800",
 };
+const STATUS_LABEL = { review: "Needs review" };
 const FILTERS = [
     { key: "all", label: "All" }, { key: "open", label: "Open" }, { key: "partial", label: "Partial" },
     { key: "overdue", label: "Overdue" }, { key: "paid", label: "Paid" }, { key: "void", label: "Void" },
@@ -112,11 +115,11 @@ function EntryModal({ kind, cfg, row, currencyDefault, onClose }) {
                     )}
                     <label className="block">
                         <span className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">Amount</span>
-                        <input type="number" step="0.01" min="0" className={inputCls} value={f.amount} onChange={set("amount")} placeholder="0.00" />
+                        <input type="number" step="0.01" min="0" disabled={row?.portal_issued} className={inputCls} value={f.amount} onChange={set("amount")} placeholder="0.00" />
                     </label>
                     <label className="block">
                         <span className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">Currency</span>
-                        <input maxLength={3} className={`${inputCls} uppercase`} value={f.currency} onChange={(e) => setF((p) => ({ ...p, currency: e.target.value.toUpperCase() }))} />
+                        <input maxLength={3} disabled={row?.portal_issued} className={`${inputCls} uppercase`} value={f.currency} onChange={(e) => setF((p) => ({ ...p, currency: e.target.value.toUpperCase() }))} />
                     </label>
                     <label className="block">
                         <span className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">Issue date</span>
@@ -185,7 +188,7 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <span className="font-mono text-xs font-bold text-gray-500">{row[cfg.numberField]}</span>
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${badge}`}>{row.payment_status}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${badge}`}>{STATUS_LABEL[row.payment_status] || row.payment_status}</span>
                             {row.days_past_due > 0 && row.payment_status !== "paid" && row.payment_status !== "void" && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600"><AlertTriangle size={11} /> {row.days_past_due}d overdue</span>
                             )}
@@ -194,13 +197,18 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                         {row.description && <p className="text-sm text-gray-500 mt-0.5">{row.description}</p>}
                     </div>
                     <div className="flex items-center gap-1">
-                        <button onClick={() => onEdit(row)} title="Edit" className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"><Pencil size={16} /></button>
-                        <button onClick={removeEntry} title="Delete" className="p-2 rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
+                        {!row.document_url && <button onClick={() => onEdit(row)} title="Edit" className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"><Pencil size={16} /></button>}
+                        {!row.document_url && !row.portal_issued && <button onClick={removeEntry} title="Delete" className="p-2 rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>}
                         <button onClick={onClose} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100"><X size={18} /></button>
                     </div>
                 </div>
 
-                <div className="p-6 space-y-5">
+                {row.document_url ? (
+                    <div className="p-6 text-sm text-gray-600">
+                        <p>{row.payment_status === "draft" ? "This invoice is saved as a draft. Its amount will be due when the invoice is issued." : "Finance needs to verify this invoice before it can enter the ledger."}</p>
+                        <a href={row.document_url} className="mt-3 inline-block font-semibold text-indigo-700 underline">Open Invoice workspace</a>
+                    </div>
+                ) : <div className="p-6 space-y-5">
                     <div className="grid grid-cols-3 gap-3">
                         <div className="rounded-xl border border-gray-200 p-3">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Amount</p>
@@ -231,7 +239,7 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                                     <span className="tabular-nums font-semibold text-gray-800 w-28">{money(p.amount, row.currency)}</span>
                                     <span className="text-gray-500 w-24">{p.paid_on}</span>
                                     <span className="text-gray-500 flex-1 truncate">{[p.method, p.reference].filter(Boolean).join(" · ") || "—"}</span>
-                                    <button onClick={() => removePayment(p.id)} className="p-1 rounded text-gray-300 hover:text-rose-500"><Trash2 size={13} /></button>
+                                    {!p.case_receipt && <button onClick={() => removePayment(p.id)} className="p-1 rounded text-gray-300 hover:text-rose-500"><Trash2 size={13} /></button>}
                                 </div>
                             ))}
                         </div>
@@ -261,7 +269,7 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                             <p className="text-sm text-gray-700 whitespace-pre-wrap">{row.notes}</p>
                         </div>
                     )}
-                </div>
+                </div>}
             </div>
         </div>
     );
@@ -269,6 +277,9 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
 
 export default function FinanceLedger({ kind, rows = [], summary = {}, filters = {}, currencyDefault = "NZD" }) {
     const cfg = KIND[kind];
+    const availableFilters = kind === "receivable"
+        ? [...FILTERS, { key: "draft", label: "Draft" }, { key: "review", label: "Needs review" }]
+        : FILTERS;
     const [q, setQ] = useState(filters.q || "");
     const [status, setStatus] = useState(filters.status || "all");
     const [creating, setCreating] = useState(false);
@@ -295,7 +306,7 @@ export default function FinanceLedger({ kind, rows = [], summary = {}, filters =
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{cfg.title}</h1>
-                    <p className="text-sm text-gray-500 mt-1">{cfg.subtitle}</p>
+                    <p className="text-sm text-gray-500 mt-1">{cfg.subtitle} Summary amounts are in {currencyDefault}.</p>
                 </div>
                 <button onClick={() => setCreating(true)} className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm w-max">
                     <Plus size={16} /> {cfg.newLabel}
@@ -342,7 +353,7 @@ export default function FinanceLedger({ kind, rows = [], summary = {}, filters =
             {/* Filters */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                    {FILTERS.map((ff) => (
+                    {availableFilters.map((ff) => (
                         <button key={ff.key} onClick={() => { setStatus(ff.key); applyFilters({ status: ff.key }); }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${status === ff.key ? "bg-indigo-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
                             {ff.label}
@@ -383,16 +394,16 @@ export default function FinanceLedger({ kind, rows = [], summary = {}, filters =
                                         <p className="font-semibold text-gray-800">{r[cfg.partyField]}</p>
                                         {(r.description || r.category) && <p className="text-[11px] text-gray-400 truncate max-w-[280px]">{r.category || r.description}</p>}
                                     </td>
-                                    <td className="px-3 py-3 text-right tabular-nums text-gray-700">{money(r.amount, r.currency)}</td>
-                                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-gray-900">{money(r.balance, r.currency)}</td>
+                                    <td className="px-3 py-3 text-right tabular-nums text-gray-700">{r.amount == null || !r.currency ? "—" : money(r.amount, r.currency)}</td>
+                                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-gray-900">{r.balance == null ? "—" : money(r.balance, r.currency)}</td>
                                     <td className="px-3 py-3 whitespace-nowrap text-gray-600">
-                                        {r.due_date}
+                                        {r.due_date || "—"}
                                         {r.days_past_due > 0 && r.payment_status !== "paid" && r.payment_status !== "void" && (
                                             <span className="ml-1.5 text-[10px] font-bold text-rose-600">+{r.days_past_due}d</span>
                                         )}
                                     </td>
                                     <td className="px-3 py-3">
-                                        <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${STATUS_BADGE[r.payment_status] || "bg-gray-100 text-gray-600"}`}>{r.payment_status}</span>
+                                        <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${STATUS_BADGE[r.payment_status] || "bg-gray-100 text-gray-600"}`}>{STATUS_LABEL[r.payment_status] || r.payment_status}</span>
                                     </td>
                                 </tr>
                             ))}

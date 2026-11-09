@@ -109,6 +109,9 @@ class PaymentProofService
 
     public static function assertEvidenceCanBeDeleted(LeadDocument $document): void
     {
+        if (self::isInvoice($document) && $document->receivable()->exists()) {
+            throw ValidationException::withMessages(['document' => 'This issued invoice is linked to Finance. Ask Finance to void it if it was issued in error.']);
+        }
         if ($document->source_variant === 'proof_of_payment'
             || PaymentProofReview::where('invoice_document_id', $document->id)->exists()
             || $document->invoicePayments()->exists()) {
