@@ -75,7 +75,8 @@ class PortalInvoiceReceivables
             DB::transaction(function () use ($document) {
                 $lead = Lead::whereKey($document->lead_id)->lockForUpdate()->firstOrFail();
                 $invoice = LeadDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
-                if ($this->isDraft($invoice) || $invoice->status === LeadDocument::STATUS_REJECTED) {
+                if ($this->isDraft($invoice) || $invoice->status === LeadDocument::STATUS_REJECTED
+                    || ($invoice->status === LeadDocument::STATUS_APPROVED && !$invoice->invoicePayments()->exists())) {
                     return;
                 }
                 $ref = self::reference($invoice->invoice_number);

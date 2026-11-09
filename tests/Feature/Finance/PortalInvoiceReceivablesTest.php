@@ -89,6 +89,21 @@ class PortalInvoiceReceivablesTest extends TestCase
         $this->assertSame(500.0, $first->receivable()->firstOrFail()->balance);
     }
 
+    public function test_sharing_a_saved_invoice_through_documents_posts_it_without_email(): void
+    {
+        Mail::fake();
+        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Client', 'is_immigration_case' => true]);
+        $doc = $this->document($lead, 'INV-101', 500);
+        $notes = $doc->notes;
+        $notes['engagement_pack_id'] = 'saved-draft-pack';
+        $doc->update(['notes' => $notes]);
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->post("/admin/leads/{$lead->id}/documents/{$doc->id}/send-to-client")
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($doc->id, FinanceReceivable::sole()->invoice_document_id);
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_finance_totals_keep_currencies_separate_in_both_ledgers_and_collections(): void
     {
         foreach (['NZD' => 100, 'USD' => 50] as $currency => $amount) {
