@@ -41,6 +41,25 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
 (async () => {
     // Catches legacy-only presets, absent server insights and accidentally showing current catalogue totals for dated filters.
     await render(props);
+    const contactProps = {
+        ...props,
+        departments: { ...props.departments, education: { ...props.departments.education, stages: [
+            { stage: 'New Lead', count: 1, clients: [] },
+            ...props.departments.education.stages,
+            { stage: 'No stage set', count: 3, clients: [] },
+        ] } },
+        register: { ...props.register,
+            'Contact Attempted': [{ id: 12, name: 'Attempted lead', date: null }],
+            'Contacted for Booking': [{ id: 13, name: 'Reached lead', date: null }],
+        },
+    };
+    await render(contactProps);
+    const statusCards = [...document.querySelectorAll('button[aria-label$="with recorded entries"]')];
+    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Contact Attempted', 'Contacted', 'Education enrolled']);
+    assert.ok(statusCards.every(node => !node.textContent.includes('Period')));
+    await click(statusCards[2]);
+    assert.match(document.body.textContent, /Reached lead/);
+    await render(props);
     assert.match(document.querySelector('h1').nextElementSibling.textContent, /1 Nov – 2 Nov/, 'NZ calendar date labels must not shift date-only boundaries into tomorrow');
     assert.deepEqual([...document.querySelectorAll('[aria-label="Report period"] button')].map(n => n.textContent), ['Today', 'This week', 'Last week', 'This month', 'This year', 'Custom', 'All']);
     assert.ok(document.querySelector('svg[aria-label*="6 distinct students"]'), 'Uses the server metric count rather than reconstructing client dates');
