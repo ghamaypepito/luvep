@@ -79,11 +79,42 @@ class EventRegistrationTest extends TestCase
 
         $this->assertStringContainsString('Mabuhay, Neil', $html);
         $this->assertStringContainsString($event->name, $html);
+        $this->assertStringContainsString('/images/email/team-header.png', $html);
+        $this->assertStringContainsString('<strong>Bryll</strong>', $html);
         // Images are hosted URLs (no embeds → no attachments); buttons are
         // baked into the footer image.
         $this->assertStringContainsString('<img src="http', $html);
         $this->assertStringNotContainsString('src="cid:', $html);
         $this->assertStringContainsString('registering', $html);
+    }
+
+    public function test_bhutanese_event_confirmation_uses_eireens_sender_and_preserves_the_booking_link(): void
+    {
+        Mail::fake();
+        config(['services.contact.booking_url' => 'https://luvep.com/booking']);
+        $event = $this->event([
+            'name' => 'Bhutanese Association of New Zealand',
+            'event_code' => 'bhutanese-association-of-new-zealand-fz35m',
+        ]);
+
+        $this->post("/register/{$event->event_code}", $this->validPayload())->assertRedirect()->assertSessionHasNoErrors();
+
+        Mail::assertQueued(EventRegistrationConfirmation::class, 1);
+        Mail::assertQueued(EventRegistrationConfirmation::class, function ($mail) {
+            $envelope = $mail->envelope();
+            $this->assertSame('Eireen Serrano', $envelope->from->name);
+            $this->assertSame('eireen@dimmigration.co', $envelope->from->address);
+            $this->assertSame('eireen@dimmigration.co', $envelope->replyTo[0]->address);
+
+            $html = $mail->render();
+            $this->assertStringContainsString('/images/email/bhutanese-association-header.jpg', $html);
+            $this->assertMatchesRegularExpression('~<a href="https://luvep\.com/booking"[^>]*>\s*<img src="[^\"]*/bhutanese-association-footer\.jpg"~', $html);
+            $this->assertStringContainsString('Eireen Serrano', $html);
+            $this->assertStringContainsString('+64 21 227 8811', $html);
+            $this->assertStringNotContainsString('<strong>Bryll</strong>', $html);
+
+            return $mail->hasTo('neil@example.com');
+        });
     }
 
     public function test_registration_still_succeeds_when_email_missing(): void

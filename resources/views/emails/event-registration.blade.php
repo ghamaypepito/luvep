@@ -20,7 +20,7 @@
                     {{-- Header banner (hosted URL — no attachment) --}}
                     <tr>
                         <td style="padding:0; background-color:#0f2f1c;">
-                            <img src="{{ $siteUrl }}/images/email/team-header.png" alt="EP" width="600" style="display:block; width:100%; max-width:600px; height:auto; border:0;">
+                            <img src="{{ $siteUrl }}/images/email/{{ $headerImage }}" alt="EP" width="600" style="display:block; width:100%; max-width:600px; height:auto; border:0;">
                         </td>
                     </tr>
 
@@ -84,7 +84,7 @@
                                 from selecting the right program to preparing your requirements.
                             </p>
                             <p style="margin:0 0 14px 0; font-size:14px; line-height:1.6; color:#333333;">
-                                To better assist you, I, <strong>Bryll</strong> of EP, will personally
+                                To better assist you, I, <strong>{{ $eventContact['first_name'] ?? 'Bryll' }}</strong> of EP, will personally
                                 reach out within the <strong>next 24 hours</strong> to discuss your background and possible
                                 options based on your profile.
                             </p>
@@ -98,11 +98,24 @@
                         </td>
                     </tr>
 
+                    @if ($eventContact)
+                    <tr>
+                        <td style="padding:16px 40px 0 40px;">
+                            <p style="margin:0; font-size:14px; line-height:1.6; color:#333333;">
+                                Kind regards,<br>
+                                <strong>{{ $eventContact['name'] }}</strong><br>
+                                <a href="mailto:{{ $eventContact['email'] }}" style="color:#2e7d32;">{{ $eventContact['email'] }}</a><br>
+                                <a href="tel:{{ preg_replace('/[^+\d]/', '', $eventContact['phone']) }}" style="color:#2e7d32;">{{ $eventContact['phone'] }}</a>
+                            </p>
+                        </td>
+                    </tr>
+                    @endif
+
                     {{-- Footer CTA — consultation image with the CTA buttons
                          baked into it (Gmail can't overlay HTML on an image);
                          the whole image links to the booking page. --}}
                     @php
-                        $footerUrl = app(\App\Services\EmailFooterComposer::class)
+                        $footerUrl = $footerImage ? $siteUrl.'/images/email/'.$footerImage : app(\App\Services\EmailFooterComposer::class)
                             ->composeUrl(public_path('images/coffee-cta.png'), 'BOOK NOW', $phone ? 'CALL '.$phone : null);
                     @endphp
                     @if ($footerUrl)
