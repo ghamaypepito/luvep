@@ -34,18 +34,22 @@ class EventRegistrationConfirmation extends Mailable implements ShouldQueue
 
     public function envelope(): Envelope
     {
-        $from = config('services.contact.event_from_email');
-        $replyTo = config('services.contact.reply_to');
+        $contact = $this->eventContact();
+        $from = $contact['email'] ?? config('services.contact.event_from_email');
+        $fromName = $contact['name'] ?? config('services.contact.event_from_name');
+        $replyTo = $contact['email'] ?? config('services.contact.reply_to');
 
         return new Envelope(
-            from: $from ? new Address($from, config('services.contact.event_from_name') ?: null) : null,
-            replyTo: $replyTo ? [new Address($replyTo)] : [],
+            from: $from ? new Address($from, $fromName ?: null) : null,
+            replyTo: $replyTo ? [new Address($replyTo, $contact['name'] ?? null)] : [],
             subject: 'You\'re registered — '.$this->event->name,
         );
     }
 
     public function content(): Content
     {
+        $contact = $this->eventContact();
+
         return new Content(
             view: 'emails.event-registration',
             with: [
@@ -61,8 +65,25 @@ class EventRegistrationConfirmation extends Mailable implements ShouldQueue
                 'facebook'     => config('services.contact.facebook'),
                 'messenger'    => config('services.contact.messenger'),
                 'email'        => config('services.contact.email'),
+                'eventContact' => $contact,
+                'headerImage'  => $contact ? 'bhutanese-association-header.jpg' : 'team-header.png',
+                'footerImage'  => $contact ? 'bhutanese-association-footer.jpg' : null,
             ],
         );
+    }
+
+    private function eventContact(): ?array
+    {
+        if ($this->event->event_code !== 'bhutanese-association-of-new-zealand-fz35m') {
+            return null;
+        }
+
+        return [
+            'first_name' => 'Eireen',
+            'name' => 'Eireen Serrano',
+            'email' => 'eireen@dimmigration.co',
+            'phone' => '+64 21 227 8811',
+        ];
     }
 
     /** Human date, using the chosen session's date when present. */
