@@ -283,6 +283,10 @@ export default function Registration({ event }) {
         );
     }
 
+    const contact = event.event_code === 'bhutanese-association-of-new-zealand-fz35m'
+        ? { phone: '+64 21 227 8811', email: 'eireen@dimmigration.com' }
+        : { phone: '+63 (82) 297-5000', email: 'hello@epathways.com.ph' };
+
     const [success, setSuccess] = useState(false);
     // Top-of-form error banner. Replaces the modal — keeping a passive
     // notice up top so the user knows something went wrong even after
@@ -610,7 +614,7 @@ export default function Registration({ event }) {
 
                                 <div className="mt-5 space-y-2.5">
                                     <a
-                                        href="tel:+63822975000"
+                                        href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}
                                         className="group flex items-center gap-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 px-3.5 py-3 transition-colors"
                                     >
                                         <span className="w-9 h-9 rounded-md bg-white/10 text-white flex items-center justify-center shrink-0">
@@ -618,12 +622,12 @@ export default function Registration({ event }) {
                                         </span>
                                         <div className="min-w-0">
                                             <p className="text-[9.5px] font-bold uppercase tracking-[0.2em] text-white/45">Phone</p>
-                                            <p className="text-[13.5px] font-semibold leading-snug truncate">+63 (82) 297-5000</p>
+                                            <p className="text-[13.5px] font-semibold leading-snug truncate">{contact.phone}</p>
                                         </div>
                                         <ChevronRight size={15} className="ml-auto text-white/40 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
                                     </a>
                                     <a
-                                        href="mailto:hello@epathways.com.ph"
+                                        href={`mailto:${contact.email}`}
                                         className="group flex items-center gap-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 px-3.5 py-3 transition-colors"
                                     >
                                         <span className="w-9 h-9 rounded-md bg-white/10 text-white flex items-center justify-center shrink-0">
@@ -631,7 +635,7 @@ export default function Registration({ event }) {
                                         </span>
                                         <div className="min-w-0">
                                             <p className="text-[9.5px] font-bold uppercase tracking-[0.2em] text-white/45">Email</p>
-                                            <p className="text-[13.5px] font-semibold leading-snug truncate">hello@epathways.com.ph</p>
+                                            <p className="text-[13.5px] font-semibold leading-snug truncate">{contact.email}</p>
                                         </div>
                                         <ChevronRight size={15} className="ml-auto text-white/40 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
                                     </a>
