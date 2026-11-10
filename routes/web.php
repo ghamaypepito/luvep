@@ -438,7 +438,7 @@ Route::middleware(['throttle:tracker'])->group(function () {
 Route::get('/register', [LeadController::class, 'showRegistration'])->name('register');
 Route::post('/register', [LeadController::class, 'storeRegistration']);
 Route::get('/register/full', [LeadController::class, 'showRegistrationFull'])->name('register.full');
-Route::get('/register/{event_code}', [EventController::class, 'showRegistrationForm']);
+Route::get('/register/{event_code}', [EventController::class, 'showRegistrationForm'])->name('events.registration');
 Route::post('/register/{event_code}', [EventController::class, 'registerLead']);
 Route::get('/free-assessment', [LeadController::class, 'showFreeAssessment'])->name('free-assessment');
 Route::post('/free-assessment', [LeadController::class, 'storeFreeAssessment']);

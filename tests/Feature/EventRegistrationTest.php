@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\Lead;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class EventRegistrationTest extends TestCase
@@ -115,6 +116,24 @@ class EventRegistrationTest extends TestCase
 
             return $mail->hasTo('neil@example.com');
         });
+    }
+
+    public function test_event_registration_confirmation_survives_a_full_page_visit(): void
+    {
+        Mail::fake();
+        $event = $this->event();
+        $url = "/register/{$event->event_code}";
+
+        $this->from('/')->post($url, $this->validPayload(), ['X-Inertia' => 'true'])
+            ->assertRedirect($url);
+
+        $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => 'outdated'])
+            ->assertStatus(409);
+
+        $this->get($url)->assertInertia(fn (Assert $page) => $page
+            ->component('registration/RegistrationPage')->where('registered', true));
+
+        $this->get($url)->assertInertia(fn (Assert $page) => $page->where('registered', false));
     }
 
     public function test_registration_still_succeeds_when_email_missing(): void
