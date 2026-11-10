@@ -284,7 +284,7 @@ export default function Registration({ event }) {
     }
 
     const contact = event.event_code === 'bhutanese-association-of-new-zealand-fz35m'
-        ? { phone: '+64 21 227 8811', email: 'eireen@dimmigration.com' }
+        ? { phone: '+64 21 227 8811', email: 'eireen@dimmigration.co' }
         : { phone: '+63 (82) 297-5000', email: 'hello@epathways.com.ph' };
 
     const [success, setSuccess] = useState(false);
