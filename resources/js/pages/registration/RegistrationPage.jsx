@@ -271,7 +271,7 @@ function SuccessScreen({ eventName }) {
 
 // ── Main ────────────────────────────────────────────────────────────
 
-export default function Registration({ event }) {
+export default function Registration({ event, registered }) {
     if (!event) {
         return (
             <div className="min-h-screen flex items-center justify-center p-10 text-center bg-gray-50">
@@ -287,7 +287,6 @@ export default function Registration({ event }) {
         ? { phone: '+64 21 227 8811', email: 'eireen@dimmigration.co' }
         : { phone: '+63 (82) 297-5000', email: 'hello@epathways.com.ph' };
 
-    const [success, setSuccess] = useState(false);
     // Top-of-form error banner. Replaces the modal — keeping a passive
     // notice up top so the user knows something went wrong even after
     // scrolling, but not blocking the page with a popover.
@@ -365,8 +364,7 @@ export default function Registration({ event }) {
         if (formRef.current && !formRef.current.reportValidity()) return;
         setBannerError(null);
         post(`/register/${event.event_code}`, {
-            onSuccess: () => setSuccess(true),
-            preserveScroll: true,
+            preserveScroll: 'errors',
             onError: (errs) => {
                 const keys = Object.keys(errs || {});
                 const catchAll = errs?.error || errs?.message;
@@ -384,7 +382,7 @@ export default function Registration({ event }) {
         });
     };
 
-    if (success) return <SuccessScreen eventName={event.name} />;
+    if (registered) return <SuccessScreen eventName={event.name} />;
 
     const fmtDate = (iso) => iso
         ? new Date(iso).toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
