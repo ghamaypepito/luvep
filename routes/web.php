@@ -54,6 +54,9 @@ Route::view('/international-student-program-guide', 'education.program-guide')
 
 // Public XML sitemap for search engines. Lists only public/indexable pages;
 // URLs use the fixed canonical base (never the request host). See SitemapController.
+Route::get('/articles', [\App\Http\Controllers\PublicArticleController::class, 'index'])->name('articles.index');
+Route::get('/articles/{slug}', [\App\Http\Controllers\PublicArticleController::class, 'show'])->name('articles.show');
+
 Route::get('/sitemap.xml', [\App\Http\Controllers\SitemapController::class, 'index'])->name('sitemap');
 
 // Local-only: render the engagement-documents email in the browser so the
@@ -802,6 +805,17 @@ Route::middleware(['auth'])->group(function () {
         // Inertia page under resources/js/pages/admin/social/. The bare /social
         // entry redirects to /social/compose so the sidebar link always lands
         // on a usable screen.
+        Route::prefix('admin/content-calendar')->name('admin.editorial.')->controller(\App\Http\Controllers\Admin\EditorialCalendarController::class)->group(function () {
+            Route::get('/', 'index')->name('calendar');
+            Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');
+            Route::post('/articles', 'store')->name('store');
+            Route::put('/articles/{article}', 'update')->whereNumber('article')->name('update');
+            Route::patch('/articles/{article}/planned-date', 'move')->whereNumber('article')->name('move');
+            Route::post('/articles/{article}/submit', 'submit')->whereNumber('article')->name('submit');
+            Route::post('/articles/{article}/approve', 'approve')->whereNumber('article')->name('approve');
+            Route::post('/articles/{article}/publish', 'publish')->whereNumber('article')->name('publish');
+        });
+
         Route::get('/social', fn () => redirect('/social/compose'))->name('social');
         Route::get('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'index'])->middleware('throttle:15,1');
         Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');

@@ -30,7 +30,7 @@ export default defineConfig({
     },
     plugins: [
         laravel({
-            input: 'resources/js/app.jsx',
+            input: ['resources/js/app.jsx', 'resources/js/articles.jsx'],
             refresh: true,
         }),
         react(),

@@ -81,6 +81,7 @@ const ADMIN_NAV = [
         icon: <Radio size={20} />,
         children: [
             { name: "Compose",     href: "/social/compose",     icon: <PenLine size={16} /> },
+            { name: "Content Calendar", href: "/admin/content-calendar", icon: <CalendarIcon size={16} /> },
             { name: "Scheduled",   href: "/social/scheduled",   icon: <CalendarDays size={16} /> },
             { name: "Inbox",       href: "/social/inbox",       icon: <Inbox size={16} /> },
             { name: "Ads",         href: "/social/ads",         icon: <Megaphone size={16} /> },

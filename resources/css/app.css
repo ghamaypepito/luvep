@@ -145,3 +145,25 @@ body {
         border-radius: 16px;
     }
 }
+
+/* Restore editorial hierarchy after Tailwind's element resets. */
+.published-article-body > * + * { margin-block-start: 1.1em; }
+.published-article-body :is(h2, h3, h4) {
+    color: var(--color-stone-900);
+    font-weight: 750;
+    line-height: 1.2;
+    margin-block-start: 1.65em;
+}
+.published-article-body h2 { font-size: 1.55em; }
+.published-article-body h3 { font-size: 1.25em; }
+.published-article-body :is(h2, h3, h4) + * { margin-block-start: .5em; }
+.published-article-body > :first-child { margin-block-start: 0; }
+.published-article-body ul { list-style: disc; padding-inline-start: 1.5em; }
+.published-article-body ol { list-style: decimal; padding-inline-start: 1.5em; }
+.published-article-body li + li { margin-block-start: .3em; }
+.published-article-body a { color: var(--color-brand-green); text-decoration: underline; text-underline-offset: .15em; }
+.published-article-body blockquote { border-inline-start: 1px solid var(--color-brand-green); padding-inline-start: 1.2em; }
+.published-article-body pre { overflow-x: auto; background: var(--color-stone-100); padding: 1em; }
+.published-article-body img { display: block; max-inline-size: 100%; block-size: auto; border-radius: .5rem; }
+.published-article-body table { display: block; overflow-x: auto; border-collapse: collapse; }
+.published-article-body :is(th, td) { border: 1px solid var(--color-stone-200); padding: .55em .75em; text-align: start; }

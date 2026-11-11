@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\EditorialArticle;
 use App\Models\Program;
 use Illuminate\Http\Response;
 
@@ -33,6 +34,7 @@ class SitemapController extends Controller
         ['path' => '/fee-guide', 'priority' => '0.6', 'changefreq' => 'monthly'],
         ['path' => '/accommodation', 'priority' => '0.7', 'changefreq' => 'weekly'],
         ['path' => '/visa-approved', 'priority' => '0.6', 'changefreq' => 'weekly'],
+        ['path' => '/articles', 'priority' => '0.7', 'changefreq' => 'weekly'],
         ['path' => '/activities', 'priority' => '0.6', 'changefreq' => 'weekly'],
         // NOTE: /booking and /free-assessment are intentionally excluded — they
         // are transactional/conversion pages, not SEO landing pages. They remain
@@ -70,6 +72,17 @@ class SitemapController extends Controller
                     'priority' => '0.7',
                     'changefreq' => 'monthly',
                     'lastmod' => optional($program->updated_at)->toAtomString(),
+                ];
+            });
+
+        EditorialArticle::published()
+            ->get(['published_slug', 'published_at', 'published_updated_at'])
+            ->each(function (EditorialArticle $article) use (&$urls, $base) {
+                $urls[] = [
+                    'loc' => $base.route('articles.show', $article->published_slug, absolute: false),
+                    'priority' => '0.7',
+                    'changefreq' => 'monthly',
+                    'lastmod' => ($article->published_updated_at ?? $article->published_at)->toAtomString(),
                 ];
             });
 

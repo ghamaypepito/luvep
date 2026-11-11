@@ -113,3 +113,5 @@ Schedule::command('immigration:onboarding-reminders')
     ->timezone('Pacific/Auckland')
     ->name('immigration-onboarding-reminders')
     ->withoutOverlapping();
+
+Schedule::command('editorial:dispatch-social')->everyMinute()->withoutOverlapping(5);

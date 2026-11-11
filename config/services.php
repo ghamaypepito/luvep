@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'ghl' => [
+        'article_facebook_enabled' => env('GHL_ARTICLE_FACEBOOK_ENABLED', false),
+    ],
+
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],

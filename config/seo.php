@@ -125,6 +125,11 @@ return [
             'description' => 'A gallery of visa-approved students and clients supported by EP on their New Zealand education and immigration journey.',
             'breadcrumb' => 'Visa Approved',
         ],
+        '/articles' => [
+            'title' => 'Articles | EP',
+            'description' => 'Explore EP articles on studying, working and settling in New Zealand.',
+            'breadcrumb' => 'Articles',
+        ],
         '/activities' => [
             'title' => 'Activities — Events & Announcements | EP',
             'description' => 'Upcoming events, announcements and live sessions from EP for students and migrants heading to New Zealand.',
