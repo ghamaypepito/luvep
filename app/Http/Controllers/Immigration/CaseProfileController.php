@@ -1475,7 +1475,17 @@ class CaseProfileController extends Controller
         return back()->with('success', 'Partner recommendation saved.');
     }
 
-    /** Shared case guard for the process endpoints. */
+    /** Explicitly classify an unmatched upload without replacing its file. */
+    public function moveDocumentToVisaHistory(Lead $lead, int $document)
+    {
+        $user = $this->guardCase($lead);
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
+            || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
+        app(\App\Services\Immigration\VisaHistoryDocuments::class)->move($lead, $document);
+
+        return back()->with('success', 'Document moved to Visa History.');
+    }
+
     private function guardCase(Lead $lead): User
     {
         $user = auth()->user();

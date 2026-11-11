@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import VisaHistoryDialog from "./VisaHistoryDialog";
 import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -1308,6 +1309,10 @@ function VerdictSelect({ value, options, onPick, saving }) {
 }
 
 function FileMenu({ doc, leadId, checklistKey = null }) {
+    const { props: menuProps } = usePage();
+    const [visaHistoryOpen, setVisaHistoryOpen] = useState(false);
+    const canClassifyVisaHistory = ["admin", "super_admin", "immigration", "immigration_manager", "immigration_adviser"].includes(menuProps?.auth?.user?.role)
+        && !checklistKey && !doc.request_id && doc.source !== "generated" && (!doc.source_variant || doc.source_variant.startsWith("outcome:"));
     const [open, setOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -1392,6 +1397,7 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
             >
                 <MoreVertical size={12} />
             </button>
+            {visaHistoryOpen && <VisaHistoryDialog doc={doc} leadId={leadId} onClose={() => setVisaHistoryOpen(false)} />}
             {checklistKey && (
                 <input
                     ref={fileRef}
@@ -1438,6 +1444,12 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
                             >
                                 {uploading ? <Loader2 size={13} className="animate-spin text-gray-400" /> : <Upload size={13} className="text-gray-400" />}
                                 {uploading ? "Uploading…" : "Replace"}
+                            </button>
+                        )}
+                        {canClassifyVisaHistory && (
+                            <button type="button" onClick={() => { close(); setVisaHistoryOpen(true); }}
+                                className="w-full text-left px-3 py-1.5 text-[12px] text-gray-700 hover:bg-gray-50">
+                                Move to Visa History
                             </button>
                         )}
                         {! confirming ? (
