@@ -62,6 +62,32 @@ class EditorialSocialPublishingTest extends TestCase
         ]);
     }
 
+    public function test_delivery_migration_resumes_when_mysql_already_created_the_table(): void
+    {
+        $schema = \Illuminate\Support\Facades\Schema::getFacadeRoot();
+        $table = 'editorial_social_deliveries';
+        $uniqueColumns = ['editorial_article_id', 'account_id'];
+        $unique = collect($schema->getIndexes($table))->firstWhere('columns', $uniqueColumns);
+        $status = collect($schema->getIndexes($table))->firstWhere('columns', ['status']);
+        $schema->table($table, function ($blueprint) use ($unique, $status) {
+            $blueprint->dropUnique($unique['name']);
+            $blueprint->dropIndex($status['name']);
+        });
+        $article = $this->draft();
+        $delivery = \App\Models\EditorialSocialDelivery::create([
+            'editorial_article_id' => $article->id,
+            'account_id' => GhlSocialReader::ACCOUNT,
+            'payload' => [],
+        ]);
+
+        $migration = require database_path('migrations/2026_11_08_020000_create_editorial_social_deliveries_table.php');
+        $migration->up();
+
+        $this->assertTrue($schema->hasIndex($table, $uniqueColumns, 'unique'));
+        $this->assertTrue($schema->hasIndex($table, ['status']));
+        $this->assertDatabaseHas($table, ['id' => $delivery->id]);
+    }
+
     public function test_only_first_publication_queues_a_frozen_facebook_share(): void
     {
         $this->enable();
