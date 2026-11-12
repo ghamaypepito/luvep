@@ -33,7 +33,11 @@ The report counts persisted note posts, not successful calls, messages, school e
 
 ## Validation and staging acceptance
 
-Local checks passed: a 41-test regression run with 817 assertions (the new note-reporting tests, Education profile-note access, Education report/period behavior and shared weekly-report tests), plus one focused support-impersonation test with 40 assertions. Total across those runs: **42 tests, 857 assertions**. The frontend test `node tests/Frontend/education-note-activity.cjs` passed explicit classification, portal-safe submission, repeated rows, author/client display, pagination and escaping checks. The full asset build was still running at this validation snapshot; its completion, CI and staging results must be checked before merge.
+Local checks passed: a 41-test regression run with 817 assertions (the new note-reporting tests, Education profile-note access, Education report/period behavior and shared weekly-report tests), plus one focused support-impersonation test with 40 assertions. Total across those runs: **42 tests, 857 assertions**. The frontend test `node tests/Frontend/education-note-activity.cjs` passed explicit classification, portal-safe submission, repeated rows, author/client display, pagination and escaping checks. The full Vite production build passed (4,961 modules); existing duplicate-key warnings were in untouched EducationEnrolmentPage.jsx. PHP syntax and diff checks passed.
+
+Published as draft PR https://github.com/ghamaypepito/luvep/pull/73. Its full GitHub regression check passed: https://github.com/ghamaypepito/luvep/actions/runs/43236501413/job/131245148373.
+
+A local headless browser with synthetic accounts posted both activity types through the real Education composer and verified automatic client/author report rows, persistence after reload without duplicate entries, absence of private note bodies in the report, Emma/Nova isolation, Finance report access and Education denial, mobile overflow and no JavaScript runtime errors. These checks passed against a temporary SQLite application on loopback, not production or staging. The temporary server was stopped afterward.
 
 No live records were used in these checks. Before merge/deployment, verify:
 
@@ -53,7 +57,7 @@ No live records were used in these checks. Before merge/deployment, verify:
 
 **Resolution:** Proposed branch records each Education note post atomically with an author/client/date event, adds an explicit Follow-up option and displays a separate personal activity report. Pending review, build/staging checks and deployment.
 
-**Verification:** Use the local results and staging checklist above. No production notes, stages or reports were modified by preparing this branch.
+**Verification:** Local backend/frontend checks, production asset compilation, the local browser flow and GitHub regression passed as listed above. Staging, the additive migration in the target environment and Emma's acceptance remain pending. No production notes, stages or reports were modified by preparing this branch.
 
 **References:** TKT-4MXBGO; branch `codex/4mxbgo-education-note-reporting`; related manual reporting ticket TKT-UY9UDR.
 
