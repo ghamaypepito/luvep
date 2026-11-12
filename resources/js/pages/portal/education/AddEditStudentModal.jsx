@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
+import { EDUCATION_DISPOSITIONS } from "../../../lib/educationDispositions";
 import { X, Save, AlertTriangle, GraduationCap, ChevronDown, Search, UserPlus, Users, Briefcase, Check } from "lucide-react";
 
 // Add / edit student modal — used from the Students page.
@@ -22,6 +23,7 @@ const STAGES_BY_DEPARTMENT = {
             "Conditional Offer", "Unconditional Offer", "Endorsed to Immigration",
             "Visa Lodged", "Approved Visa", "Started Course",
             "For Relodgement", "Declined Visa", "On Hold",
+            "Qualified but No Funds", "Archive",
         ],
     },
     english: {
@@ -158,7 +160,7 @@ export default function AddEditStudentModal({
         // Detect which department track the student is currently on by
         // looking at which of the three *_stage columns has a value.
         // Keep an Education hold selected even when another team is active.
-        const seedDept = student.education_stage === "On Hold"
+        const seedDept = EDUCATION_DISPOSITIONS.has(student.education_stage)
             ? "education"
             : student.immigration_stage
                 ? "immigration"
@@ -327,7 +329,7 @@ export default function AddEditStudentModal({
 
         // Holding or resuming Education leaves parallel work in place.
         // The server preserves omitted fields and still accepts explicit clears.
-        if (editing && (student.education_stage === "On Hold" || (department === "education" && stage === "On Hold"))) {
+        if (editing && (EDUCATION_DISPOSITIONS.has(student.education_stage) || (department === "education" && EDUCATION_DISPOSITIONS.has(stage)))) {
             if (department !== "education") delete payload.education_stage;
             if (department !== "english") {
                 delete payload.english_stage;

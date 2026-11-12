@@ -47,6 +47,8 @@ class Lead extends Model
         'For Relodgement',
         'Declined Visa',
         'On Hold',
+        'Qualified but No Funds',
+        'Archive',
     ];
 
     /** Default stage a newly-converted education student starts on. */
@@ -830,6 +832,18 @@ class Lead extends Model
         // Stamp who last touched the record, and with what, before the row
         // is written — this is what the portals' Updated column reports.
         static::updating(fn (Lead $lead) => $lead->stampLastActivity());
+
+        // Older handoffs can qualify for Cases by education_stage alone.
+        // Retain that existing membership when selecting an Education disposition;
+        // do not invent a conversion date or change the Immigration stage.
+        static::updating(function (Lead $lead) {
+            if ($lead->isDirty('education_stage')
+                && in_array($lead->education_stage, ['Qualified but No Funds', 'Archive'], true)
+                && in_array($lead->getOriginal('education_stage'), self::EDUCATION_STAGES_IMMIGRATION, true)
+                && ! $lead->is_immigration_case) {
+                $lead->is_immigration_case = true;
+            }
+        });
 
         // Stage-triggered client emails — fire whenever the pipeline stage
         // transitions (from any of the several stage-change endpoints).
