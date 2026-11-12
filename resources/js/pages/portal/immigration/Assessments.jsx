@@ -7,6 +7,7 @@ import {
     X, Mail, Phone, ExternalLink, Loader2, MessageCircle, User, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import AssessmentCaseLink from "@/components/immigration/AssessmentCaseLink";
 import PortalPageHeader from "@/components/portal/PortalPageHeader";
 import { AiAssessmentReviewModal } from "@/components/immigration/AiAssessmentReview";
 import { Sparkles } from "lucide-react";
@@ -565,6 +566,7 @@ function IntakeRow({ intake: i, expanded = false, onToggle }) {
                             onClose={() => setAiOpen(false)}
                         />
                     )}
+                    <AssessmentCaseLink assessment={i} />
                     {i.can_convert && (
                         <button
                             type="button"
@@ -1139,6 +1141,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                         {readiness ? `${readiness.verdict} · ${readiness.pct}% complete` : "Completeness only"} — internal &amp; indicative, not immigration advice
                     </p>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                        <AssessmentCaseLink assessment={i} />
                         {i.can_convert && (
                             <button type="button"
                                 onClick={() => setConvertOpen(true)}
