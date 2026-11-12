@@ -1352,6 +1352,9 @@ class EducationController extends Controller
     {
         $this->authorizeReport($request);
         if ($request->has('week_start')) {
+            if ($request->has('entry_action')) {
+                return \App\Services\Reports\EducationWeeklyNotes::save($request);
+            }
             return ReportWeek::save($request, 'education');
         }
 

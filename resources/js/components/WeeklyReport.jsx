@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useForm } from "@inertiajs/react";
 import { ClipboardList, PencilLine } from "lucide-react";
+import EducationWeeklyNotes from "./EducationWeeklyNotes";
 
 export const WEEK_PRESETS = [
     { key: "this_week", label: "This week" },
@@ -52,12 +53,13 @@ function WeekCard({ report, saveUrl }) {
                             {dateLabel(report.from)} – {dateLabel(report.to)} · {report.personal ? "Personal note" : "Shared in this portal"}
                         </p>
                     </div>
-                    {!editing && (
+                    {!editing && (!report.entries || report.note) && (
                         <button type="button" onClick={startEditing} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                            <PencilLine size={13} /> {report.note ? "Edit note" : "Add note"}
+                            <PencilLine size={13} /> {report.entries ? "Edit previous note" : report.note ? "Edit note" : "Add note"}
                         </button>
                     )}
                 </div>
+                {report.entries && <EducationWeeklyNotes report={report} saveUrl={saveUrl} />}
                 {editing ? (
                     <form className="mt-3 space-y-2" onSubmit={(event) => {
                         event.preventDefault();
@@ -75,7 +77,10 @@ function WeekCard({ report, saveUrl }) {
                         </div>
                     </form>
                 ) : (
-                    <p className="mt-3 whitespace-pre-wrap break-words text-sm text-gray-700">{report.note || "No notes for this week yet."}</p>
+                    (!report.entries || report.note) && <div className="mt-3">
+                        {report.entries && <p className="text-xs text-gray-500">Previous weekly note</p>}
+                        <p className="whitespace-pre-wrap break-words text-sm text-gray-700">{report.note || "No notes for this week yet."}</p>
+                    </div>
                 )}
                 {recentlySuccessful && <p role="status" className="mt-2 text-xs text-emerald-700">Weekly note saved.</p>}
             </section>
