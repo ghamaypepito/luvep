@@ -91,9 +91,12 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
                         </p>
                     </div>
                 </div>
-                <Link href={`/portal/accommodation/properties/${property.id}/edit`} className="inline-flex items-center gap-2 rounded-full bg-[#1F5A8B] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#184A73]">
-                    <Pencil size={16} /> Edit
-                </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/portal/accommodation/purchase-invoices?property=${property.id}`} className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Invoices &amp; Receipts</Link>
+                    <Link href={`/portal/accommodation/properties/${property.id}/edit`} className="inline-flex items-center gap-2 rounded-full bg-[#1F5A8B] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#184A73]">
+                        <Pencil size={16} /> Edit
+                    </Link>
+                </div>
             </div>
 
             {/* Tabs */}

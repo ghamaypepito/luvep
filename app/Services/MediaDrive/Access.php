@@ -67,14 +67,18 @@ class Access
 
     public function roots(User $user): Builder
     {
-        return MediaFolder::whereNull('parent_id')->where(fn ($q) => $q->whereIn('lead_id', $this->leads($user)->select('id'))->orWhereIn('tenant_id', $this->tenants($user)->select('id')));
+        return MediaFolder::whereNull('parent_id')->where(fn ($q) => $q
+            ->whereIn('lead_id', $this->leads($user)->select('id'))
+            ->orWhereIn('tenant_id', $this->tenants($user)->select('id'))
+            ->orWhere(fn ($invoices) => $invoices->where('client_key', 'like', MediaFolder::PURCHASE_INVOICE_PREFIX.'%')
+                ->whereIn('tenant_id', $this->tenants($user)->withTrashed()->select('id'))));
     }
 
     public function assertFolder(User $user, MediaFolder $folder): MediaFolder
     {
         abort_unless($this->canEnter($user), 403);
         $root = $folder->ownerRoot();
-        abort_unless($root && ($root->lead || $root->tenant), 404);
+        abort_unless($root?->ownerClient(), 404);
         abort_unless($this->roots($user)->whereKey($root->id)->exists(), 403);
 
         return $root;

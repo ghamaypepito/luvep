@@ -6,7 +6,23 @@ use Illuminate\Database\Eloquent\Model;
 
 class MediaFolder extends Model
 {
+    public const PURCHASE_INVOICE_PREFIX = 'purchase-invoice:';
+
     protected $guarded = [];
+
+    public function isPurchaseInvoice(): bool
+    {
+        return str_starts_with((string) $this->ownerRoot()->client_key, self::PURCHASE_INVOICE_PREFIX);
+    }
+
+    public function ownerClient(): Lead|Tenant|null
+    {
+        $root = $this->ownerRoot();
+
+        return $root->lead ?? $root->tenant ?? ($root->isPurchaseInvoice()
+            ? $root->tenant()->withTrashed()->first()
+            : null);
+    }
 
     public function root()
     {
