@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
 import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
@@ -1078,7 +1079,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div className="lg:col-span-2">
-                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} />
+                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} educationReport={portalBase === '/portal/education' || (portalBase === '/admin' && currentUser?.role === 'education')} />
                         </div>
                         <JourneyPanel
                             lead={backendLead}
@@ -1121,7 +1122,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                 {/* Notes and tasks side by side — the two things staff act on. */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} />
+                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} educationReport={portalBase === '/portal/education' || (portalBase === '/admin' && currentUser?.role === 'education')} />
                     <TasksPanel leadId={backendLead.id} tasks={tasks} staffOptions={staffOptions} currentUser={currentUser} />
                 </div>
 
@@ -5350,7 +5351,8 @@ const GOAL_STATUS_OPTS = ['Consultation Done', 'For Proposal', 'Proposal Sent', 
 // dropdown filtered to roles that legitimately pre-screen leads.
 const PRESCREEN_ROLES = ['sales', 'education', 'admin'];
 
-function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOptions = [] }) {
+function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOptions = [], educationReport = false }) {
+    const [reportActivity, setReportActivity] = useState('update');
     const [notePrograms, setNotePrograms] = useState([]);
     const writeBase = useWriteBase();
     const [body, setBody] = useState('');
@@ -5382,7 +5384,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
     useEffect(() => { grow(editRef.current); }, [editBody, editingId]);
 
     const reset = () => {
-        setBody(''); setMediaFiles([]); setPinned(false); setKind('general'); setNotePrograms([]);
+        setBody(''); setMediaFiles([]); setPinned(false); setKind('general'); setNotePrograms([]); setReportActivity('update');
         setPreScreenedBy(''); setPreScreenMode(''); setPreScreenDate('');
         setGoalStatus(''); setGoalBy('');
     };
@@ -5403,7 +5405,8 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
             goal_setting_status: kind === 'goal_setting' ? (goalStatus    || null) : null,
             goal_setting_by:     kind === 'goal_setting' ? (goalBy        || null) : null,
         };
-        router.post(`${writeBase}/leads/${leadId}/notes`, payload, {
+        const reporting = educationNoteSubmission(educationReport, writeBase, reportActivity);
+        router.post(`${reporting.base}/leads/${leadId}/notes`, { ...payload, ...reporting.fields }, {
             preserveScroll: true,
             preserveState: true,
             onSuccess: reset,
@@ -5447,6 +5450,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOpti
 
             {/* Compose — one bordered block, controls on the footer row. */}
             <form onSubmit={submit} className="rounded-xl border border-gray-200 bg-gray-50/40 p-2.5 space-y-2.5">
+                {educationReport && <EducationNoteReportControl value={reportActivity} onChange={setReportActivity} disabled={submitting} />}
                 {/* Kind selector */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                     {Object.entries(NOTE_KIND_META).map(([k, meta]) => (
