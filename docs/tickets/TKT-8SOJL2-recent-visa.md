@@ -24,7 +24,9 @@ Current main has no file-menu action for assigning an unmatched upload to a rece
 
 ## Validation and acceptance
 
-Local validation results and publication status are recorded in the delivery update. Do not equate a pushed branch with a production resolution.
+Local backend checks passed: **38 tests, 739 assertions**, covering RecentVisaDocumentTest, CaseDocumentsTabTest, PartnerVisaChecklistAliasTest, client UploadChecklistTest, EducationChecklistTest and LeadPortalSharedDocumentsTest. The dialog test `node tests/Frontend/recent-visa.cjs` passed confirmation, cancel, duplicate-submit prevention, error and retry checks. PHP syntax checks and `git diff --check` passed. Test databases and files are synthetic; no live client record was used.
+
+Published as draft PR https://github.com/ghamaypepito/luvep/pull/71. The old branch's feature revert and superseded notice were also pushed. GitHub reported no CI checks when queried. Full asset-build/CI completion, staging, authenticated client visibility/download checks and Nova's acceptance are still required before merge/deployment. Do not equate a pushed branch with a production resolution.
 
 Before deployment, verify with synthetic data that classification preserves file/review/upload metadata, existing checklist requirements and other cases; repeat requests remain idempotent; and cross-case IDs/external accounts are denied. Test existing Immigration Documents and client checklist upload/shared-document paths, including Education regression coverage. Confirm cancel, busy state, error/retry and refresh behavior in the dialog.
 
