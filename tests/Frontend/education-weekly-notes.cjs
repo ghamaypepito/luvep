@@ -1,0 +1,77 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const { JSDOM } = require('jsdom');
+const Module = require('node:module');
+const path = require('node:path');
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/education/reports' });
+for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+global.IS_REACT_ACT_ENVIRONMENT = true;
+const React = require('react');
+const { act } = React;
+const { createRoot } = require('react-dom/client');
+const posts = [];
+const inertia = { useForm: initial => {
+    const [data, update] = React.useState(initial);
+    const [errors, setErrors] = React.useState({});
+    return { data, errors, setData: (field, value) => update(current => typeof field === 'object' ? field : { ...current, [field]: value }),
+        clearErrors: () => setErrors({}), post: (url, options) => posts.push({ url, data, options, fail: setErrors }) };
+} };
+const output = buildSync({ entryPoints: ['resources/js/components/WeeklyReport.jsx'], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
+const loaded = new Module(path.resolve('weekly-notes-test.cjs'), module);
+loaded.filename = path.resolve('weekly-notes-test.cjs'); loaded.paths = module.paths;
+loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
+loaded._compile(output, loaded.filename);
+const root = createRoot(document.getElementById('root'));
+const render = report => act(async () => root.render(React.createElement(loaded.exports.default, { report, saveUrl: '/portal/education/reports/note' })));
+const click = node => act(async () => { assert.ok(node); node.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
+const change = value => act(async () => {
+    const node = document.querySelector('textarea');
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set.call(node, value);
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+});
+const submit = () => act(async () => document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+(async () => {
+    const report = { from: '2026-11-09', to: '2026-11-13', note: 'Existing event', entries: [], tasks: { created: 2, completed: 1, recent: [] } };
+    await render(report);
+    assert.match(document.body.textContent, /Existing event/);
+    assert.ok(button('Edit previous note'));
+    await click(button('Add note')); await change('First separate event'); await submit();
+    assert.equal(posts.at(-1).data.entry_action, 'add');
+    assert.equal(posts.at(-1).data.week_start, '2026-11-09');
+    assert.equal(posts.at(-1).data.note, 'First separate event');
+    const firstId = posts.at(-1).data.entry_id;
+    await act(async () => posts.at(-1).fail({ note: 'Network retry needed' }));
+    assert.match(document.querySelector('[role=alert]').textContent, /retry/);
+    assert.equal(document.querySelector('textarea').value, 'First separate event');
+    await submit(); assert.equal(posts.at(-1).data.entry_id, firstId);
+    await act(async () => posts.at(-1).options.onSuccess());
+    const entry = { id: firstId, note: 'First separate event', author: 'Emma Test', created_at: '2026-11-13T00:00:00Z', can_edit: true };
+    await render({ ...report, entries: [entry, { ...entry, id: 'other', author: 'Other staff', note: 'Other event', can_edit: false }] });
+    assert.equal(document.querySelectorAll('[aria-label="Weekly note entries"] li').length, 2);
+    assert.equal(document.querySelectorAll('[aria-label^="Edit note by"]').length, 1);
+    await click(button('Add note')); await change('Second separate event'); await submit();
+    assert.notEqual(posts.at(-1).data.entry_id, firstId);
+    await click(button('Cancel'));
+    await click(document.querySelector('[aria-label="Edit note by Emma Test"]'));
+    await change('Corrected first event'); await submit();
+    assert.equal(posts.at(-1).data.entry_action, 'edit');
+    assert.equal(posts.at(-1).data.expected_note, entry.note);
+    assert.equal(posts.at(-1).data.entry_id, firstId);
+    // Live report refresh keeps the draft; changing weeks resets it.
+    await render({ ...report, to: '2026-11-14', entries: [entry] });
+    assert.equal(document.querySelector('textarea').value, 'Corrected first event');
+    await render({ ...report, from: '2026-11-02', to: '2026-11-08', note: '', entries: [] });
+    assert.equal(document.querySelector('textarea'), null);
+    await click(button('Add note')); await change('Earlier week'); await submit();
+    assert.equal(posts.at(-1).data.week_start, '2026-11-02');
+    await click(button('Cancel'));
+    // Other portal payloads continue to use their original single-note editor.
+    await render({ from: '2026-10-26', to: '2026-11-01', note: 'Finance note' });
+    assert.equal(document.querySelector('[aria-label="Weekly note entries"]'), null);
+    await click(button('Edit note')); await change('Finance edit'); await submit();
+    assert.deepEqual(posts.at(-1).data, { week_start: '2026-10-26', note: 'Finance edit' });
+    await act(async () => root.unmount());
+    console.log('Education weekly notes: multiple entries, legacy preservation, retries, own-entry editing, draft retention, week reset and other portal compatibility passed.');
+})().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });
