@@ -4,9 +4,11 @@ Priority: Urgent. Reported impact: Immigration staff cannot locate the applicant
 
 ## Evidence and limits
 
-Kent supplied the requester conversation and screenshots of a case-list search returning no visible match. The assessment URL, exact conversion message, underlying record IDs and live database/logs have not been supplied. No live record was modified, conversion retried or invoice generated during this investigation.
+Kent supplied the requester conversation and screenshots of a case-list search returning no visible match. The private assessment-profile URL was subsequently supplied; keep that URL in the restricted ticket rather than this repository. The exact conversion message, underlying record IDs and live database/logs have not been supplied. No live record was modified, conversion retried or invoice generated during this investigation.
 
 Follow-up screenshots show the reported Visitor assessment as Completed with no Convert action, while another applicant sharing the same email retains Convert. This confirms the visible symptom, not the underlying case state. Completed is derived from workflow status in the UI. Shared email alone must not be used to select or repair a case. The pre-screening's separate `converted_lead_id` outcome pointer is now also resolved and checked for conflicts, in addition to `assessment_id` and the working-lead link.
+
+The later assessment-profile screenshot shows pre-screening status New and next action Send agreement, while the list screenshot shows Completed. These are separate workflow fields; their labels alone neither prove nor disprove that a case was created. The precise linked case IDs still require authorised inspection before identifying the live cause or applying a record repair.
 
 Current GitHub main was checked at `9b797d271e44a1a4277a92e704d536f0da0c0a7f`. A source-code defect is reproducible with synthetic records, but it is not yet established that this defect caused this particular live incident. Code availability on GitHub does not establish which revision is deployed.
 
