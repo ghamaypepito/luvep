@@ -55,10 +55,9 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     };
     await render(contactProps);
     const statusCards = [...document.querySelectorAll('button[aria-label$="with recorded entries"]')];
-    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Contact Attempted', 'Contacted', 'Education enrolled']);
+    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Education enrolled']);
     assert.ok(statusCards.every(node => !node.textContent.includes('Period')));
-    await click(statusCards[2]);
-    assert.match(document.body.textContent, /Reached lead/);
+    assert.doesNotMatch(document.body.textContent, /Attempted lead|Reached lead/, 'Shared contact totals must not appear as student accomplishments');
     await render(props);
     assert.match(document.querySelector('h1').nextElementSibling.textContent, /1 Nov – 2 Nov/, 'NZ calendar date labels must not shift date-only boundaries into tomorrow');
     assert.deepEqual([...document.querySelectorAll('[aria-label="Report period"] button')].map(n => n.textContent), ['Today', 'This week', 'Last week', 'This month', 'This year', 'Custom', 'All']);
@@ -89,7 +88,7 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     await act(async () => { select.value = 'English offer'; select.dispatchEvent(new Event('change', { bubbles: true })); });
     await click(button('Add note')); await change(document.querySelector('textarea'), 'Keep this commentary draft');
     await act(async () => window.dispatchEvent(new Event('focus')));
-    assert.ok(reloads.at(-1).only.includes('range')); assert.ok(reloads.at(-1).only.includes('error')); assert.ok(reloads.at(-1).only.includes('pipeline_history'));
+    assert.ok(reloads.at(-1).only.includes('range')); assert.ok(reloads.at(-1).only.includes('error')); assert.ok(reloads.at(-1).only.includes('pipeline_history')); assert.ok(reloads.at(-1).only.includes('personalReport'));
     await act(async () => reloads.at(-1).onError({ report: 'Refresh failed. Try again.' }));
     assert.match(document.querySelector('[role=alert]').textContent, /Refresh failed/);
     await render({ ...props, generated_at: '2026-11-02T03:00:00Z' });
