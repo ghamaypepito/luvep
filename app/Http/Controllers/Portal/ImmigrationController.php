@@ -2239,6 +2239,10 @@ class ImmigrationController extends Controller
             $lastName = $intake->last_name ?? $intake->family_name ?? null;
 
             return DB::transaction(function () use ($assessment, $intake, $visaName, $lastName) {
+                $link = (new \App\Services\Immigration\AssessmentCaseLink)->resolve($intake, $assessment);
+                if ($link['conversion_blocked']) {
+                    return back()->with('error', $link['conversion_issue']);
+                }
                 // Find-or-create the Lead. Emails are NOT unique to a person
                 // (a parent often registers several people under one email),
                 // so a same-email lead is only the right target when the NAME
@@ -2252,7 +2256,7 @@ class ImmigrationController extends Controller
                 //    already holds this applicant's onboarding (payment plan,
                 //    bookings, uploaded documents). Converting onto it keeps all
                 //    of that attached instead of spawning a parallel case.
-                $lead = \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                $lead = $link['case_id'] ? Lead::findOrFail($link['case_id']) : \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
                     ->where('subject_id', $intake->getKey())
                     ->whereNotNull('lead_id')
                     ->first()?->lead;
@@ -2401,12 +2405,17 @@ class ImmigrationController extends Controller
     private function convertResidentIntakeWithoutAssessment(ResidentIntake $intake)
     {
         return DB::transaction(function () use ($intake) {
+            $link = (new \App\Services\Immigration\AssessmentCaseLink)->resolve($intake, null);
+            if ($link['conversion_blocked']) {
+                return back()->with('error', $link['conversion_issue']);
+            }
             // Match a same-email lead only when the full name also matches —
             // families share an inbox, so email alone would hijack a relative.
             $wantFirst = strtolower(trim((string) $intake->first_name));
             $wantLast = strtolower(trim((string) $intake->last_name));
-            $lead = null;
-            if ($intake->email && $wantFirst !== '' && $wantLast !== '') {
+            $lead = $link['case_id'] ? Lead::findOrFail($link['case_id']) : \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                ->where('subject_id', $intake->getKey())->first()?->lead;
+            if (! $lead && $intake->email && $wantFirst !== '' && $wantLast !== '') {
                 $lead = Lead::where('email', $intake->email)->get()
                     ->first(fn ($l) => strtolower(trim((string) $l->first_name)) === $wantFirst
                         && strtolower(trim((string) $l->last_name)) === $wantLast);
@@ -2712,30 +2721,10 @@ class ImmigrationController extends Controller
                     ->keyBy('intakeable_id');
             };
 
-            // Pre-compute which Assessment ids already map to a Lead flagged
-            // as an immigration case. Matching by the exact assessment_id
-            // (not email) means only the assessment actually converted shows
-            // as "Converted" — a second same-email applicant's assessment
-            // stays convertible on its own.
-            $convertedAssessmentIds = Lead::query()
-                ->where('is_immigration_case', true)
-                ->whereNotNull('assessment_id')
-                ->pluck('assessment_id')
-                ->flip();
+            // Use live case records, not workflow labels, as conversion proof.
+            $caseLinks = new \App\Services\Immigration\AssessmentCaseLink;
 
-            // Identity keys (lower(email)|dob) of every immigration case, so a
-            // fresh submission from someone who is ALREADY a case shows as
-            // belonging to that case instead of a convertible duplicate — the
-            // public funnels sync it in (see SyncsIntakeToCase). Email+DOB (not
-            // email alone) keeps family members who share an email distinct.
-            $caseIdentities = Lead::query()
-                ->where('is_immigration_case', true)
-                ->get(['email', 'dob'])
-                ->map(fn ($c) => \App\Http\Controllers\Concerns\SyncsIntakeToCase::caseSyncIdentityKey($c->email, $c->dob))
-                ->filter()
-                ->flip();
-
-            $normalize = function ($intake, string $visaType, $assessment, $review = null) use ($convertedAssessmentIds, $caseIdentities): array {
+            $normalize = function ($intake, string $visaType, $assessment, $review = null) use ($caseLinks): array {
                 $first = (string) ($intake->first_name ?? '');
                 $last = (string) ($intake->last_name ?? $intake->family_name ?? '');
                 $hasAssessment = (bool) $assessment;
@@ -2752,17 +2741,12 @@ class ImmigrationController extends Controller
                 $isTriaged = $intake->status !== null
                     && ! in_array($intake->status, $defaultStatuses, true);
 
-                // Converted — this exact assessment is linked to a case, the
-                // intake was marked "Engaged" post-convert, OR the submitter is
-                // already a case (same email + DOB): their fresh form was synced
-                // into that case, so it isn't a new lead to convert.
-                $identityKey = \App\Http\Controllers\Concerns\SyncsIntakeToCase::caseSyncIdentityKey($intake->email, $intake->dob);
-                $belongsToCase = $identityKey !== null && isset($caseIdentities[$identityKey]);
-                $isConverted = ($assessment && isset($convertedAssessmentIds[$assessment->id]))
-                    || $intake->status === 'Engaged'
-                    || $belongsToCase;
+                // A stale Engaged/pre-screen status is not a case link.
+                $link = $caseLinks->resolve($intake, $assessment);
+                $isConverted = $link['case_id'] !== null;
 
                 return [
+                    ...$link,
                     'id' => $intake->id,
                     'record' => 'intake', // deletes from the intake table
                     'assessment_id' => $assessment?->id,
@@ -2780,17 +2764,13 @@ class ImmigrationController extends Controller
                     'extra' => $visaType === 'resident'
                         ? trim(($intake->current_visa_type ?? '').($intake->job_title ? ' · '.$intake->job_title : ''))
                         : null,
-                    // Convert is available to all four visa types now,
-                    // gated on (1) a paired Assessment exists, (2) the
-                    // intake isn't already Engaged, (3) no existing
-                    // Lead with matching email is already an
-                    // immigration case.
+                    // Only retry when no live case or unsafe/deleted link exists.
                     // Resident intakes can convert even without a paired
                     // Assessment — the controller falls back to the
                     // intake-only path (convertResidentIntakeWithoutAssessment)
                     // so the action isn't a dead end for pre-Assessment rows.
                     'can_convert' => ($hasAssessment || $visaType === 'resident')
-                        && $intake->status !== 'Engaged'
+                        && ! $link['conversion_blocked']
                         && ! $isConverted,
                     'detail_url' => $visaType === 'resident'
                         ? "/admin/immigration/resident-intakes/{$intake->id}"
@@ -3036,6 +3016,8 @@ class ImmigrationController extends Controller
             // assessment funnel is an immigration enquiry). Hidden once it's
             // already a case so it can't be double-converted.
             'can_convert' => ! $l->is_immigration_case,
+            'case_id' => $l->is_immigration_case ? $l->id : null,
+            'case_url' => $l->is_immigration_case ? "/portal/immigration/cases/{$l->id}/profile?tab=documents" : null,
             'detail_url' => "/admin/leads/{$l->id}",
             'data_url' => "/portal/immigration/assessments/free/{$l->id}/data",
             'journey' => [

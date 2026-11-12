@@ -8,6 +8,7 @@ import {
     Wallet, Receipt, Check, ArrowRightCircle, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+import AssessmentCaseLink from "@/components/immigration/AssessmentCaseLink";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
 import RichTextEditor from "@/components/templates/RichTextEditor";
 import CaseEngagementModal from "@/components/immigration/case-profile/CaseEngagementModal";
@@ -630,7 +631,11 @@ function NextAction({ i }) {
     if (p.status === "declined") {
         kind = "DECLINED"; tone = "muted"; title = "Pre-screening declined";
         body = p.decline_reason ? `Reason: ${p.decline_reason}` : "This pre-screening was declined.";
-    } else if (p.status === "converted") {
+    } else if (i.conversion_issue) {
+        kind = "CASE NEEDS REVIEW"; tone = "wait"; title = "Conversion needs verification";
+        body = i.conversion_issue;
+        if (i.can_convert) primary = { label: "Retry conversion", onClick: convert };
+    } else if (i.case_url) {
         kind = "CONVERTED"; tone = "done"; title = "Converted to a case";
         body = "This applicant is now an immigration case.";
     } else if (p.status === "eligible") {
@@ -663,6 +668,7 @@ function NextAction({ i }) {
                     <p className="text-[14px] font-bold text-gray-900 mt-1">{title}</p>
                     <p className="text-[12.5px] text-gray-500 mt-0.5 max-w-xl">{body}</p>
                 </div>
+                <AssessmentCaseLink assessment={{ case_url: i.case_url }} />
                 {primary && (
                     <button type="button" onClick={primary.onClick}
                         className={`flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold ${
@@ -775,7 +781,9 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
     // Intake-attached files + the client's /application uploads, shown together.
     const docs = [...(data?.documents || []), ...client_documents];
     const status = intake.pre_screen?.status || "new";
-    const st = PRE_STATUS[status] || PRE_STATUS.new;
+    const st = intake.conversion_issue
+        ? { label: "Case needs review", cls: "bg-amber-50 text-amber-800 border-amber-200" }
+        : PRE_STATUS[status] || PRE_STATUS.new;
 
     return (
         <>
@@ -823,7 +831,7 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
 
                     {/* Pipeline */}
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                        <Stepper status={status} />
+                        {!intake.conversion_issue && <Stepper status={status} />}
                     </div>
 
                     {/* Next action — what the staff member should do now */}
