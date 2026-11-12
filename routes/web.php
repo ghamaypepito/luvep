@@ -2054,8 +2054,6 @@ Route::middleware(['auth'])->group(function () {
             // to use LeadController::show via /admin/leads/{id}.
             Route::get('/cases/{lead}/profile', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'show'])
                 ->name('cases.profile');
-            Route::post('/cases/{lead}/documents/{document}/visa-history', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToVisaHistory'])
-                ->whereNumber('document')->name('cases.documents.visa-history');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.
             Route::post('/cases/{lead}/personal', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updatePersonal'])
                 ->name('cases.personal');
