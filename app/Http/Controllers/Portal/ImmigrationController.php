@@ -15,6 +15,7 @@ use App\Models\UserReview;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
+use App\Services\Immigration\AssessmentCaseLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -2239,7 +2240,7 @@ class ImmigrationController extends Controller
             $lastName = $intake->last_name ?? $intake->family_name ?? null;
 
             return DB::transaction(function () use ($assessment, $intake, $visaName, $lastName) {
-                $link = (new \App\Services\Immigration\AssessmentCaseLink)->resolve($intake, $assessment);
+                $link = (new AssessmentCaseLink)->resolve($intake, $assessment);
                 if ($link['conversion_blocked']) {
                     return back()->with('error', $link['conversion_issue']);
                 }
@@ -2283,6 +2284,10 @@ class ImmigrationController extends Controller
                     if ($named->count() === 1) {
                         $lead = $named->first();
                     }
+                }
+
+                if ($lead && AssessmentCaseLink::hasApplicantConflict($intake, $lead)) {
+                    return back()->with('error', AssessmentCaseLink::APPLICANT_CONFLICT);
                 }
 
                 // 3. Nothing matched → create a fresh case for this applicant
@@ -2405,7 +2410,7 @@ class ImmigrationController extends Controller
     private function convertResidentIntakeWithoutAssessment(ResidentIntake $intake)
     {
         return DB::transaction(function () use ($intake) {
-            $link = (new \App\Services\Immigration\AssessmentCaseLink)->resolve($intake, null);
+            $link = (new AssessmentCaseLink)->resolve($intake, null);
             if ($link['conversion_blocked']) {
                 return back()->with('error', $link['conversion_issue']);
             }
@@ -2419,6 +2424,9 @@ class ImmigrationController extends Controller
                 $lead = Lead::where('email', $intake->email)->get()
                     ->first(fn ($l) => strtolower(trim((string) $l->first_name)) === $wantFirst
                         && strtolower(trim((string) $l->last_name)) === $wantLast);
+            }
+            if ($lead && AssessmentCaseLink::hasApplicantConflict($intake, $lead)) {
+                return back()->with('error', AssessmentCaseLink::APPLICANT_CONFLICT);
             }
             if (! $lead) {
                 $lead = Lead::create([
@@ -2722,7 +2730,7 @@ class ImmigrationController extends Controller
             };
 
             // Use live case records, not workflow labels, as conversion proof.
-            $caseLinks = new \App\Services\Immigration\AssessmentCaseLink;
+            $caseLinks = new AssessmentCaseLink;
 
             $normalize = function ($intake, string $visaType, $assessment, $review = null) use ($caseLinks): array {
                 $first = (string) ($intake->first_name ?? '');
