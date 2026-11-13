@@ -38,7 +38,8 @@ const root = createRoot(document.getElementById("root"));
 const data = {
     today: "2026-11-12", notes_week_start: "2026-11-09",
     notes: { accomplishments: "", other_activities: "", next_week_tasks: "" },
-    kinds: { called: "Clients called", messaged: "Clients messaged", enrolment: "Enrolments / additional enrolments", offer: "Offers received", proposal: "Proposals sent / additional proposals" },
+    kinds: { new_lead: "New leads recorded", follow_up: "Follow-ups recorded manually", status_update: "Other status changes", called: "Clients called", messaged: "Clients messaged", enrolment: "Enrolments / additional enrolments", offer: "Offers received", proposal: "Proposals sent / additional proposals" },
+    statuses: ["Conditional Offer", "School Enrolment"],
     counts: { enrolment: { label: "Enrolments / additional enrolments", events: 2, clients: 1 } },
     contacts: { "Contact Attempted": [{ id: 8, name: "My Lead", date: "2026-11-11T22:00:00Z" }], Contacted: [] },
     entries: { data: [
@@ -59,7 +60,7 @@ const change = (node, value) => act(async () => {
 const submit = node => act(async () => node.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
 (async () => {
     await render(data);
-    assert.match(byLabel("My activity totals").textContent, /2 activities · 1 client/);
+    assert.match(byLabel("My activity totals").textContent, /2 activities · 1 distinct clients \/ names/);
     assert.equal(document.querySelectorAll("tbody tr").length, 2, "Repeated enrolments must keep separate rows");
     assert.match(byLabel("My lead contact activity").textContent, /My Lead/);
     await submit(byLabel("Record an accomplishment"));
@@ -114,6 +115,31 @@ const submit = node => act(async () => node.dispatchEvent(new Event("submit", { 
     await change(byLabel("Search accomplishment client"), "Unknown");
     await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
     assert.match(document.body.textContent, /Client search failed/);
+
+    await change(byLabel("Accomplishment client source"), "named");
+    assert.equal(byLabel("Search accomplishment client"), null);
+    assert.equal(byLabel("Choose accomplishment client"), null);
+    await change(byLabel("Accomplishment client name"), "External Person");
+    await change(byLabel("Accomplishment activity"), "new_lead");
+    await submit(byLabel("Record an accomplishment"));
+    assert.equal(posts.at(-1).data.client_name, "External Person");
+    assert.equal(posts.at(-1).data.lead_id, undefined);
+    await act(async () => { posts.at(-1).options.onSuccess(); posts.at(-1).options.onFinish(); });
+    await change(byLabel("Accomplishment activity"), "follow_up");
+    await submit(byLabel("Record an accomplishment"));
+    assert.equal(posts.at(-1).data.kind, "follow_up");
+    await act(async () => { posts.at(-1).options.onSuccess(); posts.at(-1).options.onFinish(); });
+    await change(byLabel("Accomplishment activity"), "status_update");
+    await change(byLabel("Reported Education status"), "Conditional Offer");
+    await change(byLabel("Accomplishment details"), "Another school offer");
+    await submit(byLabel("Record an accomplishment"));
+    assert.equal(posts.at(-1).data.reported_status, "Conditional Offer");
+    assert.equal(posts.at(-1).data.kind, "status_update");
+    await change(byLabel("Filter accomplishment list"), "follow_up");
+    assert.equal(visits.at(-1).data.activity_kind, "follow_up");
+    assert.equal(visits.at(-1).data.preset, "this_week");
+    await click(button("Show enrolments / additional enrolments names"));
+    assert.equal(visits.at(-1).data.activity_kind, "enrolment");
     await act(async () => root.unmount());
     console.log("Personal Education report: repeated rows, client search, validation, retry keys, note/week isolation, drafts, errors, removal and pagination passed.");
 })().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });

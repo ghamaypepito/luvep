@@ -215,4 +215,72 @@ class EducationPersonalReportTest extends TestCase
         $rows = $this->report($emma, '?preset=today')['personalReport']['contacts']['Contact Attempted'];
         $this->assertSame([$atMidnight->id], array_column($rows, 'id'));
     }
+
+    public function test_named_external_leads_and_repeated_follow_ups_keep_names_dates_and_totals_without_creating_leads(): void
+    {
+        $emma = $this->staff();
+        $before = Lead::count();
+        $payload = ['kind' => 'new_lead', 'client_name' => 'External Person', 'occurred_on' => '2026-11-10', 'submission_key' => (string) Str::uuid()];
+        $this->actingAs($emma)->post('/portal/education/reports/activities', $payload)->assertSessionHasNoErrors();
+        $this->post('/portal/education/reports/activities', $payload)->assertSessionHasNoErrors();
+        for ($i = 0; $i < 10; $i++) {
+            $this->post('/portal/education/reports/activities', array_merge($payload, [
+                'kind' => 'follow_up', 'client_name' => $i % 2 ? 'external   person' : 'External Person',
+                'occurred_on' => $i % 2 ? '2026-11-11' : '2026-11-12', 'submission_key' => (string) Str::uuid(),
+            ]))->assertSessionHasNoErrors();
+        }
+        $p = $this->report($emma)['personalReport'];
+        $this->assertSame(1, $p['counts']['new_lead']['events']);
+        $this->assertSame(10, $p['counts']['follow_up']['events']);
+        $this->assertSame(1, $p['counts']['follow_up']['clients']);
+        $this->assertCount(11, $p['entries']['data']);
+        $this->assertTrue($p['entries']['data'][0]['external']);
+        $this->assertSame($before, Lead::count());
+        $today = $this->report($emma, '?preset=today&activity_kind=follow_up')['personalReport'];
+        $this->assertCount(5, $today['entries']['data']);
+        $this->assertSame('follow_up', $today['activity_kind']);
+        $other = $this->report($this->staff())['personalReport'];
+        $this->assertSame(0, $other['counts']['follow_up']['events']);
+        $this->assertCount(0, $other['entries']['data']);
+        Mail::assertNothingSent(); Notification::assertNothingSent();
+    }
+
+    public function test_reported_status_events_keep_the_stage_unchanged_and_filter_lists_without_losing_totals(): void
+    {
+        $emma = $this->staff();
+        $student = $this->client();
+        $before = $student->fresh()->getAttributes();
+        foreach (['Conditional Offer', 'School Enrolment', 'School Enrolment'] as $status) {
+            $this->actingAs($emma)->post('/portal/education/reports/activities', $this->payload($student, [
+                'kind' => 'status_update', 'reported_status' => $status, 'details' => 'Additional school/offer evidence',
+            ]))->assertSessionHasNoErrors();
+        }
+        $this->post('/portal/education/reports/activities', $this->payload($student, ['kind' => 'follow_up']))->assertSessionHasNoErrors();
+        $p = $this->report($emma, '?preset=this_week&activity_kind=status_update')['personalReport'];
+        $this->assertSame(3, $p['counts']['status_update']['events']);
+        $this->assertSame(1, $p['counts']['status_update']['clients']);
+        $this->assertSame(1, $p['counts']['follow_up']['events']);
+        $this->assertCount(3, $p['entries']['data']);
+        $this->assertSame('School Enrolment', $p['entries']['data'][0]['reported_status']);
+        $this->assertSame($before, $student->fresh()->getAttributes());
+        Mail::assertNothingSent(); Mail::assertNothingQueued(); Notification::assertNothingSent();
+    }
+
+    public function test_named_activity_validation_and_retry_keys_prevent_ambiguous_or_changed_submissions(): void
+    {
+        $emma = $this->staff();
+        $student = $this->client();
+        $payload = ['kind' => 'follow_up', 'client_name' => 'External Person', 'occurred_on' => '2026-11-10', 'submission_key' => (string) Str::uuid()];
+        $this->actingAs($emma);
+        foreach ([['client_name' => ''], ['client_name' => "\u{2003}"], ['client_name' => str_repeat('x', 161)], ['lead_id' => $student->id], ['lead_id' => $student->id, 'client_name' => '0'],
+            ['kind' => 'status_update'], ['kind' => 'status_update', 'reported_status' => 'Unknown', 'details' => 'Context'],
+            ['kind' => 'status_update', 'reported_status' => 'School Enrolment', 'details' => '']] as $invalid) {
+            $this->postJson('/portal/education/reports/activities', array_merge($payload, $invalid))->assertUnprocessable();
+        }
+        $this->post('/portal/education/reports/activities', $payload)->assertSessionHasNoErrors();
+        $this->postJson('/portal/education/reports/activities', array_merge($payload, ['client_name' => null, 'lead_id' => 0]))->assertNotFound();
+        $this->post('/portal/education/reports/activities', array_merge($payload, ['client_name' => 'Someone else']))->assertStatus(409);
+        $this->assertDatabaseCount('education_report_activities', 1);
+        $this->actingAs($this->staff(['role' => 'finance']))->postJson('/portal/education/reports/activities', array_merge($payload, ['submission_key' => (string) Str::uuid()]))->assertForbidden();
+    }
 }

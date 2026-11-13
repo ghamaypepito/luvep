@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Models\EducationReportActivity;
+use App\Models\Lead;
 use App\Models\Setting;
 use App\Services\Reports\EducationPersonalReport;
 use App\Services\Reports\ReportPeriod;
@@ -42,19 +43,34 @@ class EducationReportActivityController extends Controller
     {
         $this->authorize($request);
         $data = $request->validate([
-            'lead_id' => 'required|integer',
+            'lead_id' => 'nullable|required_without:client_name|integer',
+            'client_name' => 'nullable|required_without:lead_id|string|max:160',
+            'reported_status' => ['nullable', 'required_if:kind,status_update', Rule::in(Lead::EDUCATION_STAGES)],
             'kind' => ['required', Rule::in(array_keys(EducationPersonalReport::KINDS))],
             'occurred_on' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.CarbonImmutable::now(ReportPeriod::TIMEZONE)->toDateString()],
             'submission_key' => 'required|uuid',
-            'details' => [Rule::requiredIf(in_array($request->input('kind'), ['enrolment', 'offer', 'proposal'], true)), 'nullable', 'string', 'max:1000'],
+            'details' => [Rule::requiredIf(in_array($request->input('kind'), ['enrolment', 'offer', 'proposal', 'status_update'], true)), 'nullable', 'string', 'max:1000'],
         ]);
-        EducationPersonalReport::clients()->whereKey($data['lead_id'])->firstOrFail();
+        $leadId = $data['lead_id'] ?? null;
+        $clientName = isset($data['client_name']) ? trim(preg_replace('/\s+/u', ' ', $data['client_name'])) : null;
+        if ($leadId !== null && $clientName !== null) {
+            throw ValidationException::withMessages(['client_name' => 'Choose a portal client or enter a name, not both.']);
+        }
+        if ($leadId === null && ($clientName === null || $clientName === '')) {
+            throw ValidationException::withMessages(['client_name' => 'Enter a client name or choose a portal client.']);
+        }
+        if ($leadId !== null) {
+            EducationPersonalReport::clients()->whereKey($leadId)->firstOrFail();
+        }
+        $status = $data['kind'] === 'status_update' ? $data['reported_status'] : null;
         $details = trim($data['details'] ?? '') ?: null;
         $entry = EducationReportActivity::withTrashed()->firstOrCreate(
             ['user_id' => $request->user()->id, 'submission_key' => $data['submission_key']],
-            ['lead_id' => $data['lead_id'], 'kind' => $data['kind'], 'occurred_on' => $data['occurred_on'], 'details' => $details],
+            ['lead_id' => $leadId, 'client_name' => $clientName, 'reported_status' => $status,
+                'kind' => $data['kind'], 'occurred_on' => $data['occurred_on'], 'details' => $details],
         );
-        abort_if($entry->trashed() || (int) $entry->lead_id !== (int) $data['lead_id'] || $entry->kind !== $data['kind']
+        abort_if($entry->trashed() || (int) $entry->lead_id !== (int) $leadId || $entry->client_name !== $clientName
+            || $entry->reported_status !== $status || $entry->kind !== $data['kind']
             || $entry->occurred_on->toDateString() !== $data['occurred_on'] || $entry->details !== $details,
             409, 'This submission was already used. Refresh the form before recording another activity.');
 

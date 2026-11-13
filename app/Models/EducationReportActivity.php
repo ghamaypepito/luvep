@@ -10,7 +10,7 @@ class EducationReportActivity extends Model
 {
     use LogsActivity, SoftDeletes;
 
-    protected $fillable = ['user_id', 'lead_id', 'submission_key', 'kind', 'occurred_on', 'details'];
+    protected $fillable = ['user_id', 'lead_id', 'client_name', 'reported_status', 'submission_key', 'kind', 'occurred_on', 'details'];
 
     protected $casts = ['occurred_on' => 'date'];
 

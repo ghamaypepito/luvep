@@ -1,5 +1,7 @@
 # TKT-UY9UDR — Education personal accomplishments
 
+Implementation update: the newer `codex/1c0ob4-education-report-name-lists` branch incorporates this foundation and adds the requirements of TKT-1C0OB4. Use that combined proposal for review rather than merging this original branch separately. The validation below describes the earlier implementation; see TKT-1C0OB4-education-report-name-lists.md and its PR for current results. Historical publishing-access comments below are superseded.
+
 ## Assessment
 
 Priority: Urgent (deadline-driven; corrected by Kent on 12 November 2026). Emma needs the report by Friday, 13 November, or Monday, 16 November; the exact deadline remains unconfirmed. Status: In review; proposed fix requires review, staging acceptance and deployment. This is a reporting accuracy/enhancement request with a time-sensitive reporting deadline; enrolment processing itself is not established as blocked.

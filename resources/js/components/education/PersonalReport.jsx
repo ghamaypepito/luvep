@@ -15,6 +15,9 @@ function PersonalReportContent({ data }) {
     const [client, setClient] = useState(null);
     const [searchError, setSearchError] = useState("");
     const [kind, setKind] = useState("called");
+    const [external, setExternal] = useState(false);
+    const [clientName, setClientName] = useState("");
+    const [reportedStatus, setReportedStatus] = useState("");
     const [date, setDate] = useState(data.today);
     const [details, setDetails] = useState("");
     const [submissionKey, setSubmissionKey] = useState(newKey);
@@ -34,7 +37,7 @@ function PersonalReportContent({ data }) {
 
     useEffect(() => {
         const abort = new AbortController();
-        if (query.trim().length < 2) { setClients([]); setSearchError(""); return () => abort.abort(); }
+        if (external || query.trim().length < 2) { setClients([]); setSearchError(""); return () => abort.abort(); }
         const timer = setTimeout(async () => {
             try {
                 const response = await fetch("/portal/education/reports/clients?q=" + encodeURIComponent(query.trim()), {
@@ -48,15 +51,17 @@ function PersonalReportContent({ data }) {
             }
         }, 250);
         return () => { clearTimeout(timer); abort.abort(); };
-    }, [query]);
+    }, [query, external]);
 
     const record = event => {
         event.preventDefault();
         if (busy) return;
-        if (!client) { setActivityError("Search for and choose a client first."); return; }
+        if (external ? !clientName.trim() : !client) { setActivityError(external ? "Enter the client's name first." : "Search for and choose a client first."); return; }
         setBusy(true); setActivityError(""); setNotice("");
         router.post("/portal/education/reports/activities", {
-            lead_id: client.id, kind, occurred_on: date, details, submission_key: submissionKey,
+            ...(external ? { client_name: clientName.trim() } : { lead_id: client.id }),
+            kind, occurred_on: date, details, submission_key: submissionKey,
+            ...(kind === "status_update" ? { reported_status: reportedStatus } : {}),
         }, {
             preserveState: true, preserveScroll: true,
             onSuccess: () => { setDetails(""); setSubmissionKey(newKey()); setNotice("Activity saved. It appears when its date is included in the report range."); },
@@ -85,13 +90,20 @@ function PersonalReportContent({ data }) {
         });
     };
     const entries = data.entries || { data: [], current_page: 1, last_page: 1 };
-    const needsContext = ["enrolment", "offer", "proposal"].includes(kind);
+    const needsContext = ["enrolment", "offer", "proposal", "status_update"].includes(kind);
+    const setListKind = value => {
+        const params = Object.fromEntries(new URLSearchParams(window.location.search));
+        delete params.activity_page;
+        if (value) params.activity_kind = value; else delete params.activity_kind;
+        router.get("/portal/education/reports", params, { preserveState: true, preserveScroll: true });
+    };
 
     return (
         <section aria-label="My Education accomplishments" className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
             <div>
                 <h2 className="text-lg font-bold text-gray-900">My Education accomplishments</h2>
                 <p className="mt-1 text-xs text-gray-500">Your recorded activities follow the selected report dates. Multiple activities for the same client are counted separately and do not change their stage.</p>
+                <p className="mt-1 text-xs text-gray-500">Add one entry for each person and activity date. Names entered without a portal record do not create accounts or leads. Manual entries are separate from automatic internal-note reporting; do not record the same action in both.</p>
             </div>
             {notice && <p role="status" className="text-sm text-teal-700">{notice}</p>}
 
@@ -108,11 +120,13 @@ function PersonalReportContent({ data }) {
                 </div>
             </section>
 
-            <div aria-label="My activity totals" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                {Object.entries(data.counts || {}).map(([key, count]) => <div key={key} className="rounded-xl bg-gray-50 p-3">
-                    <p className="text-xs font-semibold">{count.label}</p>
-                    <p className="mt-1 text-sm">{count.events} {count.events === 1 ? "activity" : "activities"} · {count.clients} {count.clients === 1 ? "client" : "clients"}</p>
-                </div>)}
+            <p className="text-xs text-gray-500">Totals show activities and distinct clients / names. Repeated activity for one person counts each time; manually entered names are matched by spelling, not verified identity.</p>
+            <div aria-label="My activity totals" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {Object.entries(data.counts || {}).map(([key, count]) => <details key={key} className="rounded-xl bg-gray-50 p-3">
+                    <summary className="cursor-pointer text-xs font-semibold">{count.label}: {count.events} {count.events === 1 ? "activity" : "activities"} · {count.clients} distinct clients / names</summary>
+                    <p className="mt-2 text-xs text-gray-500">Names and dates are in the activity list below. Filter by this activity to see every entry.</p>
+                    <button type="button" onClick={() => setListKind(key)} className="mt-2 text-xs font-semibold text-blue-700">Show {count.label.toLowerCase()} names</button>
+                </details>)}
             </div>
 
             <form aria-label="Record an accomplishment" onSubmit={record} className="space-y-3 rounded-xl border border-gray-200 p-3">
@@ -126,7 +140,15 @@ function PersonalReportContent({ data }) {
                     <label className="text-xs font-semibold">Activity date
                         <input aria-label="Accomplishment date" disabled={busy} type="date" required max={data.today} className={fieldClass} value={date} onChange={event => setDate(event.target.value)} />
                     </label>
-                    <label className="text-xs font-semibold">Search client
+                    <label className="text-xs font-semibold">Client source
+                        <select aria-label="Accomplishment client source" disabled={busy} className={fieldClass} value={external ? "named" : "portal"} onChange={event => { setExternal(event.target.value === "named"); setClient(null); setQuery(""); setClients([]); }}>
+                            <option value="portal">Existing Education portal client</option>
+                            <option value="named">Name only — not in portal</option>
+                        </select>
+                    </label>
+                    {external ? <label className="text-xs font-semibold">Client name (not in portal)
+                        <input aria-label="Accomplishment client name" required maxLength={160} disabled={busy} className={fieldClass} value={clientName} onChange={event => setClientName(event.target.value)} />
+                    </label> : <><label className="text-xs font-semibold">Search client
                         <input aria-label="Search accomplishment client" disabled={busy} className={fieldClass} value={query} onChange={event => { setQuery(event.target.value); setClient(null); setClients([]); }} placeholder="Enter a name or client reference" />
                     </label>
                     <label className="text-xs font-semibold">Choose client
@@ -135,9 +157,16 @@ function PersonalReportContent({ data }) {
                             {clients.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                         </select>
                     </label>
+                    </>}
+                    {kind === "status_update" && <label className="text-xs font-semibold">Reported Education status
+                        <select aria-label="Reported Education status" required disabled={busy} className={fieldClass} value={reportedStatus} onChange={event => setReportedStatus(event.target.value)}>
+                            <option value="">Choose the reported status</option>
+                            {(data.statuses || []).map(status => <option key={status} value={status}>{status}</option>)}
+                        </select>
+                    </label>}
                 </div>
                 {searchError && <p role="alert" className="text-sm text-red-700">{searchError}</p>}
-                <label className="block text-xs font-semibold">Details {needsContext ? "(school, programme, offer or proposal reference required)" : "(optional)"}
+                <label className="block text-xs font-semibold">Details {needsContext ? "(school, programme, offer, proposal or status context required)" : "(optional)"}
                     <textarea aria-label="Accomplishment details" disabled={busy} required={needsContext} maxLength={1000} rows={2} className={fieldClass} value={details} onChange={event => setDetails(event.target.value)} />
                 </label>
                 {activityError && <p role="alert" className="text-sm text-red-700">{activityError}</p>}
@@ -146,10 +175,17 @@ function PersonalReportContent({ data }) {
 
             <div className="overflow-x-auto">
                 <h3 className="mb-2 text-sm font-semibold">My dated activity list</h3>
+                <label className="mb-3 block text-xs font-semibold">Show names for activity
+                    <select aria-label="Filter accomplishment list" className={fieldClass} value={data.activity_kind || ""} onChange={event => setListKind(event.target.value)}>
+                        <option value="">All activities</option>
+                        {Object.entries(data.kinds || {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                </label>
                 {entries.data.length ? <table className="w-full text-left text-xs">
-                    <thead><tr><th className="p-2">Date</th><th className="p-2">Client</th><th className="p-2">Activity</th><th className="p-2">Details</th><th className="p-2">Action</th></tr></thead>
+                    <thead><tr><th className="p-2">Date</th><th className="p-2">Client</th><th className="p-2">Activity</th><th className="p-2">Reported status</th><th className="p-2">Details</th><th className="p-2">Action</th></tr></thead>
                     <tbody>{entries.data.map(entry => <tr key={entry.id} className="border-t border-gray-100">
-                        <td className="p-2">{entry.date}</td><td className="p-2">{entry.client}</td><td className="p-2">{data.kinds[entry.kind] || entry.kind}</td>
+                        <td className="p-2">{entry.date}</td><td className="p-2">{entry.client}{entry.external && <span className="block text-gray-500">Name only · not linked to a portal record</span>}</td><td className="p-2">{data.kinds[entry.kind] || entry.kind}</td>
+                        <td className="p-2">{entry.reported_status || "—"}</td>
                         <td className="whitespace-pre-wrap p-2">{entry.details}</td>
                         <td className="p-2"><button type="button" disabled={Boolean(removing)} aria-label={"Remove activity " + entry.id} onClick={() => remove(entry.id)} className="text-red-700 disabled:opacity-50">Remove entry</button></td>
                     </tr>)}</tbody>

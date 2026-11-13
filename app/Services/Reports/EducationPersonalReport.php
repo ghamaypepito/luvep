@@ -12,6 +12,9 @@ use Illuminate\Database\Eloquent\Builder;
 class EducationPersonalReport
 {
     public const KINDS = [
+        'new_lead' => 'New leads recorded',
+        'follow_up' => 'Follow-ups recorded manually',
+        'status_update' => 'Other status changes',
         'called' => 'Clients called',
         'messaged' => 'Clients messaged',
         'enrolment' => 'Enrolments / additional enrolments',
@@ -36,15 +39,21 @@ class EducationPersonalReport
         return "education_personal_report:{$userId}:{$monday}";
     }
 
-    public function build(ReportPeriod $period, User $user): array
+    public function build(ReportPeriod $period, User $user, ?string $kind = null): array
     {
         $base = EducationReportActivity::where('user_id', $user->id)
             ->where('occurred_on', '<', $period->now->addDay()->toDateString())
             ->when(! $period->isAll(), fn ($q) => $q->where('occurred_on', '>=', $period->start->toDateString())
                 ->where('occurred_on', '<', $period->end->toDateString()));
-        $counts = (clone $base)->selectRaw('kind, COUNT(*) AS total, COUNT(DISTINCT lead_id) AS clients')
-            ->groupBy('kind')->get()->keyBy('kind');
-        $entries = (clone $base)->with('lead:id,first_name,last_name')->orderByDesc('occurred_on')->orderByDesc('id');
+        $counts = (clone $base)->get(['kind', 'lead_id', 'client_name'])->groupBy('kind')->map(fn ($rows) => [
+            'events' => $rows->count(),
+            'clients' => $rows->map(fn ($row) => $row->lead_id !== null ? 'record:'.$row->lead_id
+                : ($row->client_name !== null ? 'name:'.mb_strtolower(trim(preg_replace('/\s+/u', ' ', $row->client_name))) : null))
+                ->filter()->unique()->count(),
+        ]);
+        $kind = array_key_exists($kind ?? '', self::KINDS) ? $kind : null;
+        $entries = (clone $base)->when($kind, fn ($q) => $q->where('kind', $kind))
+            ->with('lead:id,first_name,last_name')->orderByDesc('occurred_on')->orderByDesc('id');
         $page = (clone $entries)->paginate(30, ['*'], 'activity_page')->withQueryString();
         if ($page->currentPage() > $page->lastPage()) {
             // Removing the last row on the last page must not strand the reader.
@@ -53,8 +62,10 @@ class EducationPersonalReport
         $allowed = array_map('intval', self::clients()->whereIn('id', $page->pluck('lead_id')->filter())->pluck('id')->all());
         $page->through(fn ($entry) => [
             'id' => $entry->id, 'kind' => $entry->kind, 'date' => $entry->occurred_on->toDateString(),
-            'client' => $entry->lead && in_array((int) $entry->lead_id, $allowed, true)
-                ? trim($entry->lead->first_name.' '.$entry->lead->last_name) : 'Client no longer available in Education',
+            'client' => $entry->client_name ?? ($entry->lead && in_array((int) $entry->lead_id, $allowed, true)
+                ? trim($entry->lead->first_name.' '.$entry->lead->last_name) : 'Client no longer available in Education'),
+            'external' => $entry->client_name !== null,
+            'reported_status' => $entry->reported_status,
             'details' => $entry->details,
         ]);
         $week = ReportWeek::forPreset($period->preset, $period->now) ?? ReportWeek::forPreset('this_week', $period->now);
@@ -67,10 +78,10 @@ class EducationPersonalReport
         }
 
         return [
-            'kinds' => self::KINDS, 'entries' => $page,
+            'kinds' => self::KINDS, 'entries' => $page, 'statuses' => Lead::EDUCATION_STAGES, 'activity_kind' => $kind ?? '',
             'counts' => collect(self::KINDS)->map(fn ($label, $kind) => [
-                'label' => $label, 'events' => (int) ($counts[$kind]->total ?? 0),
-                'clients' => (int) ($counts[$kind]->clients ?? 0),
+                'label' => $label, 'events' => (int) ($counts[$kind]['events'] ?? 0),
+                'clients' => (int) ($counts[$kind]['clients'] ?? 0),
             ])->all(),
             'contacts' => $this->contacts($period, $user),
             'notes' => $fields, 'notes_week_start' => $monday,
