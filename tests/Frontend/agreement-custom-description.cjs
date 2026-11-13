@@ -16,7 +16,7 @@ global.fetch = async (url, options) => { downloads.push({ url, options }); retur
 const inertia = { Head: () => null, Link: ({ children, ...props }) => React.createElement('a', props, children), router: { post: (...args) => requests.push(args), get() {} } };
 // Expose the actual internal modal for interaction testing without recreating any of its behavior.
 const componentPath = path.resolve('resources/js/pages/portal/sales/ProposalsAgreements.jsx');
-const compiled = buildSync({ stdin: { contents: fs.readFileSync(componentPath, 'utf8') + '\nexport { NewDocumentModal };', resolveDir: path.dirname(componentPath), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') }, external: ['react', 'react-dom', '@inertiajs/react'] }).outputFiles[0].text;
+const compiled = buildSync({ stdin: { contents: fs.readFileSync(componentPath, 'utf8') + '\nexport { NewDocumentModal, DocumentRowActions };', resolveDir: path.dirname(componentPath), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') }, external: ['react', 'react-dom', '@inertiajs/react'] }).outputFiles[0].text;
 const loaded = new Module(path.resolve('agreement-description-test.cjs'), module); loaded.filename = path.resolve('agreement-description-test.cjs'); loaded.paths = module.paths; loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name); loaded._compile(compiled, loaded.filename);
 const Modal = loaded.exports.NewDocumentModal;
 const root = createRoot(document.getElementById('root'));
@@ -69,5 +69,14 @@ const confirm = async () => { await settle(); await click(button('Submit for ver
         assert.equal(Object.hasOwn(requests.at(-1)[1], 'application_description'), false); await act(async () => requests.at(-1)[2].onError({ agreement: 'Synthetic retry.' }));
     }
     await input(category(), 'philippines'); await input(type(), 'proposal'); assert.equal(description(), null);
+    for (const markers of [{}, { client_signed_at: '2026-11-13T10:00:00Z' }, { has_client_signature: true }]) {
+        await act(async () => root.render(React.createElement(loaded.exports.DocumentRowActions, { doc: { id: 7, checklist_key: 'agree.consultancy', ...markers }, lead: { id: 42, email: 'synthetic@example.test' } })));
+        const menu = document.querySelector('[aria-label="Row actions"]');
+        if (menu.getAttribute('aria-expanded') !== 'true') await click(menu);
+        const signed = Boolean(markers.client_signed_at || markers.has_client_signature);
+        assert.equal(document.body.textContent.includes('Edit / regenerate'), !signed);
+        assert.equal(document.body.textContent.includes('Regenerate PDF'), !signed);
+        assert.ok(document.body.textContent.includes('Download'));
+    }
     await act(async () => root.unmount()); dom.window.close(); console.log('Agreement custom description: scenario defaults, encoded live preview/PDF/send, confirmation, optional fallback, validation draft retention, reset and unsupported type isolation verified.');
 })().catch(async error => { console.error(error); await act(async () => root.unmount()); dom.window.close(); process.exitCode = 1; });

@@ -1162,6 +1162,10 @@ class LeadTrackingController extends Controller
         $isEnglishEng = $doc->checklist_key === 'agree.engagement_english';
         abort_unless($isEngagementWA || $isConsultancy || $isEnglishEng, 403);
 
+        if ($isConsultancy || $isEnglishEng) {
+            abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'This agreement has already been signed.');
+        }
+
         $request->validate([
             'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
             'signature_data' => 'nullable|string',

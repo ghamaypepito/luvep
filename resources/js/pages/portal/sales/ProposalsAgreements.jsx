@@ -1094,7 +1094,7 @@ function DocumentRowActions({ doc, lead, onNotify, onEdit, pending = false }) {
         };
     }, [open]);
 
-    const canEdit = doc.checklist_key === 'agree.consultancy' || doc.checklist_key === 'agree.engagement_english';
+    const canEdit = !doc.client_signed_at && !doc.has_client_signature && (doc.checklist_key === 'agree.consultancy' || doc.checklist_key === 'agree.engagement_english');
     const canEmail = !! lead.email;
     // English agreements can be pushed into the Consultancy Agreement
     // Verification queue (older ones were generated straight to a PDF).
