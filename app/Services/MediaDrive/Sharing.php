@@ -28,6 +28,7 @@ class Sharing
     {
         $this->access->assertFolder($user, $folder);
         abort_unless($this->access->canShare($user), 403);
+        $this->assertSharePermission($folder, $data);
 
         return DB::transaction(function () use ($user, $folder, $data) {
             $token = Str::random(64);
@@ -42,6 +43,9 @@ class Sharing
     {
         $this->access->assertFolder($user, $share->folder);
         abort_unless($this->access->canShare($user), 403);
+        if ($data !== null) {
+            $this->assertSharePermission($share->folder, $data);
+        }
 
         return DB::transaction(function () use ($user, $share, $data) {
             $locked = MediaShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
@@ -58,6 +62,13 @@ class Sharing
 
             return $locked;
         });
+    }
+
+    private function assertSharePermission(MediaFolder $folder, array $data): void
+    {
+        if ($folder->isPurchaseInvoice() && $data['permission'] !== 'viewer') {
+            throw ValidationException::withMessages(['permission' => 'Purchase invoice links have Viewer access.']);
+        }
     }
 
     public function resolve(string $token): MediaShare
