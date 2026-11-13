@@ -1813,6 +1813,10 @@ Route::middleware(['auth'])->group(function () {
             // is a query param, sections stay the same.
             Route::get('/reports', [EducationController::class, 'reports'])->name('reports');
             Route::post('/reports/note', [EducationController::class, 'saveReportNote'])->name('reports.note');
+            Route::get('/reports/clients', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'clients'])->name('reports.clients');
+            Route::post('/reports/activities', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'store'])->name('reports.activities.store');
+            Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
+            Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
 
             // ACCOUNT
             Route::get('/profile', [EducationController::class, 'profile'])->name('profile');
