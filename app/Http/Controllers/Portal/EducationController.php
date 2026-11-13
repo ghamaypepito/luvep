@@ -675,19 +675,10 @@ class EducationController extends Controller
         // what surprised staff. Conversion is one-way: we don't roll it
         // back when the stage moves to a non-immigration value, since
         // immigration may still be working the case in parallel.
-        $movedToImmigrationStage = array_key_exists('education_stage', $data)
-            && in_array($data['education_stage'], Lead::EDUCATION_STAGES_IMMIGRATION, true);
-
-        $becameImmigrationCase = $movedToImmigrationStage && ! $lead->is_immigration_case;
+        $handoff = app(\App\Services\EducationImmigrationHandoff::class);
+        $becameImmigrationCase = $handoff->prepare($lead, $data['education_stage'] ?? null);
         if ($becameImmigrationCase) {
             abort_unless(\App\Support\LeadAccess::canView($request->user(), $lead), 403);
-            $lead->is_immigration_case = true;
-            $lead->immigration_converted_at = now();
-            $lead->immigration_converted_by = auth()->id();
-        }
-
-        if ($movedToImmigrationStage && ! filled($lead->inz_visa_type)) {
-            $lead->inz_visa_type = 'Student Visa';
         }
 
         // A student handed to Immigration STAYS a student — the same person is
@@ -698,11 +689,7 @@ class EducationController extends Controller
 
         $lead->save();
 
-        if ($becameImmigrationCase) {
-            app(\App\Services\EmailAutomationService::class)->fire('immigration.education.handoff', $lead, [
-                'visa_type' => $lead->inz_visa_type ?? '',
-            ]);
-        }
+        $handoff->notify($lead, $becameImmigrationCase);
 
         return back();
     }
@@ -771,6 +758,8 @@ class EducationController extends Controller
                 $lead->pushStageHistory('immigration', $lead->immigration_stage, $lead->immigration_assignee);
             }
             $this->mergeCourseStartDate($lead, $data);
+            $handoff = app(\App\Services\EducationImmigrationHandoff::class);
+            $becameImmigrationCase = $handoff->prepare($lead, $data['education_stage'] ?? null);
             $lead->save();
 
             if (! empty($data['program_text']) || ! empty($data['intake']) || ! empty($data['english_test'])) {
@@ -796,6 +785,8 @@ class EducationController extends Controller
                     'english_test_taken' => false,
                 ]);
             }
+
+            $handoff->notify($lead, $becameImmigrationCase);
 
             return back()->with('success', "Student {$lead->lead_id} added.");
         } catch (\Throwable $e) {
@@ -927,6 +918,8 @@ class EducationController extends Controller
                 $lead->date_of_engagement = $data['date_of_engagement'] ?? now()->toDateString();
             }
             $this->mergeCourseStartDate($lead, $data);
+            $handoff = app(\App\Services\EducationImmigrationHandoff::class);
+            $becameImmigrationCase = $handoff->prepare($lead, $data['education_stage'] ?? null);
             $lead->save();
 
             // Study plan — reuse the existing one if the lead already has study
@@ -950,6 +943,8 @@ class EducationController extends Controller
                     ], fn ($v) => $v !== null && $v !== '')
                 );
             }
+
+            $handoff->notify($lead, $becameImmigrationCase);
 
             return back()->with('success', "{$lead->lead_id} is now a student.");
         } catch (\Throwable $e) {
@@ -1014,6 +1009,8 @@ class EducationController extends Controller
             }
 
             $this->mergeCourseStartDate($lead, $data);
+            $handoff = app(\App\Services\EducationImmigrationHandoff::class);
+            $becameImmigrationCase = $handoff->prepare($lead, $data['education_stage'] ?? null);
             $lead->save();
 
             // Update or create the primary study plan row.
@@ -1043,6 +1040,8 @@ class EducationController extends Controller
             if ($plan->isDirty() || ! $plan->exists) {
                 $plan->save();
             }
+
+            $handoff->notify($lead, $becameImmigrationCase);
 
             return back()->with('success', "Student {$lead->lead_id} updated.");
         } catch (\Throwable $e) {
