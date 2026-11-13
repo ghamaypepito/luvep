@@ -766,7 +766,7 @@ class LeadDocumentController extends Controller
     }
 
     /**
-     * Re-render an already-approved consultancy / English agreement PDF in place
+     * Re-render an unsigned consultancy / English agreement PDF in place
      * from the amount currently stored on the lead's review — no re-verification.
      * Fixes file-vs-column drift when a fee was edited after the PDF was made.
      */
@@ -774,6 +774,8 @@ class LeadDocumentController extends Controller
     {
         $lead = Lead::findOrFail($leadId);
         $doc = LeadDocument::where('lead_id', $lead->id)->findOrFail($documentId);
+
+        abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'Signed agreements cannot be regenerated. Create a new agreement for amended terms.');
 
         abort_unless(
             in_array($doc->checklist_key, ['agree.consultancy', 'agree.engagement_english'], true)
@@ -789,14 +791,6 @@ class LeadDocumentController extends Controller
             $g = app(\App\Services\AgreementGenerator::class);
             $overrides = \App\Services\ConsultancyReviewService::overridesForGeneration($review);
 
-            // Preserve the client's e-signature if the doc was already signed —
-            // re-apply it to the re-rendered PDF so it stays a signed agreement.
-            $clientSig = null;
-            if ($doc->client_signature_path && Storage::disk(self::DISK)->exists($doc->client_signature_path)) {
-                $ext = strtolower(pathinfo($doc->client_signature_path, PATHINFO_EXTENSION));
-                $mime = in_array($ext, ['jpg', 'jpeg'], true) ? 'image/jpeg' : 'image/png';
-                $clientSig = "data:{$mime};base64,".base64_encode(Storage::disk(self::DISK)->get($doc->client_signature_path));
-            }
             if ($doc->engagement_signer_id) {
                 $overrides['signer_id'] = $doc->engagement_signer_id;
             }
@@ -805,17 +799,13 @@ class LeadDocumentController extends Controller
             // and render it with the current amounts.
             [$view, $payload] = \App\Services\ConsultancyReviewService::previewPayload($g, $lead, $review['scenario'], $overrides);
             unset($payload['preview']); // this is the final PDF, not the in-flow preview
-            if ($clientSig) {
-                $payload['client_signature'] = $clientSig;
-                $payload['acknowledged'] = true;
-            }
 
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($view, $payload)
                 ->setPaper('a4')
                 ->setOption('isPhpEnabled', true)
                 ->output();
 
-            // Overwrite the SAME file so the row + signed state stay intact.
+            // Only unsigned documents may be updated in place.
             Storage::disk(self::DISK)->put($doc->file_path, $pdf);
             $doc->forceFill(['size' => strlen($pdf)])->save();
 
