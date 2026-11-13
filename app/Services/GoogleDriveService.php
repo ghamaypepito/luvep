@@ -8,7 +8,9 @@ use Google\Client as GoogleClient;
 use Google\Service\Drive;
 use Google\Service\Drive\DriveFile;
 use Google\Service\Drive\Permission;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 /**
  * Pushes APPROVED client documents into a per-client folder inside a Google
@@ -51,7 +53,7 @@ class GoogleDriveService
             : base_path($path);
     }
 
-    private function drive(): Drive
+    protected function drive(): Drive
     {
         if ($this->drive) {
             return $this->drive;
@@ -71,47 +73,69 @@ class GoogleDriveService
 
     /**
      * The single entry point the job calls: ensure the client folder exists,
-     * then upload (or overwrite) this document inside it. Idempotent — a
-     * document already synced updates the same Drive file, never duplicates.
+     * then upload (or overwrite) this document inside it. Stored file IDs are
+     * reused; record metadata supports recovery after interrupted uploads.
      */
-    public function syncApprovedDocument(LeadDocument $doc): void
+    public function syncApprovedDocument(LeadDocument $doc): bool
     {
-        $lead = $doc->lead;
-        if (! $lead) {
-            return;
-        }
+        // Serialize local workers for the same record; names are never identity.
+        return DB::transaction(function () use ($doc) {
+            $lead = Lead::whereKey($doc->lead_id)->lockForUpdate()->first();
+            $doc = LeadDocument::whereKey($doc->id)->lockForUpdate()->first();
+            if (! $lead || ! $doc || (int) $doc->lead_id !== (int) $lead->id || $doc->status !== LeadDocument::STATUS_APPROVED) {
+                return false;
+            }
 
-        [$disk, $path] = $this->resolveFile($doc);
-        if (! $disk) {
-            // Nothing on disk to upload — skip quietly (the caller logs).
-            return;
-        }
+            [$disk, $path] = $this->resolveFile($doc);
+            if (! $disk) {
+                // Nothing on disk to upload — skip quietly (the caller logs).
+                return false;
+            }
 
-        $folderId = $this->ensureClientFolder($lead);
-        $bytes = Storage::disk($disk)->get($path);
-        $name = $doc->original_name ?: ('document-'.$doc->id.'.pdf');
-        $mime = $doc->mime ?: 'application/octet-stream';
+            $folderId = $this->ensureClientFolder($lead);
+            $bytes = Storage::disk($disk)->get($path);
+            if (! is_string($bytes)) {
+                throw new RuntimeException('Stored document could not be read; no Drive upload was completed.');
+            }
+            $name = $doc->original_name ?: ('document-'.$doc->id.'.pdf');
+            $mime = $doc->mime ?: 'application/octet-stream';
 
-        if ($doc->gdrive_file_id) {
-            // Overwrite the existing Drive file's contents in place.
-            $this->drive()->files->update(
-                $doc->gdrive_file_id,
-                new DriveFile(['name' => $name]),
-                ['data' => $bytes, 'mimeType' => $mime, 'uploadType' => 'multipart', 'supportsAllDrives' => true],
-            );
-            $fileId = $doc->gdrive_file_id;
-        } else {
-            $created = $this->drive()->files->create(
-                new DriveFile(['name' => $name, 'parents' => [$folderId]]),
-                ['data' => $bytes, 'mimeType' => $mime, 'uploadType' => 'multipart', 'supportsAllDrives' => true, 'fields' => 'id'],
-            );
-            $fileId = $created->getId();
-        }
+            // Recover a successful remote create if the local transaction previously failed.
+            $fileId = $doc->gdrive_file_id ?: $this->findDocument($doc, $folderId);
+            if ($fileId) {
+                $remote = $this->drive()->files->get($fileId, [
+                    'supportsAllDrives' => true, 'fields' => 'id,parents,driveId,trashed,appProperties',
+                ]);
+                $properties = $remote->getAppProperties() ?? [];
+                if ($remote->getTrashed() || $remote->getDriveId() !== $this->sharedDriveId()
+                    || ! in_array($folderId, $remote->getParents() ?? [], true)
+                    || (isset($properties['luvep_document_id']) && $properties['luvep_document_id'] !== (string) $doc->id)
+                || (isset($properties['luvep_lead_id']) && $properties['luvep_lead_id'] !== (string) $lead->id)
+                    || LeadDocument::where('gdrive_file_id', $fileId)->whereKeyNot($doc->id)->exists()) {
+                    throw new RuntimeException('Drive file mapping requires authorised record review before upload.');
+                }
+                // Overwrite the existing Drive file's contents in place.
+                $this->drive()->files->update(
+                    $fileId,
+                    new DriveFile(['name' => $name]),
+                    ['data' => $bytes, 'mimeType' => $mime, 'uploadType' => 'multipart', 'supportsAllDrives' => true],
+                );
+            } else {
+                $created = $this->drive()->files->create(
+                    new DriveFile(['name' => $name, 'parents' => [$folderId],
+                        'appProperties' => ['luvep_document_id' => (string) $doc->id, 'luvep_lead_id' => (string) $lead->id]]),
+                    ['data' => $bytes, 'mimeType' => $mime, 'uploadType' => 'multipart', 'supportsAllDrives' => true, 'fields' => 'id'],
+                );
+                $fileId = $created->getId();
+            }
 
-        $doc->forceFill([
-            'gdrive_file_id' => $fileId,
-            'gdrive_synced_at' => now(),
-        ])->save();
+            $doc->forceFill([
+                'gdrive_file_id' => $fileId,
+                'gdrive_synced_at' => now(),
+            ])->save();
+
+            return true;
+        });
     }
 
     /**
@@ -122,23 +146,37 @@ class GoogleDriveService
      */
     public function ensureClientFolder(Lead $lead): string
     {
-        if ($lead->gdrive_folder_id) {
-            return $lead->gdrive_folder_id;
-        }
+        return DB::transaction(function () use ($lead) {
+            $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            $folderId = $lead->gdrive_folder_id ?: ($this->findFolder($lead) ?? $this->createFolder($lead));
+            $folder = $this->drive()->files->get($folderId, [
+                'supportsAllDrives' => true, 'fields' => 'id,mimeType,parents,driveId,trashed,appProperties',
+            ]);
+            $properties = $folder->getAppProperties() ?? [];
+            if ($folder->getTrashed() || $folder->getMimeType() !== self::FOLDER_MIME
+                || $folder->getDriveId() !== $this->sharedDriveId()
+                || (isset($properties['luvep_lead_id']) && $properties['luvep_lead_id'] !== (string) $lead->id)
+                || Lead::withTrashed()->where('gdrive_folder_id', $folderId)->whereKeyNot($lead->id)->exists()) {
+                throw new RuntimeException('Drive folder mapping requires authorised record review before upload.');
+            }
 
-        $name = $this->folderName($lead);
-        $folderId = $this->findFolder($name) ?? $this->createFolder($name);
+            // Existing untagged mappings are retained, not adopted by a name search.
+            // Their historical contents/ACLs still require owner verification.
+            // Complete initial sharing before saving the new mapping. Do not
+            // re-grant a reader's access after the Drive owner later revokes it.
+            if (! $lead->gdrive_folder_id) {
+                $this->shareFolderIfConfigured($folderId);
+            }
 
-        $webLink = 'https://drive.google.com/drive/folders/'.$folderId;
-        $lead->forceFill([
-            'gdrive_folder_id' => $folderId,
-            // Only backfill the link if staff hasn't set one manually.
-            'student_gdrive_link' => $lead->student_gdrive_link ?: $webLink,
-        ])->save();
+            $webLink = 'https://drive.google.com/drive/folders/'.$folderId;
+            $lead->forceFill([
+                'gdrive_folder_id' => $folderId,
+                // Only backfill the link if staff hasn't set one manually.
+                'student_gdrive_link' => $lead->student_gdrive_link ?: $webLink,
+            ])->save();
 
-        $this->shareFolderIfConfigured($folderId);
-
-        return $folderId;
+            return $folderId;
+        });
     }
 
     private function folderName(Lead $lead): string
@@ -146,34 +184,38 @@ class GoogleDriveService
         $client = trim("{$lead->first_name} {$lead->last_name}") ?: ('Client '.$lead->id);
         $prefix = (string) config('services.google_drive.folder_prefix', '');
 
-        return trim($prefix.$client);
+        return trim($prefix.$client).' [Lead '.$lead->id.']';
     }
 
-    private function findFolder(string $name): ?string
+    private function findFolder(Lead $lead): ?string
     {
-        $escaped = str_replace("'", "\\'", $name);
         $result = $this->drive()->files->listFiles([
-            'q' => "name = '{$escaped}' and mimeType = '".self::FOLDER_MIME."' and trashed = false",
+            'q' => "appProperties has { key='luvep_lead_id' and value='{$lead->id}' } and '".$this->queryValue($this->sharedDriveId())."' in parents and mimeType = '".self::FOLDER_MIME."' and trashed = false",
             'corpora' => 'drive',
             'driveId' => $this->sharedDriveId(),
             'includeItemsFromAllDrives' => true,
             'supportsAllDrives' => true,
-            'fields' => 'files(id,name)',
-            'pageSize' => 1,
+            'fields' => 'nextPageToken,files(id,name)',
+            'pageSize' => 2,
         ]);
 
         $files = $result->getFiles();
 
+        if (count($files) > 1 || $result->getNextPageToken()) {
+            throw new RuntimeException('Multiple Drive folders match this record; authorised review is required.');
+        }
+
         return $files ? $files[0]->getId() : null;
     }
 
-    private function createFolder(string $name): string
+    private function createFolder(Lead $lead): string
     {
         $folder = $this->drive()->files->create(
             new DriveFile([
-                'name' => $name,
+                'name' => $this->folderName($lead),
                 'mimeType' => self::FOLDER_MIME,
                 'parents' => [$this->sharedDriveId()],
+                'appProperties' => ['luvep_lead_id' => (string) $lead->id],
             ]),
             ['supportsAllDrives' => true, 'fields' => 'id'],
         );
@@ -188,11 +230,47 @@ class GoogleDriveService
             return;
         }
 
+        $page = null;
+        do {
+            $permissions = $this->drive()->permissions->listPermissions($folderId, array_filter([
+                'supportsAllDrives' => true, 'fields' => 'nextPageToken,permissions(type,emailAddress,role,deleted)', 'pageToken' => $page,
+            ]));
+            foreach ($permissions->getPermissions() as $permission) {
+                if (! $permission->getDeleted() && $permission->getType() === 'user'
+                    && strcasecmp((string) $permission->getEmailAddress(), trim($email)) === 0
+                    && in_array($permission->getRole(), ['reader', 'commenter', 'writer', 'fileOrganizer', 'organizer', 'owner'], true)) {
+                    return;
+                }
+            }
+            $page = $permissions->getNextPageToken();
+        } while ($page);
+
         $this->drive()->permissions->create(
             $folderId,
             new Permission(['type' => 'user', 'role' => 'reader', 'emailAddress' => $email]),
             ['supportsAllDrives' => true, 'sendNotificationEmail' => false],
         );
+    }
+
+    private function queryValue(string $value): string
+    {
+        return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+    }
+
+    private function findDocument(LeadDocument $doc, string $folderId): ?string
+    {
+        $result = $this->drive()->files->listFiles([
+            'q' => "appProperties has { key='luvep_document_id' and value='{$doc->id}' } and '".$this->queryValue($folderId)."' in parents and trashed = false",
+            'corpora' => 'drive', 'driveId' => $this->sharedDriveId(),
+            'includeItemsFromAllDrives' => true, 'supportsAllDrives' => true,
+            'fields' => 'nextPageToken,files(id)', 'pageSize' => 2,
+        ]);
+        $files = $result->getFiles();
+        if (count($files) > 1 || $result->getNextPageToken()) {
+            throw new RuntimeException('Multiple Drive files match this document; authorised review is required.');
+        }
+
+        return $files ? $files[0]->getId() : null;
     }
 
     /**
