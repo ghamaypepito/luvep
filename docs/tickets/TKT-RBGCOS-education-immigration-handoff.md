@@ -65,4 +65,6 @@ References: TKT-RBGCOS; branch codex/rbgcos-consistent-education-handoff; origin
 Follow-up: Sir Ghamay reviews/releases after staging; Sharry confirms the remaining video-only report. Keep In review until those checks are complete.
 
 Documentation summary: Existing inline handoff versus inconsistent entry paths, shared stage-handoff fix, same-record verification, configured notices and closure evidence.
+## Message for Sir Ghamay
 
+Hi Sir, I reviewed TKT-RBGCOS. The existing Students-list handoff works, but the profile-header and student form paths do not apply all of the same promotion, Student Visa default and notification behavior. I reproduced five failed checks before preparing `codex/rbgcos-consistent-education-handoff`. The shared routine now covers explicit Education-stage handoffs across those paths while preserving the same student record and existing visa choices. The broader regression passed 47 tests / 637 assertions, and the final targeted run passed 8 tests / 224 assertions. Please review the PR/full validation and arrange staging verification. No new migration is required. The original Loom remained inaccessible, so Sharry's confirmation of the original report is still required before Done; no production client was converted or notified.
