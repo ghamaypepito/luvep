@@ -1288,6 +1288,13 @@ Route::middleware(['auth'])->group(function () {
             });
     }
 
+    foreach (['admin' => '/admin/offers-of-place', 'sales' => '/portal/sales/offers-of-place', 'education' => '/portal/education/offers-of-place'] as $role => $path) {
+        Route::middleware('portal:'.$role)->group(function () use ($role, $path) {
+            Route::get($path, [\App\Http\Controllers\OfferOfPlaceController::class, 'index'])->name($role.'.offers-of-place');
+            Route::get($path.'/{document}/download', [\App\Http\Controllers\OfferOfPlaceController::class, 'download'])->whereNumber('document')->name($role.'.offers-of-place.download');
+        });
+    }
+
     // Manual lead status-update emails — staff send a department (or shared)
     // template to a lead from the lead detail screen. Available to admins and
     // every department portal. The GET lists templates the user may send.
