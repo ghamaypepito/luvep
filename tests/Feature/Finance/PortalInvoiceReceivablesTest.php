@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Models\ActivityLog;
 use App\Models\CaseFinancePayment;
 use App\Models\CaseFinancial;
 use App\Models\FinancePayable;
@@ -10,6 +11,7 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
 use App\Services\Finance\PortalInvoiceReceivables;
+use App\Services\PaymentProofService;
 use Inertia\Testing\AssertableInertia as Assert;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -19,6 +21,73 @@ use Tests\TestCase;
 class PortalInvoiceReceivablesTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_finance_records_an_actual_student_visa_receipt_then_flags_internal_settlement(): void
+    {
+        Mail::fake();
+        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Student', 'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa (Fee Paying)']);
+        $invoice = $this->document($lead, 'INV-101', 500);
+        $otherInvoice = $this->document($lead, 'INV-102', 100);
+        app(PortalInvoiceReceivables::class)->post($invoice);
+        app(PortalInvoiceReceivables::class)->post($otherInvoice);
+        $receivable = $invoice->receivable()->firstOrFail();
+        $url = '/portal/finance/receivables/'.$receivable->id;
+        $finance = User::factory()->create(['role' => 'finance']);
+        $this->actingAs($finance);
+
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertSessionHasErrors('pending');
+        $this->post($url.'/payments', ['amount' => 500, 'paid_on' => now()->toDateString()])->assertSessionHasErrors('reference');
+        $this->post($url.'/payments', ['amount' => 500, 'paid_on' => now()->addDay()->toDateString(), 'reference' => 'Future'])->assertSessionHasErrors('paid_on');
+        $this->assertDatabaseCount('finance_payments', 0);
+
+        $this->post($url.'/payments', ['amount' => 100, 'paid_on' => now()->subDay()->toDateString(), 'reference' => 'First transfer'])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertSessionHasErrors('pending');
+        $receipt = ['amount' => 400, 'paid_on' => now()->subDay()->toDateString(), 'reference' => 'Transfer 101', 'notes' => 'Verified against the bank statement'];
+        $this->post($url.'/payments', $receipt)->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($url.'/payments', $receipt)->assertSessionHasErrors('reference');
+
+        $payment = $invoice->invoicePayments()->where('reference', $receipt['reference'])->sole();
+        $this->assertSame($receipt['paid_on'], $payment->paid_at->toDateString());
+        $this->assertSame('paid', $receivable->fresh()->payment_status);
+        $mirror = $receivable->payments()->where('reference', 'like', '%(CFP-'.$payment->id.')')->sole();
+        $this->assertSame($receipt['notes'], $mirror->notes);
+        $this->assertTrue(app(PaymentProofService::class)->invoiceSummary($invoice->fresh())['paid']);
+        $this->assertFalse(app(PaymentProofService::class)->invoiceSummary($otherInvoice->fresh())['paid']);
+        $this->assertFalse($receivable->fresh()->internal_settlement_pending);
+
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertRedirect()->assertSessionHasNoErrors();
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertRedirect()->assertSessionHasNoErrors();
+        $this->get('/portal/finance/receivables?q=INV-101')->assertInertia(fn (Assert $page) => $page
+            ->where('rows.0.payment_status', 'paid')
+            ->where('rows.0.internal_settlement_pending', true));
+        $this->assertSame(1, ActivityLog::where('action', 'finance.invoice_internal_settlement_changed')->count());
+        $this->assertDatabaseHas('activity_logs', ['action' => 'finance.invoice_payment_recorded', 'user_id' => $finance->id, 'entity_id' => $receivable->id]);
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->patch($url.'/internal-settlement', ['pending' => false])->assertRedirect()->assertSessionHasNoErrors();
+        $this->delete($url.'/payments/'.$mirror->id)->assertUnprocessable();
+        $this->delete("/portal/immigration/cases/{$lead->id}/financials/payments/{$payment->id}")->assertSessionHasErrors('payment');
+        $this->assertFalse($receivable->fresh()->internal_settlement_pending);
+        $this->assertDatabaseCount('case_finance_payments', 2);
+        $this->assertDatabaseCount('finance_payments', 2);
+        $this->assertSame('INV-101', $invoice->fresh()->invoice_number);
+        $this->assertSame('fixture.pdf', $invoice->fresh()->file_path);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_extra_portal_access_cannot_record_student_visa_receipts_or_change_internal_settlement(): void
+    {
+        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Student', 'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa']);
+        $invoice = $this->document($lead, 'INV-103', 500);
+        app(PortalInvoiceReceivables::class)->post($invoice);
+        $receivable = $invoice->receivable()->firstOrFail();
+        $url = '/portal/finance/receivables/'.$receivable->id;
+        $this->actingAs(User::factory()->create(['role' => 'immigration', 'portal_access' => ['finance']]))
+            ->post($url.'/payments', ['amount' => 500, 'paid_on' => now()->toDateString(), 'reference' => 'Transfer 103'])->assertForbidden();
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertForbidden();
+        $this->assertDatabaseCount('finance_payments', 0);
+    }
 
     public function test_generated_invoice_posts_and_its_case_receipt_updates_only_that_invoice(): void
     {

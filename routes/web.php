@@ -21,6 +21,7 @@ use App\Http\Controllers\Portal\Accommodation\CalendarController;
 use App\Http\Controllers\Portal\Accommodation\GasDeliveryController;
 use App\Http\Controllers\Portal\Accommodation\MessageTemplateController;
 use App\Http\Controllers\Portal\Accommodation\PaymentScheduleController;
+use App\Http\Controllers\Portal\Accommodation\PurchaseInvoiceController;
 use App\Http\Controllers\Portal\Accommodation\RentUtilitiesController;
 use App\Http\Controllers\Portal\Accommodation\TenantController;
 use App\Http\Controllers\Portal\AccommodationController;
@@ -1947,6 +1948,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/consent-ack', [$preScreen, 'consentAck'])->name('pre-screening.consent-ack');
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
+            Route::post('/pre-screening/{preScreening}/aewv-endorse', [$preScreen, 'endorseAewv'])->name('pre-screening.aewv-endorse');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
             // Staff schedule a consultation / consent meeting directly.
             Route::post('/pre-screening/{preScreening}/book', [$preScreen, 'book'])->name('pre-screening.book');
@@ -2058,6 +2060,8 @@ Route::middleware(['auth'])->group(function () {
             // to use LeadController::show via /admin/leads/{id}.
             Route::get('/cases/{lead}/profile', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'show'])
                 ->name('cases.profile');
+            Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
+                ->whereNumber('document')->name('cases.documents.recent-visa');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.
             Route::post('/cases/{lead}/personal', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updatePersonal'])
                 ->name('cases.personal');
@@ -2342,6 +2346,9 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
             Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
             Route::get('/payment-schedule', [PaymentScheduleController::class, 'index'])->name('payment-schedule');
+            Route::get('/purchase-invoices', [PurchaseInvoiceController::class, 'index'])->name('purchase-invoices');
+            Route::post('/tenants/{tenant}/purchase-invoices', [PurchaseInvoiceController::class, 'store'])->name('purchase-invoices.store');
+            Route::get('/purchase-invoices/{invoice}/files/{file}', [PurchaseInvoiceController::class, 'download'])->whereNumber('file')->name('purchase-invoices.download');
             Route::get('/gas-delivery', [GasDeliveryController::class, 'index'])->name('gas-delivery');
             Route::get('/concerns', [App\Http\Controllers\ConcernController::class, 'index'])->name('concerns');
             Route::patch('/concerns/{concern}', [App\Http\Controllers\ConcernController::class, 'update'])->name('concerns.update');
@@ -2369,6 +2376,7 @@ Route::middleware(['auth'])->group(function () {
             Route::put('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'update'])->name('receivables.update');
             Route::delete('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'destroy'])->name('receivables.destroy');
             Route::post('/receivables/{receivable}/payments', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'recordPayment'])->name('receivables.payments.store');
+            Route::patch('/receivables/{receivable}/internal-settlement', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'updateInternalSettlement'])->name('receivables.internal-settlement');
             Route::delete('/receivables/{receivable}/payments/{payment}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'deletePayment'])->name('receivables.payments.destroy');
 
             // Accounts Payable

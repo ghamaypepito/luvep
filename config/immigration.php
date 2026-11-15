@@ -2,6 +2,9 @@
 
 return [
 
+    'aewv_submission_recipients' => ['visa@dimmigration.co', 'eireen@dimmigration.co'],
+    'aewv_endorsement_recipient' => 'hendry@dimmigration.co',
+
     /*
     |--------------------------------------------------------------------------
     | IAA licence expiry warnings

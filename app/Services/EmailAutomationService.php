@@ -42,7 +42,12 @@ class EmailAutomationService
         return $this->dispatchEvent($eventKey, $lead, $context, $attachments, true);
     }
 
-    private function dispatchEvent(string $eventKey, Lead $lead, array $context, array $attachments, bool $anyRecipient): bool
+    public function fireWithStaffRecipients(string $eventKey, Lead $lead, array $context, array $staffRecipients): void
+    {
+        $this->dispatchEvent($eventKey, $lead, $context, [], false, $staffRecipients);
+    }
+
+    private function dispatchEvent(string $eventKey, Lead $lead, array $context, array $attachments, bool $anyRecipient, ?array $staffRecipients = null): bool
     {
         $firedClient = false;
         try {
@@ -61,7 +66,7 @@ class EmailAutomationService
                 if (empty($msg->template_key)) {
                     continue;
                 }
-                if ($this->deliver($msg, $lead, $context, $department, $attachments, $anyRecipient)) {
+                if ($this->deliver($msg, $lead, $context, $department, $attachments, $anyRecipient, $staffRecipients)) {
                     $firedClient = true;
                 }
             }
@@ -74,7 +79,7 @@ class EmailAutomationService
 
     /** Returns true when a message was sent to the CLIENT (so a caller can skip a
      *  built-in client email and avoid double-sending). Staff notices return false. */
-    private function deliver(EmailAutomationMessage $msg, Lead $lead, array $context, string $department, array $attachments = [], bool $anyRecipient = false): bool
+    private function deliver(EmailAutomationMessage $msg, Lead $lead, array $context, string $department, array $attachments = [], bool $anyRecipient = false, ?array $staffRecipients = null): bool
     {
         // When configured, keep the lead's own recruiting agent in the loop by
         // CC-ing them — resolved per-lead, so each client's agent is used.
@@ -94,7 +99,7 @@ class EmailAutomationService
 
         // Staff recipient — render the template with the case's context and send
         // to each resolved staff email as an internal notice.
-        $emails = $this->staffEmails($msg->recipient, $lead, $department);
+        $emails = $staffRecipients ?? $this->staffEmails($msg->recipient, $lead, $department);
         if (empty($emails)) {
             return false;
         }
@@ -123,9 +128,9 @@ class EmailAutomationService
             $attachments,
             true,
             $lead->id,
-            $template->to_extra,
-            $this->comms->mergeAddressList($template->cc, $agentCc),
-            $template->bcc,
+            $staffRecipients === null ? $template->to_extra : null,
+            $staffRecipients === null ? $this->comms->mergeAddressList($template->cc, $agentCc) : null,
+            $staffRecipients === null ? $template->bcc : null,
         );
 
         return $anyRecipient && in_array($log->status, ['queued', 'sent'], true);

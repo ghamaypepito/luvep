@@ -24,8 +24,8 @@ class Library
     {
         $data = ['id' => $folder->id, 'name' => $folder->name, 'parent_id' => $folder->parent_id, 'root_id' => $folder->root_id ?: $folder->id, 'updated_at' => $folder->updated_at?->toIso8601String()];
         if ($staff) {
-            $root = $folder->ownerRoot();
-            $data['client'] = $this->clientData($root->lead ?: $root->tenant);
+            $data['client'] = $this->clientData($folder->ownerClient());
+            $data['viewer_only'] = $folder->isPurchaseInvoice();
             $ancestors = [...array_filter(explode('/', $folder->ancestry)), $folder->id];
             $direct = $folder->shares()->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
             $shared = MediaShare::whereIn('folder_id', $ancestors)->whereNull('revoked_at')->where('expires_at', '>', now())->exists();

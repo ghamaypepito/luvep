@@ -4,10 +4,15 @@ namespace App\Services\Immigration;
 
 use App\Models\Booking;
 use App\Models\Lead;
+use App\Models\MessageLog;
 use App\Models\PreScreening;
 use App\Models\User;
+use App\Models\WorkIntake;
+use App\Services\CommunicationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Pre-screening vetting flow on a Visa Assessment: book the two consultations,
@@ -17,6 +22,41 @@ use Illuminate\Support\Carbon;
  */
 class PreScreeningService
 {
+    public function endorseAewv(PreScreening $pre, User $actor): void
+    {
+        DB::transaction(function () use ($pre, $actor) {
+            $record = PreScreening::whereKey($pre->id)->lockForUpdate()->firstOrFail();
+            $intake = $record->subject;
+            abort_unless($intake instanceof WorkIntake, 404);
+            if ($record->aewv_endorsed_at && ! $record->aewvEndorsementFailed()) {
+                return;
+            }
+
+            $link = app(AssessmentCaseLink::class)->resolve($intake, $intake->assessment);
+            if ($record->isTerminal() || $link['case_id'] || $link['conversion_issue']) {
+                throw ValidationException::withMessages(['endorsement' => 'This assessment is no longer available for endorsement.']);
+            }
+
+            $url = route('portal.immigration.assessments');
+            $reference = $intake->intake_id;
+            $message = app(CommunicationService::class)->sendComposedEmail(
+                config('immigration.aewv_endorsement_recipient'),
+                'AEWV assessment endorsed for review',
+                "AEWV assessment {$reference} was endorsed to you for review.\n\n[Open Immigration Assessments]({$url})",
+                afterCommit: true,
+            );
+            if (! in_array($message->status, [MessageLog::STATUS_QUEUED, MessageLog::STATUS_SENT], true)) {
+                throw ValidationException::withMessages(['endorsement' => 'The notification could not be queued. Please try again.']);
+            }
+
+            $record->forceFill([
+                'aewv_endorsed_at' => $record->aewv_endorsed_at ?? now(),
+                'aewv_endorsed_by' => $record->aewv_endorsed_by ?? $actor->id,
+                'aewv_endorsement_message_id' => $message->id,
+            ])->saveOrFail();
+        });
+    }
+
     /** Get (or lazily create) the pre-screening hub for an assessment subject. */
     public function ensureFor(Model $subject, ?User $by = null): PreScreening
     {
@@ -31,7 +71,7 @@ class PreScreeningService
      * building the Visa Assessment list, so every row has a token/link).
      *
      * @param  iterable<Model>  $subjects
-     * @return array<string,PreScreening>  keyed "{morphClass}:{id}"
+     * @return array<string,PreScreening> keyed "{morphClass}:{id}"
      */
     public function ensureMany(iterable $subjects, ?User $by = null): array
     {
@@ -240,6 +280,7 @@ class PreScreeningService
             'skipped' => $pre->isSkipped(),
             'gate_passed' => $this->gatePassed($pre),
             'eligible_at' => optional($pre->eligible_at)->toIso8601String(),
+            'aewv_endorsed_at' => $pre->aewv_endorsed_at?->toIso8601String(),
             'converted_at' => optional($pre->converted_at)->toIso8601String(),
             'declined_at' => optional($pre->declined_at)->toIso8601String(),
             'decline_reason' => $pre->decline_reason,

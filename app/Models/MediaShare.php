@@ -19,6 +19,6 @@ class MediaShare extends Model
 
     public function isAvailable(): bool
     {
-        return ! $this->revoked_at && $this->expires_at->isFuture() && $this->folder && ($this->folder->ownerRoot()->lead || $this->folder->ownerRoot()->tenant);
+        return ! $this->revoked_at && $this->expires_at->isFuture() && $this->folder?->ownerClient() !== null;
     }
 }

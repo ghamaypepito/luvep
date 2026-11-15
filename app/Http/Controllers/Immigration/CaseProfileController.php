@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Immigration\RecentVisaDocuments;
 use App\Services\Immigration\VisaProgressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1475,6 +1476,17 @@ class CaseProfileController extends Controller
         return back()->with('success', 'Partner recommendation saved.');
     }
 
+    /** Explicitly classify an unmatched upload without replacing its file. */
+    public function moveDocumentToRecentVisa(Request $request, Lead $lead, int $document, RecentVisaDocuments $recentVisas)
+    {
+        $user = $request->user();
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
+            || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
+        $recentVisas->move($lead, $document);
+
+        return back()->with('success', 'Document moved to Recent visa / eVisa.');
+    }
+
     /** Shared case guard for the process endpoints. */
     private function guardCase(Lead $lead): User
     {
@@ -1930,8 +1942,7 @@ class CaseProfileController extends Controller
             ?? ($signers[0]['id'] ?? null);
 
         // Milestone dates for the Overview: when the pack was emailed, when the
-        // Written Agreement was signed, and when the invoice was settled (the
-        // first approved proof of payment).
+        // Written Agreement was signed, and when verified payments settled the invoices.
         $signedAt = LeadDocument::where('lead_id', $lead->id)
             ->where('source_variant', 'engagement:written_agreement')
             ->whereNotNull('client_signed_at')
@@ -1939,7 +1950,8 @@ class CaseProfileController extends Controller
 
         $invoices = \App\Services\PaymentProofService::invoiceQuery($lead)->with('invoicePayments')->get();
         $allPaid = $invoices->isNotEmpty() && $invoices->every(fn ($invoice) => app(\App\Services\PaymentProofService::class)->invoiceSummary($invoice)['paid']);
-        $paidAt = $allPaid ? $invoices->max('reviewed_at') : null;
+        $paidAt = $allPaid ? $invoices->max(fn ($invoice) => $invoice->reviewed_at
+            ?? $invoice->invoicePayments->where('finance_verified', true)->max('paid_at')) : null;
 
         return [
             'sent' => (bool) $lead->engagement_sent_at,
