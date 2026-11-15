@@ -7,6 +7,7 @@ use App\Mail\TemplatedMessage;
 use App\Models\Lead;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -270,7 +271,7 @@ class CommunicationService
      * the caller. Logs with source='compose' and recipient_type 'lead'/'raw'.
      * $rawHtml=true sends a self-contained builder email (no branded shell).
      */
-    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null): MessageLog
+    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false): MessageLog
     {
         // Primary To address(es) plus any template "To — also send to" extras,
         // lower-cased and deduped. Accepts a single address or a list (a staff
@@ -297,16 +298,23 @@ class CommunicationService
             return $log;
         }
 
-        try {
+        $enqueue = function () use ($recipients, $subject, $body, $attachments, $log, $cc, $bcc, $rawHtml): void {
             // Cc/Bcc ride along via TemplatedMessage's envelope, same as the
             // templated client path — so a staff notice honours the template's
             // configured Cc/Bcc, not just the resolved role address.
-            Mail::to($recipients)->queue(
-                new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, null, null, $cc, $bcc, null, $rawHtml)
-            );
-        } catch (\Throwable $e) {
-            Log::error('Composed email failed', ['address' => implode(', ', $recipients), 'error' => $e->getMessage()]);
-            $log->update(['status' => MessageLog::STATUS_FAILED, 'error_message' => $e->getMessage(), 'failed_at' => now()]);
+            try {
+                Mail::to($recipients)->queue(
+                    new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, null, null, $cc, $bcc, null, $rawHtml)
+                );
+            } catch (\Throwable $e) {
+                Log::error('Composed email failed', ['address' => implode(', ', $recipients), 'error' => $e->getMessage()]);
+                $log->update(['status' => MessageLog::STATUS_FAILED, 'error_message' => $e->getMessage(), 'failed_at' => now()]);
+            }
+        };
+        if ($afterCommit) {
+            DB::afterCommit($enqueue);
+        } else {
+            $enqueue();
         }
 
         return $log;

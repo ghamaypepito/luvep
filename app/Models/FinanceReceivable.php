@@ -43,7 +43,13 @@ class FinanceReceivable extends Model
     public function isStudentVisaInvoice(): bool
     {
         return $this->invoice_document_id && $this->lead?->is_immigration_case
-            && strcasecmp(trim((string) $this->lead->inz_visa_type), 'Student Visa') === 0;
+            && in_array(strtolower(trim((string) $this->lead->inz_visa_type)), ['student visa', 'student visa (fee paying)'], true);
+    }
+
+    public function canFlagInternalSettlement(float $allocated): bool
+    {
+        return $this->status !== 'void' && (float) $this->amount > 0
+            && round($allocated, 2) >= (float) $this->amount;
     }
 
     public function creator(): BelongsTo

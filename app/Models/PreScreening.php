@@ -101,6 +101,12 @@ class PreScreening extends Model
         return in_array($this->status, [self::STATUS_CONVERTED, self::STATUS_DECLINED], true);
     }
 
+    public function aewvEndorsementFailed(): bool
+    {
+        return $this->aewv_endorsement_message_id
+            && MessageLog::whereKey($this->aewv_endorsement_message_id)->value('status') === MessageLog::STATUS_FAILED;
+    }
+
     public function isSkipped(): bool
     {
         return $this->skip_at !== null;

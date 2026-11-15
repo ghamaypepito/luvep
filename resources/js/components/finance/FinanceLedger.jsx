@@ -281,7 +281,7 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                                 <p className="text-xs font-bold text-gray-800">Internal settlement</p>
                                 {row.internal_settlement_pending && <p className="text-xs text-amber-800">Pending</p>}
                                 {!row.internal_settlement_pending && !row.can_flag_internal_settlement && row.payment_status !== "void" && (
-                                    <p className="text-xs text-gray-500">Record a payment on this invoice first.</p>
+                                    <p className="text-xs text-gray-500">Record the full client payment on this invoice first.</p>
                                 )}
                             </div>
                             <button type="button" onClick={updateSettlement} disabled={saving || (!row.internal_settlement_pending && !row.can_flag_internal_settlement)} className="px-3 py-2 rounded-lg border border-gray-200 text-xs font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-50">

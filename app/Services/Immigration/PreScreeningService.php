@@ -28,7 +28,7 @@ class PreScreeningService
             $record = PreScreening::whereKey($pre->id)->lockForUpdate()->firstOrFail();
             $intake = $record->subject;
             abort_unless($intake instanceof WorkIntake, 404);
-            if ($record->aewv_endorsed_at) {
+            if ($record->aewv_endorsed_at && ! $record->aewvEndorsementFailed()) {
                 return;
             }
 
@@ -43,12 +43,17 @@ class PreScreeningService
                 config('immigration.aewv_endorsement_recipient'),
                 'AEWV assessment endorsed for review',
                 "AEWV assessment {$reference} was endorsed to you for review.\n\n[Open Immigration Assessments]({$url})",
+                afterCommit: true,
             );
             if (! in_array($message->status, [MessageLog::STATUS_QUEUED, MessageLog::STATUS_SENT], true)) {
                 throw ValidationException::withMessages(['endorsement' => 'The notification could not be queued. Please try again.']);
             }
 
-            $record->forceFill(['aewv_endorsed_at' => now(), 'aewv_endorsed_by' => $actor->id])->saveOrFail();
+            $record->forceFill([
+                'aewv_endorsed_at' => $record->aewv_endorsed_at ?? now(),
+                'aewv_endorsed_by' => $record->aewv_endorsed_by ?? $actor->id,
+                'aewv_endorsement_message_id' => $message->id,
+            ])->saveOrFail();
         });
     }
 

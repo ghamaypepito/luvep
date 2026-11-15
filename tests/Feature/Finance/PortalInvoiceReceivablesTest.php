@@ -25,7 +25,7 @@ class PortalInvoiceReceivablesTest extends TestCase
     public function test_finance_records_an_actual_student_visa_receipt_then_flags_internal_settlement(): void
     {
         Mail::fake();
-        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Student', 'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa']);
+        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Student', 'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa (Fee Paying)']);
         $invoice = $this->document($lead, 'INV-101', 500);
         $otherInvoice = $this->document($lead, 'INV-102', 100);
         app(PortalInvoiceReceivables::class)->post($invoice);
@@ -40,14 +40,18 @@ class PortalInvoiceReceivablesTest extends TestCase
         $this->post($url.'/payments', ['amount' => 500, 'paid_on' => now()->addDay()->toDateString(), 'reference' => 'Future'])->assertSessionHasErrors('paid_on');
         $this->assertDatabaseCount('finance_payments', 0);
 
-        $receipt = ['amount' => 500, 'paid_on' => now()->subDay()->toDateString(), 'reference' => 'Transfer 101', 'notes' => 'Verified against the bank statement'];
+        $this->post($url.'/payments', ['amount' => 100, 'paid_on' => now()->subDay()->toDateString(), 'reference' => 'First transfer'])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->patch($url.'/internal-settlement', ['pending' => true])->assertSessionHasErrors('pending');
+        $receipt = ['amount' => 400, 'paid_on' => now()->subDay()->toDateString(), 'reference' => 'Transfer 101', 'notes' => 'Verified against the bank statement'];
         $this->post($url.'/payments', $receipt)->assertRedirect()->assertSessionHasNoErrors();
         $this->post($url.'/payments', $receipt)->assertSessionHasErrors('reference');
 
-        $payment = $invoice->invoicePayments()->sole();
+        $payment = $invoice->invoicePayments()->where('reference', $receipt['reference'])->sole();
         $this->assertSame($receipt['paid_on'], $payment->paid_at->toDateString());
         $this->assertSame('paid', $receivable->fresh()->payment_status);
-        $this->assertSame($receipt['notes'], $receivable->payments()->sole()->notes);
+        $mirror = $receivable->payments()->where('reference', 'like', '%(CFP-'.$payment->id.')')->sole();
+        $this->assertSame($receipt['notes'], $mirror->notes);
         $this->assertTrue(app(PaymentProofService::class)->invoiceSummary($invoice->fresh())['paid']);
         $this->assertFalse(app(PaymentProofService::class)->invoiceSummary($otherInvoice->fresh())['paid']);
         $this->assertFalse($receivable->fresh()->internal_settlement_pending);
@@ -62,11 +66,11 @@ class PortalInvoiceReceivablesTest extends TestCase
 
         $this->actingAs(User::factory()->create(['role' => 'admin']))
             ->patch($url.'/internal-settlement', ['pending' => false])->assertRedirect()->assertSessionHasNoErrors();
-        $this->delete($url.'/payments/'.$receivable->payments()->sole()->id)->assertUnprocessable();
+        $this->delete($url.'/payments/'.$mirror->id)->assertUnprocessable();
         $this->delete("/portal/immigration/cases/{$lead->id}/financials/payments/{$payment->id}")->assertSessionHasErrors('payment');
         $this->assertFalse($receivable->fresh()->internal_settlement_pending);
-        $this->assertDatabaseCount('case_finance_payments', 1);
-        $this->assertDatabaseCount('finance_payments', 1);
+        $this->assertDatabaseCount('case_finance_payments', 2);
+        $this->assertDatabaseCount('finance_payments', 2);
         $this->assertSame('INV-101', $invoice->fresh()->invoice_number);
         $this->assertSame('fixture.pdf', $invoice->fresh()->file_path);
         Mail::assertNothingOutgoing();

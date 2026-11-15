@@ -607,7 +607,7 @@ const ACTION_TONE = {
  * pre-screening, driven by the existing pre-screen state. Replaces the flat
  * action bar with a clear primary action + secondary options. Same endpoints.
  */
-function NextAction({ i, canEndorseAewv }) {
+function NextAction({ i, canEndorseAewv, endorsementFailed }) {
     const p = i?.pre_screen;
     if (!p) return null;
 
@@ -681,12 +681,12 @@ function NextAction({ i, canEndorseAewv }) {
 
             {/* Secondary options */}
             <div className="mt-3 flex items-center gap-3 flex-wrap text-[12px]">
-                {p.aewv_endorsed_at && (
+                {p.aewv_endorsed_at && !endorsementFailed && (
                     <span className="font-semibold text-emerald-700">Endorsed to Hendry · {fmtDate(p.aewv_endorsed_at)}</span>
                 )}
-                {canEndorseAewv && !p.aewv_endorsed_at && (
+                {canEndorseAewv && (!p.aewv_endorsed_at || endorsementFailed) && (
                     <button type="button" onClick={() => act("aewv-endorse")} className="text-[#00796b] hover:underline font-semibold">
-                        Endorse to Hendry
+                        {endorsementFailed ? "Retry endorsement email to Hendry" : "Endorse to Hendry"}
                     </button>
                 )}
                 {i.application_link && (
@@ -763,7 +763,7 @@ function RecreateVisaControl({ intake }) {
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null, engagement_pack = null, can_endorse_aewv = false }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null, engagement_pack = null, can_endorse_aewv = false, aewv_endorsement_failed = false }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showAssessment, setShowAssessment] = useState(false);
@@ -843,7 +843,7 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
                     </div>
 
                     {/* Next action — what the staff member should do now */}
-                    <NextAction i={intake} canEndorseAewv={can_endorse_aewv} />
+                    <NextAction i={intake} canEndorseAewv={can_endorse_aewv} endorsementFailed={aewv_endorsement_failed} />
                 </div>
 
                 {/* Visa assessment — a compact "available" card; opens the full

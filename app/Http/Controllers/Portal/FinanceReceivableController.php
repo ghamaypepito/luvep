@@ -26,8 +26,8 @@ class FinanceReceivableController extends Controller
         $q = trim((string) $request->query('q', ''));
 
         $rows = FinanceReceivable::with(['payments', 'lead:id,inz_visa_type,is_immigration_case'])
-            ->withExists(['invoicePayments as has_invoice_receipt' => fn ($query) => $query
-                ->whereColumn('case_finance_payments.currency', 'finance_receivables.currency')->where('case_finance_payments.amount', '>', 0)])
+            ->withSum(['invoicePayments as case_receipt_total' => fn ($query) => $query
+                ->whereColumn('case_finance_payments.currency', 'finance_receivables.currency')], 'amount')
             ->when($q !== '', fn ($query) => $query->where(fn ($w) => $w
                 ->where('client_name', 'like', "%{$q}%")
                 ->orWhere('invoice_no', 'like', "%{$q}%")
@@ -57,7 +57,7 @@ class FinanceReceivableController extends Controller
             'portal_issued' => $r->invoice_document_id !== null,
             'student_visa_invoice' => $r->isStudentVisaInvoice(),
             'can_manage_student_visa_invoice' => $canReview && $r->isStudentVisaInvoice(),
-            'can_flag_internal_settlement' => $r->has_invoice_receipt && $r->status !== 'void',
+            'can_flag_internal_settlement' => $r->canFlagInternalSettlement((float) $r->case_receipt_total),
             'internal_settlement_pending' => $canReview && $r->internal_settlement_pending,
             'days_past_due' => $r->days_past_due,
             'aging_bucket' => $r->aging_bucket,
@@ -267,9 +267,9 @@ class FinanceReceivableController extends Controller
             if ($receivable->internal_settlement_pending === $pending) {
                 return;
             }
-            if ($pending && ($receivable->status === 'void' || ! $receivable->invoicePayments()
-                ->where('currency', $receivable->currency)->where('amount', '>', 0)->exists())) {
-                throw ValidationException::withMessages(['pending' => 'Record a receipt on the active invoice before flagging internal settlement.']);
+            if ($pending && ! $receivable->canFlagInternalSettlement((float) $receivable->invoicePayments()
+                ->where('currency', $receivable->currency)->sum('amount'))) {
+                throw ValidationException::withMessages(['pending' => 'Record the full client payment on the active invoice before flagging internal settlement.']);
             }
 
             $receivable->internal_settlement_pending = $pending;

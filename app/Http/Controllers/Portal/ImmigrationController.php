@@ -2591,6 +2591,7 @@ class ImmigrationController extends Controller
             'can_endorse_aewv' => $row['visa_type'] === 'work' && ! $preScreening->isTerminal()
                 && ! $row['case_url'] && ! $row['conversion_issue']
                 && (auth()->user()->isAdmin() || auth()->user()->role === 'immigration_manager'),
+            'aewv_endorsement_failed' => $preScreening->aewvEndorsementFailed(),
             // The two pre-screening meetings (consultation, then consent).
             'bookings' => [
                 'consult' => $fmtBooking($preScreening->consultBooking),
