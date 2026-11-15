@@ -135,6 +135,9 @@ class LeadNoteController extends Controller
                 app(\App\Services\Reports\EducationNoteActivityReport::class)->record(
                     $request, $lead, $note, $validated['education_report_activity'] ?? 'update'
                 );
+                if (\App\Services\Reports\EducationNoteActivityReport::isEducationPost($request)) {
+                    $lead->recordStaffActivity('Internal note added');
+                }
 
                 foreach ($mediaAttachments as $attachment) {
                     $file = \App\Models\MediaFile::findOrFail($attachment['media_file_id']);

@@ -69,7 +69,12 @@ class EducationNoteActivityReportTest extends TestCase
         $this->assertCount(11, $report['entries']['data']);
         $this->assertSame('Synthetic Student', $report['entries']['data'][0]['client']);
         $this->assertSame('Synthetic Emma', $report['entries']['data'][0]['author']);
-        $this->assertSame($before, $lead->fresh()->getAttributes());
+        $lead->refresh();
+        $this->assertSame('Internal note added', $lead->last_activity_desc);
+        $this->assertSame($emma->id, $lead->last_activity_by);
+        $this->assertTrue($lead->last_activity_at?->equalTo(Carbon::now()) ?? false);
+        $activityFields = array_flip(['last_activity_at', 'last_activity_by', 'last_activity_desc', 'updated_at']);
+        $this->assertSame(array_diff_key($before, $activityFields), array_diff_key($lead->getAttributes(), $activityFields));
         $this->assertArrayNotHasKey('body', $report['entries']['data'][0]);
     }
 
