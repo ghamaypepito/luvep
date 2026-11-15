@@ -1942,8 +1942,7 @@ class CaseProfileController extends Controller
             ?? ($signers[0]['id'] ?? null);
 
         // Milestone dates for the Overview: when the pack was emailed, when the
-        // Written Agreement was signed, and when the invoice was settled (the
-        // first approved proof of payment).
+        // Written Agreement was signed, and when verified payments settled the invoices.
         $signedAt = LeadDocument::where('lead_id', $lead->id)
             ->where('source_variant', 'engagement:written_agreement')
             ->whereNotNull('client_signed_at')
@@ -1951,7 +1950,8 @@ class CaseProfileController extends Controller
 
         $invoices = \App\Services\PaymentProofService::invoiceQuery($lead)->with('invoicePayments')->get();
         $allPaid = $invoices->isNotEmpty() && $invoices->every(fn ($invoice) => app(\App\Services\PaymentProofService::class)->invoiceSummary($invoice)['paid']);
-        $paidAt = $allPaid ? $invoices->max('reviewed_at') : null;
+        $paidAt = $allPaid ? $invoices->max(fn ($invoice) => $invoice->reviewed_at
+            ?? $invoice->invoicePayments->where('finance_verified', true)->max('paid_at')) : null;
 
         return [
             'sent' => (bool) $lead->engagement_sent_at,
