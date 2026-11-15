@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import AddEditStudentModal from "./AddEditStudentModal";
+import { studentReferralLabel } from "../../../lib/studentReferral";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing } from "@/utils/priority";
 
@@ -886,8 +887,8 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                             <div className="text-[10px] text-gray-400 font-mono truncate">{s.lead_id}</div>
                                                         ) : null}
                                                         {(s.agent_name || s.referral) && (
-                                                            <div className="flex items-center gap-1 text-[10px] text-indigo-500 truncate" title="Referring agent">
-                                                                <Users size={10} className="text-indigo-300 flex-shrink-0" /> {s.agent_name || s.referral}
+                                                            <div className="flex items-center gap-1 text-[10px] text-indigo-500 truncate" title={studentReferralLabel(s)}>
+                                                                <Users size={10} className="text-indigo-300 flex-shrink-0" /> {studentReferralLabel(s)}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1179,7 +1180,7 @@ function StudentDashboardPanel({ student: s }) {
                         stage. Lives in the expander so the row column
                         stays compact. */}
                     <ReadOnlyField icon={UserPlus}  label="Endorsed by"    value={s.endorsed_by} />
-                    <ReadOnlyField icon={Users}     label="Referring agent" value={s.agent_name || s.referral} />
+                    <ReadOnlyField icon={Users}     label="Agent / referee" value={studentReferralLabel(s)} />
                     <ReadOnlyField icon={UserPlus}  label="Assigned person" value={s.immigration_assignee || s.english_assignee} />
                 </div>
             </section>

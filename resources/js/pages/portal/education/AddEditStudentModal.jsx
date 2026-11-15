@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
 import { X, Save, AlertTriangle, GraduationCap, ChevronDown, Search, UserPlus, Users, Briefcase, Check } from "lucide-react";
 
@@ -116,6 +116,7 @@ export default function AddEditStudentModal({
     agentOptions   = [],
 }) {
     const editing = !! student;
+    const refereeOptionsId = useId();
     const [form,    setForm]    = useState(blankForm);
     const [errors,  setErrors]  = useState({});
     const [saving,  setSaving]  = useState(false);
@@ -567,13 +568,25 @@ export default function AddEditStudentModal({
                             <Field label="Contact number" required>
                                 <input type="tel" required value={form.phone} onChange={set("phone")} className={ICls} placeholder="+63 …" />
                             </Field>
-                            <Field label="Referring agent" hint="Recruiting agent who referred them · optional">
-                                <select value={form.agent_id} onChange={set("agent_id")} className={ICls}>
+                            <Field label="Linked recruiting agent" hint="Existing recruiting-agent account · optional">
+                                <select aria-label="Linked recruiting agent" value={form.agent_id} onChange={set("agent_id")} className={ICls}>
                                     <option value="">— No agent —</option>
                                     {agentOptions.map((a) => (
                                         <option key={a.id} value={String(a.id)}>{a.name}</option>
                                     ))}
                                 </select>
+                            </Field>
+                            <Field label="Agent / referee name" hint="Select SIT or type a name. The linked recruiting account stays unchanged.">
+                                <div className="flex items-center gap-2">
+                                    <input aria-label="Agent or referee name" type="text" list={refereeOptionsId} maxLength={191}
+                                        value={form.referral} onChange={set("referral")} className={`${ICls} min-w-0`}
+                                        placeholder="SIT or another agent / referee" aria-invalid={Boolean(errors.referral)} />
+                                    <button type="button" disabled={saving} aria-label="Use SIT as agent or referee"
+                                        onClick={() => setForm((current) => ({ ...current, referral: "SIT" }))}
+                                        className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">SIT</button>
+                                </div>
+                                <datalist id={refereeOptionsId}><option value="SIT" /></datalist>
+                                {errors.referral && <p role="alert" className="mt-1 text-xs text-red-700">{errors.referral}</p>}
                             </Field>
                             <Field label="Location" hint="Country only · optional">
                                 <input type="text" value={form.location} onChange={set("location")} className={ICls} maxLength={120} placeholder="e.g. Philippines" />
