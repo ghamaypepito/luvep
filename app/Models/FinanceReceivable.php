@@ -40,6 +40,11 @@ class FinanceReceivable extends Model
         return $this->hasMany(CaseFinancePayment::class, 'invoice_document_id', 'invoice_document_id');
     }
 
+    public function invoiceReplacements(): HasMany
+    {
+        return $this->hasMany(InvoiceReplacement::class);
+    }
+
     public function isStudentVisaInvoice(): bool
     {
         return $this->invoice_document_id && $this->lead?->is_immigration_case

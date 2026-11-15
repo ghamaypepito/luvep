@@ -22,6 +22,59 @@ class PortalInvoiceReceivablesTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_issued_invoice_replacement_retains_original_and_the_same_payment_ledger(): void
+    {
+        Storage::fake('local');
+        Mail::fake();
+        $lead = Lead::create(['first_name' => 'Example', 'last_name' => 'Applicant', 'is_immigration_case' => true]);
+        $invoice = $this->document($lead, 'INV-200', 500);
+        $invoice->update(['mime' => 'application/pdf']);
+        $original = \Barryvdh\DomPDF\Facade\Pdf::loadHTML('<h1>Invoice INV-200</h1><p>Education processing: NZD 500.00</p>')->output();
+        Storage::disk('local')->put($invoice->file_path, $original);
+        app(PortalInvoiceReceivables::class)->post($invoice);
+        $ar = $invoice->receivable()->sole();
+        $receipt = CaseFinancePayment::create(['lead_id' => $lead->id, 'invoice_document_id' => $invoice->id,
+            'currency' => 'NZD', 'paid_at' => '2026-11-11', 'amount' => 150, 'reference' => 'Verified bank receipt']);
+        $payment = $ar->payments()->sole();
+        CaseFinancial::updateOrCreate(['lead_id' => $lead->id], ['invoice_no' => 'INV-200', 'currency' => 'NZD']);
+        $url = '/portal/finance/receivables/'.$ar->id;
+        $payload = ['invoice_number' => 'INVOICE-201', 'expected_number' => 'INV-200', 'reason' => 'Correct the issued reference'];
+
+        $this->actingAs(User::factory()->create(['role' => 'immigration', 'portal_access' => ['finance']]))
+            ->post($url.'/replace-invoice', $payload)->assertForbidden();
+        $this->actingAs(User::factory()->create(['role' => 'finance']));
+        $this->post($url.'/replace-invoice', array_replace($payload, ['invoice_number' => 'INVOICE-00200']))
+            ->assertSessionHasErrors('invoice_number');
+        $this->post($url.'/replace-invoice', $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($url.'/replace-invoice', $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($url.'/replace-invoice', array_replace($payload, ['invoice_number' => 'INV-202']))
+            ->assertSessionHasErrors('expected_number');
+
+        $ar->refresh();
+        $invoice->refresh();
+        $this->assertSame('INVOICE-201', $invoice->invoice_number);
+        $this->assertSame('INVOICE-201', $ar->invoice_no);
+        $this->assertSame($invoice->id, $ar->invoice_document_id);
+        $this->assertSame($payment->id, $ar->payments()->sole()->id);
+        $this->assertSame($receipt->id, $invoice->invoicePayments()->sole()->id);
+        $this->assertEquals(350, $ar->balance);
+        $this->assertSame('INVOICE-201', CaseFinancial::where('lead_id', $lead->id)->value('invoice_no'));
+        $history = $ar->invoiceReplacements()->sole();
+        $this->assertSame($original, Storage::disk('local')->get($history->previous_path));
+        $pages = (new \Smalot\PdfParser\Parser)->parseContent(Storage::disk('local')->get($invoice->file_path))->getPages();
+        $this->assertCount(2, $pages);
+        $this->assertStringContainsString('INVOICE-201', $pages[0]->getText());
+        $this->assertStringContainsString('Education processing: NZD 500.00', $pages[1]->getText());
+        $this->get($url.'/invoice-history/'.$history->id)->assertOk()->assertDownload();
+        $this->get($url.'/invoice-history')->assertOk()->assertDownload();
+        $this->post('/portal/finance/receivables', ['invoice_no' => 'INVOICE-00200', 'client_name' => 'Example Applicant',
+            'amount' => 500, 'issue_date' => '2026-11-06', 'due_date' => '2026-11-13'])->assertSessionHasErrors('invoice_number');
+        $this->assertDatabaseCount('finance_receivables', 1);
+        $this->assertDatabaseCount('finance_payments', 1);
+        $this->assertDatabaseHas('activity_logs', ['action' => 'finance.issued_invoice_replaced', 'entity_id' => $ar->id]);
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_finance_records_an_actual_student_visa_receipt_then_flags_internal_settlement(): void
     {
         Mail::fake();
