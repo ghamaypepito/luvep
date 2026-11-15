@@ -57,6 +57,12 @@ class LeadDocument extends Model
         return $status === self::STATUS_CHECKED ? self::STATUS_UNDER_REVIEW : $status;
     }
 
+    public function isEducationAgreement(): bool
+    {
+        return in_array($this->checklist_key, ['agree.consultancy', 'agree.engagement_english'], true)
+            && ($this->source === self::SOURCE_GENERATED || $this->status === self::STATUS_STAFF_SHARED);
+    }
+
     public function lead()
     {
         return $this->belongsTo(Lead::class);

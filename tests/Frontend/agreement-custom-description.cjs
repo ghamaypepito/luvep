@@ -74,8 +74,8 @@ const confirm = async () => { await settle(); await click(button('Submit for ver
         const menu = document.querySelector('[aria-label="Row actions"]');
         if (menu.getAttribute('aria-expanded') !== 'true') await click(menu);
         const signed = Boolean(markers.client_signed_at || markers.has_client_signature);
-        assert.equal(document.body.textContent.includes('Edit / regenerate'), !signed);
-        assert.equal(document.body.textContent.includes('Regenerate PDF'), !signed);
+        assert.equal(document.body.textContent.includes('Create revised agreement'), !signed);
+        assert.equal(document.body.textContent.includes('Regenerate PDF'), false);
         assert.ok(document.body.textContent.includes('Download'));
     }
     await act(async () => root.unmount()); dom.window.close(); console.log('Agreement custom description: scenario defaults, encoded live preview/PDF/send, confirmation, optional fallback, validation draft retention, reset and unsupported type isolation verified.');

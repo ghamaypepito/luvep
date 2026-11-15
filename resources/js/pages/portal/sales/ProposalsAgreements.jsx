@@ -1129,12 +1129,6 @@ function DocumentRowActions({ doc, lead, onNotify, onEdit, pending = false }) {
         router.post(`/admin/leads/${lead.id}/documents/${doc.id}/to-verification`, {}, { preserveScroll: true });
     };
 
-    // Re-render the PDF in place from the current stored amount — no re-verify.
-    const handleRegenerate = () => {
-        setOpen(false);
-        router.post(`/admin/leads/${lead.id}/documents/${doc.id}/regenerate`, {}, { preserveScroll: true });
-    };
-
     return (
         <div ref={wrapRef} className="relative inline-block">
             <button
@@ -1186,17 +1180,7 @@ function DocumentRowActions({ doc, lead, onNotify, onEdit, pending = false }) {
                             onClick={handleEdit}
                             className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors"
                         >
-                            <Pencil size={13} className="text-gray-400" /> Edit / regenerate
-                        </button>
-                    )}
-                    {canEdit && (
-                        <button
-                            type="button"
-                            onClick={handleRegenerate}
-                            title="Re-render the PDF from the current amount — no re-verification"
-                            className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                        >
-                            <RefreshCw size={13} className="text-gray-400" /> Regenerate PDF
+                            <Pencil size={13} className="text-gray-400" /> Create revised agreement
                         </button>
                     )}
                     <button
