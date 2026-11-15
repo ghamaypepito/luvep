@@ -285,7 +285,7 @@ function PersonalForm({ lead = {}, intake = null, assessmentCompleteness = null,
                         leadId={lead.id} blocked={isDirty || processing} onBusyChange={setPrefillBusy}
                         onApplied={(values, personal) => {
                             const merged = Object.fromEntries(Object.keys(data).map(key => [key, personal?.[key] ?? values[key] ?? data[key]]));
-                            form.defaults(merged); setData(merged); setSavedAt(Date.now());
+                            form.defaults(merged); setData(merged); setSavedAt(Date.now()); setScan(null);
                             router.reload({ only: ['lead', 'activity'], preserveState: true });
                         }}
                     />}

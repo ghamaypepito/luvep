@@ -40,6 +40,7 @@ let getState = { status: 'none', draft: null }, failApply = false, deferred = nu
 global.fetch = async (url, options = {}) => {
     calls.push({ url, options });
     if (!options.method) return { ok: true, json: async () => getState };
+    if (url.endsWith('/identity-scan')) return { ok: true, json: async () => ({ ok: true, rows: [{ label: 'Passport number', verdict: 'conflict', value: 'NEW-SYNTHETIC', note: 'Synthetic earlier conflict' }] }) };
     if (url.endsWith('/passport-prefill')) {
         if (deferred) return await new Promise(resolve => { deferred.resolve = resolve; });
         return { ok: true, json: async () => fixture };
@@ -49,7 +50,7 @@ global.fetch = async (url, options = {}) => {
 };
 const render = async (Component, props = {}) => act(async () => root.render(React.createElement(Component, props)));
 const click = async el => { assert.ok(el, 'Expected control'); await act(async () => el.dispatchEvent(new MouseEvent('click', { bubbles: true }))); };
-const button = text => [...document.querySelectorAll('button')].find(el => el.textContent === text);
+const button = text => [...document.querySelectorAll('button')].find(el => el.textContent.trim() === text);
 const confirm = () => document.querySelector('input[type="checkbox"]:not([aria-label])');
 const pause = ms => act(async () => await new Promise(resolve => setTimeout(resolve, ms)));
 
@@ -112,6 +113,8 @@ const pause = ms => act(async () => await new Promise(resolve => setTimeout(reso
     // Actual Personal tab: scan/review never triggers its existing autosave.
     const lead = { id: 42, first_name: 'Existing', last_name: 'Synthetic', email: 'synthetic@example.test', passport_number: 'OLD-SYNTHETIC', phone: 'old phone' };
     await render(Personal, { lead, passportPrefillAvailable: true });
+    await click(button('Scan passport with AI'));
+    assert.match(document.body.textContent, /Synthetic earlier conflict/);
     await click(button('Extract passport suggestions'));
     assert.ok([...document.querySelectorAll('input')].some(el => el.value === 'OLD-SYNTHETIC'));
     await pause(1000); assert.equal(posts.length, 0);
@@ -122,6 +125,7 @@ const pause = ms => act(async () => await new Promise(resolve => setTimeout(reso
     assert.ok([...document.querySelectorAll('input')].some(el => el.value === 'Existing'));
     await pause(1000); assert.equal(posts.length, 0, 'Accepting already saved fields must not post the whole form again');
     assert.deepEqual(reloads.at(-1).only, ['lead', 'activity']);
+    assert.doesNotMatch(document.body.textContent, /Synthetic earlier conflict/);
     await render(Personal, { lead: { ...lead, id: 99, first_name: 'Different', passport_number: 'CASE-99' }, passportPrefillAvailable: false });
     assert.ok([...document.querySelectorAll('input')].some(el => el.value === 'Different'));
     assert.ok(![...document.querySelectorAll('input')].some(el => el.value === 'Existing'));
