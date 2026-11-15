@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\VisaType;
 use App\Notifications\DocumentSubmittedForReview;
 use App\Notifications\LeadInfoUpdated;
+use App\Services\IssuedEducationAgreement;
 use App\Support\UploadValidation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -492,6 +493,8 @@ class LeadTrackingController extends Controller
             return back()->with('error', 'This document has been approved and can no longer be edited.');
         }
 
+        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
+
         $request->validate([
             'file' => 'nullable|'.UploadValidation::document(),
             'checklist_key' => 'nullable|string|max:80',
@@ -960,7 +963,8 @@ class LeadTrackingController extends Controller
                 $isEngagementWA = $type === 'written_agreement';
                 $isConsultancy = $d->checklist_key === 'agree.consultancy';
                 $isEnglishEng = $d->checklist_key === 'agree.engagement_english';
-                $isSignable = $isEngagementWA || $isConsultancy || $isEnglishEng;
+                $issuedAgreement = $d->isEducationAgreement();
+                $isSignable = $isEngagementWA || ($issuedAgreement && $d->status !== LeadDocument::STATUS_REJECTED);
 
                 // Friendly titles for the sales-side docs so the tracker
                 // doesn't just show "CA-Ravi-Std150-Single.pdf".
@@ -970,7 +974,10 @@ class LeadTrackingController extends Controller
                         : ($isEnglishEng ? 'English Engagement Agreement'
                             : $d->original_name));
 
-                $signed = (bool) $d->client_signed_at;
+                $signed = (bool) ($d->client_signed_at || ($issuedAgreement && $d->client_signature_path));
+                $issuedHash = $issuedAgreement && $isSignable && ! $signed
+                    ? IssuedEducationAgreement::checksum($d)
+                    : null;
 
                 return [
                     'id' => $d->id,
@@ -980,14 +987,14 @@ class LeadTrackingController extends Controller
                     'created_at' => $d->created_at?->toIso8601String(),
                     'view_url' => "/track/{$code}/documents/{$d->id}/download?inline=1",
                     'download_url' => "/track/{$code}/documents/{$d->id}/download",
-                    // Live HTML preview for the signing modal — the drawn
-                    // signature streams into it via postMessage.
-                    'preview_url' => $isSignable ? "/track/{$code}/documents/{$d->id}/preview" : null,
-                    'signable' => $isSignable,
+                    // Education clients review the issued PDF itself.
+                    'issued_agreement_hash' => $issuedHash,
+                    'preview_url' => $isEngagementWA ? "/track/{$code}/documents/{$d->id}/preview" : null,
+                    'signable' => $isSignable && (! $issuedAgreement || $signed || $issuedHash !== null),
                     'signed' => $signed,
                     'signed_at' => $d->client_signed_at?->toIso8601String(),
                     'signer_name' => $d->client_signer_name,
-                    'sign_url' => $isSignable ? "/track/{$code}/documents/{$d->id}/sign" : null,
+                    'sign_url' => $isSignable && (! $issuedAgreement || $issuedHash !== null) ? "/track/{$code}/documents/{$d->id}/sign" : null,
                 ];
             })
             ->values()
@@ -1020,9 +1027,11 @@ class LeadTrackingController extends Controller
 
         abort_unless($doc->file_path && Storage::disk('local')->exists($doc->file_path), 404);
 
+        $headers = $doc->isEducationAgreement() ? ['Cache-Control' => 'private, no-store'] : [];
+
         // ?inline=1 → render in the browser (View); otherwise force download.
         if ($request->boolean('inline')) {
-            return response()->file(Storage::disk('local')->path($doc->file_path), [
+            return response()->file(Storage::disk('local')->path($doc->file_path), $headers + [
                 'Content-Type' => $doc->mime ?: 'application/pdf',
                 'Content-Disposition' => 'inline; filename="'.$doc->original_name.'"',
             ]);
@@ -1030,7 +1039,8 @@ class LeadTrackingController extends Controller
 
         return response()->download(
             Storage::disk('local')->path($doc->file_path),
-            $doc->original_name
+            $doc->original_name,
+            $headers,
         );
     }
 
@@ -1048,6 +1058,12 @@ class LeadTrackingController extends Controller
         $doc = LeadDocument::where('id', $docId)
             ->where('lead_id', $lead->id)
             ->firstOrFail();
+
+        if ($doc->isEducationAgreement()) {
+            $request->query->set('inline', '1');
+
+            return $this->downloadDoc($request, $code, $docId);
+        }
 
         // Any stored client signature — passed to the generator so the
         // preview already shows what's been signed.
@@ -1072,74 +1088,7 @@ class LeadTrackingController extends Controller
             return response($html)->header('Content-Type', 'text/html; charset=utf-8');
         }
 
-        if ($doc->checklist_key === 'agree.consultancy') {
-            [$view, $payload] = $this->consultancyPreviewFor($doc, $lead, $clientSig);
-
-            return response(view($view, $payload)->render())
-                ->header('Content-Type', 'text/html; charset=utf-8');
-        }
-
-        if ($doc->checklist_key === 'agree.engagement_english') {
-            $payload = $this->englishEngagementPreviewFor($doc, $lead, $clientSig);
-
-            return response(view('agreements.engagement-english', $payload)->render())
-                ->header('Content-Type', 'text/html; charset=utf-8');
-        }
-
         abort(403);
-    }
-
-    /**
-     * Rebuild the consultancy payload from the stored source_variant so
-     * the tracker preview + re-sign renders exactly what was generated.
-     * source_variant format: "consultancy:{scenario_key}:{applicant_mode}".
-     */
-    private function consultancyPreviewFor(LeadDocument $doc, Lead $lead, ?string $clientSig): array
-    {
-        $parts = explode(':', (string) $doc->source_variant);
-        $scenario = $parts[1] ?? 'std_100';
-        $mode = ($parts[2] ?? 'single') === 'couple' ? 'couple' : 'single';
-        $gen = app(\App\Services\AgreementGenerator::class);
-
-        $signerOpt = $doc->engagement_signer_id ? ['signer_id' => $doc->engagement_signer_id] : [];
-
-        // Onshore engagement (free) + offshore single-package each have their
-        // own blade; the standard scenarios share agreements.consultancy.
-        if ($scenario === 'onshore') {
-            $payload = $gen->buildOnshoreEngagementPayload($lead, $signerOpt);
-            $view = 'agreements.onshore-engagement';
-        } elseif ($scenario === 'offshore') {
-            $payload = $gen->buildOffshorePayload($lead, $signerOpt);
-            $view = 'agreements.consultancy-offshore';
-        } else {
-            [$payload] = $gen->buildConsultancyPayload($lead, $scenario, array_merge($signerOpt, ['applicant_mode' => $mode]));
-            $view = 'agreements.consultancy';
-        }
-        $payload['preview'] = true;
-        $payload['client_signature'] = $clientSig;
-
-        return [$view, $payload];
-    }
-
-    private function englishEngagementPreviewFor(LeadDocument $doc, Lead $lead, ?string $clientSig): array
-    {
-        $clientName = trim("{$lead->first_name} {$lead->last_name}");
-        $signer = $doc->engagement_signer_id
-            ? \App\Models\User::find($doc->engagement_signer_id)
-            : \Illuminate\Support\Facades\Auth::user();
-
-        return [
-            'client_name' => $clientName,
-            'client_reference' => Str::slug($clientName ?: 'ClientName', '') ?: 'ClientName',
-            'signer_name' => $signer?->name ?: 'Neil Bryan Escaner',
-            'signer_mobile' => $signer?->phone ?: '+63945 107 6871',
-            'signer_signature' => method_exists($signer, 'signatureDataUriTrimmed')
-                ? $signer->signatureDataUriTrimmed()
-                : null,
-            'client_signature' => $clientSig,
-            'generated_at' => $doc->created_at ?? now(),
-            'generated_at_formatted' => ($doc->created_at ?? now())->format('jS').' day of '.($doc->created_at ?? now())->format('F Y'),
-        ];
     }
 
     /**
@@ -1157,10 +1106,41 @@ class LeadTrackingController extends Controller
             ->where('lead_id', $lead->id)
             ->firstOrFail();
 
-        $isEngagementWA = $doc->source_variant === 'engagement:written_agreement';
-        $isConsultancy = $doc->checklist_key === 'agree.consultancy';
-        $isEnglishEng = $doc->checklist_key === 'agree.engagement_english';
-        abort_unless($isEngagementWA || $isConsultancy || $isEnglishEng, 403);
+        if ($doc->isEducationAgreement()) {
+            abort_if(in_array($doc->checklist_key, app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead), true), 404);
+            abort_if($doc->status === LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
+            abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'This agreement has already been signed.');
+
+            $data = $request->validate([
+                'issued_agreement_hash' => ['required', 'regex:/^[a-f0-9]{64}$/D'],
+                'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
+                'signature_data' => 'nullable|string|max:2800000',
+                'signer_name' => 'nullable|string|max:120',
+                'acknowledged' => 'accepted',
+            ], ['issued_agreement_hash.required' => 'Refresh this page and review the issued agreement before signing.']);
+
+            [$binary, $ext] = $this->readSignatureUpload($request);
+            $image = $binary ? @getimagesizefromstring($binary) : false;
+            $expectedType = $ext === 'jpeg' ? IMAGETYPE_JPEG : IMAGETYPE_PNG;
+            if (! $image || $image[2] !== $expectedType || max($image[0], $image[1]) > 4096
+                || ! @imagecreatefromstring($binary)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['signature_data' => 'Draw a valid signature before signing.']);
+            }
+
+            try {
+                app(IssuedEducationAgreement::class)->sign($lead, $doc, $data['issued_agreement_hash'], $binary, $ext, $data['signer_name'] ?? null, $request->ip());
+            } catch (\Illuminate\Validation\ValidationException | \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
+                throw $error;
+            } catch (\Throwable $error) {
+                report($error);
+
+                return back()->withErrors(['signature_data' => 'Could not save the signature. The issued agreement is still available.']);
+            }
+
+            return back()->with('success', 'Thank you — your agreement has been signed.');
+        }
+
+        abort_unless($doc->source_variant === 'engagement:written_agreement', 403);
 
         $request->validate([
             'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
@@ -1168,14 +1148,6 @@ class LeadTrackingController extends Controller
             'signer_name' => 'nullable|string|max:120',
             'acknowledged' => 'nullable|boolean',
         ]);
-
-        // Terms ack is required for the sales-side agreements (consultancy
-        // + english engagement); the immigration Written Agreement has no
-        // ack box, so we don't gate it there.
-        $acknowledged = (bool) $request->input('acknowledged');
-        if (($isConsultancy || $isEnglishEng) && ! $acknowledged) {
-            return back()->withErrors(['error' => 'Please tick "I have read and agreed to the terms" before signing.']);
-        }
 
         try {
             [$binary, $ext] = $this->readSignatureUpload($request);
@@ -1190,70 +1162,10 @@ class LeadTrackingController extends Controller
 
             $clientSig = 'data:image/'.($ext === 'jpeg' ? 'jpeg' : 'png').';base64,'.base64_encode($binary);
 
-            // Re-render the same document family with the client sig baked in.
-            if ($isEngagementWA) {
-                $pdf = $generator->pdfBinary($lead, 'written_agreement', [
-                    'signer_id' => $doc->engagement_signer_id,
-                    'client_signature' => $clientSig,
-                ]);
-            } elseif ($isConsultancy) {
-                $parts = explode(':', (string) $doc->source_variant);
-                $scenario = $parts[1] ?? 'std_100';
-                $mode = ($parts[2] ?? 'single') === 'couple' ? 'couple' : 'single';
-                $gen = app(\App\Services\AgreementGenerator::class);
-                // Carry the reviewer-confirmed fees (+ bank/currency) so signing
-                // re-renders with the SAME amount the agreement was approved at —
-                // not the generator's default. Without this, signing baked in the
-                // default fee and the signed PDF drifted from the saved amount.
-                $reviewOv = \App\Services\ConsultancyReviewService::overridesForGeneration(
-                    is_array($lead->consultancy_review) ? $lead->consultancy_review : []
-                );
-                $opts = array_merge($reviewOv, array_filter(['signer_id' => $doc->engagement_signer_id]));
-
-                if ($scenario === 'onshore') {
-                    // Onshore engagement (free) — its own blade.
-                    $payload = $gen->buildOnshoreEngagementPayload($lead, $opts);
-                    $payload['client_signature'] = $clientSig;
-                    $payload['acknowledged'] = $acknowledged;
-                    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('agreements.onshore-engagement', $payload)
-                        ->setPaper('a4')->setOption('isPhpEnabled', true)->output();
-                } elseif ($scenario === 'offshore') {
-                    // Offshore single-package consultancy — its own blade.
-                    $payload = $gen->buildOffshorePayload($lead, $opts);
-                    $payload['client_signature'] = $clientSig;
-                    $payload['acknowledged'] = $acknowledged;
-                    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('agreements.consultancy-offshore', $payload)
-                        ->setPaper('a4')->setOption('isPhpEnabled', true)->output();
-                } else {
-                    [$payload, $s] = $gen->buildConsultancyPayload(
-                        $lead,
-                        $scenario,
-                        array_merge($opts, ['applicant_mode' => $mode])
-                    );
-                    $payload['client_signature'] = $clientSig;
-                    $payload['acknowledged'] = $acknowledged;
-                    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('agreements.consultancy', $payload)
-                        ->setPaper('a4')->setOption('isPhpEnabled', true)->output();
-                }
-            } else { // english engagement / offshore — pick the right variant + fees
-                $scenario = match ($doc->source_variant) {
-                    'engagement-english-offshore' => 'english_offshore',
-                    'engagement-english-offshore-1000' => 'english_offshore_1000',
-                    default => 'english_engagement',
-                };
-                $ov = \App\Services\ConsultancyReviewService::overridesForGeneration(
-                    is_array($lead->consultancy_review) ? $lead->consultancy_review : []
-                );
-                [$view, $payload] = \App\Services\ConsultancyReviewService::previewPayload(
-                    app(\App\Services\AgreementGenerator::class), $lead, $scenario, $ov
-                );
-                unset($payload['preview']); // final signed PDF, not the in-flow preview
-                $payload['client_signature'] = $clientSig;
-                $payload['acknowledged'] = $acknowledged;
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($view, $payload)
-                    ->setPaper('a4')
-                    ->output();
-            }
+            $pdf = $generator->pdfBinary($lead, 'written_agreement', [
+                'signer_id' => $doc->engagement_signer_id,
+                'client_signature' => $clientSig,
+            ]);
 
             Storage::disk('local')->put($doc->file_path, $pdf);
 
@@ -1264,20 +1176,6 @@ class LeadTrackingController extends Controller
                 'client_signer_name' => $request->input('signer_name') ?: trim("{$lead->first_name} {$lead->last_name}"),
                 'client_signer_ip' => $request->ip(),
             ])->save();
-
-            // Signing a consultancy agreement advances the pipeline to
-            // "Consultancy Agreement Signed" (non-regressing). That stage
-            // transition fires the consultancy_signe client email via the
-            // Lead model trigger (same path as staff "Mark as signed").
-            if ($isConsultancy) {
-                $stages = Lead::STAGES;
-                $curIdx = array_search($lead->status, $stages, true);
-                $tgtIdx = array_search('Consultancy Agreement Signed', $stages, true);
-                if ($tgtIdx !== false && ($curIdx === false || $curIdx < $tgtIdx)) {
-                    $lead->status = 'Consultancy Agreement Signed';
-                    $lead->save();
-                }
-            }
 
             return back()->with('success', 'Thank you — your agreement has been signed.');
         } catch (\Throwable $e) {

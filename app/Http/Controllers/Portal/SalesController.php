@@ -731,6 +731,8 @@ class SalesController extends Controller
                         // "Offshore - Philippines".
                         'type' => $this->agreementTypeLabel($d->checklist_key, $d->source_variant),
                         'variant' => $d->source_variant,
+                        'client_signed_at' => $d->client_signed_at?->toIso8601String(),
+                        'has_client_signature' => (bool) $d->client_signature_path,
                         'applicant_mode' => $applicantMode,
                         // Fee total for the Total column — the lead's verified
                         // review amounts when they match this doc, else the

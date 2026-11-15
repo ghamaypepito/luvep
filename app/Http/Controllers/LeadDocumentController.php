@@ -765,66 +765,12 @@ class LeadDocumentController extends Controller
         return back()->with('success', "English agreement sent for verification — {$lead->first_name} {$lead->last_name}.");
     }
 
-    /**
-     * Re-render an already-approved consultancy / English agreement PDF in place
-     * from the amount currently stored on the lead's review — no re-verification.
-     * Fixes file-vs-column drift when a fee was edited after the PDF was made.
-     */
     public function regenerateAgreement(Request $request, $leadId, $documentId)
     {
-        $lead = Lead::findOrFail($leadId);
-        $doc = LeadDocument::where('lead_id', $lead->id)->findOrFail($documentId);
+        $doc = LeadDocument::where('lead_id', $leadId)->findOrFail($documentId);
+        abort_unless($doc->isEducationAgreement(), 422, 'Only an issued Education agreement can be revised.');
 
-        abort_unless(
-            in_array($doc->checklist_key, ['agree.consultancy', 'agree.engagement_english'], true)
-                && $doc->source === LeadDocument::SOURCE_GENERATED,
-            422,
-            'Only a generated agreement can be regenerated.'
-        );
-
-        $review = is_array($lead->consultancy_review) ? $lead->consultancy_review : [];
-        abort_if(empty($review) || empty($review['scenario']), 422, 'No stored agreement data to regenerate from.');
-
-        try {
-            $g = app(\App\Services\AgreementGenerator::class);
-            $overrides = \App\Services\ConsultancyReviewService::overridesForGeneration($review);
-
-            // Preserve the client's e-signature if the doc was already signed —
-            // re-apply it to the re-rendered PDF so it stays a signed agreement.
-            $clientSig = null;
-            if ($doc->client_signature_path && Storage::disk(self::DISK)->exists($doc->client_signature_path)) {
-                $ext = strtolower(pathinfo($doc->client_signature_path, PATHINFO_EXTENSION));
-                $mime = in_array($ext, ['jpg', 'jpeg'], true) ? 'image/jpeg' : 'image/png';
-                $clientSig = "data:{$mime};base64,".base64_encode(Storage::disk(self::DISK)->get($doc->client_signature_path));
-            }
-            if ($doc->engagement_signer_id) {
-                $overrides['signer_id'] = $doc->engagement_signer_id;
-            }
-
-            // Build the real PDF payload (reuses the verification-preview mapping)
-            // and render it with the current amounts.
-            [$view, $payload] = \App\Services\ConsultancyReviewService::previewPayload($g, $lead, $review['scenario'], $overrides);
-            unset($payload['preview']); // this is the final PDF, not the in-flow preview
-            if ($clientSig) {
-                $payload['client_signature'] = $clientSig;
-                $payload['acknowledged'] = true;
-            }
-
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($view, $payload)
-                ->setPaper('a4')
-                ->setOption('isPhpEnabled', true)
-                ->output();
-
-            // Overwrite the SAME file so the row + signed state stay intact.
-            Storage::disk(self::DISK)->put($doc->file_path, $pdf);
-            $doc->forceFill(['size' => strlen($pdf)])->save();
-
-            return back()->with('success', 'Agreement PDF regenerated with the current amount.');
-        } catch (\Throwable $e) {
-            Log::error('Agreement regenerate failed', ['lead' => $leadId, 'doc' => $documentId, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not regenerate the PDF.']);
-        }
+        abort(409, 'Issued agreements cannot be regenerated in place. Submit a new agreement for amended terms.');
     }
 
     /**
@@ -2044,6 +1990,9 @@ class LeadDocumentController extends Controller
                 Storage::disk(self::DISK)->exists($doc->file_path)
                     ? \App\Support\DocumentFiles::delete($doc->file_path, 'local')
                     : null;
+                if ($issuedPath = $doc->notes['issued_agreement']['file_path'] ?? null) {
+                    \App\Support\DocumentFiles::delete($issuedPath, 'local');
+                }
                 $name = $doc->original_name ?: 'file';
                 $doc->delete();
 
@@ -2271,7 +2220,7 @@ class LeadDocumentController extends Controller
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be removed.');
         }
-        if ($doc->source === 'generated') {
+        if ($doc->source === 'generated' || $doc->isEducationAgreement()) {
             return back()->with('error', 'This document was prepared for you and cannot be removed.');
         }
 
@@ -2298,6 +2247,8 @@ class LeadDocumentController extends Controller
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be replaced.');
         }
+
+        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
 
         $request->validate(['file' => 'required|'.UploadValidation::document()]);
         $file = $request->file('file');
