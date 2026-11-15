@@ -1328,6 +1328,7 @@ class EducationController extends Controller
 
             return inertia('portal/education/Reports', app(EducationReportService::class)->build($period) + [
                 'weeklyReport' => $week ? $week->notes('education') + ['tasks' => $week->tasks('education')] : null,
+                'personalReport' => app(\App\Services\Reports\EducationPersonalReport::class)->build($period, $request->user(), is_string($request->query('activity_kind')) ? $request->query('activity_kind') : null),
             ]);
         } catch (\Throwable $e) {
             Log::error('Education reports failed', ['error' => $e->getMessage()]);
@@ -1352,6 +1353,9 @@ class EducationController extends Controller
     {
         $this->authorizeReport($request);
         if ($request->has('week_start')) {
+            if ($request->has('entry_action')) {
+                return \App\Services\Reports\EducationWeeklyNotes::save($request);
+            }
             return ReportWeek::save($request, 'education');
         }
 

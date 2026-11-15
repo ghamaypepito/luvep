@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Models\Lead;
 use App\Services\LeadIntakeService;
 use App\Support\VisaIntakeDraft;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -75,23 +77,23 @@ trait SavesIntakeDraft
                 'stage' => 'Evaluation',
             ], $request);
 
-            // Never demote someone who has already got further than a draft —
-            // a returning applicant re-opening the form must not knock their
-            // real submission back to Draft.
-            $locked = ['Submitted', 'In Review', 'Engaged', 'Converted', 'Completed', 'Closed'];
-            $stillDraft = ! in_array($lead->status, $locked, true);
+            DB::transaction(function () use ($lead, $validated, $surname, $source, $request) {
+                $current = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+                // An applicant's auto-save must not demote a staff-managed record.
+                $canEnterDraft = in_array($current->status, [null, 'New Leads', 'Draft'], true)
+                    && ! $current->is_student && blank($current->education_stage)
+                    && ! $current->is_immigration_case;
 
-            $lead->update(array_filter([
-                'first_name' => $validated['first_name'],
-                'last_name' => $surname ?: null,
-                'phone' => $validated['phone'] ?? null,
-                'source' => $source,
-                'status' => $stillDraft ? 'Draft' : $lead->status,
-                // The whole in-progress form. Same column the Free Assessment
-                // draft uses, so both funnels read back the same way.
-                'ai_analysis' => $request->except(['_token']),
-                'ai_analysis_status' => 'completed',
-            ], fn ($v) => $v !== null));
+                $current->update(array_filter([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $surname ?: null,
+                    'phone' => $validated['phone'] ?? null,
+                    'source' => $source,
+                    'status' => $canEnterDraft ? 'Draft' : null,
+                    'ai_analysis' => $request->except(['_token']),
+                    'ai_analysis_status' => 'completed',
+                ], fn ($value) => $value !== null));
+            });
 
             return response()->json([
                 'draft_saved' => true,

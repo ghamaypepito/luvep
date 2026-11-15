@@ -50,6 +50,7 @@ class ReportWeek
             'to' => $to,
             'note' => (string) Setting::get(self::key($scope, $from), ''),
             'personal' => str_contains($scope, ':'),
+            ...($scope === 'education' ? ['entries' => EducationWeeklyNotes::entries($from)] : []),
         ];
     }
 
