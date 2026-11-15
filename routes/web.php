@@ -2365,6 +2365,7 @@ Route::middleware(['auth'])->group(function () {
             Route::put('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'update'])->name('receivables.update');
             Route::delete('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'destroy'])->name('receivables.destroy');
             Route::post('/receivables/{receivable}/payments', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'recordPayment'])->name('receivables.payments.store');
+            Route::patch('/receivables/{receivable}/internal-settlement', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'updateInternalSettlement'])->name('receivables.internal-settlement');
             Route::delete('/receivables/{receivable}/payments/{payment}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'deletePayment'])->name('receivables.payments.destroy');
 
             // Accounts Payable
