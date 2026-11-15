@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { BookOpen, CheckCircle2, FileText, PencilLine, Save, X, RefreshCw } from "lucide-react";
 import EducationReportInsights from "../../../components/EducationReportInsights";
+import EducationNoteActivityReport from "../../../components/education/EducationNoteActivityReport";
 
 // Public report presets. Legacy URL aliases are resolved by the server.
 const PRESETS = [
@@ -39,7 +40,10 @@ export default function EducationReports(props) {
     }, [props]);
     const displayed = props.error ? lastSuccessful.current : props;
 
-    return <EducationReportContent {...(displayed || { range: props.range })} error={props.error} hasTrustedData={Boolean(displayed)} />;
+    return <>
+        <EducationReportContent {...(displayed || { range: props.range })} error={props.error} hasTrustedData={Boolean(displayed)} />
+        <EducationNoteActivityReport data={displayed?.summary?.note_activity} />
+    </>;
 }
 
 function EducationReportContent({ range = {}, pipeline = [], summary = {}, summaryLists = {}, totalRegister = 0, movements = 0, register = {}, departments = {}, programs = {}, conclusion = {}, generated_at = null, generated_by = null, error = null, errors = {}, pipeline_history = {}, weeklyReport, hasTrustedData = false }) {

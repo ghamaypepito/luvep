@@ -62,6 +62,8 @@ class LeadNoteController extends Controller
     {
         $this->authorizeLead($request, $leadId);
         $validated = $request->validate([
+            'education_report_activity' => [\Illuminate\Validation\Rule::excludeIf(! \App\Services\Reports\EducationNoteActivityReport::isEducationPost($request)),
+                'nullable', \Illuminate\Validation\Rule::in(['update', 'follow_up'])],
             'body' => 'required|string|max:2000',
             'programs' => 'nullable|array|max:50',
             'programs.*' => 'required|string|max:255|distinct|exists:programs,title',
@@ -110,7 +112,7 @@ class LeadNoteController extends Controller
                 ];
             }
 
-            \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $user, $validated, $attachments, $mediaAttachments) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $lead, $user, $validated, $attachments, $mediaAttachments) {
                 $note = LeadNote::create([
                     'lead_id' => $lead->id,
                     'parent_id' => $validated['parent_id'] ?? null,
@@ -129,6 +131,10 @@ class LeadNoteController extends Controller
                     'goal_setting_status' => $validated['goal_setting_status'] ?? null,
                     'goal_setting_by' => $validated['goal_setting_by'] ?? null,
                 ]);
+
+                app(\App\Services\Reports\EducationNoteActivityReport::class)->record(
+                    $request, $lead, $note, $validated['education_report_activity'] ?? 'update'
+                );
 
                 foreach ($mediaAttachments as $attachment) {
                     $file = \App\Models\MediaFile::findOrFail($attachment['media_file_id']);
