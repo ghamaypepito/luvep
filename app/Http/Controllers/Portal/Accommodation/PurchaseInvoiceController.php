@@ -71,7 +71,7 @@ class PurchaseInvoiceController extends Controller
             'lines.*.amount' => 'required|gt:0|'.$amount,
             'gst' => 'exclude_unless:source,generate|required|'.$amount,
             'gst_number' => 'exclude_unless:source,generate|nullable|string|max:32',
-            'bill_to' => 'exclude_unless:source,generate|required|string|max:200',
+            'bill_to' => 'exclude_unless:source,generate|required|string|max:255',
             'payment_instructions' => 'exclude_unless:source,generate|required|string|max:1000',
             'receipts' => 'nullable|array|list|max:10',
             'receipts.*' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
@@ -84,6 +84,9 @@ class PurchaseInvoiceController extends Controller
             throw ValidationException::withMessages(['receipts' => "The invoice and receipts must be {$maxUploadMb} MB or less combined."]);
         }
         $reference = mb_strtoupper($data['reference']);
+        if (mb_strlen($reference) > 64) {
+            throw ValidationException::withMessages(['reference' => 'The invoice number may contain up to 64 characters after conversion to uppercase.']);
+        }
         if ($data['source'] === 'generate') {
             $toCents = static fn ($value) => (int) round((float) $value * 100);
             $total = array_sum(array_map(fn ($line) => $toCents($line['amount']), $data['lines']));

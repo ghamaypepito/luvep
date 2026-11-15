@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('invoice_file_id')->constrained('media_files')->restrictOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('reference', 64)->unique();
-            $table->string('tenant_name', 200);
+            $table->string('tenant_name');
             $table->text('property_address');
             $table->date('issue_date');
             $table->date('due_date')->nullable();

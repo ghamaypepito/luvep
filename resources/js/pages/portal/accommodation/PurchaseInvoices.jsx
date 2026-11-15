@@ -45,7 +45,7 @@ function InvoiceForm({ tenant, maxUploadMb, onClose }) {
             <label className={labelStyle}>Issue date<input className={fieldStyle} required type="date" value={data.issue_date} onChange={(e) => setData('issue_date', e.target.value)} /></label>
             <label className={labelStyle}>Due date<input className={fieldStyle} type="date" min={data.issue_date || undefined} value={data.due_date} onChange={(e) => setData('due_date', e.target.value)} /></label>
             {generate
-                ? <label className={labelStyle}>Bill to<input className={fieldStyle} required maxLength={200} value={data.bill_to} onChange={(e) => setData('bill_to', e.target.value)} /></label>
+                ? <label className={labelStyle}>Bill to<input className={fieldStyle} required maxLength={255} value={data.bill_to} onChange={(e) => setData('bill_to', e.target.value)} /></label>
                 : <label className={labelStyle}>Total (NZD)<input className={fieldStyle} required type="number" min="0.01" max="9999999.99" step="0.01" value={data.total} onChange={(e) => setData('total', e.target.value)} /></label>}
         </div>
         {generate && <fieldset className="space-y-3">

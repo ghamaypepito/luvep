@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Models\Tenant;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -210,7 +211,16 @@ class PropertyController extends Controller
                 ->with('error', 'Cannot delete a property with active tenants. Vacate or move them first.');
         }
 
-        $property->delete();
+        try {
+            DB::transaction(fn () => $property->delete());
+        } catch (\DomainException $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        } catch (QueryException $e) {
+            if ($property->hasPurchaseInvoiceHistory()) {
+                return redirect()->back()->with('error', Property::PURCHASE_INVOICE_DELETE_ERROR);
+            }
+            throw $e;
+        }
 
         return redirect()->route('portal.accommodation.properties.index')
             ->with('success', 'Property deleted successfully.');

@@ -16,8 +16,7 @@ class PropertyImage extends Model
 
     protected static function booted(): void
     {
-        // Remove the file from disk whenever the row is deleted (individually
-        // or via the parent Property's cascade in Property::booted()).
+        // Individual deletion removes the file. Property cleans up its cascaded images after commit.
         static::deleting(function (PropertyImage $image) {
             if ($image->path) {
                 Storage::disk('public')->delete($image->path);
