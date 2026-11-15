@@ -2377,6 +2377,9 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'destroy'])->name('receivables.destroy');
             Route::post('/receivables/{receivable}/payments', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'recordPayment'])->name('receivables.payments.store');
             Route::patch('/receivables/{receivable}/internal-settlement', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'updateInternalSettlement'])->name('receivables.internal-settlement');
+            Route::post('/receivables/{receivable}/replace-invoice', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'replaceInvoice'])->name('receivables.replace-invoice');
+            Route::get('/receivables/{receivable}/invoice-history/{version?}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'downloadInvoiceHistory'])
+                ->whereNumber('version')->name('receivables.invoice-history');
             Route::delete('/receivables/{receivable}/payments/{payment}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'deletePayment'])->name('receivables.payments.destroy');
 
             // Accounts Payable

@@ -425,6 +425,7 @@ class CaseProfileController extends Controller
     {
         $user = $this->guardCase($lead);
         [$data, $invoiceNo] = $this->invoiceData($lead);
+        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($invoiceNo);
 
         $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.invoice', array_merge($data, ['mode' => 'pdf']))
             ->setPaper('a4')->output();

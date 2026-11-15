@@ -9,9 +9,11 @@ use App\Models\FinancePayment;
 use App\Models\FinanceReceivable;
 use App\Models\Lead;
 use App\Services\Finance\PortalInvoiceReceivables;
+use App\Services\Finance\ReplaceIssuedInvoice;
 use App\Services\PaymentProofService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -24,13 +26,16 @@ class FinanceReceivableController extends Controller
     {
         $status = $request->query('status');
         $q = trim((string) $request->query('q', ''));
+        $canReview = app(PaymentProofService::class)->canReview($request->user());
 
         $rows = FinanceReceivable::with(['payments', 'lead:id,inz_visa_type,is_immigration_case'])
+            ->when($canReview, fn ($query) => $query->with(['invoiceReplacements:id,finance_receivable_id,previous_number,replacement_number,reason,created_at']))
             ->withSum(['invoicePayments as case_receipt_total' => fn ($query) => $query
                 ->whereColumn('case_finance_payments.currency', 'finance_receivables.currency')], 'amount')
             ->when($q !== '', fn ($query) => $query->where(fn ($w) => $w
                 ->where('client_name', 'like', "%{$q}%")
                 ->orWhere('invoice_no', 'like', "%{$q}%")
+                ->when($canReview, fn ($filters) => $filters->orWhereHas('invoiceReplacements', fn ($versions) => $versions->where('previous_number', 'like', "%{$q}%")))
                 ->orWhere('description', 'like', "%{$q}%")))
             ->orderByDesc('issue_date')->orderByDesc('id')
             ->get();
@@ -40,7 +45,6 @@ class FinanceReceivableController extends Controller
             $rows = $rows->filter(fn ($r) => $r->payment_status === $status)->values();
         }
 
-        $canReview = app(PaymentProofService::class)->canReview($request->user());
         $data = $rows->map(fn (FinanceReceivable $r) => [
             'id' => $r->id,
             'invoice_no' => $r->invoice_no,
@@ -55,6 +59,11 @@ class FinanceReceivableController extends Controller
             'status' => $r->status,
             'payment_status' => $r->payment_status,
             'portal_issued' => $r->invoice_document_id !== null,
+            'can_replace_invoice' => $canReview && $r->invoice_document_id && in_array($r->status, ['sent', 'issued', 'paid'], true),
+            'invoice_history' => $canReview ? $r->invoiceReplacements->sortByDesc('id')->map(fn ($version) => [
+                'id' => $version->id, 'previous_number' => $version->previous_number, 'replacement_number' => $version->replacement_number,
+                'reason' => $version->reason, 'date' => $version->created_at?->setTimezone('Pacific/Auckland')->toDateString(),
+            ])->values() : [],
             'student_visa_invoice' => $r->isStudentVisaInvoice(),
             'can_manage_student_visa_invoice' => $canReview && $r->isStudentVisaInvoice(),
             'can_flag_internal_settlement' => $r->canFlagInternalSettlement((float) $r->case_receipt_total),
@@ -126,9 +135,11 @@ class FinanceReceivableController extends Controller
         ]);
 
         $next = (FinanceReceivable::max('id') ?? 0) + 1;
+        $number = ($data['invoice_no'] ?? null) ?: 'AR-'.str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($number);
 
         $r = FinanceReceivable::create([
-            'invoice_no' => $data['invoice_no'] ?: 'AR-'.str_pad((string) $next, 5, '0', STR_PAD_LEFT),
+            'invoice_no' => $number,
             'client_name' => $data['client_name'],
             'description' => $data['description'] ?? null,
             'currency' => strtoupper($data['currency'] ?? config('services.booking.currency', 'nzd')),
@@ -221,6 +232,38 @@ class FinanceReceivableController extends Controller
         });
 
         return back()->with('success', 'Payment recorded.');
+    }
+
+    public function replaceInvoice(Request $request, FinanceReceivable $receivable, ReplaceIssuedInvoice $replacement)
+    {
+        abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+        $data = $request->validate([
+            'expected_number' => 'required|string|max:60',
+            'invoice_number' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/D'],
+            'reason' => 'required|string|max:500',
+        ]);
+        $replacement->issue($request->user(), $receivable, $data['expected_number'], $data['invoice_number'], $data['reason']);
+
+        return back()->with('success', 'Replacement invoice issued. The previous PDF is in Invoice history.');
+    }
+
+    public function downloadInvoiceHistory(Request $request, FinanceReceivable $receivable, ?int $version = null)
+    {
+        abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+        $disk = Storage::disk('local');
+        if ($version === null) {
+            $current = \App\Models\LeadDocument::whereKey($receivable->invoice_document_id)
+                ->where('lead_id', $receivable->lead_id)->firstOrFail();
+            abort_unless(PaymentProofService::isInvoice($current) && $current->file_path
+                && $disk->exists($current->file_path), 404);
+
+            return $disk->download($current->file_path, $current->original_name);
+        }
+        $history = $receivable->invoiceReplacements()->findOrFail($version);
+        abort_unless($disk->exists($history->previous_path)
+            && hash_file('sha256', $disk->path($history->previous_path)) === $history->previous_hash, 404);
+
+        return $disk->download($history->previous_path, $history->previous_filename);
     }
 
     private function recordStudentVisaReceipt(FinanceReceivable $receivable, array $data): void
