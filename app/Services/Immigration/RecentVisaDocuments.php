@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\Lead;
 use App\Models\LeadDocument;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** Explicit staff classification; never infer purpose from filenames. */
 class RecentVisaDocuments
@@ -16,28 +17,34 @@ class RecentVisaDocuments
             $lead = Lead::whereKey($case->id)->lockForUpdate()->firstOrFail();
             abort_unless($lead->is_immigration_case, 404);
             $document = $lead->documents()->whereKey($documentId)->lockForUpdate()->firstOrFail();
-            abort_if($document->dependent_id || $document->request_id || $document->checklist_key === 'rfi'
-                || $document->source === LeadDocument::SOURCE_GENERATED
-                || (filled($document->source_variant) && ! str_starts_with($document->source_variant, 'outcome:')), 422, 'This document belongs to a separate workflow.');
+            $oldKey = $document->checklist_key;
+            if ($document->dependent_id || $document->request_id || $oldKey === 'rfi'
+                || $document->source !== LeadDocument::SOURCE_UPLOAD
+                || (filled($document->source_variant) && ! str_starts_with($document->source_variant, 'outcome:'))) {
+                throw ValidationException::withMessages(['document' => 'This document belongs to a separate workflow.']);
+            }
 
             $resolver = app(CaseChecklistService::class);
             $items = $resolver->forCase($lead);
             $known = collect($items)->flatMap(fn ($item) => $resolver->itemKeys($item))->all();
-            abort_if($document->checklist_key !== 'recent_visa'
-                && in_array($document->checklist_key, $known, true), 422, 'This document already has a checklist category.');
+            if ($oldKey !== 'recent_visa' && in_array($oldKey, $known, true)) {
+                throw ValidationException::withMessages(['document' => 'This document already has a checklist category.']);
+            }
 
-            $oldKey = $document->checklist_key;
             $added = ! in_array('recent_visa', $known, true);
+            $hiddenKeys = $resolver->hiddenKeysFor($lead);
+            if (! $added && in_array($oldKey, $hiddenKeys, true) && ! in_array('recent_visa', $hiddenKeys, true)) {
+                throw ValidationException::withMessages(['document' => 'Hide the Recent visa / eVisa row before moving this hidden file.']);
+            }
             if ($added) {
-                // Use the existing per-case override; do not modify global templates.
+                // Preserve unstructured planning notes stored beside the checklist items.
+                $items = $lead->document_checklist ?: $items;
                 $items[] = ['key' => 'recent_visa', 'label' => 'Recent visa / eVisa',
                     'hint' => 'Recent visa grant or eVisa issued for this client.',
                     'required' => false, 'category' => 'Visa applications & decisions'];
                 $lead->document_checklist = $items;
                 // A classification must not automatically publish a new tracker row.
-                $lead->hidden_track_documents = array_values(array_unique(array_merge(
-                    $lead->hidden_track_documents ?? [], ['recent_visa']
-                )));
+                $lead->hidden_track_documents = array_values(array_unique([...((array) $lead->hidden_track_documents), 'recent_visa']));
                 $lead->save();
             }
 

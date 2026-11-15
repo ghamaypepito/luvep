@@ -12,6 +12,7 @@ use App\Support\UploadValidation;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -2628,8 +2629,6 @@ class LeadDocumentController extends Controller
      */
     public function toggleTrackVisibility(Request $request, $leadId)
     {
-        $lead = Lead::findOrFail($leadId);
-
         // Accepts one or many keys so a single row checkbox and a
         // section-level "select all" both hit the same endpoint.
         $data = $request->validate([
@@ -2638,30 +2637,34 @@ class LeadDocumentController extends Controller
             'hidden' => 'required|boolean',
         ]);
 
-        $hidden = array_values(array_unique(array_filter(
-            is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : []
-        )));
+        DB::transaction(function () use ($leadId, $data) {
+            // Share the case lock with checklist changes that also update visibility.
+            $lead = Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $hidden = array_values(array_unique(array_filter(
+                is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : []
+            )));
 
-        $keys = $data['checklist_keys'];
-        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
-        foreach ($checklist->forCase($lead) as $item) {
-            $itemKeys = $checklist->itemKeys($item);
-            if (array_intersect($keys, $itemKeys)) {
-                $keys = array_merge($keys, $itemKeys);
-            }
-        }
-        foreach (array_unique($keys) as $key) {
-            if ($data['hidden']) {
-                if (! in_array($key, $hidden, true)) {
-                    $hidden[] = $key;
+            $keys = $data['checklist_keys'];
+            $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+            foreach ($checklist->forCase($lead) as $item) {
+                $itemKeys = $checklist->itemKeys($item);
+                if (array_intersect($keys, $itemKeys)) {
+                    $keys = array_merge($keys, $itemKeys);
                 }
-            } else {
-                $hidden = array_filter($hidden, fn ($k) => $k !== $key);
             }
-        }
+            foreach (array_unique($keys) as $key) {
+                if ($data['hidden']) {
+                    if (! in_array($key, $hidden, true)) {
+                        $hidden[] = $key;
+                    }
+                } else {
+                    $hidden = array_filter($hidden, fn ($k) => $k !== $key);
+                }
+            }
 
-        $lead->hidden_track_documents = array_values($hidden);
-        $lead->save();
+            $lead->hidden_track_documents = array_values($hidden);
+            $lead->save();
+        });
 
         return back()->with('success', $data['hidden'] ? 'Hidden from the tracker.' : 'Shown on the tracker.');
     }

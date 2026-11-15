@@ -1310,10 +1310,11 @@ function VerdictSelect({ value, options, onPick, saving }) {
 
 function FileMenu({ doc, leadId, checklistKey = null }) {
     const { props: menuProps, url: menuUrl } = usePage();
-    const [visaHistoryOpen, setRecentVisaOpen] = useState(false);
+    const [recentVisaOpen, setRecentVisaOpen] = useState(false);
     const canClassifyRecentVisa = (menuUrl || "").startsWith("/portal/immigration/")
-        && ["admin", "super_admin", "immigration", "immigration_manager", "immigration_adviser"].includes(menuProps?.auth?.user?.role)
-        && !checklistKey && !doc.request_id && doc.source !== "generated" && (!doc.source_variant || doc.source_variant.startsWith("outcome:"));
+        && menuProps?.auth?.user?.is_active
+        && ["admin", "super_admin", "immigration", "immigration_manager", "immigration_adviser"].includes(menuProps.auth.user.role)
+        && !checklistKey && !doc.request_id && doc.source === "upload" && (!doc.source_variant || doc.source_variant.startsWith("outcome:"));
     const [open, setOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -1398,7 +1399,7 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
             >
                 <MoreVertical size={12} />
             </button>
-            {visaHistoryOpen && <RecentVisaDialog doc={doc} leadId={leadId} onClose={() => setRecentVisaOpen(false)} />}
+            {recentVisaOpen && <RecentVisaDialog doc={doc} leadId={leadId} onClose={() => setRecentVisaOpen(false)} />}
             {checklistKey && (
                 <input
                     ref={fileRef}
@@ -1448,7 +1449,7 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
                             </button>
                         )}
                         {canClassifyRecentVisa && (
-                            <button type="button" onClick={() => { close(); setRecentVisaOpen(true); }}
+                            <button type="button" onClick={() => { btnRef.current?.focus(); close(); setRecentVisaOpen(true); }}
                                 className="w-full text-left px-3 py-1.5 text-[12px] text-gray-700 hover:bg-gray-50">
                                 Move to Recent visa / eVisa
                             </button>

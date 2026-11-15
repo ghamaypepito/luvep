@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Models\VisaType;
 use App\Services\Immigration\CaseChecklistService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class RecentVisaDocumentTest extends TestCase
@@ -62,7 +64,12 @@ class RecentVisaDocumentTest extends TestCase
 
         $this->post($this->url($lead, $doc))->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame(1, collect($resolver->forCase($lead->refresh()))->where('key', 'recent_visa')->count());
-        $this->assertSame(1, ActivityLog::where('action', 'case.document.categorized')->count());
+        $event = ActivityLog::where('action', 'case.document.categorized')->sole();
+        $this->assertSame($user->id, $event->user_id);
+        $this->assertSame($lead->id, $event->properties['subject_id']);
+        $this->assertSame($doc->id, $event->properties['document_id']);
+        $this->assertSame('legacy.visa', $event->properties['old_checklist_key']);
+        $this->assertSame('recent_visa', $event->properties['new_checklist_key']);
         $this->assertSame(1, LeadDocument::where('lead_id', $lead->id)->count());
         $second = $this->document($lead, ['source_variant' => 'outcome:approved_visa']);
         $this->post($this->url($lead, $second))->assertRedirect()->assertSessionHasNoErrors();
@@ -92,6 +99,8 @@ class RecentVisaDocumentTest extends TestCase
             ->post($this->url($lead, $doc))->assertNotFound();
         $other->update(['is_immigration_case' => false]);
         $this->post($this->url($other, $doc))->assertNotFound();
+        $this->actingAs(User::factory()->create(['role' => 'immigration', 'is_active' => false]))
+            ->post($this->url($lead, $this->document($lead)))->assertRedirect(route('login'));
         foreach (['sales', 'education', 'lead', 'agent', 'finance'] as $role) {
             $this->actingAs(User::factory()->create(['role' => $role, 'portal_access' => ['immigration']]))
                 ->post($this->url($lead, $doc))->assertForbidden();
@@ -105,9 +114,70 @@ class RecentVisaDocumentTest extends TestCase
         foreach ([['checklist_key' => 'passport'], ['source' => 'generated'], ['source_variant' => 'proof_of_payment'],
             ['source_variant' => 'rfi'], ['checklist_key' => 'rfi']] as $extra) {
             $doc = $this->document($lead, $extra);
-            $this->post($this->url($lead, $doc))->assertUnprocessable();
+            $profile = "/portal/immigration/cases/{$lead->id}/profile?tab=documents";
+            $this->from($profile)
+                ->post($this->url($lead, $doc), [], ['X-Inertia' => 'true'])
+                ->assertRedirect($profile)->assertSessionHasErrors('document');
             $this->assertSame($extra['checklist_key'] ?? null, $doc->fresh()->checklist_key);
         }
         $this->assertNotContains('recent_visa', array_column(app(CaseChecklistService::class)->forCase($lead->fresh()), 'key'));
     }
+
+    public function test_existing_case_checklist_notes_survive_classification(): void
+    {
+        $lead = $this->caseRecord();
+        $checklist = $lead->document_checklist + ['education_identity' => ['notes' => 'Keep the existing planning notes']];
+        $lead->update(['document_checklist' => $checklist]);
+        $doc = $this->document($lead);
+
+        $this->actingAs(User::factory()->create(['role' => 'immigration_adviser']))
+            ->post($this->url($lead, $doc))->assertSessionHasNoErrors();
+
+        $this->assertSame($checklist['education_identity'], $lead->fresh()->document_checklist['education_identity'] ?? null);
+    }
+
+    public function test_moving_a_hidden_upload_does_not_grant_access_through_an_existing_visible_row(): void
+    {
+        Storage::fake('local');
+        $lead = $this->caseRecord();
+        $lead->update(['hidden_track_documents' => ['legacy.visa']]);
+        $staff = User::factory()->create(['role' => 'immigration_manager']);
+        $client = User::factory()->create(['role' => 'lead', 'lead_id' => $lead->id]);
+        $first = $this->document($lead, ['file_path' => 'private/previous-visa.pdf']);
+        $hidden = $this->document($lead, ['checklist_key' => 'legacy.visa']);
+        Storage::disk('local')->put($first->file_path, '%PDF-1.4 first visa');
+        Storage::disk('local')->put($hidden->file_path, '%PDF-1.4 classified visa');
+        $firstDownload = "/portal/lead/documents/{$first->id}/download";
+        $hiddenDownload = "/portal/lead/documents/{$hidden->id}/download";
+        $visibility = "/admin/leads/{$lead->id}/documents/track-visibility";
+
+        $this->actingAs($staff)->post($this->url($lead, $first))->assertSessionHasNoErrors();
+        $this->actingAs($client)->get($firstDownload)->assertNotFound();
+        $this->actingAs($staff)->post($visibility, ['checklist_keys' => ['recent_visa'], 'hidden' => false])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($client)->get($firstDownload)->assertDownload($first->original_name);
+        $this->get($hiddenDownload)->assertNotFound();
+
+        $this->actingAs($staff)->post($this->url($lead, $hidden))->assertSessionHasErrors('document');
+        $this->assertSame('legacy.visa', $hidden->fresh()->checklist_key);
+        $this->actingAs($client)->get($hiddenDownload)->assertNotFound();
+        $this->get($firstDownload)->assertDownload($first->original_name);
+
+        $this->actingAs($staff)->post($visibility, ['checklist_keys' => ['recent_visa'], 'hidden' => true])
+            ->assertSessionHasNoErrors();
+        $this->post($this->url($lead, $hidden))->assertSessionHasNoErrors();
+        $this->assertSame('recent_visa', $hidden->fresh()->checklist_key);
+        $this->actingAs($client)->get($hiddenDownload)->assertNotFound();
+        $this->actingAs($staff)->post($visibility, ['checklist_keys' => ['recent_visa'], 'hidden' => false])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($client)->get($hiddenDownload)->assertDownload($hidden->original_name);
+        $this->post('/portal/lead/documents/checklist/recent_visa/upload', [
+            'files' => [UploadedFile::fake()->create('another-visa.pdf', 10, 'application/pdf')],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(3, $lead->documents()->where('checklist_key', 'recent_visa')->count());
+        $this->actingAs(User::factory()->create(['role' => 'lead', 'lead_id' => $this->caseRecord()->id]))
+            ->get($hiddenDownload)->assertForbidden();
+        $this->assertSame('%PDF-1.4 classified visa', Storage::disk('local')->get($hidden->file_path));
+    }
+
 }

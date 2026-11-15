@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Immigration\RecentVisaDocuments;
 use App\Services\Immigration\VisaProgressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1476,16 +1477,17 @@ class CaseProfileController extends Controller
     }
 
     /** Explicitly classify an unmatched upload without replacing its file. */
-    public function moveDocumentToRecentVisa(Lead $lead, int $document)
+    public function moveDocumentToRecentVisa(Request $request, Lead $lead, int $document, RecentVisaDocuments $recentVisas)
     {
-        $user = $this->guardCase($lead);
+        $user = $request->user();
         abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
             || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
-        app(\App\Services\Immigration\RecentVisaDocuments::class)->move($lead, $document);
+        $recentVisas->move($lead, $document);
 
         return back()->with('success', 'Document moved to Recent visa / eVisa.');
     }
 
+    /** Shared case guard for the process endpoints. */
     private function guardCase(Lead $lead): User
     {
         $user = auth()->user();
