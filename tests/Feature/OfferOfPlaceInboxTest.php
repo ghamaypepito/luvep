@@ -41,7 +41,7 @@ class OfferOfPlaceInboxTest extends TestCase
         $this->lead(['education_stage' => 'Unconditional Offer', 'student_oop' => 'Yes']);
         $this->offer($lead, ['checklist_key' => 'acad.cv']);
         $this->offer($lead, ['source' => 'generated']);
-        $this->offer($lead, ['file_path' => null]);
+        $this->offer($lead, ['file_path' => '']);
 
         $this->actingAs($user)->get('/portal/education/offers-of-place')->assertOk()
             ->assertInertia(fn (Assert $p) => $p->component('portal/education/OffersOfPlace')
@@ -116,7 +116,7 @@ class OfferOfPlaceInboxTest extends TestCase
         Storage::fake('public');
         $this->actingAs(User::factory()->create(['role' => 'admin']));
         $lead = $this->lead();
-        foreach ([['checklist_key' => 'acad.cv'], ['source' => 'generated'], ['file_path' => null]] as $attributes) {
+        foreach ([['checklist_key' => 'acad.cv'], ['source' => 'generated'], ['file_path' => '']] as $attributes) {
             $doc = $this->offer($lead, $attributes);
             $this->get('/admin/offers-of-place/'.$doc->id.'/download')->assertNotFound();
         }
