@@ -121,7 +121,7 @@ export default function CaseProfile() {
         threads = [], caseStaff = [], attention = null,
         financials = { record: null, payments: [], totals: {}, referred_by: null },
         inzForms = [], dependents = [], vif = null, caseOptions = [], tiedTo = null, visaTypes = [],
-        assessmentCompleteness = null, engagement = {}, tasks = { items: [] },
+        assessmentCompleteness = null, engagement = {}, tasks = { items: [] }, passportPrefillAvailable = false,
         visaProgress = { tracked: false, activities: [] }, stageTimeline = [],
         visaChain = { sequence: 1, total: 1, closed: false, can_start_next: false, chain: [] },
     } = props;
@@ -156,7 +156,7 @@ export default function CaseProfile() {
     const tabProps = {
         lead, intake, documents, documentRequests, checklist, checklistGrouped, unstructuredDocuments, checklistProgress,
         communications, clientReplies, agreements, notes, activity, findings, process, threads, caseStaff, financials, inzForms, dependents, vif, caseOptions, visaTypes,
-        assessmentCompleteness, engagement, attention, tasks,
+        assessmentCompleteness, engagement, attention, tasks, passportPrefillAvailable,
         visaProgress, stageTimeline,
         onNavigate: setActiveTab,
     };

@@ -28,6 +28,30 @@ class LeadDocument extends Model
 
     public const SOURCE_GENERATED = 'generated';
 
+    protected static function booted(): void
+    {
+        static::created(function (self $doc) {
+            $user = auth()->user();
+            if (! $user || ! \App\Services\Immigration\PassportPrefillService::enabledFor($user)
+                || request()?->attributes->has('user_view_actor')
+                || ! \App\Services\Immigration\PassportPrefillService::isPrimaryPassport($doc)
+                || ! Lead::immigrationCase()->whereKey($doc->lead_id)->exists()) {
+                return;
+            }
+            $leadId = (int) $doc->lead_id;
+            $userId = (int) $user->id;
+            $documentId = (int) $doc->id;
+            \Illuminate\Support\Facades\DB::afterCommit(function () use ($leadId, $userId, $documentId) {
+                try {
+                    \Illuminate\Support\Facades\Cache::put(\App\Services\Immigration\PassportPrefillService::stateKey($leadId, $userId), ['status' => 'queued', 'document_id' => $documentId], now()->addMinutes(15));
+                    \App\Jobs\ExtractPassportDraft::dispatch($leadId, $userId, $documentId)->delay(now()->addSeconds(5));
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Passport draft could not be queued', ['document_id' => $documentId, 'exception' => get_class($e)]);
+                }
+            });
+        });
+    }
+
     protected $fillable = [
         'lead_id', 'dependent_id', 'request_id', 'checklist_key', 'media_file_id', 'media_target_key',
         'original_name', 'file_path', 'mime', 'size',

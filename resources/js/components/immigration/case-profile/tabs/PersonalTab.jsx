@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { useForm } from "@inertiajs/react";
+import { useForm, router } from "@inertiajs/react";
 import { toast } from "sonner";
 import { Save, ClipboardList, Eye, Download, FileText, Sparkles, Loader2, CheckCircle2, XCircle, AlertTriangle, RefreshCw } from "lucide-react";
 
 const xsrf = () => decodeURIComponent((document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || "");
 import { ASSESSMENT_SECTIONS, formatAssessmentValue } from "@/data/assessmentSections";
+import PassportPrefillReview from "../PassportPrefillReview";
 import SendAssessmentButton from "../SendAssessmentButton";
 import PhoneField from "@/components/PhoneField";
 import { immBase } from "@/lib/caseRoutes";
@@ -25,7 +26,11 @@ const VISA_LABEL = {
     student: "Student Visa", visitor: "Visitor Visa", family: "Family Visa (Partner / Child)",
 };
 
-export default function PersonalTab({ lead = {}, intake = null, assessmentCompleteness = null, activity = [] }) {
+export default function PersonalTab(props) {
+    return <PersonalForm key={props.lead?.id} {...props} />;
+}
+
+function PersonalForm({ lead = {}, intake = null, assessmentCompleteness = null, activity = [], passportPrefillAvailable = false }) {
     const form = useForm({
         first_name:        lead.first_name || "",
         middle_name:       lead.middle_name || "",
@@ -52,6 +57,7 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
 
     // "saved just now" indicator (auto-save + manual save both set it).
     const [savedAt, setSavedAt] = useState(0);
+    const [prefillBusy, setPrefillBusy] = useState(false);
 
     const save = (opts = {}) => {
         post(`${immBase()}/cases/${lead.id}/personal`, {
@@ -122,6 +128,7 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
     return (
       <div className="space-y-8">
         <form onSubmit={submit} className="space-y-5">
+          <fieldset disabled={prefillBusy} className="contents">
             {/* Header */}
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
@@ -274,6 +281,14 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
                         )}
                     </section>
 
+                    {passportPrefillAvailable && <PassportPrefillReview
+                        leadId={lead.id} blocked={isDirty || processing} onBusyChange={setPrefillBusy}
+                        onApplied={(values, personal) => {
+                            const merged = Object.fromEntries(Object.keys(data).map(key => [key, personal?.[key] ?? values[key] ?? data[key]]));
+                            form.defaults(merged); setData(merged); setSavedAt(Date.now());
+                            router.reload({ only: ['lead', 'activity'], preserveState: true });
+                        }}
+                    />}
                     {/* Missing before lodgement */}
                     {missing.length > 0 && (
                         <section className="rounded-2xl border border-amber-100 bg-amber-50/40 shadow-sm p-4">
@@ -304,6 +319,7 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
                     )}
                 </div>
             </div>
+          </fieldset>
         </form>
 
         {intake?.data ? (
