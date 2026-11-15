@@ -1943,6 +1943,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/consent-ack', [$preScreen, 'consentAck'])->name('pre-screening.consent-ack');
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
+            Route::post('/pre-screening/{preScreening}/aewv-endorse', [$preScreen, 'endorseAewv'])->name('pre-screening.aewv-endorse');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
             // Staff schedule a consultation / consent meeting directly.
             Route::post('/pre-screening/{preScreening}/book', [$preScreen, 'book'])->name('pre-screening.book');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\Lead;
+use App\Models\WorkIntake;
 use App\Services\EmailAutomationService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -34,8 +35,14 @@ trait FiresEnquiryAutomation
         $lead->phone = $intake->phone ?? '';
         $lead->inz_visa_type = $visaLabel;
 
-        app(EmailAutomationService::class)->fire('immigration.lead.captured', $lead, [
-            'visa_type' => $visaLabel,
-        ]);
+        $automation = app(EmailAutomationService::class);
+        $context = ['visa_type' => $visaLabel];
+        if ($intake instanceof WorkIntake) {
+            $automation->fireWithStaffRecipients('immigration.lead.captured', $lead, $context, config('immigration.aewv_submission_recipients'));
+
+            return;
+        }
+
+        $automation->fire('immigration.lead.captured', $lead, $context);
     }
 }

@@ -2588,6 +2588,9 @@ class ImmigrationController extends Controller
 
         return inertia('portal/immigration/AssessmentProfile', [
             'intake' => $row,
+            'can_endorse_aewv' => $row['visa_type'] === 'work' && ! $preScreening->isTerminal()
+                && ! $row['case_url'] && ! $row['conversion_issue']
+                && (auth()->user()->isAdmin() || auth()->user()->role === 'immigration_manager'),
             // The two pre-screening meetings (consultation, then consent).
             'bookings' => [
                 'consult' => $fmtBooking($preScreening->consultBooking),

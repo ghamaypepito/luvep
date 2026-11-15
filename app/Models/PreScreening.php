@@ -46,6 +46,7 @@ class PreScreening extends Model
         'consent_sent_at' => 'datetime',
         'consent_ack_at' => 'datetime',
         'eligible_at' => 'datetime',
+        'aewv_endorsed_at' => 'datetime',
         'converted_at' => 'datetime',
         'declined_at' => 'datetime',
         'skip_at' => 'datetime',
