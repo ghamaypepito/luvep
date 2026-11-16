@@ -25,7 +25,7 @@ const VISA_LABEL = {
     student: "Student Visa", visitor: "Visitor Visa", family: "Family Visa (Partner / Child)",
 };
 
-export default function PersonalTab({ lead = {}, intake = null, assessmentCompleteness = null, activity = [] }) {
+export default function PersonalTab({ lead = {}, intake = null, assessmentCompleteness = null, activity = [], canCorrectCaseNames = false }) {
     const form = useForm({
         first_name:        lead.first_name || "",
         middle_name:       lead.middle_name || "",
@@ -162,13 +162,13 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
                 <div className="space-y-4 w-full min-w-0" style={{ flex: "1 1 0%" }}>
                     <Section title="Identity" note="Feeds INZ 1012 · section A">
                         <F label="First name" required badge={verdictBadge("Full name") || (!data.first_name ? { text: "Required", tone: "req" } : null)}>
-                            <input type="text" required value={data.first_name} onChange={(e) => setData("first_name", e.target.value)} className={IC} maxLength={120} />
+                            <input type="text" required readOnly={!canCorrectCaseNames} value={data.first_name} onChange={(e) => setData("first_name", e.target.value)} className={canCorrectCaseNames ? IC : ICLocked} maxLength={120} />
                         </F>
                         <F label="Middle name">
-                            <input type="text" value={data.middle_name} onChange={(e) => setData("middle_name", e.target.value)} className={IC} maxLength={120} />
+                            <input type="text" readOnly={!canCorrectCaseNames} value={data.middle_name} onChange={(e) => setData("middle_name", e.target.value)} className={canCorrectCaseNames ? IC : ICLocked} maxLength={120} />
                         </F>
                         <F label="Last name">
-                            <input type="text" value={data.last_name} onChange={(e) => setData("last_name", e.target.value)} className={IC} maxLength={120} />
+                            <input type="text" readOnly={!canCorrectCaseNames} value={data.last_name} onChange={(e) => setData("last_name", e.target.value)} className={canCorrectCaseNames ? IC : ICLocked} maxLength={120} />
                         </F>
                         <F label="Date of birth" badge={verdictBadge("Date of birth")}>
                             <input type="date" value={data.dob || ""} onChange={(e) => setData("dob", e.target.value)} className={IC} />
@@ -216,7 +216,7 @@ export default function PersonalTab({ lead = {}, intake = null, assessmentComple
                             <input type="date" value={data.target_lodgement_at || ""} onChange={(e) => setData("target_lodgement_at", e.target.value)} className={IC} />
                         </F>
                         <F label="Suffix">
-                            <input type="text" value={data.suffix} onChange={(e) => setData("suffix", e.target.value)} className={IC} maxLength={20} placeholder="Jr., Sr., III…" />
+                            <input type="text" readOnly={!canCorrectCaseNames} value={data.suffix} onChange={(e) => setData("suffix", e.target.value)} className={canCorrectCaseNames ? IC : ICLocked} maxLength={20} placeholder="Jr., Sr., III…" />
                         </F>
                     </Section>
 

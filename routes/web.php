@@ -2021,6 +2021,12 @@ Route::middleware(['auth'])->group(function () {
                 ->where(['type' => 'resident|work|student|visitor|family|free', 'id' => '[0-9]+'])
                 ->name('assessments.notes.store');
             Route::get('/cases', [ImmigrationController::class, 'cases'])->name('cases');
+            $archive = \App\Http\Controllers\Immigration\CaseArchiveController::class;
+            Route::get('/cases/archived', [$archive, 'index'])->name('cases.archived');
+            Route::post('/cases/{id}/archive', [$archive, 'archive'])->whereNumber('id')->name('cases.archive');
+            Route::post('/cases/archived/{id}/restore', [$archive, 'restore'])->whereNumber('id')->name('cases.archived.restore');
+            Route::patch('/cases/archived/{id}/name', [$archive, 'correctName'])->whereNumber('id')->name('cases.archived.name');
+            Route::delete('/cases/archived/{id}', [$archive, 'remove'])->whereNumber('id')->name('cases.archived.remove');
             // Engagement + Invoice generation workspaces. Declared before the
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
