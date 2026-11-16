@@ -48,6 +48,29 @@ class ProposalAgreementDownloadTest extends TestCase
         }
     }
 
+    public function test_consultancy_cost_breakdown_download_uses_selected_applicant_and_fees_without_saving(): void
+    {
+        Mail::fake();
+        $lead = Lead::create(['first_name' => 'Breakdown', 'last_name' => 'Sample']);
+        $before = $lead->fresh()->getAttributes();
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $data = ['document' => 'cost_breakdown', 'applicant_mode' => 'couple', 'school_enrolment_fee' => 123456];
+
+        $response = $this->post("/admin/leads/{$lead->id}/generate/consultancy_std_150/download-preview", $data)
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringContainsString('indicative-cost-breakdown', $response->headers->get('Content-Disposition'));
+        $text = (new Parser)->parseContent($response->getContent())->getText();
+        foreach (['Indicative Cost Breakdown', 'Couple', '123,456.00', '448,556.00', '900,000.00'] as $expected) {
+            $this->assertStringContainsString($expected, $text);
+        }
+        $this->assertStringNotContainsString('EXECUTION & ACCEPTANCE', $text);
+        $this->assertStringNotContainsString('WITHOUT A VOUCHER', $text);
+        $this->post("/admin/leads/{$lead->id}/generate/consultancy_onshore/download-preview", $data)->assertNotFound();
+        $this->assertSame($before, $lead->fresh()->getAttributes());
+        $this->assertDatabaseCount('lead_documents', 0);
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_proposal_download_uses_unsaved_selection_and_reasons_without_changing_lead(): void
     {
         Mail::fake();

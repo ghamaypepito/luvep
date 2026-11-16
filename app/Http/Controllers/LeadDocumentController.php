@@ -1484,6 +1484,15 @@ class LeadDocumentController extends Controller
         $lead = Lead::findOrFail($leadId);
         $download = $request->query('download') === 'pdf';
 
+        if ($download && $request->input('document') === 'cost_breakdown') {
+            $scenario = $this->consultancyScenarioForType($type);
+            abort_if($scenario === null, 404);
+
+            [$payload] = $generator->buildConsultancyPayload($lead, $scenario, $this->feeOverridesFromRequest($request));
+
+            return $this->draftPdfResponse($lead, 'indicative-cost-breakdown', 'agreements.consultancy-cost-breakdown', $payload);
+        }
+
         if ($type === 'proposal' && $download) {
             $data = $request->validate([
                 'program_ids' => ['required', 'array', 'min:1', 'max:5'],

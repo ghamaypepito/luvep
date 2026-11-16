@@ -1797,7 +1797,7 @@ const BANK_PRESETS = {
 
 function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null }) {
     const [leadId, setLeadId] = useState('');
-    const [downloading, setDownloading] = useState(false);
+    const [downloading, setDownloading] = useState('');
     const [downloadError, setDownloadError] = useState('');
     // No default — staff must actively pick a doc type. Empty string
     // keeps the preview area empty and the Generate button disabled.
@@ -2138,13 +2138,22 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         setDownloadError('');
     }, [previewUrl]);
 
-    async function downloadPdf() {
+    async function downloadPdf(documentType = 'draft') {
         if (!canSubmit || downloading || !previewUrl) return;
-        setDownloading(true);
+        setDownloading(documentType);
         setDownloadError('');
         try {
             const url = new URL(previewUrl, window.location.origin);
-            const body = new URLSearchParams(url.search);
+            const params = url.searchParams;
+            // The cost estimate uses the fee and applicant inputs only.
+            const body = documentType === 'cost_breakdown'
+                ? new URLSearchParams([
+                    ['document', documentType],
+                    ...['school_enrolment_fee', 'english_proficiency_fee', 'applicant_mode']
+                        .filter((key) => params.has(key))
+                        .map((key) => [key, params.get(key)]),
+                ])
+                : new URLSearchParams(params);
             const csrfCookie = document.cookie.split('; ').find((cookie) => cookie.startsWith('XSRF-TOKEN='));
             if (isProposalType) {
                 pickedProgramIds.forEach((id) => {
@@ -2181,7 +2190,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         } catch (error) {
             setDownloadError(error.message || 'Could not download the PDF. Please try again.');
         } finally {
-            setDownloading(false);
+            setDownloading('');
         }
     }
 
@@ -2483,13 +2492,23 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                     <span className="text-[11px] text-gray-400 italic">nothing selected yet</span>
                                 )}
                             </div>
-                            <button type="button" onClick={downloadPdf}
-                                disabled={!canSubmit || downloading || amountSettling}
-                                title="Download a draft of the current selection. This does not send an email."
-                                className="ml-auto inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                                {downloading ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
-                                {downloading ? 'Preparing PDF…' : 'Download PDF'}
-                            </button>
+                            <div className="ml-auto flex flex-wrap gap-2">
+                                {typeMeta?.category === 'philippines' && (
+                                    <button type="button" onClick={() => downloadPdf('cost_breakdown')}
+                                        disabled={!canSubmit || Boolean(downloading) || amountSettling}
+                                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        {downloading === 'cost_breakdown' ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
+                                        {downloading === 'cost_breakdown' ? 'Preparing breakdown…' : 'Download cost breakdown'}
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => downloadPdf()}
+                                    disabled={!canSubmit || Boolean(downloading) || amountSettling}
+                                    title="Download a draft of the current selection. This does not send an email."
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                                    {downloading === 'draft' ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
+                                    {downloading === 'draft' ? 'Preparing PDF…' : 'Download PDF'}
+                                </button>
+                            </div>
                         </div>
                         {downloadError && <p role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50">{downloadError}</p>}
 
