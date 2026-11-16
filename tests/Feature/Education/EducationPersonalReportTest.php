@@ -177,6 +177,29 @@ class EducationPersonalReportTest extends TestCase
             ->assertJsonPath('clients.0.id', $student->id);
     }
 
+    public function test_existing_english_learner_can_be_linked_to_named_accomplishments(): void
+    {
+        $employee = $this->staff();
+        $learner = $this->client(['first_name' => 'English Learner', 'is_student' => false, 'english_stage' => 'Proposal Sent']);
+        $this->actingAs($employee)->getJson('/portal/education/reports/clients?q=English%20Learner')
+            ->assertOk()->assertJsonPath('clients.0.id', $learner->id);
+        $this->post('/portal/education/reports/activities', $this->payload($learner, ['kind' => 'follow_up']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $entry = $this->report($employee)['personalReport']['entries']['data'][0];
+        $this->assertSame($learner->id, $entry['lead_id']);
+        $this->assertFalse($entry['external']);
+    }
+
+    public function test_prospect_on_education_leads_list_can_be_linked_even_after_immigration_triage(): void
+    {
+        $prospect = $this->client(['first_name' => 'Shared Prospect', 'is_student' => false, 'immigration_stage' => 'Qualified', 'status' => 'Qualified']);
+        $this->actingAs($this->staff())->getJson('/portal/education/reports/clients?q=Shared%20Prospect')
+            ->assertOk()->assertJsonPath('clients.0.id', $prospect->id);
+        $this->post('/portal/education/reports/activities', $this->payload($prospect, ['kind' => 'follow_up']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($prospect->id, EducationReportActivity::sole()->lead_id);
+    }
+
     public function test_date_filters_and_pagination_keep_all_repeated_offers_and_proposals(): void
     {
         $emma = $this->staff();
@@ -201,6 +224,75 @@ class EducationPersonalReportTest extends TestCase
         $this->assertSame(1, $afterRemoval['entries']['current_page']);
         $this->assertCount(30, $afterRemoval['entries']['data']);
 
+    }
+
+    public function test_owners_can_correct_an_entry_in_place_and_others_are_counted_and_filterable(): void
+    {
+        $owner = $this->staff();
+        $other = $this->staff();
+        $student = $this->client();
+        $payload = $this->payload($student);
+        $this->actingAs($owner)->post('/portal/education/reports/activities', $payload)->assertSessionHasNoErrors();
+        $entry = EducationReportActivity::sole();
+        $url = '/portal/education/reports/activities/'.$entry->id;
+        $changes = ['kind' => 'other', 'occurred_on' => '2026-11-12', 'details' => 'Provided application guidance', 'edit_version' => $entry->editVersion()];
+
+        $this->actingAs($other)->patchJson($url, $changes)->assertNotFound();
+        $this->actingAs($owner)->patchJson($url, array_replace($changes, ['occurred_on' => '2026-11-13']))->assertUnprocessable();
+        $this->assertSame('enrolment', $entry->fresh()->kind);
+        $this->patch($url, $changes + ['user_id' => $other->id, 'submission_key' => (string) Str::uuid()])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->patchJson($url, [...$changes, 'occurred_on' => '2026-11-10'])
+            ->assertUnprocessable()->assertJsonValidationErrors('edit_version');
+
+        $entry->refresh();
+        $this->assertSame($owner->id, (int) $entry->user_id);
+        $this->assertSame($student->id, (int) $entry->lead_id);
+        $this->assertSame($payload['submission_key'], $entry->submission_key);
+        $this->assertDatabaseCount('education_report_activities', 1);
+        $report = $this->report($owner, '?preset=today&activity_kind=other')['personalReport'];
+        $this->assertSame('Others', $report['kinds']['other']);
+        $this->assertSame(1, $report['counts']['other']['events']);
+        $this->assertSame('other', $report['activity_kind']);
+        $this->assertSame($entry->id, $report['entries']['data'][0]['id']);
+        $this->assertSame($changes['details'], $report['entries']['data'][0]['details']);
+        $this->assertSame(0, $this->report($owner)['personalReport']['counts']['enrolment']['events']);
+        $this->assertSame(0, $this->report($other)['personalReport']['counts']['other']['events']);
+
+        $this->actingAs($owner)->post('/portal/education/reports/activities', $this->payload($student, $changes))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('education_report_activities', 2);
+    }
+
+    public function test_edits_preserve_unavailable_client_links_and_keep_private_text_out_of_the_audit_log(): void
+    {
+        $owner = $this->staff();
+        $student = $this->client();
+        $this->actingAs($owner)->post('/portal/education/reports/activities', $this->payload($student))->assertSessionHasNoErrors();
+        $entry = EducationReportActivity::sole();
+        $url = '/portal/education/reports/activities/'.$entry->id;
+        $student->update(['is_student' => false, 'is_immigration_case' => true]);
+
+        $row = $this->report($owner)['personalReport']['entries']['data'][0];
+        $this->assertNull($row['lead_id']);
+        $this->assertSame('Client no longer available in Education', $row['client']);
+        $changes = ['kind' => 'follow_up', 'occurred_on' => '2026-11-12', 'details' => 'Private activity details', 'edit_version' => $row['edit_version']];
+        $this->patch($url, $changes)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($student->id, (int) $entry->fresh()->lead_id);
+        $changes['edit_version'] = $entry->fresh()->editVersion();
+        $this->patchJson($url, $changes + ['lead_id' => $student->id])->assertNotFound();
+
+        $this->patch($url, array_replace($changes, ['kind' => 'other', 'client_name' => 'Private entered name']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertNull($entry->fresh()->lead_id);
+        $this->assertSame('Private entered name', $entry->fresh()->client_name);
+
+        $logs = ActivityLog::where('action', 'education_report_activity.updated')->get();
+        $this->assertCount(2, $logs);
+        foreach ($logs as $log) {
+            $this->assertArrayNotHasKey('details', $log->properties['changes']);
+            $this->assertArrayNotHasKey('client_name', $log->properties['changes']);
+        }
     }
 
     public function test_contact_dates_use_new_zealand_midnight_and_exclude_future_logs(): void

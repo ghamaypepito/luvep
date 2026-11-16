@@ -132,6 +132,23 @@ class SystemTicketTest extends TestCase
         Notification::assertSentTo($sales, TicketUpdated::class);
     }
 
+    public function test_support_can_classify_an_existing_request_as_a_feature_with_history(): void
+    {
+        Notification::fake();
+        $owner = User::factory()->create(['role' => 'education']);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $ticket = SystemTicket::create($this->payload(['submitted_by' => $owner->id, 'department' => 'education', 'category' => 'change']));
+        $update = ['status' => 'open', 'expected_status' => 'open', 'category' => 'feature'];
+        $this->actingAs($owner)->post("/admin/system-tickets/{$ticket->id}", $update)->assertForbidden();
+        $this->actingAs($admin)->postJson("/admin/system-tickets/{$ticket->id}", [...$update, 'category' => 'made-up'])
+            ->assertUnprocessable()->assertJsonValidationErrors('category');
+        $this->post("/admin/system-tickets/{$ticket->id}", $update)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('feature', $ticket->fresh()->category);
+        $event = $ticket->events()->where('kind', 'category_changed')->sole();
+        $this->assertSame($admin->id, $event->actor_id);
+        $this->assertSame(['from' => 'change', 'to' => 'feature'], $event->metadata);
+    }
+
     public function test_resolving_stamps_resolver_and_time(): void
     {
         Notification::fake();

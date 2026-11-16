@@ -47,13 +47,15 @@ class EducationWeeklyNotes
                 throw ValidationException::withMessages(['note' => 'This submission has already changed. Reload before adding another note.']);
             }
         } else {
-            $query = DB::table('education_weekly_notes')->where('id', $data['entry_id'])->where('week_start', $data['week_start']);
-            $entry = (clone $query)->first();
-            abort_unless($entry && (int) $entry->user_id === $user->id, 403);
-            $updated = $query->where('note', $data['expected_note'])->update(['note' => $data['note'], 'updated_at' => now()]);
-            if (! $updated) {
-                throw ValidationException::withMessages(['note' => 'This note changed since you opened it. Reload before editing again.']);
-            }
+            DB::transaction(function () use ($data, $user) {
+                $query = DB::table('education_weekly_notes')->where('id', $data['entry_id'])->where('week_start', $data['week_start']);
+                $entry = (clone $query)->lockForUpdate()->first();
+                abort_unless($entry && (int) $entry->user_id === $user->id, 403);
+                if ($entry->note !== $data['expected_note']) {
+                    throw ValidationException::withMessages(['note' => 'This note changed since you opened it. Reload before editing again.']);
+                }
+                $query->update(['note' => $data['note'], 'updated_at' => now()]);
+            });
         }
 
         return back()->with('success', 'Weekly note saved.');

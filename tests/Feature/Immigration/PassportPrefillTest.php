@@ -133,6 +133,7 @@ class PassportPrefillTest extends TestCase
 
     public function test_invalid_dates_and_ambiguous_names_are_not_guessed(): void
     {
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
         $this->ai->content = json_encode(['full_name' => 'SURNAME, COMBINED GIVEN NAMES', 'fields' => [
             'first_name' => $this->field('GUESSED'), 'middle_name' => ['value' => null], 'dob' => $this->field('2030-02-31'),
             'passport_expiry' => $this->field('not a date'), 'citizenship' => ['value' => ['malformed']], 'passport_number' => $this->field('VALID-SYNTHETIC'),
@@ -213,6 +214,36 @@ class PassportPrefillTest extends TestCase
         $this->passport->delete();
         $this->postJson($this->url())->assertNotFound();
         $this->assertSame(1, $this->ai->calls);
+    }
+
+    public function test_passport_preview_is_private_and_disables_shared_caching(): void
+    {
+        $preview = $this->get($this->url().'/document/'.$this->passport->id)->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $cache = $preview->headers->get('Cache-Control');
+        $this->assertStringContainsString('private', $cache);
+        $this->assertStringContainsString('no-store', $cache);
+        $this->assertStringNotContainsString('public', $cache);
+    }
+
+    public function test_prefill_preserves_admin_only_case_name_corrections(): void
+    {
+        $this->ai->content = json_encode(['name_parts_explicit' => true, 'fields' => [
+            'first_name' => $this->field('Reviewed'),
+            'passport_number' => $this->field('NEW-SYNTHETIC'),
+        ]]);
+        $draft = $this->draft();
+        $this->assertFalse(collect($draft['fields'])->firstWhere('key', 'first_name')['can_apply']);
+        $this->apply($draft, ['first_name', 'passport_number'])->assertForbidden();
+        $this->assertSame('Existing', $this->case->fresh()->first_name);
+        $this->assertSame('OLD-SYNTHETIC', $this->case->fresh()->passport_number);
+        $this->apply($draft, ['passport_number'])->assertOk();
+
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $adminDraft = $this->draft();
+        $this->assertTrue(collect($adminDraft['fields'])->firstWhere('key', 'first_name')['can_apply']);
+        $this->apply($adminDraft, ['first_name'])->assertOk()->assertJsonPath('saved.first_name', 'Reviewed');
+        $this->assertSame('Reviewed', $this->case->fresh()->first_name);
     }
 
     public function test_media_drive_cross_link_cannot_send_another_clients_file(): void

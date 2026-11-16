@@ -11,6 +11,7 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
+use App\Support\CaseRecordAccess;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
@@ -80,7 +81,8 @@ class CaseProfileController extends Controller
 
         return Inertia::render($page, [
             'lead' => $this->serializeLead($lead),
-            'passportPrefillAvailable' => \App\Services\Immigration\PassportPrefillService::enabledFor($user),
+            'passportPrefillAvailable' => ! request()->attributes->has('user_view_actor')
+                && \App\Services\Immigration\PassportPrefillService::enabledFor($user),
             'intake' => $intake ? ['type' => $intakeType, 'data' => $intake] : null,
             'assessmentCompleteness' => $completeness,
             'documents' => $this->loadDocuments($lead),
@@ -152,6 +154,7 @@ class CaseProfileController extends Controller
                 ];
             })(),
             // Cases the dependant can be related to (defaults to this case).
+            'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
             'caseOptions' => Lead::immigrationCase()
                 ->orderBy('first_name')->limit(500)
                 ->get(['id', 'lead_id', 'first_name', 'last_name'])
@@ -537,12 +540,17 @@ class CaseProfileController extends Controller
             ], $d->checklistData()))->all();
     }
 
-    private function dependentRules(): array
+    private function dependentRules(?int $existingLink = null): array
     {
         return [
             'relationship' => ['required', \Illuminate\Validation\Rule::in(\App\Models\CaseDependent::RELATIONSHIPS)],
-            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')->where(function ($query) {
-                $query->where('is_immigration_case', true);
+            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')->where(function ($query) use ($existingLink) {
+                $query->where('is_immigration_case', true)->where(function ($state) use ($existingLink) {
+                    $state->whereNull('deleted_at');
+                    if ($existingLink !== null) {
+                        $state->orWhere('id', $existingLink);
+                    }
+                });
                 if (auth()->user()?->role === 'agent') {
                     $query->where('agent_id', auth()->id());
                 }
@@ -599,7 +607,9 @@ class CaseProfileController extends Controller
     {
         $this->guardCase($lead);
         abort_unless($dependent->lead_id === $lead->id, 404);
-        $dependent->update($request->validate($this->dependentRules()));
+        $data = $request->validate($this->dependentRules($dependent->linked_lead_id));
+        CaseRecordAccess::authorizeNameChanges($request, $dependent, $data, ['first_name', 'middle_name', 'family_name']);
+        $dependent->update($data);
 
         return back()->with('success', 'Dependant updated.');
     }
@@ -1572,6 +1582,7 @@ class CaseProfileController extends Controller
             'ird_number' => 'nullable|string|max:60',
         ]);
 
+        CaseRecordAccess::authorizeNameChanges($request, $lead, $validated, ['first_name', 'middle_name', 'last_name', 'suffix']);
         $lead->update($validated);
 
         // No flash — the Personal tab auto-saves and shows its own inline

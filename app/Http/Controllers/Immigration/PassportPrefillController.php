@@ -13,7 +13,8 @@ class PassportPrefillController extends Controller
 {
     private function guard(Request $request, Lead $lead): void
     {
-        abort_unless($request->user() && PassportPrefillService::enabledFor($request->user()), 403);
+        abort_unless($request->user() && ! $request->attributes->has('user_view_actor')
+            && PassportPrefillService::enabledFor($request->user()), 403);
         abort_unless(Lead::immigrationCase()->whereKey($lead->id)->exists(), 404);
     }
 
@@ -53,6 +54,10 @@ class PassportPrefillController extends Controller
         $doc = $service->document($lead, $document);
         $source = $service->privateSource($doc, $request->user());
 
-        return response()->file(Storage::disk('local')->path($source['path']), ['Content-Type' => $source['mime'], 'Cache-Control' => 'private, no-store']);
+        return response()->file(Storage::disk('local')->path($source['path']), [
+            'Content-Type' => $source['mime'],
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ])->setPrivate();
     }
 }

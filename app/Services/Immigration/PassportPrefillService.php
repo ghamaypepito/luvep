@@ -8,6 +8,7 @@ use App\Models\LeadDocument;
 use App\Models\User;
 use App\Services\AIService;
 use App\Services\MediaDrive\Attachments;
+use App\Support\CaseRecordAccess;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -169,7 +170,8 @@ class PassportPrefillService
             $page = $row['page'] ?? null;
             $page = is_int($page) && $page >= 1 && $page <= 200 ? $page : null;
             $evidence = is_string($row['evidence'] ?? null) ? mb_substr(trim($row['evidence']), 0, 200) : '';
-            $eligible = $confidence !== null && $confidence >= 0.9 && $page !== null && $evidence !== '';
+            $eligible = $confidence !== null && $confidence >= 0.9 && $page !== null && $evidence !== ''
+                && ($user->isAdmin() || ! in_array($key, CaseRecordAccess::NAME_FIELDS, true));
             $baseline[$key] = $this->value($lead, $key);
             $fields[$key] = ['key' => $key, 'label' => self::LABELS[$key], 'value' => $value, 'current' => $baseline[$key], 'confidence' => $confidence, 'page' => $page, 'evidence' => $evidence, 'can_apply' => $eligible];
         }
@@ -190,6 +192,7 @@ class PassportPrefillService
     public function apply(Lead $lead, User $user, string $token, array $selected): array
     {
         abort_unless(self::enabledFor($user), 403);
+        abort_if(! $user->isAdmin() && array_intersect($selected, CaseRecordAccess::NAME_FIELDS), 403, 'Only an Admin or Super Admin can correct a case name.');
         $key = $this->key($lead, $user, $token);
         try {
             return Cache::lock($key.':lock', 15)->block(2, function () use ($key, $lead, $user, $token, $selected) {
