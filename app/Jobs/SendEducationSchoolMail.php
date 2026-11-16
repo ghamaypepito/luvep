@@ -53,8 +53,8 @@ class SendEducationSchoolMail implements ShouldQueue
                 return;
             }
             $current = $audience->rows($m->filters, $r->email)->firstWhere('email', $r->email);
-            if (! $current || ! $current['eligible'] || $current['name'] !== $r->name || $current['source_refs'] !== $r->source_refs) {
-                $r->update(['status' => 'skipped', 'detail' => 'Registration, address, attendance or email permission changed.']);
+            if (! $current || ! $current['eligible'] || $current['name'] !== $r->name || $current['source_refs'] != $r->source_refs || $current['context'] != $r->context_snapshot) {
+                $r->update(['status' => 'skipped', 'detail' => 'Registration, address, visit details, attendance or email permission changed.']);
 
                 return;
             }

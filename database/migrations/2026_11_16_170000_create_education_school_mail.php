@@ -23,6 +23,7 @@ return new class extends Migration
             $t->string('email', 254);
             $t->string('name', 180);
             $t->json('source_refs');
+            $t->json('context_snapshot');
             $t->string('status', 20)->default('pending');
             $t->text('detail')->nullable();
             $t->unsignedBigInteger('message_log_id')->nullable();

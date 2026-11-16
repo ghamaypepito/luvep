@@ -19,8 +19,8 @@ Education > Emails > Bulk Mail gains a School visit bulk email link to `/portal/
 - Choose follow-up or newsletter/promotion. Check the existing corresponding opt-in. Verified RSVP email is required. Programme registration requires recorded consent and the relevant form opt-in or matching non-exited confirmed subscription. Conservative combined records with missing/conflicting preferences remain excluded. No permission override or consent backfill is provided.
 - Exclude known bounces/unsubscribe replies consistently with existing Education outreach rules. Deduplicate addresses across selected sources and visits. Different names on the same address require review rather than mixed personalisation.
 - Select eligible recipients and a compatible active email template, preview a sample and confirm the recipients/purpose before queueing. Supported variables are displayed. Each recipient receives a private individual message. No extra template To/Cc/Bcc recipients are added.
-- Snapshot template content/branding, selected filters, addresses and source references in dedicated Education mailing tables. Never create or modify Leads, statuses or client credentials to send a school email.
-- Worker rechecks current sender access, source membership, name/address and email permissions immediately before sending. Changed or ineligible sources are skipped. Template content remains the staff-reviewed snapshot. Visit variables use the first matching source for a deduplicated address, as the preview explains.
+- Snapshot template content/branding, selected filters, addresses, personalisation context and source references in dedicated Education mailing tables. Never create or modify Leads, statuses or client credentials to send a school email.
+- Worker rechecks current sender access, source membership, reviewed personalisation context, name/address and email permissions immediately before sending. Changed or ineligible sources are skipped. Template content remains the staff-reviewed snapshot. Visit variables use the first matching source for a deduplicated address, as the preview explains.
 - Record per-recipient pending/sending/sent/skipped/failed history with a MessageLog reference. Sent means accepted by the configured mail transport, not guaranteed inbox delivery. Message logs use a raw recipient with no Lead ID to avoid ID collisions with unrelated clients.
 - A per-recipient lock and durable pre-send claim prevent ordinary job redelivery from automatically resending. Worker tries=1, timeout=60s, lock=75s (below the default queue retry-after=90s). Production worker/SMTP timeout and a shared lock-capable cache must match these assumptions. SMTP acceptance followed by a lost response cannot provide exactly-once delivery; uncertain sends require review.
 - Dispatch only after the mailing transaction commits. Dispatch failures leave pending records recoverable with `php artisan education:dispatch-school-mail --mailing=ID`. This only requeues untouched pending records, never failed/sending/sent recipients. It is an operator recovery command, not an automatically scheduled production action.
@@ -35,7 +35,7 @@ This first release queues immediate school mailings, not scheduled mailings. Exi
 
 ## Verification
 
-Local focused regression run: 40 tests / 256 assertions across the new school mail tests, existing Communication and Sales bulk email, Education public email choices and automatic attendance.
+Local focused regression run: 42 tests / 262 assertions across the new school mail tests, existing Communication and Sales bulk email, Education public email choices and automatic attendance.
 
 Frontend interaction tests passed for actual SchoolMail and existing Education Compose/Bulk Email components. They cover disabled recipients, sample escaping, explicit review, scoped POST data, and invalidating a selection when audience filters change. New interaction test is included in CI.
 

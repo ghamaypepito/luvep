@@ -53,7 +53,7 @@ class EducationSchoolMailAudience
             $sameName = $group->map(fn ($r) => EducationRsvpWorkflow::nameKey($r['name']))->unique()->count() === 1;
             $eligible = ! isset($suppressed[$email]) && filter_var($email, FILTER_VALIDATE_EMAIL) && $sameName && $group->every(fn ($r) => $r['eligible']);
 
-            return ['id' => hash('sha256', $email), 'email' => $email, 'name' => $first['name'],
+            return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.'),
                 'schools' => $group->pluck('school')->unique()->values()->all(),
                 'attendance' => $group->pluck('attendance')->unique()->implode(', '),

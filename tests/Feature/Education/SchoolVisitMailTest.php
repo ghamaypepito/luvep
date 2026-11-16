@@ -74,7 +74,7 @@ class SchoolVisitMailTest extends TestCase
         $row = $this->rows($this->filters($v))->first();
         $m = EducationSchoolMailing::create(['created_by' => $u->id, 'submission_id' => (string) Str::uuid(), 'name' => 'Synthetic', 'filters' => $this->filters($v), 'template_snapshot' => ['subject' => 'Hi {{full_name}}', 'body' => '<p>{{full_name}} {{school}}</p>', 'banner' => null, 'footer' => null, 'from_email' => 'staff@example.test', 'from_name' => 'Education', 'reply_to_email' => null, 'reply_to_name' => null]]);
 
-        return $m->recipients()->create(['email' => $row['email'], 'name' => $row['name'], 'source_refs' => $row['source_refs']]);
+        return $m->recipients()->create(['email' => $row['email'], 'name' => $row['name'], 'source_refs' => $row['source_refs'], 'context_snapshot' => $row['context']]);
     }
 
     public function test_school_visits_are_separate_from_general_events_and_unlinked_rsvps_appear(): void
@@ -285,6 +285,33 @@ class SchoolVisitMailTest extends TestCase
         $this->registration($v);
         $item = $this->mailing($v);
         EmailReply::create(['direction' => 'inbound', 'from_email' => 'alex@example.test', 'to_email' => 'staff@example.test', 'subject' => 'Unsubscribe', 'message_id' => 'worker-unsubscribe', 'body_text' => 'unsubscribe']);
+        (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
+        $this->assertSame('skipped', $item->fresh()->status);
+        Mail::assertNothingSent();
+    }
+
+    public function test_mysql_json_object_key_reordering_does_not_skip_a_valid_recipient(): void
+    {
+        Mail::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $item = $this->mailing($v);
+        $item->update(['source_refs' => array_map(fn ($ref) => array_reverse($ref, true), $item->source_refs), 'context_snapshot' => array_reverse($item->context_snapshot, true)]);
+        (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
+        $this->assertSame('sent', $item->fresh()->status);
+        Mail::assertSentCount(1);
+    }
+
+    public function test_changed_preview_is_rejected_before_queueing_and_changed_visit_context_is_skipped(): void
+    {
+        Queue::fake();
+        Mail::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $data = $this->payload($v);
+        $item = $this->mailing($v);
+        $v->update(['activity' => 'Different activity']);
+        $this->actingAs($this->staff())->post('/portal/education/school-mail', $data)->assertSessionHasErrors('recipient_keys');
         (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
         $this->assertSame('skipped', $item->fresh()->status);
         Mail::assertNothingSent();

@@ -8,7 +8,7 @@ class EducationSchoolMailRecipient extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['source_refs' => 'array'];
+    protected $casts = ['source_refs' => 'array', 'context_snapshot' => 'array'];
 
     public function mailing()
     {

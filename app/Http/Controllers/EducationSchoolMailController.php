@@ -70,7 +70,7 @@ class EducationSchoolMailController extends Controller
                     'banner' => $template->banner_image, 'footer' => $template->footer_image, 'from_email' => $template->from_email, 'from_name' => $template->from_name,
                     'reply_to_email' => $template->reply_to_email, 'reply_to_name' => $template->reply_to_name]]);
             foreach ($rows as $r) {
-                $recipient = $mailing->recipients()->create(['email' => $r['email'], 'name' => $r['name'], 'source_refs' => $r['source_refs']]);
+                $recipient = $mailing->recipients()->create(['email' => $r['email'], 'name' => $r['name'], 'source_refs' => $r['source_refs'], 'context_snapshot' => $r['context']]);
                 DB::afterCommit(fn () => SendEducationSchoolMail::enqueue($recipient->id));
             }
             ActivityLog::record('education.school_mail.created', ['portal' => 'education', 'properties' => ['mailing_id' => $mailing->id, 'filters' => $filters, 'recipient_count' => $rows->count(), 'template_id' => $template->id]]);
