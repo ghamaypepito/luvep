@@ -82,6 +82,8 @@ class CaseProfileController extends Controller
 
         return Inertia::render($page, [
             'lead' => $this->serializeLead($lead),
+            'passportPrefillAvailable' => ! request()->attributes->has('user_view_actor')
+                && \App\Services\Immigration\PassportPrefillService::enabledFor($user),
             'intake' => $intake ? ['type' => $intakeType, 'data' => $intake] : null,
             'assessmentCompleteness' => $completeness,
             'documents' => $this->loadDocuments($lead),
