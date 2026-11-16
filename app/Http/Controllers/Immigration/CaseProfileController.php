@@ -51,9 +51,10 @@ class CaseProfileController extends Controller
 
         $this->ensureCanViewCases($user);
 
-        // Hard 404 on non-cases. This endpoint is case-only; non-cases
-        // continue to use LeadController::show via /admin/leads/{id} etc.
-        abort_unless($lead->is_immigration_case, 404);
+        // Match the Cases list, including older Education handoffs whose case
+        // flag was never stamped. Plain leads remain excluded. Reading a case
+        // must not rewrite its conversion flags, dates or audit history.
+        abort_unless(Lead::immigrationCase()->whereKey($lead->getKey())->exists(), 404);
 
         $this->writeAuditView($lead, $user);
 
@@ -81,6 +82,8 @@ class CaseProfileController extends Controller
 
         return Inertia::render($page, [
             'lead' => $this->serializeLead($lead),
+            'passportPrefillAvailable' => ! request()->attributes->has('user_view_actor')
+                && \App\Services\Immigration\PassportPrefillService::enabledFor($user),
             'intake' => $intake ? ['type' => $intakeType, 'data' => $intake] : null,
             'assessmentCompleteness' => $completeness,
             'documents' => $this->loadDocuments($lead),
