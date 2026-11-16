@@ -1816,6 +1816,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/reports/note', [EducationController::class, 'saveReportNote'])->name('reports.note');
             Route::get('/reports/clients', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'clients'])->name('reports.clients');
             Route::post('/reports/activities', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'store'])->name('reports.activities.store');
+            Route::patch('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'update'])->whereNumber('activity')->name('reports.activities.update');
             Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
             Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
 
@@ -2020,6 +2021,13 @@ Route::middleware(['auth'])->group(function () {
                 ->where(['type' => 'resident|work|student|visitor|family|free', 'id' => '[0-9]+'])
                 ->name('assessments.notes.store');
             Route::get('/cases', [ImmigrationController::class, 'cases'])->name('cases');
+            $archive = \App\Http\Controllers\Immigration\CaseArchiveController::class;
+            Route::get('/cases/archived', [$archive, 'index'])->name('cases.archived');
+            Route::post('/cases/{id}/archive', [$archive, 'archive'])->whereNumber('id')->name('cases.archive');
+            Route::get('/cases/archived/{id}/download', [$archive, 'download'])->whereNumber('id')->name('cases.archived.download');
+            Route::post('/cases/archived/{id}/restore', [$archive, 'restore'])->whereNumber('id')->name('cases.archived.restore');
+            Route::patch('/cases/archived/{id}/name', [$archive, 'correctName'])->whereNumber('id')->name('cases.archived.name');
+            Route::delete('/cases/archived/{id}', [$archive, 'remove'])->whereNumber('id')->name('cases.archived.remove');
             // Engagement + Invoice generation workspaces. Declared before the
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.

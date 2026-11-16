@@ -129,6 +129,7 @@ export default function AddEditStudentModal({
     // and flag them as a student instead of creating a duplicate row.
     const [mode, setMode] = useState("new");          // "new" | "existing"
     const [linkedLead, setLinkedLead] = useState(null); // chosen existing lead
+    const lockCaseName = Boolean((student ?? linkedLead)?.case_name_locked);
     const [searchQ, setSearchQ] = useState("");
     const [searchResults, setSearchResults] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -174,9 +175,9 @@ export default function AddEditStudentModal({
                 : "";
 
         setForm({
-            first_name:      student.name?.split(/\s+/)[0]              ?? "",
+            first_name:      student.first_name ?? student.name?.split(/\s+/)[0] ?? "",
             middle_name:     student.middle_name                        ?? "",
-            last_name:       student.name?.split(/\s+/).slice(-1)[0]    ?? "",
+            last_name:       student.last_name ?? student.name?.split(/\s+/).slice(-1)[0] ?? "",
             suffix:          student.suffix                             ?? "",
             gender:          student.gender                             ?? "",
             email:           student.email                              ?? "",
@@ -532,16 +533,16 @@ export default function AddEditStudentModal({
                     <Section title="Identity">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Field label="First name" required>
-                                <input type="text" required value={form.first_name} onChange={set("first_name")} className={ICls} maxLength={120} placeholder="e.g. Maria" />
+                                <input type="text" required readOnly={lockCaseName} value={form.first_name} onChange={set("first_name")} className={ICls} maxLength={120} placeholder="e.g. Maria" />
                             </Field>
                             <Field label="Middle name" hint="Optional">
-                                <input type="text" value={form.middle_name} onChange={set("middle_name")} className={ICls} maxLength={120} />
+                                <input type="text" readOnly={lockCaseName} value={form.middle_name} onChange={set("middle_name")} className={ICls} maxLength={120} />
                             </Field>
                             <Field label="Last name" required>
-                                <input type="text" required value={form.last_name} onChange={set("last_name")} className={ICls} maxLength={120} placeholder="e.g. Santos" />
+                                <input type="text" required readOnly={lockCaseName} value={form.last_name} onChange={set("last_name")} className={ICls} maxLength={120} placeholder="e.g. Santos" />
                             </Field>
                             <Field label="Suffix" hint="Optional">
-                                <select value={form.suffix} onChange={set("suffix")} className={ICls}>
+                                <select disabled={lockCaseName} value={form.suffix} onChange={set("suffix")} className={ICls}>
                                     {SUFFIX_OPTIONS.map((s) => (
                                         <option key={s || "none"} value={s}>
                                             {s || "— None —"}

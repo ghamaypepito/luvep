@@ -1214,6 +1214,7 @@ class SalesController extends Controller
             'lead_ids.*' => 'integer|exists:leads,id',
         ]);
 
+        \App\Support\CaseRecordAccess::authorizeArchive($request, $validated['lead_ids']);
         try {
             $count = Lead::whereIn('id', $validated['lead_ids'])->delete();
 

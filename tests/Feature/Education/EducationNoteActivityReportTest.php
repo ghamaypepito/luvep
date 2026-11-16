@@ -108,6 +108,38 @@ class EducationNoteActivityReportTest extends TestCase
         $this->assertFalse($this->report()['entries']['data'][0]['note_available']);
     }
 
+    public function test_authorized_case_notes_and_edits_refresh_student_activity_without_an_education_report_event(): void
+    {
+        $lead = $this->client();
+        $lead->update(['is_immigration_case' => true]);
+        $education = User::factory()->create(['role' => 'education']);
+        $this->actingAs($education);
+        $parent = $this->postNote($lead);
+        $caseWorker = User::factory()->create(['role' => 'immigration_manager']);
+        $this->actingAs($caseWorker);
+        $this->travel(1)->hours();
+        $reply = $this->postNote($lead, ['parent_id' => $parent->id], '/admin');
+        $this->assertSame($caseWorker->id, $lead->fresh()->last_activity_by);
+        $this->assertSame('Internal note reply added', $lead->fresh()->last_activity_desc);
+        $this->travel(1)->hours();
+        $this->post("/admin/leads/{$lead->id}/notes/{$reply->id}", ['body' => 'Changed reply'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Internal note updated', $lead->fresh()->last_activity_desc);
+        $this->assertTrue($lead->fresh()->last_activity_at->equalTo(now()));
+        $this->assertSame(1, EducationNoteActivity::count());
+        $this->assertSame($education->id, EducationNoteActivity::sole()->user_id);
+
+        $agent = User::factory()->create(['role' => 'agent']);
+        $lead->forceFill(['agent_id' => $agent->id])->saveQuietly();
+        $lastStaffActivity = $lead->fresh()->last_activity_at;
+        $this->travel(1)->hours();
+        $this->actingAs($agent);
+        $this->postNote($lead, [], '/portal/agent');
+        $this->assertSame($caseWorker->id, $lead->fresh()->last_activity_by);
+        $this->assertTrue($lead->fresh()->last_activity_at->equalTo($lastStaffActivity));
+        $this->assertSame(1, EducationNoteActivity::count());
+    }
+
     public function test_validation_failure_saves_neither_note_nor_activity_and_replies_are_recorded_once(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'education']));

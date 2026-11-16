@@ -4,6 +4,7 @@ namespace Tests\Feature\Education;
 
 use App\Models\ActivityLog;
 use App\Models\Lead;
+use App\Models\Program;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -45,7 +46,7 @@ class EducationReportPeriodTest extends TestCase
         return collect($props['departments'][$dept]['stages'])->firstWhere('stage', $stage);
     }
 
-    public function test_presets_follow_nz_calendar_boundaries_and_default_to_this_month(): void
+    public function test_presets_follow_nz_calendar_boundaries_and_default_to_today(): void
     {
         foreach (['today' => '2026-11-04', 'this_week' => '2026-11-02', 'this_month' => '2026-11-01', 'this_year' => '2026-01-01'] as $preset => $from) {
             $p = $this->report('?preset='.$preset);
@@ -53,7 +54,10 @@ class EducationReportPeriodTest extends TestCase
             $this->assertSame('2026-11-04', $p['range']['to']);
             $this->assertSame('Pacific/Auckland', $p['range']['timezone']);
         }
-        $this->assertSame('this_month', $this->report()['range']['preset']);
+        $range = $this->report()['range'];
+        $this->assertSame('today', $range['preset']);
+        $this->assertSame('2026-11-04', $range['from']);
+        $this->assertSame('2026-11-04', $range['to']);
     }
 
     public function test_dated_cards_keep_past_milestones_and_do_not_use_shared_update_dates(): void
@@ -147,12 +151,19 @@ class EducationReportPeriodTest extends TestCase
         $this->assertSame(1, $p['departments']['immigration']['total']);
     }
 
-    public function test_program_catalogue_counts_are_only_exposed_under_all(): void
+    public function test_current_program_catalogue_counts_update_and_stay_independent_of_report_dates(): void
     {
-        $p = $this->report('?preset=today');
-        $this->assertNull($p['programs']['total']);
-        $this->assertFalse($p['programs']['history_available']);
-        $this->assertIsInt($this->report('?preset=all')['programs']['total']);
+        foreach (['published', 'draft', 'archived'] as $status) {
+            $program = Program::create(['title' => 'Programme '.$status, 'institution' => 'Example School',
+                'level' => 7, 'category' => 'bachelors', 'status' => $status]);
+        }
+
+        $expected = ['total' => 3, 'published' => 1, 'draft' => 1, 'history_available' => false, 'scope' => 'current'];
+        $this->assertSame($expected, $this->report('?preset=today')['programs']);
+        $this->assertSame($expected, $this->report('?preset=all')['programs']);
+
+        $program->update(['status' => 'published']);
+        $this->assertSame(array_replace($expected, ['published' => 2]), $this->report('?preset=last_week')['programs']);
     }
 
     public function test_success_explicitly_clears_an_old_partial_reload_error(): void

@@ -79,10 +79,7 @@ export default function ProposalsAgreements({
     }, [activeRows, search]);
 
     const openNewWithPrefill = (leadId, suggestion, exactType = null) => {
-        // Sensible defaults per suggestion kind. The 6-way consultancy
-        // dropdown means "agreement" no longer has an obvious default —
-        // Standard · Single · 100,000 is the most common starting point;
-        // staff can flip to Couple / Voucher / 150k from the dropdown.
+        // Standard · Single · 100,000 is the default for agreement suggestions.
         // `exactType` skips the mapping and prefills with a specific
         // DOC_TYPES key — used by the Agreements "Edit" action to
         // re-open the modal at the same variant the doc was generated
@@ -1735,10 +1732,8 @@ function NotifyLeadModal({ target, onClose }) {
 
 // ── New Document modal — pick lead + type, then either save program picks
 //    (Proposal type) or POST to the generate endpoint (Agreements). ─────
-// 6 flat consultancy options (Single / Couple baked into each) + 1
-// English Engagement + Proposal. `backendType` is the type key the
-// server route knows; `applicantMode` gets sent alongside so the PDF
-// swaps the applicant line + cost breakdown. `defaultSchoolFee` is
+// `backendType` is the server document type. `applicantMode` sets the
+// Single or Couple applicant line in the PDF. `defaultSchoolFee` is
 // the fee that pre-fills the Settings panel — staff can override.
 // `category` groups doc types under the Category selector. `all` = shown in
 // every category (Study Proposal). `free` doc types have no fee/bank panel.
@@ -1748,8 +1743,6 @@ const DOC_TYPES = [
     { value: 'consultancy_std_single_100',        label: 'Standard · Single · 100,000',                    category: 'philippines', hint: 'Sole applicant. School Enrolment + Documentation Fee.',                                       backendType: 'consultancy_std_100',     applicantMode: 'single', defaultSchoolFee: 100000 },
     { value: 'consultancy_std_single_150',        label: 'Standard · Single · 150,000',                    category: 'philippines', hint: 'Sole applicant. School Enrolment + INZ visa application fee.',                                backendType: 'consultancy_std_150',     applicantMode: 'single', defaultSchoolFee: 150000 },
     { value: 'consultancy_std_couple_150',        label: 'Standard · Couple · 150,000',                    category: 'philippines', hint: 'Applicant + partner. School Enrolment + INZ visa application fee.',                           backendType: 'consultancy_std_150',     applicantMode: 'couple', defaultSchoolFee: 150000 },
-    { value: 'consultancy_voucher_single_150',    label: 'With Voucher · Single · 150,000',                category: 'philippines', hint: 'Sole applicant. Inclusive of the INZ visa application fee (voucher).',                        backendType: 'consultancy_voucher_150', applicantMode: 'single', defaultSchoolFee: 150000 },
-    { value: 'consultancy_voucher_couple_150',    label: 'With Voucher · Couple · 150,000',                category: 'philippines', hint: 'Applicant + partner. Inclusive of the INZ visa application fee (voucher).',                   backendType: 'consultancy_voucher_150', applicantMode: 'couple', defaultSchoolFee: 150000 },
     { value: 'consultancy_english_single_100',    label: 'With English · Single · 100,000',                category: 'philippines', hint: 'Sole applicant with English review add-on.',                                                  backendType: 'consultancy_english_100', applicantMode: 'single', defaultSchoolFee: 100000 },
     { value: 'english_engagement',                label: 'Offshore - Philippines',                         category: 'english',     hint: 'English Engagement Agreement (PTE prep + exam) — Php. Editable English Review + PTE Exam fees.', backendType: 'english_engagement', englishFee: true, hasPte: true, defaultEnglishFee: 14500, defaultPteFee: 240, currency: 'php' },
     { value: 'english_offshore',                  label: 'Offshore - English',                             category: 'english',     hint: 'English Proficiency Test (IELTS/PTE) Review Agreement — NZD. Editable package fee.', backendType: 'english_offshore', englishFee: true, defaultEnglishFee: 550, currency: 'nzd' },
@@ -1766,11 +1759,10 @@ const DOC_TYPES = [
 // branch, so they must not be treated as consultancy).
 const CONSULTANCY_TYPES = new Set(DOC_TYPES.filter((t) => t.backendType && ! t.free && ! t.englishFee).map((t) => t.value));
 // Plain-text counterparts of the Philippines templates' Application Type descriptions.
-// Default-equivalent values are omitted so the original voucher emphasis remains intact.
+// Default-equivalent values are omitted so the template supplies the wording.
 const APPLICATION_DESCRIPTIONS = {
     consultancy_std_100: 'School Enrollment and Documentation Fee',
     consultancy_std_150: 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee',
-    consultancy_voucher_150: 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee',
     consultancy_english_100: 'School Enrollment and Documentation Fee',
 };
 const MAX_PROPOSED_PROGRAMS = 5;
@@ -1805,7 +1797,7 @@ const BANK_PRESETS = {
 
 function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null }) {
     const [leadId, setLeadId] = useState('');
-    const [downloading, setDownloading] = useState(false);
+    const [downloading, setDownloading] = useState('');
     const [downloadError, setDownloadError] = useState('');
     // No default — staff must actively pick a doc type. Empty string
     // keeps the preview area empty and the Generate button disabled.
@@ -1872,11 +1864,10 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     // hit "Generate" without re-picking.
     useEffect(() => {
         if (! open) return;
+        const meta = DOC_TYPES.find((t) => t.value === prefill?.type);
         if (prefill) {
             setLeadId(prefill.leadId);
-            setType(prefill.type);
-            // Jump to the category the prefilled type belongs to.
-            const meta = DOC_TYPES.find((t) => t.value === prefill.type);
+            setType(meta?.value || '');
             setCategory(meta && meta.category !== 'all' ? meta.category : 'philippines');
         } else {
             setLeadId('');
@@ -1888,8 +1879,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         setProgramSearch('');
         setNotify(true);
         setBank({ preset: 'rcbc', ...BANK_PRESETS.rcbc, reference: '' });
-        const openingType = DOC_TYPES.find((t) => t.value === prefill?.type);
-        setApplicationDescription(APPLICATION_DESCRIPTIONS[openingType?.backendType] || '');
+        setApplicationDescription(APPLICATION_DESCRIPTIONS[meta?.backendType] || '');
         setSubmitErrors({});
     }, [open, prefill]);
 
@@ -1918,6 +1908,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     // Resolve the selected doc-type entry once — used for backendType +
     // applicantMode when building the preview URL and the submit body.
     const typeMeta = useMemo(() => DOC_TYPES.find((t) => t.value === type) || null, [type]);
+    const hasEnglishProficiencyFee = typeMeta?.backendType === 'consultancy_english_100';
     const defaultApplicationDescription = APPLICATION_DESCRIPTIONS[typeMeta?.backendType];
     const customApplicationDescription = defaultApplicationDescription && applicationDescription.trim() !== defaultApplicationDescription
         ? applicationDescription.trim() : '';
@@ -1985,7 +1976,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
             : (isConsultancyType
                 ? {
                     school_enrolment_fee: schoolFee,
-                    english_proficiency_fee: englishFee,
+                    ...(hasEnglishProficiencyFee ? { english_proficiency_fee: englishFee } : {}),
                     applicant_mode: typeMeta?.applicantMode || 'single',
                     ...(customApplicationDescription ? { application_description: customApplicationDescription } : {}),
                     currency,
@@ -2091,9 +2082,9 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
     const amountText = useMemo(() => {
         const n = (v) => Number(v || 0).toLocaleString(cur.locale);
         if (typeMeta?.hasPte) return `${cur.symbol}${n(schoolFee)} · PTE US$${Number(pteFee || 0).toLocaleString()}`;
-        if (typeMeta?.singleFee || isEnglishType) return `${cur.symbol}${n(schoolFee)}`;
-        return `${cur.symbol}${n(Number(schoolFee) + Number(englishFee))}`;
-    }, [typeMeta, schoolFee, englishFee, pteFee, cur, isEnglishType]);
+        const total = Number(schoolFee) + (hasEnglishProficiencyFee ? Number(englishFee) : 0);
+        return `${cur.symbol}${n(total)}`;
+    }, [typeMeta, schoolFee, englishFee, pteFee, cur, hasEnglishProficiencyFee]);
     // While the live preview is still rendering the freshly-typed amount, keep
     // the submit button read-only; it re-enables once the preview has settled.
     const amountSettling = needsAmountConfirm && previewLoading;
@@ -2127,7 +2118,6 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         }
         const params = new URLSearchParams({
             school_enrolment_fee: String(schoolFee || 0),
-            english_proficiency_fee: String(englishFee || 0),
             applicant_mode: typeMeta?.applicantMode || 'single',
             currency,
             bank_heading: bank.heading || '',
@@ -2136,9 +2126,10 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
             bank_account_number: bank.account_number || '',
             bank_reference: bank.reference || '',
         });
+        if (hasEnglishProficiencyFee) params.set('english_proficiency_fee', String(englishFee || 0));
         if (customApplicationDescription) params.set('application_description', customApplicationDescription);
         return `${base}?${params.toString()}`;
-    }, [leadId, type, isConsultancyType, schoolFee, englishFee, pteFee, typeMeta, currency, bank, customApplicationDescription]);
+    }, [leadId, type, isConsultancyType, schoolFee, englishFee, pteFee, typeMeta, currency, bank, customApplicationDescription, hasEnglishProficiencyFee]);
 
     // Reset the loading flag every time the URL swings — the iframe's
     // onLoad callback will clear it once the new content is painted.
@@ -2147,13 +2138,22 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         setDownloadError('');
     }, [previewUrl]);
 
-    async function downloadPdf() {
+    async function downloadPdf(documentType = 'draft') {
         if (!canSubmit || downloading || !previewUrl) return;
-        setDownloading(true);
+        setDownloading(documentType);
         setDownloadError('');
         try {
             const url = new URL(previewUrl, window.location.origin);
-            const body = new URLSearchParams(url.search);
+            const params = url.searchParams;
+            // The cost estimate uses the fee and applicant inputs only.
+            const body = documentType === 'cost_breakdown'
+                ? new URLSearchParams([
+                    ['document', documentType],
+                    ...['school_enrolment_fee', 'english_proficiency_fee', 'applicant_mode']
+                        .filter((key) => params.has(key))
+                        .map((key) => [key, params.get(key)]),
+                ])
+                : new URLSearchParams(params);
             const csrfCookie = document.cookie.split('; ').find((cookie) => cookie.startsWith('XSRF-TOKEN='));
             if (isProposalType) {
                 pickedProgramIds.forEach((id) => {
@@ -2190,7 +2190,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
         } catch (error) {
             setDownloadError(error.message || 'Could not download the PDF. Please try again.');
         } finally {
-            setDownloading(false);
+            setDownloading('');
         }
     }
 
@@ -2387,7 +2387,7 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                             <p className="text-[10px] text-gray-500 mt-1.5">Defaults to {cur.symbol}0 (fees waived) — type an amount to charge.</p>
                                         )}
                                     </>
-                                ) : (
+                                ) : hasEnglishProficiencyFee ? (
                                     <>
                                         <div className="grid grid-cols-2 gap-2">
                                             <FeeInput
@@ -2408,10 +2408,17 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                         <div className="mt-3 flex items-baseline justify-between border-t border-gray-100 pt-2.5">
                                             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Combined</span>
                                             <span className="text-base font-black text-gray-900 tabular-nums">
-                                                {cur.symbol}{(schoolFee + englishFee).toLocaleString(cur.locale)}
+                                                {amountText}
                                             </span>
                                         </div>
                                     </>
+                                ) : (
+                                    <FeeInput
+                                        label="School Enrolment"
+                                        value={schoolFee}
+                                        onChange={setSchoolFee}
+                                        symbol={cur.symbol}
+                                    />
                                 )}
                             </div>
                         )}
@@ -2485,13 +2492,23 @@ function NewDocumentModal({ open, onClose, picker, programs = [], prefill = null
                                     <span className="text-[11px] text-gray-400 italic">nothing selected yet</span>
                                 )}
                             </div>
-                            <button type="button" onClick={downloadPdf}
-                                disabled={!canSubmit || downloading || amountSettling}
-                                title="Download a draft of the current selection. This does not send an email."
-                                className="ml-auto inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                                {downloading ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
-                                {downloading ? 'Preparing PDF…' : 'Download PDF'}
-                            </button>
+                            <div className="ml-auto flex flex-wrap gap-2">
+                                {typeMeta?.category === 'philippines' && (
+                                    <button type="button" onClick={() => downloadPdf('cost_breakdown')}
+                                        disabled={!canSubmit || Boolean(downloading) || amountSettling}
+                                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        {downloading === 'cost_breakdown' ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
+                                        {downloading === 'cost_breakdown' ? 'Preparing breakdown…' : 'Download cost breakdown'}
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => downloadPdf()}
+                                    disabled={!canSubmit || Boolean(downloading) || amountSettling}
+                                    title="Download a draft of the current selection. This does not send an email."
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                                    {downloading === 'draft' ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
+                                    {downloading === 'draft' ? 'Preparing PDF…' : 'Download PDF'}
+                                </button>
+                            </div>
                         </div>
                         {downloadError && <p role="alert" className="px-4 py-2 text-xs text-red-700 bg-red-50">{downloadError}</p>}
 

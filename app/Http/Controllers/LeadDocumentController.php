@@ -653,7 +653,6 @@ class LeadDocumentController extends Controller
      * Unified generate endpoint for the "Proposal & Agreements" page.
      * Types:
      *   consultancy_std_150      → Scenario #1 STANDARD 150,000
-     *   consultancy_voucher_150  → Scenario #2 WITH VOUCHER 150,000
      *   consultancy_std_100      → Scenario #3 STANDARD 100,000
      *   consultancy_english_100  → Scenario #3 WITH ENGLISH 100,000
      *   english_engagement       → English Engagement Agreement
@@ -1405,7 +1404,6 @@ class LeadDocumentController extends Controller
     {
         return match ($type) {
             'consultancy_std_150' => 'std_150',
-            'consultancy_voucher_150' => 'voucher_150',
             'consultancy_std_100' => 'std_100',
             'consultancy_english_100' => 'english_100',
             default => null,
@@ -1485,6 +1483,15 @@ class LeadDocumentController extends Controller
     {
         $lead = Lead::findOrFail($leadId);
         $download = $request->query('download') === 'pdf';
+
+        if ($download && $request->input('document') === 'cost_breakdown') {
+            $scenario = $this->consultancyScenarioForType($type);
+            abort_if($scenario === null, 404);
+
+            [$payload] = $generator->buildConsultancyPayload($lead, $scenario, $this->feeOverridesFromRequest($request));
+
+            return $this->draftPdfResponse($lead, 'indicative-cost-breakdown', 'agreements.consultancy-cost-breakdown', $payload);
+        }
 
         if ($type === 'proposal' && $download) {
             $data = $request->validate([
