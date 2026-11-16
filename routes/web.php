@@ -2024,6 +2024,7 @@ Route::middleware(['auth'])->group(function () {
             $archive = \App\Http\Controllers\Immigration\CaseArchiveController::class;
             Route::get('/cases/archived', [$archive, 'index'])->name('cases.archived');
             Route::post('/cases/{id}/archive', [$archive, 'archive'])->whereNumber('id')->name('cases.archive');
+            Route::get('/cases/archived/{id}/download', [$archive, 'download'])->whereNumber('id')->name('cases.archived.download');
             Route::post('/cases/archived/{id}/restore', [$archive, 'restore'])->whereNumber('id')->name('cases.archived.restore');
             Route::patch('/cases/archived/{id}/name', [$archive, 'correctName'])->whereNumber('id')->name('cases.archived.name');
             Route::delete('/cases/archived/{id}', [$archive, 'remove'])->whereNumber('id')->name('cases.archived.remove');

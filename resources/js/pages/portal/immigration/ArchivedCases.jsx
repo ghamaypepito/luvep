@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Head, Link, router, useForm } from "@inertiajs/react";
-import { ArchiveRestore, Pencil, Search, Trash2 } from "lucide-react";
+import { ArchiveRestore, Download, Pencil, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import Pagination from "@/components/ui/Pagination";
 
@@ -55,6 +55,7 @@ export default function ArchivedCases({ cases, search = "" }) {
                             <div className="flex flex-wrap gap-3">
                                 <button type="button" disabled={busy} className="inline-flex items-center gap-1 font-semibold hover:underline" onClick={() => setEditing(record)}><Pencil size={14} /> Correct name</button>
                                 <button type="button" disabled={busy} className="inline-flex items-center gap-1 font-semibold text-emerald-800 hover:underline" onClick={() => restore(record)}><ArchiveRestore size={14} /> Restore</button>
+                                <a href={`${archive}/${record.id}/download`} className="inline-flex items-center gap-1 font-semibold hover:underline"><Download size={14} /> Download</a>
                                 <button type="button" disabled={busy} className="inline-flex items-center gap-1 font-semibold text-red-700 hover:underline" onClick={() => setDeleting(record)}><Trash2 size={14} /> Delete</button>
                             </div>
                         </td>
@@ -100,7 +101,8 @@ function DeleteCase({ record, onClose }) {
     return <CaseDialog label="delete-archived-case" onClose={onClose} processing={form.processing}>
         <form onSubmit={submit} className="space-y-3">
             <h2 id="delete-archived-case" className="text-lg font-bold">Permanently delete {nameOf(record)}?</h2>
-            <p className="text-sm text-gray-700">{record.lead_id} will be deleted permanently. Cases with linked records or case history must stay archived.</p>
+            <p className="text-sm text-gray-700">{record.lead_id} and its case records and files will be permanently deleted. Files used by another record will be kept.</p>
+            <a href={`${archive}/${record.id}/download`} className="inline-flex items-center gap-1 text-sm font-semibold hover:underline"><Download size={14} /> Download case records and files (optional)</a>
             <label className="block text-sm font-semibold">Type DELETE ACCOUNT
                 <input autoFocus autoComplete="off" value={form.data.confirmation} onChange={event => form.setData("confirmation", event.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" />
             </label>
