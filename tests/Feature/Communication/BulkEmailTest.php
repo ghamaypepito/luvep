@@ -135,8 +135,67 @@ class BulkEmailTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('email_campaigns', ['name' => 'Later', 'status' => 'scheduled']);
+        $this->assertDatabaseHas('email_campaigns', [
+            'name' => 'Later', 'status' => 'scheduled', 'new_leads_only' => false, 'skipped_count' => 0,
+        ]);
         Queue::assertNotPushed(SendCampaign::class);
+    }
+
+    public function test_scheduled_education_new_leads_campaign_skips_people_who_leave_new_leads(): void
+    {
+        Mail::fake();
+        $template = $this->tmpl(['department' => 'education']);
+        $new = $this->lead(['email' => 'new@example.com', 'status' => 'New Leads']);
+        $contacted = $this->lead(['email' => 'contacted@example.com', 'status' => 'New Leads', 'stage' => 'New Leads']);
+        $student = $this->lead(['email' => 'student@example.com', 'status' => 'New Leads']);
+        $notSelected = $this->lead(['email' => 'not-selected@example.com', 'status' => 'Contact Attempted']);
+        $education = User::factory()->create(['role' => 'education']);
+
+        $this->actingAs($education)->post('/portal/education/bulk-email', [
+            'name' => 'Welcome tomorrow', 'template_id' => $template->id, 'new_leads_only' => true,
+            'recipient_lead_ids' => [$new->id, $contacted->id, $student->id],
+            'action' => 'schedule', 'scheduled_at' => now()->addHour()->toDateTimeString(),
+        ])->assertSessionHas('success');
+        Mail::assertNothingQueued();
+
+        $contacted->update(['status' => 'Contact Attempted']);
+        $student->update(['is_student' => true]);
+        $notSelected->update(['status' => 'New Leads']);
+        $this->travel(2)->hours();
+        $this->artisan('campaigns:dispatch-due')->assertSuccessful();
+
+        Mail::assertQueued(TemplatedMessage::class, 1);
+        Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $mail) => $mail->hasTo($new->email));
+        $campaign = EmailCampaign::sole();
+        $this->assertTrue($campaign->new_leads_only);
+        $this->get("/portal/education/bulk-email/{$campaign->id}")->assertInertia(fn ($page) => $page
+            ->where('campaign.sent', 1)
+            ->where('campaign.failed', 0)
+            ->where('campaign.skipped', 2)
+            ->where('recipients', fn ($recipients) => collect($recipients)->where('status', 'skipped')
+                ->filter(fn ($recipient) => str_contains($recipient['error'], 'no longer in New Leads'))->count() === 2));
+    }
+
+    public function test_new_leads_campaign_with_no_eligible_recipients_completes_as_skipped(): void
+    {
+        Mail::fake();
+        $lead = $this->lead(['status' => 'New Leads']);
+        $campaign = EmailCampaign::create([
+            'name' => 'Welcome tomorrow', 'department' => 'education', 'subject' => 'Welcome',
+            'body' => 'Hello', 'status' => 'sending', 'new_leads_only' => true,
+            'total_recipients' => 1, 'recipient_lead_ids' => [$lead->id],
+        ]);
+        $lead->delete();
+
+        $job = new SendCampaign($campaign->id);
+        $job->handle(app(CommunicationService::class));
+        $job->handle(app(CommunicationService::class));
+
+        Mail::assertNothingQueued();
+        $campaign->refresh();
+        $this->assertSame(EmailCampaign::STATUS_SKIPPED, $campaign->status);
+        $this->assertSame(1, $campaign->skipped_count);
+        $this->assertSame(1, $campaign->logs()->count());
     }
 
     public function test_only_emailable_recipients_are_snapshotted(): void

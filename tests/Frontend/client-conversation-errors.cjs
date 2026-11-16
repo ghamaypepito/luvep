@@ -25,7 +25,7 @@ let requests = [];
 global.fetch = async (url, options = {}) => {
     requests.push({url, options});
     return { ok: status === 200, status, json: async () => status === 200
-        ? { data: [], can_email: true, can_attach_documents: true, attachment_documents: [{ id: 11, name: 'Offer of Place.pdf' }] }
+        ? { data: [], can_email: true, can_attach_documents: true, attachment_documents: [{ id: 11, name: 'Offer of Place.pdf', status: 'Approved' }, { id: 12, name: 'Offer of Place.pdf', status: 'StaffShared' }] }
         : { message: 'You do not have access to this lead.' } };
 };
 (async () => {
@@ -51,6 +51,8 @@ global.fetch = async (url, options = {}) => {
     await click('New email');
     const documents = document.querySelector('select[aria-label="Attach a student document"]');
     assert.ok(documents);
+    assert.match(documents.options[1].textContent, /Offer of Place\.pdf.*Approved.*#11/s);
+    assert.match(documents.options[2].textContent, /Offer of Place\.pdf.*Staff shared.*#12/s);
     await act(async () => {
         documents.value = '11';
         documents.dispatchEvent(new Event('change', { bubbles: true }));

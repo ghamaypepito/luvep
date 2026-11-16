@@ -247,7 +247,7 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                             ))}
                             {selectedDocuments.map((document) => (
                                 <span key={`document-${document.id}`} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-gray-100 text-gray-600 text-[11px]">
-                                    <Paperclip size={11} /> <span className="max-w-[140px] truncate">{document.name}</span>
+                                    <Paperclip size={11} /> <span className="max-w-[140px] truncate">{document.name}</span><span>#{document.id}</span>
                                     <button type="button" aria-label={`Remove ${document.name}`} onClick={() => removeDocument(document.id)} className="text-gray-400 hover:text-gray-700"><X size={12} /></button>
                                 </span>
                             ))}
@@ -270,7 +270,11 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                                     className="max-w-64 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 disabled:opacity-50">
                                     <option value="">{documents.length > 0 ? "Attach a student document" : "No approved or shared documents"}</option>
                                     {documents.filter((document) => !selectedDocuments.some((item) => item.id === document.id))
-                                        .map((document) => <option key={document.id} value={document.id}>{document.name}</option>)}
+                                        .map((document) => <option key={document.id} value={document.id}>
+                                            {document.name} · {document.status === "StaffShared" ? "Staff shared" : "Approved"}
+                                            {document.added_at ? ` · ${new Date(document.added_at).toLocaleString("en-NZ", { timeZone: "Pacific/Auckland", dateStyle: "medium", timeStyle: "short" })}` : ""}
+                                            {` · #${document.id}`}
+                                        </option>)}
                                 </select>
                             )}
                             {attachmentCount > 0 && <span className="text-xs text-gray-500">{attachmentCount}/{MAX_ATTACHMENTS}</span>}

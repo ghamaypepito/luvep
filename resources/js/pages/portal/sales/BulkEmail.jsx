@@ -336,10 +336,11 @@ function CampaignTable({ rows, empty, showCancel = false, basePath = "/portal/sa
                                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_CHIP[c.status] || "bg-gray-100 text-gray-500"}`}>{c.status}</span>
                                 </td>
                                 <td className="px-5 py-3 text-sm text-gray-600">
-                                    {c.status === "sent" || c.status === "failed" ? (
+                                    {["sent", "failed", "skipped"].includes(c.status) ? (
                                         <span className="inline-flex items-center gap-1">
                                             <CheckCircle2 size={12} className="text-emerald-500" /> {c.sent}
                                             {c.failed > 0 && <span className="text-rose-600 inline-flex items-center gap-0.5"> · <XCircle size={12} /> {c.failed}</span>}
+                                            {c.skipped > 0 && <span className="text-gray-500"> · {c.skipped} skipped</span>}
                                             <span className="text-gray-400"> · {c.total} total</span>
                                         </span>
                                     ) : `${c.total} leads`}

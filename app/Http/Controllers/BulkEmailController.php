@@ -6,7 +6,6 @@ use App\Jobs\SendCampaign;
 use App\Models\EmailCampaign;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -73,7 +72,7 @@ class BulkEmailController extends Controller
         // Keep only recipients reachable on this channel (snapshot for history).
         $leadIds = array_unique($data['recipient_lead_ids']);
         $newLeadsOnly = $department === 'education' && $channel === EmailCampaign::CHANNEL_EMAIL && $request->boolean('new_leads_only');
-        $leads = ($newLeadsOnly ? $this->newLeads() : Lead::query())->whereIn('id', $leadIds)->get();
+        $leads = Lead::query()->when($newLeadsOnly, fn ($query) => $query->inNewLeads())->whereIn('id', $leadIds)->get();
         if ($newLeadsOnly && $leads->count() !== count($leadIds)) {
             throw ValidationException::withMessages([
                 'recipient_lead_ids' => 'Some selected recipients are no longer in New Leads. Refresh the list and select the recipients again.',
@@ -116,6 +115,7 @@ class BulkEmailController extends Controller
             'scheduled_at' => $scheduling ? $data['scheduled_at'] : null,
             'total_recipients' => count($recipientIds),
             'recipient_lead_ids' => $recipientIds,
+            'new_leads_only' => $newLeadsOnly,
         ]);
 
         $noun = $isSms ? 'SMS campaign' : 'Campaign';
@@ -265,7 +265,7 @@ class BulkEmailController extends Controller
 
         $comms = app(\App\Services\CommunicationService::class);
         $newLeadIds = $filterNewLeads
-            ? $this->newLeads()->select('id')
+            ? Lead::inNewLeads()->select('id')
             : null;
 
         return $query->select(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id'])
@@ -290,11 +290,6 @@ class BulkEmailController extends Controller
             ])->values();
     }
 
-    private function newLeads(): Builder
-    {
-        return Lead::inLeadPipeline()->where('status', 'New Leads');
-    }
-
     private function campaignRow(EmailCampaign $c): array
     {
         return [
@@ -304,6 +299,7 @@ class BulkEmailController extends Controller
             'total' => $c->total_recipients,
             'sent' => $c->sent_count,
             'failed' => $c->failed_count,
+            'skipped' => $c->skipped_count,
             'scheduled_at' => optional($c->scheduled_at)?->toIso8601String(),
             'completed_at' => optional($c->completed_at)?->toIso8601String(),
             'created_at' => optional($c->created_at)?->toIso8601String(),

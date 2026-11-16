@@ -62,8 +62,8 @@ class ComposeEmailTest extends TestCase
         $this->actingAs($admin)->post('/admin/email/compose/send', [
             'lead_ids' => [$lead->id],
             'emails' => ['someone@external.com'],
-            'subject' => 'Hi {{first_name}}',
-            'body' => '<p>Hello {{first_name}}</p>',
+            'subject' => 'Hi {{first.name}}',
+            'body' => '<p>Hello {{<strong>first</strong>.name}}</p>',
         ])->assertRedirect();
 
         // One log per recipient, tagged source=compose.
@@ -72,7 +72,7 @@ class ComposeEmailTest extends TestCase
         $this->assertSame(1, MessageLog::where('source', 'compose')->where('recipient_type', 'raw')->where('recipient_address', 'someone@external.com')->count());
 
         Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $m) => $m->hasTo('angi@example.com') && str_contains($m->markdownBody, 'Angi'));
-        Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $m) => $m->hasTo('someone@external.com') && ! str_contains($m->markdownBody, '{{first_name}}'));
+        Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $m) => $m->hasTo('someone@external.com') && ! str_contains($m->markdownBody, '{{'));
     }
 
     public function test_compose_requires_at_least_one_recipient(): void

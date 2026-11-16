@@ -32,7 +32,7 @@ class EducationPersonalReport
 
     public static function clients(): Builder
     {
-        return Lead::where(fn ($q) => $q->inStudentsRegister()->orWhereIn('id', self::leadsOnly()->select('id')));
+        return Lead::where(fn ($q) => $q->inStudentsRegister()->orWhere(fn ($lead) => $lead->inLeadPipeline()));
     }
 
     public static function noteKey(int $userId, string $monday): string
@@ -72,6 +72,7 @@ class EducationPersonalReport
                 'external' => $entry->client_name !== null,
                 'reported_status' => $entry->reported_status,
                 'details' => $entry->details,
+                'edit_version' => $entry->editVersion(),
             ];
         });
         $week = ReportWeek::forPreset($period->preset, $period->now) ?? ReportWeek::forPreset('this_week', $period->now);

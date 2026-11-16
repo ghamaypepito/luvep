@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Sends one bulk-email campaign: marks it sending, queues a personalised email
  * for each snapshot recipient (logged against the campaign), tallies
- * sent/failed, and marks the campaign sent. Each per-recipient email is itself
+ * sent/failed/skipped, and marks the campaign complete. Each per-recipient email is itself
  * queued by CommunicationService, so this job just fans them out.
  */
 class SendCampaign implements ShouldQueue
@@ -29,7 +29,7 @@ class SendCampaign implements ShouldQueue
     public function handle(CommunicationService $comms): void
     {
         $campaign = EmailCampaign::find($this->campaignId);
-        if (! $campaign || in_array($campaign->status, [EmailCampaign::STATUS_SENT, EmailCampaign::STATUS_CANCELED], true)) {
+        if (! $campaign || in_array($campaign->status, [EmailCampaign::STATUS_SENT, EmailCampaign::STATUS_SKIPPED, EmailCampaign::STATUS_CANCELED], true)) {
             return;
         }
 
@@ -37,6 +37,7 @@ class SendCampaign implements ShouldQueue
 
         $sent = 0;
         $failed = 0;
+        $skipped = 0;
         $isSms = $campaign->channel === EmailCampaign::CHANNEL_SMS;
 
         // Carry the source template's branding (banner/footer/sender) so bulk
@@ -48,7 +49,24 @@ class SendCampaign implements ShouldQueue
         $fromName = $template?->from_name;
 
         foreach (array_chunk($campaign->recipient_lead_ids ?? [], 200) as $chunk) {
-            $leads = Lead::whereIn('id', $chunk)->get();
+            $leads = Lead::whereIn('id', $chunk)
+                ->when($campaign->new_leads_only, fn ($query) => $query->inNewLeads())
+                ->get();
+            if ($campaign->new_leads_only) {
+                foreach (array_diff($chunk, $leads->modelKeys()) as $leadId) {
+                    $campaign->logs()->firstOrCreate(
+                        ['recipient_type' => 'lead', 'recipient_id' => $leadId, 'status' => 'skipped'],
+                        [
+                            'channel' => $campaign->channel,
+                            'recipient_address' => '',
+                            'subject' => $campaign->subject,
+                            'error_message' => 'Lead was no longer in New Leads when the campaign ran.',
+                            'triggered_by_user_id' => $campaign->created_by,
+                        ],
+                    );
+                    $skipped++;
+                }
+            }
             foreach ($leads as $lead) {
                 $ok = $isSms
                     ? $comms->sendCampaignSms($lead, $campaign->body, $campaign->id)
@@ -57,13 +75,20 @@ class SendCampaign implements ShouldQueue
             }
         }
 
+        $status = match (true) {
+            $sent === 0 && $failed > 0 => EmailCampaign::STATUS_FAILED,
+            $sent === 0 && $skipped > 0 => EmailCampaign::STATUS_SKIPPED,
+            default => EmailCampaign::STATUS_SENT,
+        };
+
         $campaign->update([
-            'status' => $failed > 0 && $sent === 0 ? EmailCampaign::STATUS_FAILED : EmailCampaign::STATUS_SENT,
+            'status' => $status,
             'sent_count' => $sent,
             'failed_count' => $failed,
+            'skipped_count' => $skipped,
             'completed_at' => now(),
         ]);
 
-        Log::info('Bulk campaign dispatched', ['campaign_id' => $campaign->id, 'sent' => $sent, 'failed' => $failed]);
+        Log::info('Bulk campaign dispatched', ['campaign_id' => $campaign->id, 'sent' => $sent, 'failed' => $failed, 'skipped' => $skipped]);
     }
 }

@@ -94,7 +94,7 @@ class ComposeController extends Controller
         }
 
         // Typed addresses — no lead context, so strip any {{variables}}.
-        $strip = fn ($t) => preg_replace('/\{\{\s*\w+\s*\}\}/', '', (string) $t);
+        $strip = fn ($t) => preg_replace('/\{\{.*?\}\}/s', '', (string) $t);
         foreach ($emails as $email) {
             $comms->sendComposedEmail($email, $strip($subject), $strip($body), $attachments, $rawHtml, null);
             $count++;

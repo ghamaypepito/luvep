@@ -55,7 +55,9 @@ class TicketAttachmentTest extends TestCase
             ->where('tickets.data.0.attachments.1.url', url("/system-tickets/{$ticket->id}/attachments/1?inline=1"))
             ->missing('tickets.data.0.attachments.1.path')
             ->has('tickets.data.0.images', 1));
-        $this->get("/system-tickets/{$ticket->id}/images/0")->assertOk();
+        $legacy = $this->get("/system-tickets/{$ticket->id}/images/0")->assertOk();
+        $this->assertStringContainsString('no-store', $legacy->headers->get('Cache-Control'));
+        $this->assertStringContainsString('private', $legacy->headers->get('Cache-Control'));
         $this->actingAs(User::factory()->create(['role' => 'admin']))->get('/admin/system-tickets')
             ->assertInertia(fn (Assert $page) => $page->has('tickets.data.0.attachments', 3)->missing('tickets.data.0.attachments.0.path'));
     }

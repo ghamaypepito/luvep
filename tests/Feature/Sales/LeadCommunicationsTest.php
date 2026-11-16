@@ -163,6 +163,8 @@ class LeadCommunicationsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('can_attach_documents', true)
             ->assertJsonPath('attachment_documents.0.id', $approved->id)
+            ->assertJsonPath('attachment_documents.0.status', LeadDocument::STATUS_APPROVED)
+            ->assertJsonPath('attachment_documents.0.added_at', $approved->created_at->toIso8601String())
             ->assertJsonMissingPath('attachment_documents.0.file_path')
             ->assertJsonCount(1, 'attachment_documents');
 

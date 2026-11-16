@@ -11,6 +11,7 @@ use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -58,8 +59,14 @@ class EducationReportActivityController extends Controller
     public function update(Request $request, int $activity)
     {
         $this->authorize($request);
-        $entry = EducationReportActivity::where('user_id', $request->user()->id)->findOrFail($activity);
-        $entry->update($this->activityAttributes($request));
+        DB::transaction(function () use ($request, $activity) {
+            $entry = EducationReportActivity::where('user_id', $request->user()->id)->lockForUpdate()->findOrFail($activity);
+            $version = $request->validate(['edit_version' => 'required|string|size:64'])['edit_version'];
+            if (! hash_equals($entry->editVersion(), $version)) {
+                throw ValidationException::withMessages(['edit_version' => 'This activity was changed. Copy your draft, then close and reopen the entry before trying again.']);
+            }
+            $entry->update($this->activityAttributes($request));
+        });
 
         return back()->with('success', 'Education accomplishment updated.');
     }

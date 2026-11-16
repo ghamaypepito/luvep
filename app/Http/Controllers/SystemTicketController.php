@@ -272,7 +272,10 @@ class SystemTicketController extends Controller
         $images = $ticket->images ?? [];
         abort_unless(isset($images[$index]) && Storage::disk('local')->exists($images[$index]), 404);
 
-        return response()->file(Storage::disk('local')->path($images[$index]));
+        return response()->file(Storage::disk('local')->path($images[$index]), [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ])->setPrivate();
     }
 
     public function attachment(Request $request, SystemTicket $ticket, int $index)

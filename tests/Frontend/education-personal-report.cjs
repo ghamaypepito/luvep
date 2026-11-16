@@ -44,7 +44,7 @@ const data = {
     counts: { enrolment: { label: "Enrolments / additional enrolments", events: 2, clients: 1 } },
     contacts: { "Contact Attempted": [{ id: 8, name: "My Lead", date: "2026-11-11T22:00:00Z" }], Contacted: [] },
     entries: { data: [
-        { id: 1, kind: "enrolment", date: "2026-11-10", client: "Synthetic Student", lead_id: 7, details: "School A" },
+        { id: 1, kind: "enrolment", date: "2026-11-10", client: "Synthetic Student", lead_id: 7, details: "School A", edit_version: "opened-version" },
         { id: 2, kind: "enrolment", date: "2026-11-11", client: "Synthetic Student", details: "School B" },
     ], current_page: 1, last_page: 2, next_page_url: "/portal/education/reports?preset=this_week&activity_page=2", prev_page_url: null },
 };
@@ -115,7 +115,7 @@ const submit = node => act(async () => node.dispatchEvent(new Event("submit", { 
     await change(editField("Accomplishment details"), "Corrected activity");
     await submit(edit);
     assert.equal(patches[0].url, "/portal/education/reports/activities/1");
-    assert.deepEqual(patches[0].data, { kind: "other", occurred_on: "2026-11-10", details: "Corrected activity" });
+    assert.deepEqual(patches[0].data, { kind: "other", occurred_on: "2026-11-10", details: "Corrected activity", edit_version: "opened-version" });
     await act(async () => { patches[0].options.onError({ details: "Edit failed" }); patches[0].options.onFinish(); });
     assert.equal(editField("Accomplishment details").value, "Corrected activity");
     await submit(edit);

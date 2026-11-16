@@ -190,6 +190,16 @@ class EducationPersonalReportTest extends TestCase
         $this->assertFalse($entry['external']);
     }
 
+    public function test_prospect_on_education_leads_list_can_be_linked_even_after_immigration_triage(): void
+    {
+        $prospect = $this->client(['first_name' => 'Shared Prospect', 'is_student' => false, 'immigration_stage' => 'Qualified', 'status' => 'Qualified']);
+        $this->actingAs($this->staff())->getJson('/portal/education/reports/clients?q=Shared%20Prospect')
+            ->assertOk()->assertJsonPath('clients.0.id', $prospect->id);
+        $this->post('/portal/education/reports/activities', $this->payload($prospect, ['kind' => 'follow_up']))
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($prospect->id, EducationReportActivity::sole()->lead_id);
+    }
+
     public function test_date_filters_and_pagination_keep_all_repeated_offers_and_proposals(): void
     {
         $emma = $this->staff();
@@ -225,13 +235,15 @@ class EducationPersonalReportTest extends TestCase
         $this->actingAs($owner)->post('/portal/education/reports/activities', $payload)->assertSessionHasNoErrors();
         $entry = EducationReportActivity::sole();
         $url = '/portal/education/reports/activities/'.$entry->id;
-        $changes = ['kind' => 'other', 'occurred_on' => '2026-11-12', 'details' => 'Provided application guidance'];
+        $changes = ['kind' => 'other', 'occurred_on' => '2026-11-12', 'details' => 'Provided application guidance', 'edit_version' => $entry->editVersion()];
 
         $this->actingAs($other)->patchJson($url, $changes)->assertNotFound();
         $this->actingAs($owner)->patchJson($url, array_replace($changes, ['occurred_on' => '2026-11-13']))->assertUnprocessable();
         $this->assertSame('enrolment', $entry->fresh()->kind);
         $this->patch($url, $changes + ['user_id' => $other->id, 'submission_key' => (string) Str::uuid()])
             ->assertRedirect()->assertSessionHasNoErrors();
+        $this->patchJson($url, [...$changes, 'occurred_on' => '2026-11-10'])
+            ->assertUnprocessable()->assertJsonValidationErrors('edit_version');
 
         $entry->refresh();
         $this->assertSame($owner->id, (int) $entry->user_id);
@@ -264,9 +276,10 @@ class EducationPersonalReportTest extends TestCase
         $row = $this->report($owner)['personalReport']['entries']['data'][0];
         $this->assertNull($row['lead_id']);
         $this->assertSame('Client no longer available in Education', $row['client']);
-        $changes = ['kind' => 'follow_up', 'occurred_on' => '2026-11-12', 'details' => 'Private activity details'];
+        $changes = ['kind' => 'follow_up', 'occurred_on' => '2026-11-12', 'details' => 'Private activity details', 'edit_version' => $row['edit_version']];
         $this->patch($url, $changes)->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame($student->id, (int) $entry->fresh()->lead_id);
+        $changes['edit_version'] = $entry->fresh()->editVersion();
         $this->patchJson($url, $changes + ['lead_id' => $student->id])->assertNotFound();
 
         $this->patch($url, array_replace($changes, ['kind' => 'other', 'client_name' => 'Private entered name']))

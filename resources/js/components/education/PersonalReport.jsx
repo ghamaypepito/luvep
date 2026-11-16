@@ -199,7 +199,7 @@ function AccomplishmentForm({ data, entry, setNotice, onClose }) {
         router[method](url, {
             ...(replaceClient ? (external ? { client_name: clientName.trim() } : { lead_id: client.id }) : {}),
             kind, occurred_on: date, details,
-            ...(entry ? {} : { submission_key: submissionKey }),
+            ...(entry ? { edit_version: entry.edit_version } : { submission_key: submissionKey }),
             ...(kind === "status_update" ? { reported_status: reportedStatus } : {}),
         }, {
             preserveState: true, preserveScroll: true,

@@ -36,11 +36,12 @@ export default function CampaignDetail({ campaign, recipients = [], basePath = "
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold capitalize ${STATUS_CHIP[campaign.status] || "bg-gray-100 text-gray-500"}`}>{campaign.status}</span>
             </header>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className={campaign.skipped > 0 ? "grid grid-cols-2 gap-3 sm:grid-cols-4" : "grid grid-cols-3 gap-3"}>
                 {[
                     { label: "Recipients", value: campaign.total },
                     { label: "Sent", value: campaign.sent },
                     { label: "Failed", value: campaign.failed },
+                    ...(campaign.skipped > 0 ? [{ label: "Skipped", value: campaign.skipped }] : []),
                 ].map((s) => (
                     <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{s.label}</p>
@@ -86,6 +87,7 @@ export default function CampaignDetail({ campaign, recipients = [], basePath = "
                                         <span className="inline-flex items-center gap-1.5 text-xs font-medium capitalize" title={r.error || ""}>
                                             {ROW_ICON[r.status] || <Clock size={14} className="text-gray-400" />} {r.status}
                                         </span>
+                                        {r.status === "skipped" && r.error && <p className="mt-1 text-xs text-gray-500">{r.error}</p>}
                                     </td>
                                 </tr>
                             ))}

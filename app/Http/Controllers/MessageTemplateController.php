@@ -187,10 +187,13 @@ class MessageTemplateController extends Controller
                 'required', 'string', 'max:80', 'regex:/^[a-z0-9_]+$/',
                 Rule::unique('message_templates', 'key')->where(fn ($q) => $q->where('department', $department)),
             ],
-            'folder_id' => ['nullable', 'integer', 'exists:template_folders,id'],
+            'folder_id' => ['nullable', 'integer', Rule::exists('template_folders', 'id')->where('department', $department)],
             ...$this->bodyRules(),
             ...$this->imageRules(),
-        ], ['key.regex' => 'Key must be lowercase letters, numbers and underscores only.']);
+        ], [
+            'key.regex' => 'Key must be lowercase letters, numbers and underscores only.',
+            'folder_id.exists' => 'Choose a folder in the selected department, or create the template outside a folder.',
+        ]);
 
         $this->applyImages($request, $data, null);
         $data['email_body'] = $this->sanitizeBody($data['email_body'] ?? null);
@@ -238,6 +241,9 @@ class MessageTemplateController extends Controller
             unset($data['key']); // never change an existing key
         }
         $data['department'] = $department;
+        if ($template->folder_id && $template->department !== $department && $template->folder?->department !== $department) {
+            $data['folder_id'] = null;
+        }
 
         $this->applyImages($request, $data, $template);
         $data['email_body'] = $this->sanitizeBody($data['email_body'] ?? null);

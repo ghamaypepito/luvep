@@ -95,8 +95,9 @@ class LeadCommunicationsController extends Controller
             'can_email' => ! empty($lead->email),
             'can_attach_documents' => $canAttachDocuments,
             'attachment_documents' => $canAttachDocuments
-                ? $this->attachableDocuments($lead)->latest()->get(['id', 'original_name'])
-                    ->map(fn (LeadDocument $doc) => ['id' => $doc->id, 'name' => $doc->original_name])
+                ? $this->attachableDocuments($lead)->latest()->get(['id', 'original_name', 'status', 'created_at'])
+                    ->map(fn (LeadDocument $doc) => ['id' => $doc->id, 'name' => $doc->original_name,
+                        'status' => $doc->status, 'added_at' => $doc->created_at?->toIso8601String()])
                 : [],
         ]);
     }

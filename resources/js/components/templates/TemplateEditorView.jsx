@@ -278,7 +278,7 @@ export default function TemplateEditorView({
                         {showDeptSelector && (
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Department</span>
-                                <select value={data.department} onChange={(e) => { const v = e.target.value; setData("department", v); setData("branding", v || "default"); }} className={inp}>
+                                <select value={data.department} onChange={(e) => { const v = e.target.value; setData("department", v); setData("branding", v || "default"); if (!editing) setData("folder_id", null); }} className={inp}>
                                     {departmentOptions.map((o) => (
                                         <option key={o.value} value={o.value}>{o.label}</option>
                                     ))}
