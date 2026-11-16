@@ -91,6 +91,32 @@ class DepartmentTemplateTest extends TestCase
         $this->assertDatabaseMissing('message_templates', ['key' => 'edu_note', 'department' => 'education']);
     }
 
+    public function test_education_template_from_the_shared_tab_defaults_to_shared(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->get('/portal/education/email-templates/create?department=')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('fixedDepartment', ''));
+    }
+
+    public function test_education_template_creation_reports_invalid_inputs_then_persists_corrected_draft(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $inputs = [
+            'name' => 'Welcome', 'channels' => ['email'], 'is_active' => true,
+            'email_subject' => 'Welcome {{first_name}}', 'email_body' => '<p>Hello {{first_name}}</p>',
+        ];
+
+        $this->post('/portal/education/email-templates', $inputs)
+            ->assertSessionHasErrors('key');
+        $this->assertDatabaseMissing('message_templates', ['name' => 'Welcome']);
+
+        $this->post('/portal/education/email-templates', $inputs + ['key' => 'education_welcome'])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+        $this->assertDatabaseHas('message_templates', ['key' => 'education_welcome', 'department' => 'education', 'is_active' => true]);
+    }
+
     public function test_staff_can_view_and_edit_another_departments_and_shared_templates(): void
     {
         $sales = $this->tmpl(['department' => 'sales']);

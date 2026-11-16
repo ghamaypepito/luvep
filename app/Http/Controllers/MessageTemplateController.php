@@ -72,9 +72,8 @@ class MessageTemplateController extends Controller
     {
         $ctx = $this->context($request);
 
-        // When "New template" is opened from inside a department tab, seed the
-        // department picker to that tab (admin only — portals force their own).
-        $defaultDepartment = $request->query('department');
+        // An explicit Shared tab arrives as an empty query value.
+        $defaultDepartment = $request->query->has('department') ? ($request->query('department') ?? '') : null;
         if (! in_array($defaultDepartment, array_merge([''], MessageTemplate::DEPARTMENTS), true)) {
             $defaultDepartment = null;
         }
@@ -85,7 +84,7 @@ class MessageTemplateController extends Controller
             'basePath' => $ctx['basePath'],
             'departmentOptions' => $ctx['departmentOptions'],
             'brandingOptions' => $this->brandingOptions(),
-            'fixedDepartment' => $ctx['department'] ?? $defaultDepartment,
+            'fixedDepartment' => $defaultDepartment ?? $ctx['department'],
             'defaultChannel' => $request->query('channel'),
             // Carried through the New-template form so a template created from
             // inside a folder is saved into that folder.

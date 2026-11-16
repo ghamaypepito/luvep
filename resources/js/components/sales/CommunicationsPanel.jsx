@@ -19,6 +19,8 @@ const stripQuoteMarkers = (t) => (t || "").replace(/^[ \t]*>+[ \t]?/gm, "");
 
 // Laravel expects the (decoded) XSRF-TOKEN cookie echoed back as a header.
 const xsrf = () => decodeURIComponent((document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || "");
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /**
  * Staff-side conversation for one lead — every email/SMS we sent them merged
@@ -42,6 +44,9 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
     const [files, setFiles] = useState([]);
+    const [canAttachDocuments, setCanAttachDocuments] = useState(false);
+    const [documents, setDocuments] = useState([]);
+    const [selectedDocuments, setSelectedDocuments] = useState([]);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState(null);
     const [sent, setSent] = useState(false);
@@ -71,7 +76,7 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
         scrollToComposer();
     };
 
-    const closeComposer = () => { setComposerOpen(false); setReplyContext(null); setSubject(""); setBody(""); setFiles([]); setError(null); };
+    const closeComposer = () => { setComposerOpen(false); setReplyContext(null); setSubject(""); setBody(""); setFiles([]); setSelectedDocuments([]); setError(null); };
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -88,6 +93,8 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
             setLogs(data.data ?? []);
             if (typeof data.can_email === "boolean") setCanEmail(data.can_email);
             if (data.lead_email !== undefined) setEmail(data.lead_email || "");
+            setCanAttachDocuments(data.can_attach_documents === true);
+            setDocuments(data.attachment_documents ?? []);
         } catch (error) {
             setLoadError(error instanceof TypeError ? "Could not load the conversation. Please try again." : error.message);
         } finally {
@@ -122,18 +129,40 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
         }
     };
 
-    const addFiles = (list) => setFiles((prev) => [...prev, ...Array.from(list || [])].slice(0, 5));
+    const attachmentCount = files.length + selectedDocuments.length;
+    const addFiles = (list) => {
+        const incoming = Array.from(list || []);
+        if (attachmentCount + incoming.length > MAX_ATTACHMENTS) {
+            setError("You can attach up to five files per email.");
+            return;
+        }
+        const oversized = incoming.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+        if (oversized) {
+            setError(`${oversized.name} exceeds the 10 MB limit per file.`);
+            return;
+        }
+        setFiles((prev) => [...prev, ...incoming]);
+        setError(null);
+    };
     const removeFile = (i) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
+    const addDocument = (id) => {
+        const document = documents.find((item) => String(item.id) === id);
+        if (!document || attachmentCount >= MAX_ATTACHMENTS) return;
+        setSelectedDocuments((prev) => [...prev, document]);
+        setError(null);
+    };
+    const removeDocument = (id) => setSelectedDocuments((prev) => prev.filter((item) => item.id !== id));
 
     const send = async () => {
         const plain = body.replace(/<[^>]*>/g, "").trim();
-        if (!plain && files.length === 0) { setError("Write a message first."); return; }
+        if (!plain && attachmentCount === 0) { setError("Write a message or attach a file first."); return; }
         setSending(true); setError(null); setSent(false);
         try {
             const fd = new FormData();
             if (subject.trim()) fd.append("subject", subject.trim());
             fd.append("body", body);
             files.forEach((f) => fd.append("attachments[]", f));
+            selectedDocuments.forEach((document) => fd.append("document_ids[]", document.id));
 
             const res = await fetch(indexUrl, {
                 method: "POST",
@@ -142,13 +171,15 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                 credentials: "same-origin",
             });
             if (res.ok) {
-                setSubject(""); setBody(""); setFiles([]); setSent(true);
+                setSubject(""); setBody(""); setFiles([]); setSelectedDocuments([]); setSent(true);
                 setComposerOpen(false); setReplyContext(null);
                 await load();
                 setTimeout(() => setSent(false), 3000);
             } else {
                 const j = await res.json().catch(() => ({}));
-                setError(j.message || "Could not send the message. Please try again.");
+                setError(res.status === 413
+                    ? "These attachments are too large to send together. Try fewer or smaller files."
+                    : j.message || "Could not send the message. Please try again.");
             }
         } catch {
             setError("Could not send the message. Please try again.");
@@ -206,26 +237,44 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
 
                     <RichTextEditor value={body} onChange={setBody} />
 
-                    {files.length > 0 && (
+                    {attachmentCount > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">
                             {files.map((f, i) => (
-                                <span key={i} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-gray-100 text-gray-600 text-[11px]">
+                                <span key={`upload-${i}`} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-gray-100 text-gray-600 text-[11px]">
                                     <Paperclip size={11} /> <span className="max-w-[140px] truncate">{f.name}</span>
-                                    <button type="button" onClick={() => removeFile(i)} className="text-gray-400 hover:text-gray-700"><X size={12} /></button>
+                                    <button type="button" aria-label={`Remove ${f.name}`} onClick={() => removeFile(i)} className="text-gray-400 hover:text-gray-700"><X size={12} /></button>
+                                </span>
+                            ))}
+                            {selectedDocuments.map((document) => (
+                                <span key={`document-${document.id}`} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-gray-100 text-gray-600 text-[11px]">
+                                    <Paperclip size={11} /> <span className="max-w-[140px] truncate">{document.name}</span>
+                                    <button type="button" aria-label={`Remove ${document.name}`} onClick={() => removeDocument(document.id)} className="text-gray-400 hover:text-gray-700"><X size={12} /></button>
                                 </span>
                             ))}
                         </div>
                     )}
 
-                    {error && <p className="mt-2 text-xs text-rose-600 flex items-center gap-1.5"><AlertTriangle size={12} /> {error}</p>}
+                    {error && <p role="alert" className="mt-2 text-xs text-rose-600 flex items-center gap-1.5"><AlertTriangle size={12} /> {error}</p>}
 
-                    <div className="flex items-center justify-between mt-3">
-                        <label className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 cursor-pointer">
-                            <Paperclip size={14} /> Attach
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button type="button" onClick={() => fileRef.current?.click()} disabled={attachmentCount >= MAX_ATTACHMENTS}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50">
+                                <Paperclip size={14} /> Upload files
+                            </button>
                             <input ref={fileRef} type="file" multiple className="hidden"
                                 onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-                            {files.length > 0 && <span className="text-gray-400">({files.length}/5)</span>}
-                        </label>
+                            {canAttachDocuments && (
+                                <select aria-label="Attach a student document" value="" onChange={(e) => addDocument(e.target.value)}
+                                    disabled={attachmentCount >= MAX_ATTACHMENTS || documents.length === 0}
+                                    className="max-w-64 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 disabled:opacity-50">
+                                    <option value="">{documents.length > 0 ? "Attach a student document" : "No approved or shared documents"}</option>
+                                    {documents.filter((document) => !selectedDocuments.some((item) => item.id === document.id))
+                                        .map((document) => <option key={document.id} value={document.id}>{document.name}</option>)}
+                                </select>
+                            )}
+                            {attachmentCount > 0 && <span className="text-xs text-gray-500">{attachmentCount}/{MAX_ATTACHMENTS}</span>}
+                        </div>
                         <button
                             onClick={send}
                             disabled={sending}

@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Sales;
 
+use App\Mail\TemplatedMessage;
 use App\Models\EmailReply;
 use App\Models\Lead;
+use App\Models\LeadDocument;
 use App\Models\MessageLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class LeadCommunicationsTest extends TestCase
@@ -115,6 +119,83 @@ class LeadCommunicationsTest extends TestCase
             ->assertStatus(422);
 
         $this->assertDatabaseCount('message_logs', 0);
+    }
+
+    public function test_education_can_send_a_local_offer_pdf_without_a_message_body(): void
+    {
+        Mail::fake();
+        Storage::fake('local');
+        $user = User::factory()->create(['role' => 'education']);
+        $student = $this->lead(['is_student' => true]);
+
+        $this->actingAs($user)
+            ->withHeader('Accept', 'application/json')
+            ->post("/admin/leads/{$student->id}/communications", [
+                'subject' => 'Offer of Place',
+                'attachments' => [UploadedFile::fake()->create('Offer of Place.pdf', 100, 'application/pdf')],
+            ])->assertOk()->assertJsonPath('ok', true);
+
+        Mail::assertQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo($student->email)
+            && $mail->attachmentFiles[0]['name'] === 'Offer of Place.pdf'
+            && Storage::disk('local')->exists($mail->attachmentFiles[0]['path']));
+    }
+
+    public function test_education_can_attach_an_approved_student_document_to_a_conversation(): void
+    {
+        Mail::fake();
+        Storage::fake('local');
+        Storage::fake('public');
+        $user = User::factory()->create(['role' => 'education']);
+        $student = $this->lead(['is_student' => true]);
+        $approved = $this->offer($student, 'student/offer.pdf', LeadDocument::STATUS_APPROVED);
+        $pending = $this->offer($student, 'student/draft.pdf', LeadDocument::STATUS_SUBMITTED);
+        $hidden = $this->offer($student, 'student/hidden.pdf', LeadDocument::STATUS_STAFF_SHARED);
+        $hidden->update(['checklist_key' => 'custom.hidden']);
+        $student->update(['hidden_track_documents' => ['custom.hidden']]);
+        $other = $this->offer($this->lead(['is_student' => true]), 'other/offer.pdf', LeadDocument::STATUS_APPROVED);
+        // Older documents may still live on public. The queued copy must be private.
+        Storage::disk('public')->put($approved->file_path, '%PDF synthetic offer');
+        Storage::disk('local')->put($pending->file_path, '%PDF synthetic draft');
+        Storage::disk('local')->put($other->file_path, '%PDF other student');
+        $url = "/admin/leads/{$student->id}/communications";
+
+        $this->actingAs($user)->getJson($url)
+            ->assertOk()
+            ->assertJsonPath('can_attach_documents', true)
+            ->assertJsonPath('attachment_documents.0.id', $approved->id)
+            ->assertJsonMissingPath('attachment_documents.0.file_path')
+            ->assertJsonCount(1, 'attachment_documents');
+
+        foreach ([$pending, $hidden, $other] as $blocked) {
+            $this->postJson($url, ['body' => 'Your offer', 'document_ids' => [$approved->id, $blocked->id]])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('document_ids');
+        }
+        Mail::assertNothingQueued();
+
+        $unavailable = $this->offer($student, 'student/unavailable.pdf', LeadDocument::STATUS_APPROVED);
+        $this->postJson($url, ['document_ids' => [$approved->id, $unavailable->id]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('document_ids');
+        $this->assertSame([], Storage::disk('local')->allFiles('compose-attachments'));
+        Mail::assertNothingQueued();
+
+        $this->postJson($url, ['subject' => 'Your offer', 'document_ids' => [$approved->id]])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        Mail::assertQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo($student->email)
+            && $mail->attachmentFiles[0]['name'] === 'Offer of Place.pdf'
+            && Storage::disk('local')->get($mail->attachmentFiles[0]['path']) === '%PDF synthetic offer');
+    }
+
+    private function offer(Lead $lead, string $path, string $status): LeadDocument
+    {
+        return $lead->documents()->create([
+            'checklist_key' => 'acad.offer_of_place', 'original_name' => 'Offer of Place.pdf',
+            'file_path' => $path, 'mime' => 'application/pdf', 'size' => 100,
+            'status' => $status, 'source' => LeadDocument::SOURCE_UPLOAD,
+        ]);
     }
 
     public function test_reply_to_inaccessible_lead_is_forbidden(): void

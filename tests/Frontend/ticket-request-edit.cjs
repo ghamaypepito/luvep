@@ -81,6 +81,16 @@ const page = data => ({ tickets: { data, links: [] } });
     assert.equal(editor().querySelector('[aria-label="Selected attachments"]').children.length, 1); assert.match(editor().textContent, /10/); assert.match(editor().querySelector('[role=alert]').textContent, /existing|remaining|total/i);
     await submit(); assert.deepEqual(requests.at(-1).data.getAll('attachments[]').map(item => item.name), ['last.png']); await act(async () => requests.at(-1).fail({ request: 'Try again.' }));
     assert.match(editor().textContent, /Try again/);
+    // Remove a saved screenshot in a completed request, then attach its replacement.
+    const replacement = { ...ticket, images: ["/system-tickets/42/images/2"] };
+    await render(Mine, page([replacement])); await click(button('Edit request'));
+    await click(editor().querySelector('[aria-label="Remove Screenshot 1"]'));
+    assert.ok(editor().querySelector('[aria-label="Keep Screenshot 1"]'));
+    await selectFiles([file('correct.png')]);
+    await submit();
+    assert.deepEqual(requests.at(-1).data.getAll('remove_images[]'), ['2']);
+    assert.equal(requests.at(-1).data.get('attachments[]').name, 'correct.png');
+    await act(async () => requests.at(-1).fail({ attachments: 'Test retry.' }));
     // Catches exposing edits to foreign/archived requests even if ordinary ticket details remain readable.
     for (const denied of [{ ...ticket, can_edit_request: false }, { ...ticket, archived_at: '2026-11-03T00:00:00Z' }]) { await render(Mine, page([denied])); assert.equal(button('Edit request'), undefined); }
     // Catches an admin drawer using a stale active snapshot or remounting and discarding independent management drafts.

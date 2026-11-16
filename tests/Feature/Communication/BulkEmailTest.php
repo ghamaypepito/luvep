@@ -79,6 +79,49 @@ class BulkEmailTest extends TestCase
         Queue::assertPushed(SendCampaign::class);
     }
 
+    public function test_education_new_leads_uses_current_pipeline_status(): void
+    {
+        $new = $this->lead(['stage' => 'Consultation Done', 'status' => 'New Leads']);
+        $contacted = $this->lead(['stage' => 'New Leads', 'status' => 'Contact Attempted']);
+        $student = $this->lead(['stage' => 'New Leads', 'status' => 'New Leads', 'is_student' => true]);
+        $case = $this->lead(['stage' => 'New Leads', 'status' => 'New Leads', 'is_immigration_case' => true]);
+
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->get('/portal/education/bulk-email')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->has('recipients', 4)
+                ->where('recipients', fn ($recipients) => collect($recipients)->pluck('is_new_lead', 'id')->all() === [
+                    $new->id => true,
+                    $contacted->id => false,
+                    $student->id => false,
+                    $case->id => false,
+                ]));
+    }
+
+    public function test_education_rejects_changed_recipient_selection_when_sending_to_new_leads(): void
+    {
+        Queue::fake();
+        $new = $this->lead(['status' => 'New Leads']);
+        $contacted = $this->lead(['stage' => 'New Leads', 'status' => 'Contact Attempted']);
+        $template = $this->tmpl(['department' => 'education']);
+
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $campaign = [
+            'name' => 'Welcome', 'template_id' => $template->id, 'new_leads_only' => true,
+            'recipient_lead_ids' => [$new->id, $contacted->id], 'action' => 'send_now',
+        ];
+
+        $this->post('/portal/education/bulk-email', $campaign)->assertSessionHasErrors('recipient_lead_ids');
+        $this->assertDatabaseCount('email_campaigns', 0);
+        Queue::assertNotPushed(SendCampaign::class);
+
+        $this->post('/portal/education/bulk-email', array_replace($campaign, ['recipient_lead_ids' => [$new->id]]))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+        $this->assertSame([$new->id], EmailCampaign::sole()->recipient_lead_ids);
+        Queue::assertPushed(SendCampaign::class, 1);
+    }
+
     public function test_schedule_stores_future_campaign_without_dispatching(): void
     {
         Queue::fake();

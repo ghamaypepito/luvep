@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Lead;
 use App\Models\MessageLog;
+use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\CommunicationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Compose module — write a one-off email and send it to picked leads and/or any
@@ -24,6 +26,19 @@ class ComposeController extends Controller
         return inertia($ctx['component'], [
             'basePath' => $ctx['basePath'],
             'sent' => $this->sentList(),
+            'templates' => MessageTemplate::active()
+                ->whereJsonContains('channels', 'email')
+                ->whereNotNull('email_body')->where('email_body', '!=', '')
+                ->orderBy('name')
+                ->get(['id', 'name', 'department', 'email_subject', 'email_body', 'design_json'])
+                ->map(function (MessageTemplate $template) {
+                    if (! preg_match('/<[a-z][\s\S]*>/i', $template->email_body)) {
+                        // Markdown percent-encodes the merge fields used as link destinations.
+                        $template->email_body = preg_replace('/%7B%7B([a-z0-9_.]+)%7D%7D/i', '{{$1}}', Str::markdown($template->email_body));
+                    }
+
+                    return $template;
+                }),
         ]);
     }
 

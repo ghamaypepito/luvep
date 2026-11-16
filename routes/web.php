@@ -1816,6 +1816,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/reports/note', [EducationController::class, 'saveReportNote'])->name('reports.note');
             Route::get('/reports/clients', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'clients'])->name('reports.clients');
             Route::post('/reports/activities', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'store'])->name('reports.activities.store');
+            Route::patch('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'update'])->whereNumber('activity')->name('reports.activities.update');
             Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
             Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
 

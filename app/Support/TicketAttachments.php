@@ -52,6 +52,8 @@ class TicketAttachments
 
     public static function serialize(array $attachments, string $base): array
     {
+        $attachments = array_filter($attachments);
+
         return array_map(function ($file, $index) use ($base) {
             $url = url($base.'/'.$index);
 

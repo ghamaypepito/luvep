@@ -77,4 +77,15 @@ class EducationWeeklyNotesTest extends TestCase
         $this->assertDatabaseCount('education_weekly_notes', 0);
         $this->assertSame('Finance only', Setting::get('weekly_report_note:finance:2026-11-09'));
     }
+
+    public function test_case_only_edit_is_saved_and_a_stale_tab_cannot_overwrite_it(): void
+    {
+        $data = $this->entry('Event attended');
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->post('/portal/education/reports/note', $data)->assertSessionHasNoErrors();
+        $edit = [...$data, 'entry_action' => 'edit', 'expected_note' => $data['note'], 'note' => 'Event Attended'];
+        $this->post('/portal/education/reports/note', $edit)->assertSessionHasNoErrors();
+        $this->post('/portal/education/reports/note', [...$edit, 'note' => 'Stale overwrite'])->assertSessionHasErrors('note');
+        $this->assertSame('Event Attended', DB::table('education_weekly_notes')->find($data['entry_id'])->note);
+    }
 }

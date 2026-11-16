@@ -8,6 +8,13 @@ import {
 
 const inp = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-300";
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+const NEW_LEADS = "New Leads";
+
+function recipientStage(recipient, filterNewLeads) {
+    if (!filterNewLeads) return recipient.stage || recipient.status;
+    if (recipient.status === NEW_LEADS && !recipient.is_new_lead) return null;
+    return recipient.status;
+}
 
 const STATUS_CHIP = {
     scheduled: "bg-amber-50 text-amber-700",
@@ -52,7 +59,7 @@ function fillPreview(text, lead, selectedEvent, escapeValues = false) {
     });
 }
 
-export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [] }) {
+export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [], filterNewLeads = false }) {
     const [tab, setTab] = useState("compose");
     const isSms = channel === "sms";
 
@@ -92,14 +99,14 @@ export default function SalesBulkEmail({ templates = [], recipients = [], campai
                 ))}
             </div>
 
-            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} />}
+            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} filterNewLeads={filterNewLeads} />}
             {tab === "scheduled" && <CampaignTable rows={scheduled} empty="No scheduled campaigns." showCancel basePath={basePath} />}
             {tab === "history" && <CampaignTable rows={history} empty="No campaigns sent yet." basePath={basePath} />}
         </div>
     );
 }
 
-function Compose({ templates, recipients, basePath, isSms = false, events = [] }) {
+function Compose({ templates, recipients, basePath, isSms = false, events = [], filterNewLeads }) {
     const [name, setName] = useState("");
     const [templateId, setTemplateId] = useState(templates[0]?.id ? String(templates[0].id) : "");
     const [selected, setSelected] = useState(() => new Set());
@@ -122,10 +129,14 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
     }, [templates, templateId]);
 
     const template = templates.find((t) => String(t.id) === String(templateId));
+    const newLeadsOnly = filterNewLeads && stage === NEW_LEADS;
 
     const stages = useMemo(
-        () => Array.from(new Set(recipients.map((r) => r.stage || r.status).filter(Boolean))).sort(),
-        [recipients],
+        () => Array.from(new Set([
+            ...(filterNewLeads ? [NEW_LEADS] : []),
+            ...recipients.map((r) => recipientStage(r, filterNewLeads)).filter(Boolean),
+        ])).sort(),
+        [recipients, filterNewLeads],
     );
 
     const contactOf = (r) => (isSms ? r.phone : r.email) || "";
@@ -134,13 +145,14 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
         const q = search.trim().toLowerCase();
         return recipients.filter((r) => {
             if (eventId && String(r.event_id) !== String(eventId)) return false;
-            if (stage && (r.stage || r.status) !== stage) return false;
+            if (stage && recipientStage(r, filterNewLeads) !== stage) return false;
             if (q && !(`${r.name} ${contactOf(r)}`.toLowerCase().includes(q))) return false;
             return true;
         });
-    }, [recipients, search, stage, eventId, isSms]);
+    }, [recipients, search, stage, eventId, isSms, filterNewLeads]);
 
-    const previewLead = recipients.find((r) => selected.has(r.id)) || filtered[0] || null;
+    const visibleSelection = newLeadsOnly ? new Set(filtered.filter((r) => selected.has(r.id)).map((r) => r.id)) : selected;
+    const previewLead = recipients.find((r) => visibleSelection.has(r.id)) || filtered[0] || null;
 
     const toggle = (id) => setSelected((prev) => {
         const next = new Set(prev);
@@ -150,13 +162,14 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
     const selectAllMatching = () => setSelected((prev) => new Set([...prev, ...filtered.map((r) => r.id)]));
     const clearAll = () => setSelected(new Set());
 
-    const canSend = name.trim() && templateId && selected.size > 0 && (action === "send_now" || scheduledAt) && !sending;
+    const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || scheduledAt) && !sending;
 
     const submit = () => {
         if (!canSend) return;
         setSending(true);
         router.post(basePath, {
-            name, template_id: templateId, recipient_lead_ids: [...selected],
+            name, template_id: templateId, recipient_lead_ids: [...visibleSelection],
+            ...(newLeadsOnly ? { new_leads_only: true } : {}),
             action, scheduled_at: action === "schedule" ? scheduledAt : null,
         }, {
             preserveScroll: true,
@@ -201,7 +214,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
 
                     <button onClick={submit} disabled={!canSend} className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                         {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                        {action === "schedule" ? "Schedule campaign" : "Send"} {selected.size > 0 && `· ${selected.size} lead${selected.size === 1 ? "" : "s"}`}
+                        {action === "schedule" ? "Schedule campaign" : "Send"} {visibleSelection.size > 0 && `· ${visibleSelection.size} lead${visibleSelection.size === 1 ? "" : "s"}`}
                     </button>
                 </div>
 
@@ -209,7 +222,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
                     <div className="flex items-center justify-between">
                         <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5"><Users size={15} /> Recipients</h3>
-                        <span className="text-xs text-gray-500">{selected.size} selected · {filtered.length} shown</span>
+                        <span className="text-xs text-gray-500">{visibleSelection.size} selected · {filtered.length} shown</span>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <div className="relative flex-1">
@@ -238,7 +251,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [] }
                                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} className="rounded" />
                                     <span className="flex-1 min-w-0">
                                         <span className="block text-sm text-gray-800 truncate">{r.name}</span>
-                                        <span className="block text-[11px] text-gray-400 truncate">{contactOf(r)}{(r.stage || r.status) ? ` · ${r.stage || r.status}` : ""}</span>
+                                        <span className="block text-[11px] text-gray-400 truncate">{contactOf(r)}{recipientStage(r, filterNewLeads) && ` · ${recipientStage(r, filterNewLeads)}`}</span>
                                     </span>
                                 </label>
                             </li>

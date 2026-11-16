@@ -14,6 +14,11 @@ class EducationReportActivity extends Model
 
     protected $casts = ['occurred_on' => 'date'];
 
+    public function activityIgnoredAttributes(): array
+    {
+        return ['client_name', 'details'];
+    }
+
     public function lead()
     {
         return $this->belongsTo(Lead::class);

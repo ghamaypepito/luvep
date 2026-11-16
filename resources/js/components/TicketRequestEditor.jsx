@@ -24,10 +24,14 @@ export default function TicketRequestEditor({ ticket }) {
 function RequestForm({ ticket, onCancel, onSuccess }) {
     // Keep the version captured when editing began. New page props must not
     // overwrite a draft or silently bypass a concurrent request-content edit.
-    const { data, setData, post, transform, processing, progress, errors } = useForm({ title: ticket.title || "", description: ticket.description || "", category: ticket.category || "change", priority: ticket.priority || "normal", request_version: ticket.request_version, attachments: [] });
+    const { data, setData, post, transform, processing, progress, errors } = useForm({ title: ticket.title || "", description: ticket.description || "", category: ticket.category || "change", priority: ticket.priority || "normal", request_version: ticket.request_version, attachments: [], remove_images: [], remove_attachments: [] });
     const submitting = useRef(false);
     const [selectionError, setSelectionError] = useState("");
-    const existingCount = (ticket.images?.length || 0) + (ticket.attachments?.length || 0);
+    const [savedFiles] = useState(() => [
+        ...(ticket.images ?? []).map((url, i) => ({ url, name: `Screenshot ${i + 1}`, field: "remove_images" })),
+        ...(ticket.attachments ?? []).map((file) => ({ url: file.url, name: file.name, field: "remove_attachments" })),
+    ].map((file) => ({ ...file, index: file.url.split("?")[0].split("/").pop() })));
+    const existingCount = savedFiles.length - data.remove_images.length - data.remove_attachments.length;
     const remaining = Math.max(0, 10 - existingCount);
     const completed = ticket.status === "done" || ticket.status === "declined";
     const otherErrors = Object.entries(errors).filter(([key]) => !["title", "description", "category", "priority", "request_version", "attachments"].includes(key) && !key.startsWith("attachments."));
@@ -44,13 +48,16 @@ function RequestForm({ ticket, onCancel, onSuccess }) {
             const payload = new FormData();
             ["title", "description", "category", "priority", "request_version"].forEach((key) => payload.append(key, values[key]));
             values.attachments.forEach((file) => payload.append("attachments[]", file));
+            ["remove_images", "remove_attachments"].forEach((field) => {
+                values[field].forEach((index) => payload.append(`${field}[]`, index));
+            });
             return payload;
         });
         post(`/system-tickets/${ticket.id}/request`, { forceFormData: true, preserveScroll: true, preserveState: true, onSuccess, onFinish: () => { submitting.current = false; } });
     };
 
     return <form aria-label="Edit ticket request" onSubmit={submit} className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/50 p-4">
-        <div><h3 className="text-sm font-semibold text-gray-900">Edit your request</h3><p className="mt-1 text-xs text-gray-500">Update the request or add evidence. Existing attachments stay on the ticket.</p></div>
+        <div><h3 className="text-sm font-semibold text-gray-900">Edit your request</h3><p className="mt-1 text-xs text-gray-500">Update the request or replace evidence. Removed files stay attached until you save.</p></div>
         {completed && <p className="text-xs text-gray-600">Saving keeps the ticket status {ticket.status === "done" ? "Done" : "Declined"} and preserves the support team's response and resolution.</p>}
         {otherErrors.length > 0 && <div role="alert" className="text-xs text-rose-700">{otherErrors.map(([key, value]) => <p key={key}>{message(value)}</p>)}</div>}
         {errors.request_version && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">{message(errors.request_version)}</p><p className="mt-1">Your draft and selected files are still here. Copy your draft before reloading the page to see the latest request. Reloading clears unsaved changes and selected files.</p></div>}
@@ -60,7 +67,21 @@ function RequestForm({ ticket, onCancel, onSuccess }) {
             <label className="block text-xs font-semibold text-gray-600">Priority<select name="priority" value={data.priority} onChange={(event) => setData("priority", event.target.value)} disabled={processing} className={fieldClass}>{priorities.map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select>{errors.priority && <span className="mt-1 block text-xs font-normal text-rose-600">{message(errors.priority)}</span>}</label>
         </div>
         <label className="block text-xs font-semibold text-gray-600">Details<textarea name="description" value={data.description} onChange={(event) => setData("description", event.target.value)} maxLength={5000} rows={5} disabled={processing} className={fieldClass} />{errors.description && <span className="mt-1 block text-xs font-normal text-rose-600">{message(errors.description)}</span>}</label>
-        <div className="space-y-2"><p className="text-xs text-gray-500">{existingCount} existing {existingCount === 1 ? "file" : "files"} · {remaining} additional {remaining === 1 ? "file" : "files"} allowed (10 total).</p><TicketAttachmentPicker files={data.attachments} onChange={chooseFiles} disabled={processing || remaining === 0} errors={errors} />{selectionError && <p role="alert" className="text-xs text-rose-700">{selectionError}</p>}</div>
+        <div className="space-y-2">
+            {savedFiles.map(({ url, name, field, index }) => {
+                const removed = data[field].includes(index);
+                return <div key={url} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs">
+                    <a href={url} target="_blank" rel="noreferrer" className={removed ? "line-through text-gray-500" : "font-medium text-slate-800"}>{name}</a>
+                    <button type="button" disabled={processing} aria-label={`${removed ? "Keep" : "Remove"} ${name}`} onClick={() => {
+                        setSelectionError("");
+                        setData(field, removed ? data[field].filter((value) => value !== index) : [...data[field], index]);
+                    }} className="shrink-0 rounded px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100">{removed ? "Keep" : "Remove"}</button>
+                </div>;
+            })}
+            <p className="text-xs text-gray-500">{existingCount} existing {existingCount === 1 ? "file" : "files"} · {remaining} additional {remaining === 1 ? "file" : "files"} allowed (10 total).</p>
+            <TicketAttachmentPicker files={data.attachments} onChange={chooseFiles} disabled={processing} errors={errors} />
+            {selectionError && <p role="alert" className="text-xs text-rose-700">{selectionError}</p>}
+        </div>
         {processing && <p role="status" className="text-xs text-gray-600">{progress ? `Uploading… ${Math.round(progress.percentage ?? 0)}%` : "Saving request…"}</p>}
         <div className="flex flex-wrap justify-end gap-2"><button type="button" disabled={processing} onClick={onCancel} className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50">Cancel</button><button type="submit" disabled={processing} className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"><Save size={14} />{processing ? "Saving…" : "Save request"}</button></div>
     </form>;

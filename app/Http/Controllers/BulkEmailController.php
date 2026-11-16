@@ -6,8 +6,10 @@ use App\Jobs\SendCampaign;
 use App\Models\EmailCampaign;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Bulk campaigns — one feature, two channels (email + SMS). Compose from a
@@ -24,13 +26,15 @@ class BulkEmailController extends Controller
     {
         $department = $this->department($request);
         $channel = $this->channel($request);
+        $filterNewLeads = $department === 'education' && $channel === EmailCampaign::CHANNEL_EMAIL;
         $eventSender = app(\App\Services\EventEmailSender::class);
 
         return inertia($this->page($request, 'index'), [
             'basePath' => $this->basePath($request),
             'channel' => $channel,
             'templates' => $this->availableTemplates($department, $channel),
-            'recipients' => $this->recipientPool($channel),
+            'recipients' => $this->recipientPool($channel, $filterNewLeads),
+            'filterNewLeads' => $filterNewLeads,
             'events' => \App\Models\Event::orderBy('name')
                 ->get()
                 ->map(fn (\App\Models\Event $e) => array_merge(
@@ -55,6 +59,7 @@ class BulkEmailController extends Controller
             'template_id' => ['required', 'integer', 'exists:message_templates,id'],
             'recipient_lead_ids' => ['required', 'array', 'min:1'],
             'recipient_lead_ids.*' => ['integer'],
+            'new_leads_only' => ['sometimes', 'boolean'],
             'action' => ['required', Rule::in(['send_now', 'schedule'])],
             'scheduled_at' => ['nullable', 'required_if:action,schedule', 'date', 'after:now'],
         ]);
@@ -66,7 +71,15 @@ class BulkEmailController extends Controller
         }
 
         // Keep only recipients reachable on this channel (snapshot for history).
-        $leads = Lead::whereIn('id', $data['recipient_lead_ids'])->get();
+        $leadIds = array_unique($data['recipient_lead_ids']);
+        $newLeadsOnly = $department === 'education' && $channel === EmailCampaign::CHANNEL_EMAIL && $request->boolean('new_leads_only');
+        $leads = ($newLeadsOnly ? $this->newLeads() : Lead::query())->whereIn('id', $leadIds)->get();
+        if ($newLeadsOnly && $leads->count() !== count($leadIds)) {
+            throw ValidationException::withMessages([
+                'recipient_lead_ids' => 'Some selected recipients are no longer in New Leads. Refresh the list and select the recipients again.',
+            ]);
+        }
+
         $comms = app(\App\Services\CommunicationService::class);
         $recipientIds = [];
 
@@ -241,7 +254,7 @@ class BulkEmailController extends Controller
     }
 
     /** Selectable recipients: every lead reachable on the channel. */
-    private function recipientPool(string $channel): \Illuminate\Support\Collection
+    private function recipientPool(string $channel, bool $filterNewLeads): \Illuminate\Support\Collection
     {
         $query = Lead::query();
         if ($channel === EmailCampaign::CHANNEL_SMS) {
@@ -251,9 +264,13 @@ class BulkEmailController extends Controller
         }
 
         $comms = app(\App\Services\CommunicationService::class);
+        $newLeadIds = $filterNewLeads
+            ? $this->newLeads()->select('id')
+            : null;
 
-        return $query->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id'])
+        return $query->select(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id'])
+            ->when($newLeadIds, fn ($q) => $q->selectRaw('id in ('.$newLeadIds->toSql().') as is_new_lead', $newLeadIds->getBindings()))
+            ->orderBy('first_name')->get()
             ->filter(function (Lead $l) use ($channel, $comms) {
                 if ($channel === EmailCampaign::CHANNEL_SMS) {
                     return $l->phone && $comms->normalizePhone($l->phone);
@@ -269,7 +286,13 @@ class BulkEmailController extends Controller
                 'stage' => $l->stage,
                 'status' => $l->status,
                 'event_id' => $l->event_id,
+                'is_new_lead' => (bool) $l->is_new_lead,
             ])->values();
+    }
+
+    private function newLeads(): Builder
+    {
+        return Lead::inLeadPipeline()->where('status', 'New Leads');
     }
 
     private function campaignRow(EmailCampaign $c): array

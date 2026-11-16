@@ -20,6 +20,7 @@ class EducationPersonalReport
         'enrolment' => 'Enrolments / additional enrolments',
         'offer' => 'Offers received',
         'proposal' => 'Proposals sent / additional proposals',
+        'other' => 'Others',
     ];
 
     public static function leadsOnly(): Builder
@@ -31,7 +32,7 @@ class EducationPersonalReport
 
     public static function clients(): Builder
     {
-        return Lead::where(fn ($q) => $q->where('is_student', true)->orWhereIn('id', self::leadsOnly()->select('id')));
+        return Lead::where(fn ($q) => $q->inStudentsRegister()->orWhereIn('id', self::leadsOnly()->select('id')));
     }
 
     public static function noteKey(int $userId, string $monday): string
@@ -60,14 +61,19 @@ class EducationPersonalReport
             $page = (clone $entries)->paginate(30, ['*'], 'activity_page', $page->lastPage())->withQueryString();
         }
         $allowed = array_map('intval', self::clients()->whereIn('id', $page->pluck('lead_id')->filter())->pluck('id')->all());
-        $page->through(fn ($entry) => [
-            'id' => $entry->id, 'kind' => $entry->kind, 'date' => $entry->occurred_on->toDateString(),
-            'client' => $entry->client_name ?? ($entry->lead && in_array((int) $entry->lead_id, $allowed, true)
-                ? trim($entry->lead->first_name.' '.$entry->lead->last_name) : 'Client no longer available in Education'),
-            'external' => $entry->client_name !== null,
-            'reported_status' => $entry->reported_status,
-            'details' => $entry->details,
-        ]);
+        $page->through(function ($entry) use ($allowed) {
+            $lead = in_array((int) $entry->lead_id, $allowed, true) ? $entry->lead : null;
+
+            return [
+                'id' => $entry->id, 'kind' => $entry->kind, 'date' => $entry->occurred_on->toDateString(),
+                'lead_id' => $lead?->id,
+                'client' => $entry->client_name ?? ($lead
+                    ? trim($lead->first_name.' '.$lead->last_name) : 'Client no longer available in Education'),
+                'external' => $entry->client_name !== null,
+                'reported_status' => $entry->reported_status,
+                'details' => $entry->details,
+            ];
+        });
         $week = ReportWeek::forPreset($period->preset, $period->now) ?? ReportWeek::forPreset('this_week', $period->now);
         $monday = $week->start->toDateString();
         $notes = Setting::get(self::noteKey($user->id, $monday), []);

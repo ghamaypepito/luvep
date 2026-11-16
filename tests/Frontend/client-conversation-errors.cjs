@@ -4,7 +4,7 @@ const { JSDOM } = require('jsdom');
 const Module = require('node:module');
 const path = require('node:path');
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/education/leads/7' });
-for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent', 'FormData']) global[key] = dom.window[key];
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react');
@@ -16,7 +16,7 @@ const output = buildSync({
 }).outputFiles[0].text;
 const loaded = new Module(path.resolve('client-conversation-errors.cjs'), module);
 loaded.filename = path.resolve('client-conversation-errors.cjs'); loaded.paths = module.paths;
-loaded.require = name => name === '@/components/templates/RichTextEditor' ? {default: () => null} : module.require(name);
+loaded.require = name => name === '@/components/templates/RichTextEditor' ? () => null : module.require(name);
 loaded._compile(output, loaded.filename);
 const Panel = loaded.exports.default;
 const root = createRoot(document.getElementById('root'));
@@ -24,7 +24,9 @@ let status = 403;
 let requests = [];
 global.fetch = async (url, options = {}) => {
     requests.push({url, options});
-    return { ok: status === 200, status, json: async () => status === 200 ? { data: [], can_email: true } : { message: 'You do not have access to this lead.' } };
+    return { ok: status === 200, status, json: async () => status === 200
+        ? { data: [], can_email: true, can_attach_documents: true, attachment_documents: [{ id: 11, name: 'Offer of Place.pdf' }] }
+        : { message: 'You do not have access to this lead.' } };
 };
 (async () => {
     await act(async () => root.render(React.createElement(Panel, {leadId: 7, leadEmail:'synthetic@example.test'})));
@@ -41,6 +43,28 @@ global.fetch = async (url, options = {}) => {
     await act(async () => sync.dispatchEvent(new MouseEvent('click', {bubbles:true})));
     assert.match(document.body.textContent, /refresh.*try again/i, 'Session expiry while syncing must be actionable');
     assert.doesNotMatch(document.body.textContent, /Checked the mailbox/, 'Failed sync must not claim success');
+    const click = async label => {
+        const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === label);
+        assert.ok(btn, `Expected ${label}`);
+        await act(async () => btn.click());
+    };
+    await click('New email');
+    const documents = document.querySelector('select[aria-label="Attach a student document"]');
+    assert.ok(documents);
+    await act(async () => {
+        documents.value = '11';
+        documents.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    assert.ok(document.querySelector('[aria-label="Remove Offer of Place.pdf"]'));
+    status = 413;
+    await click('Send email');
+    assert.match(document.body.textContent, /attachments are too large/);
+    assert.ok(document.querySelector('[aria-label="Remove Offer of Place.pdf"]'), 'Failed send keeps the selected attachment');
+    status = 200;
+    await click('Send email');
+    const send = requests.findLast(({ options }) => options.body);
+    assert.equal(send.url, '/admin/leads/7/communications');
+    assert.deepEqual(Object.fromEntries(send.options.body), { body: '', 'document_ids[]': '11' });
     await act(async () => root.unmount());
-    console.log('Conversation access errors, retry recovery and failed reply sync verified');
+    console.log('Conversation access errors, reply sync and student attachment retry verified');
 })().catch(error => { console.error(error); process.exitCode = 1; });
