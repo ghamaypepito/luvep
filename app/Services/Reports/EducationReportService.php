@@ -36,6 +36,7 @@ class EducationReportService
         $education = $departments['education'];
         $noteKey = $period->isAll() ? 'edu_report_note:all' : 'edu_report_note:'.$period->start->toDateString().':'.$period->end->subDay()->toDateString();
         $proposals = collect($education['stages'])->firstWhere('stage', 'Proposal Sent')['count'] ?? 0;
+        $programCounts = Program::selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status');
         $conclusion = [
             'auto' => $period->isAll()
                 ? "{$education['total']} Education students in the current register. Records with missing dates remain included."
@@ -52,10 +53,10 @@ class EducationReportService
             'pipeline' => $pipeline, 'register' => $register, 'totalRegister' => count(array_unique(array_merge(...array_map(fn ($rows) => array_column($rows, 'id'), array_values($register))))),
             'pipeline_history' => $pipelineNotice, 'movements' => $education['event_count'],
             'summary' => ['note_activity' => app(EducationNoteActivityReport::class)->build($period, auth()->user())], 'summaryLists' => [],
-            'programs' => ['total' => $period->isAll() ? Program::count() : null,
-                'published' => $period->isAll() ? Program::where('status', 'published')->count() : null,
-                'draft' => $period->isAll() ? Program::where('status', 'draft')->count() : null,
-                'history_available' => false, 'scope' => $period->isAll() ? 'current' : 'unavailable'],
+            'programs' => ['total' => (int) $programCounts->sum(),
+                'published' => (int) $programCounts->get('published', 0),
+                'draft' => (int) $programCounts->get('draft', 0),
+                'history_available' => false, 'scope' => 'current'],
             'conclusion' => $conclusion, 'generated_at' => $period->now->toIso8601String(), 'generated_by' => auth()->user()?->name,
         ];
     }

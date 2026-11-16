@@ -52,6 +52,8 @@ class TicketAttachments
 
     public static function serialize(array $attachments, string $base): array
     {
+        $attachments = array_filter($attachments);
+
         return array_map(function ($file, $index) use ($base) {
             $url = url($base.'/'.$index);
 
@@ -80,7 +82,7 @@ class TicketAttachments
         $headers = ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store'];
         $canPreview = in_array($file['mime'], ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'], true);
         if ($request->boolean('inline') && $canPreview) {
-            return response()->file(Storage::disk('local')->path($file['path']), array_merge($headers, ['Content-Type' => $file['mime']]));
+            return response()->file(Storage::disk('local')->path($file['path']), array_merge($headers, ['Content-Type' => $file['mime']]))->setPrivate();
         }
 
         return Storage::disk('local')->download($file['path'], $file['name'], $headers);

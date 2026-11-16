@@ -14,6 +14,16 @@ class EducationReportActivity extends Model
 
     protected $casts = ['occurred_on' => 'date'];
 
+    public function activityIgnoredAttributes(): array
+    {
+        return ['client_name', 'details'];
+    }
+
+    public function editVersion(): string
+    {
+        return hash_hmac('sha256', json_encode($this->only(['lead_id', 'client_name', 'reported_status', 'kind', 'occurred_on', 'details'])), config('app.key'));
+    }
+
     public function lead()
     {
         return $this->belongsTo(Lead::class);

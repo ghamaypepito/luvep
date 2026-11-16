@@ -181,6 +181,7 @@ function TicketDrawer({ ticket, statuses, assignees, onClose, intent }) {
                     <h3 className="font-semibold">Ticket management</h3>
                     <div className="grid sm:grid-cols-2 gap-3">
                         <label className="text-sm">Status<select className={fieldClass} value={form.status} onChange={(e) => change("status", e.target.value)}>{statuses.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}</select></label>
+                        <label className="text-sm">Type<select className={fieldClass} value={form.category ?? ticket.category} onChange={(e) => change("category", e.target.value)}>{Object.entries(CAT_LABEL).map(([value, label]) => <option key={value} value={value}>{value === "feature" ? "New feature" : label}</option>)}</select></label>
                         <label className="text-sm">Owner<select className={fieldClass} value={form.assigned_to} onChange={(e) => change("assigned_to", e.target.value)}><option value="">Unassigned</option>{assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
                         <label className="text-sm">Waiting on<select className={fieldClass} value={form.waiting_on} onChange={(e) => change("waiting_on", e.target.value)}>{["support", "requester", "external"].map((s) => <option key={s}>{s}</option>)}</select></label>
                         <label className="text-sm">Topic<input className={fieldClass} value={form.topic} onChange={(e) => change("topic", e.target.value)} maxLength={120} /></label>

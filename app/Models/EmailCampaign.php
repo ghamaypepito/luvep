@@ -19,6 +19,8 @@ class EmailCampaign extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_SKIPPED = 'skipped';
+
     public const STATUS_CANCELED = 'canceled';
 
     public const CHANNEL_EMAIL = 'email';
@@ -40,7 +42,9 @@ class EmailCampaign extends Model
         'total_recipients',
         'sent_count',
         'failed_count',
+        'skipped_count',
         'recipient_lead_ids',
+        'new_leads_only',
     ];
 
     protected $casts = [
@@ -48,6 +52,7 @@ class EmailCampaign extends Model
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
         'recipient_lead_ids' => 'array',
+        'new_leads_only' => 'boolean',
     ];
 
     public function creator(): BelongsTo

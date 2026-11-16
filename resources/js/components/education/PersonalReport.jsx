@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
 
 const errorText = errors => Object.values(errors || {}).flat().join(" ") || "Could not save. Please try again.";
@@ -10,19 +10,6 @@ export default function EducationPersonalReport({ data }) {
 }
 
 function PersonalReportContent({ data }) {
-    const [query, setQuery] = useState("");
-    const [clients, setClients] = useState([]);
-    const [client, setClient] = useState(null);
-    const [searchError, setSearchError] = useState("");
-    const [kind, setKind] = useState("called");
-    const [external, setExternal] = useState(false);
-    const [clientName, setClientName] = useState("");
-    const [reportedStatus, setReportedStatus] = useState("");
-    const [date, setDate] = useState(data.today);
-    const [details, setDetails] = useState("");
-    const [submissionKey, setSubmissionKey] = useState(newKey);
-    const [busy, setBusy] = useState(false);
-    const [activityError, setActivityError] = useState("");
     const [notice, setNotice] = useState("");
     const [notes, setNotes] = useState(data.notes);
     const [draftWeek, setDraftWeek] = useState(data.notes_week_start);
@@ -30,45 +17,20 @@ function PersonalReportContent({ data }) {
     const [notesBusy, setNotesBusy] = useState(false);
     const [notesError, setNotesError] = useState("");
     const [removing, setRemoving] = useState(null);
+    const [removeError, setRemoveError] = useState("");
+    const [editing, setEditing] = useState(null);
+    const editTrigger = useRef(null);
+    const listHeading = useRef(null);
+    const closeEdit = () => {
+        const trigger = editTrigger.current;
+        (trigger?.isConnected ? trigger : listHeading.current)?.focus();
+        setEditing(null);
+    };
 
     useEffect(() => {
         if (!dirty) { setNotes(data.notes); setDraftWeek(data.notes_week_start); }
     }, [data.notes, data.notes_week_start, dirty]);
 
-    useEffect(() => {
-        const abort = new AbortController();
-        if (external || query.trim().length < 2) { setClients([]); setSearchError(""); return () => abort.abort(); }
-        const timer = setTimeout(async () => {
-            try {
-                const response = await fetch("/portal/education/reports/clients?q=" + encodeURIComponent(query.trim()), {
-                    credentials: "same-origin", headers: { Accept: "application/json" }, signal: abort.signal,
-                });
-                if (!response.ok) throw new Error("Client search failed. Please retry.");
-                const payload = await response.json();
-                if (!abort.signal.aborted) { setClients(payload.clients || []); setSearchError(""); }
-            } catch (error) {
-                if (!abort.signal.aborted) { setClients([]); setSearchError(error.message); }
-            }
-        }, 250);
-        return () => { clearTimeout(timer); abort.abort(); };
-    }, [query, external]);
-
-    const record = event => {
-        event.preventDefault();
-        if (busy) return;
-        if (external ? !clientName.trim() : !client) { setActivityError(external ? "Enter the client's name first." : "Search for and choose a client first."); return; }
-        setBusy(true); setActivityError(""); setNotice("");
-        router.post("/portal/education/reports/activities", {
-            ...(external ? { client_name: clientName.trim() } : { lead_id: client.id }),
-            kind, occurred_on: date, details, submission_key: submissionKey,
-            ...(kind === "status_update" ? { reported_status: reportedStatus } : {}),
-        }, {
-            preserveState: true, preserveScroll: true,
-            onSuccess: () => { setDetails(""); setSubmissionKey(newKey()); setNotice("Activity saved. It appears when its date is included in the report range."); },
-            onError: errors => setActivityError(errorText(errors)),
-            onFinish: () => setBusy(false),
-        });
-    };
     const saveNotes = event => {
         event.preventDefault();
         if (notesBusy) return;
@@ -81,16 +43,15 @@ function PersonalReportContent({ data }) {
         });
     };
     const remove = id => {
-        if (removing) return;
-        setRemoving(id); setActivityError("");
+        if (removing || editing) return;
+        setRemoving(id); setRemoveError("");
         router.delete("/portal/education/reports/activities/" + id, {
             preserveState: true, preserveScroll: true,
-            onError: errors => setActivityError(errorText(errors)),
+            onError: errors => setRemoveError(errorText(errors)),
             onFinish: () => setRemoving(null),
         });
     };
     const entries = data.entries || { data: [], current_page: 1, last_page: 1 };
-    const needsContext = ["enrolment", "offer", "proposal", "status_update"].includes(kind);
     const setListKind = value => {
         const params = Object.fromEntries(new URLSearchParams(window.location.search));
         delete params.activity_page;
@@ -129,52 +90,14 @@ function PersonalReportContent({ data }) {
                 </details>)}
             </div>
 
-            <form aria-label="Record an accomplishment" onSubmit={record} className="space-y-3 rounded-xl border border-gray-200 p-3">
-                <h3 className="text-sm font-semibold">Record an accomplishment</h3>
-                <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="text-xs font-semibold">Activity
-                        <select aria-label="Accomplishment activity" disabled={busy} className={fieldClass} value={kind} onChange={event => setKind(event.target.value)}>
-                            {Object.entries(data.kinds || {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                    </label>
-                    <label className="text-xs font-semibold">Activity date
-                        <input aria-label="Accomplishment date" disabled={busy} type="date" required max={data.today} className={fieldClass} value={date} onChange={event => setDate(event.target.value)} />
-                    </label>
-                    <label className="text-xs font-semibold">Client source
-                        <select aria-label="Accomplishment client source" disabled={busy} className={fieldClass} value={external ? "named" : "portal"} onChange={event => { setExternal(event.target.value === "named"); setClient(null); setQuery(""); setClients([]); }}>
-                            <option value="portal">Existing Education portal client</option>
-                            <option value="named">Name only — not in portal</option>
-                        </select>
-                    </label>
-                    {external ? <label className="text-xs font-semibold">Client name (not in portal)
-                        <input aria-label="Accomplishment client name" required maxLength={160} disabled={busy} className={fieldClass} value={clientName} onChange={event => setClientName(event.target.value)} />
-                    </label> : <><label className="text-xs font-semibold">Search client
-                        <input aria-label="Search accomplishment client" disabled={busy} className={fieldClass} value={query} onChange={event => { setQuery(event.target.value); setClient(null); setClients([]); }} placeholder="Enter a name or client reference" />
-                    </label>
-                    <label className="text-xs font-semibold">Choose client
-                        <select aria-label="Choose accomplishment client" disabled={busy} className={fieldClass} value={client?.id || ""} onChange={event => setClient(clients.find(item => String(item.id) === event.target.value) || null)}>
-                            <option value="">Choose a search result</option>
-                            {clients.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                    </label>
-                    </>}
-                    {kind === "status_update" && <label className="text-xs font-semibold">Reported Education status
-                        <select aria-label="Reported Education status" required disabled={busy} className={fieldClass} value={reportedStatus} onChange={event => setReportedStatus(event.target.value)}>
-                            <option value="">Choose the reported status</option>
-                            {(data.statuses || []).map(status => <option key={status} value={status}>{status}</option>)}
-                        </select>
-                    </label>}
-                </div>
-                {searchError && <p role="alert" className="text-sm text-red-700">{searchError}</p>}
-                <label className="block text-xs font-semibold">Details {needsContext ? "(school, programme, offer, proposal or status context required)" : "(optional)"}
-                    <textarea aria-label="Accomplishment details" disabled={busy} required={needsContext} maxLength={1000} rows={2} className={fieldClass} value={details} onChange={event => setDetails(event.target.value)} />
-                </label>
-                {activityError && <p role="alert" className="text-sm text-red-700">{activityError}</p>}
-                <button disabled={busy} type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving activity…" : "Save activity"}</button>
-            </form>
+            <div hidden={Boolean(editing)}>
+                <AccomplishmentForm data={data} setNotice={setNotice} />
+            </div>
 
             <div className="overflow-x-auto">
-                <h3 className="mb-2 text-sm font-semibold">My dated activity list</h3>
+                <h3 ref={listHeading} tabIndex={-1} className="mb-2 text-sm font-semibold">My dated activity list</h3>
+                {editing && <AccomplishmentForm key={editing.id} data={data} entry={editing} setNotice={setNotice} onClose={closeEdit} />}
+                {removeError && <p role="alert" className="mb-2 text-sm text-red-700">{removeError}</p>}
                 <label className="mb-3 block text-xs font-semibold">Show names for activity
                     <select aria-label="Filter accomplishment list" className={fieldClass} value={data.activity_kind || ""} onChange={event => setListKind(event.target.value)}>
                         <option value="">All activities</option>
@@ -187,7 +110,17 @@ function PersonalReportContent({ data }) {
                         <td className="p-2">{entry.date}</td><td className="p-2">{entry.client}{entry.external && <span className="block text-gray-500">Name only · not linked to a portal record</span>}</td><td className="p-2">{data.kinds[entry.kind] || entry.kind}</td>
                         <td className="p-2">{entry.reported_status || "—"}</td>
                         <td className="whitespace-pre-wrap p-2">{entry.details}</td>
-                        <td className="p-2"><button type="button" disabled={Boolean(removing)} aria-label={"Remove activity " + entry.id} onClick={() => remove(entry.id)} className="text-red-700 disabled:opacity-50">Remove entry</button></td>
+                        <td className="p-2">
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" disabled={Boolean(removing || (editing && editing.id !== entry.id))} aria-label={"Edit activity " + entry.id} onClick={event => {
+                                    editTrigger.current = event.currentTarget;
+                                    setRemoveError("");
+                                    setNotice("");
+                                    setEditing(entry);
+                                }} className="font-semibold text-blue-700 disabled:opacity-50">Edit entry</button>
+                                <button type="button" disabled={Boolean(removing || editing)} aria-label={"Remove activity " + entry.id} onClick={() => remove(entry.id)} className="text-red-700 disabled:opacity-50">Remove entry</button>
+                            </div>
+                        </td>
                     </tr>)}</tbody>
                 </table> : <p className="text-sm text-gray-500">No accomplishments recorded for you in this range.</p>}
                 {entries.last_page > 1 && <div className="mt-3 flex items-center gap-3 text-sm">
@@ -213,5 +146,119 @@ function PersonalReportContent({ data }) {
                 </div>
             </form>
         </section>
+    );
+}
+
+function AccomplishmentForm({ data, entry, setNotice, onClose }) {
+    const [query, setQuery] = useState("");
+    const [clients, setClients] = useState([]);
+    const [client, setClient] = useState(entry?.lead_id ? { id: entry.lead_id, name: entry.client } : null);
+    const [searchError, setSearchError] = useState("");
+    const [kind, setKind] = useState(entry?.kind ?? "called");
+    const [external, setExternal] = useState(entry?.external ?? false);
+    const [clientChanged, setClientChanged] = useState(false);
+    const [clientName, setClientName] = useState(entry?.external ? entry.client : "");
+    const [reportedStatus, setReportedStatus] = useState(entry?.reported_status ?? "");
+    const [date, setDate] = useState(entry?.date ?? data.today);
+    const [details, setDetails] = useState(entry?.details ?? "");
+    const [submissionKey, setSubmissionKey] = useState(() => entry ? null : newKey());
+    const [busy, setBusy] = useState(false);
+    const [activityError, setActivityError] = useState("");
+
+    useEffect(() => {
+        const abort = new AbortController();
+        if (external || query.trim().length < 2) { setClients([]); setSearchError(""); return () => abort.abort(); }
+        const timer = setTimeout(async () => {
+            try {
+                const response = await fetch("/portal/education/reports/clients?q=" + encodeURIComponent(query.trim()), {
+                    credentials: "same-origin", headers: { Accept: "application/json" }, signal: abort.signal,
+                });
+                if (!response.ok) throw new Error("Client search failed. Please retry.");
+                const payload = await response.json();
+                if (!abort.signal.aborted) { setClients(payload.clients || []); setSearchError(""); }
+            } catch (error) {
+                if (!abort.signal.aborted) { setClients([]); setSearchError(error.message); }
+            }
+        }, 250);
+        return () => { clearTimeout(timer); abort.abort(); };
+    }, [query, external]);
+
+    const clientOptions = client && !clients.some(item => item.id === client.id) ? [client, ...clients] : clients;
+    const needsContext = ["enrolment", "offer", "proposal", "status_update"].includes(kind);
+    const record = event => {
+        event.preventDefault();
+        if (busy) return;
+        const replaceClient = !entry || clientChanged;
+        if (replaceClient && (external ? !clientName.trim() : !client)) {
+            setActivityError(external ? "Enter the client's name first." : "Search for and choose a client first.");
+            return;
+        }
+        setBusy(true); setActivityError(""); setNotice("");
+        const url = "/portal/education/reports/activities" + (entry ? "/" + entry.id : "");
+        const method = entry ? "patch" : "post";
+        router[method](url, {
+            ...(replaceClient ? (external ? { client_name: clientName.trim() } : { lead_id: client.id }) : {}),
+            kind, occurred_on: date, details,
+            ...(entry ? { edit_version: entry.edit_version } : { submission_key: submissionKey }),
+            ...(kind === "status_update" ? { reported_status: reportedStatus } : {}),
+        }, {
+            preserveState: true, preserveScroll: true,
+            onSuccess: () => {
+                if (entry) onClose();
+                else { setDetails(""); setSubmissionKey(newKey()); }
+                setNotice(entry ? "Activity updated. It appears when its date is included in the report range." : "Activity saved. It appears when its date is included in the report range.");
+            },
+            onError: errors => setActivityError(errorText(errors)),
+            onFinish: () => setBusy(false),
+        });
+    };
+
+    return (
+        <form aria-label={entry ? "Edit accomplishment" : "Record an accomplishment"} onSubmit={record} className="mb-3 space-y-3 rounded-xl border border-gray-200 p-3">
+            <h3 className="text-sm font-semibold">{entry ? "Edit accomplishment" : "Record an accomplishment"}</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold">Activity
+                    <select aria-label="Accomplishment activity" autoFocus={Boolean(entry)} disabled={busy} className={fieldClass} value={kind} onChange={event => setKind(event.target.value)}>
+                        {Object.entries(data.kinds || {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                </label>
+                <label className="text-xs font-semibold">Activity date
+                    <input aria-label="Accomplishment date" disabled={busy} type="date" required max={data.today} className={fieldClass} value={date} onChange={event => setDate(event.target.value)} />
+                </label>
+                <label className="text-xs font-semibold">Client source
+                    <select aria-label="Accomplishment client source" disabled={busy} className={fieldClass} value={external ? "named" : "portal"} onChange={event => { setClientChanged(true); setExternal(event.target.value === "named"); setClient(null); setQuery(""); setClients([]); }}>
+                        <option value="portal">Existing Education portal client</option>
+                        <option value="named">Name only — not in portal</option>
+                    </select>
+                </label>
+                {external ? <label className="text-xs font-semibold">Client name (not in portal)
+                    <input aria-label="Accomplishment client name" required maxLength={160} disabled={busy} className={fieldClass} value={clientName} onChange={event => { setClientChanged(true); setClientName(event.target.value); }} />
+                </label> : <><label className="text-xs font-semibold">Search client
+                    <input aria-label="Search accomplishment client" disabled={busy} className={fieldClass} value={query} onChange={event => { setClientChanged(true); setQuery(event.target.value); setClient(null); setClients([]); }} placeholder="Enter a name or client reference" />
+                </label>
+                <label className="text-xs font-semibold">Choose client
+                    <select aria-label="Choose accomplishment client" disabled={busy} className={fieldClass} value={client?.id || ""} onChange={event => { setClientChanged(true); setClient(clientOptions.find(item => String(item.id) === event.target.value) || null); }}>
+                        <option value="">{entry && !clientChanged && !client ? entry.client : "Choose a search result"}</option>
+                        {clientOptions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                </label>
+                </>}
+                {kind === "status_update" && <label className="text-xs font-semibold">Reported Education status
+                    <select aria-label="Reported Education status" required disabled={busy} className={fieldClass} value={reportedStatus} onChange={event => setReportedStatus(event.target.value)}>
+                        <option value="">Choose the reported status</option>
+                        {(data.statuses || []).map(status => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                </label>}
+            </div>
+            {searchError && <p role="alert" className="text-sm text-red-700">{searchError}</p>}
+            <label className="block text-xs font-semibold">Details {needsContext ? "(school, programme, offer, proposal or status context required)" : "(optional)"}
+                <textarea aria-label="Accomplishment details" disabled={busy} required={needsContext} maxLength={1000} rows={2} className={fieldClass} value={details} onChange={event => setDetails(event.target.value)} />
+            </label>
+            {activityError && <p role="alert" className="text-sm text-red-700">{activityError}</p>}
+            <div className="flex gap-2">
+                <button disabled={busy} type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving activity…" : entry ? "Save changes" : "Save activity"}</button>
+                {entry && <button disabled={busy} type="button" onClick={onClose} className="rounded-lg border px-3 py-2 text-sm">Cancel edit</button>}
+            </div>
+        </form>
     );
 }

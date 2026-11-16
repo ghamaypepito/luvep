@@ -13,7 +13,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require("react");
 const { act } = React;
 const { createRoot } = require("react-dom/client");
-const posts = [], deletes = [], visits = [];
+const posts = [], patches = [], deletes = [], visits = [];
 let searchFails = false;
 global.fetch = async () => ({
     ok: !searchFails,
@@ -21,6 +21,7 @@ global.fetch = async () => ({
 });
 const inertia = { router: {
     post: (url, data, options) => posts.push({ url, data, options }),
+    patch: (url, data, options) => patches.push({ url, data, options }),
     delete: (url, options) => deletes.push({ url, options }),
     get: (url, data, options) => visits.push({ url, data, options }),
 } };
@@ -38,12 +39,12 @@ const root = createRoot(document.getElementById("root"));
 const data = {
     today: "2026-11-12", notes_week_start: "2026-11-09",
     notes: { accomplishments: "", other_activities: "", next_week_tasks: "" },
-    kinds: { new_lead: "New leads recorded", follow_up: "Follow-ups recorded manually", status_update: "Other status changes", called: "Clients called", messaged: "Clients messaged", enrolment: "Enrolments / additional enrolments", offer: "Offers received", proposal: "Proposals sent / additional proposals" },
+    kinds: { new_lead: "New leads recorded", follow_up: "Follow-ups recorded manually", status_update: "Other status changes", called: "Clients called", messaged: "Clients messaged", enrolment: "Enrolments / additional enrolments", offer: "Offers received", proposal: "Proposals sent / additional proposals", other: "Others" },
     statuses: ["Conditional Offer", "School Enrolment"],
     counts: { enrolment: { label: "Enrolments / additional enrolments", events: 2, clients: 1 } },
     contacts: { "Contact Attempted": [{ id: 8, name: "My Lead", date: "2026-11-11T22:00:00Z" }], Contacted: [] },
     entries: { data: [
-        { id: 1, kind: "enrolment", date: "2026-11-10", client: "Synthetic Student", details: "School A" },
+        { id: 1, kind: "enrolment", date: "2026-11-10", client: "Synthetic Student", lead_id: 7, details: "School A", edit_version: "opened-version" },
         { id: 2, kind: "enrolment", date: "2026-11-11", client: "Synthetic Student", details: "School B" },
     ], current_page: 1, last_page: 2, next_page_url: "/portal/education/reports?preset=this_week&activity_page=2", prev_page_url: null },
 };
@@ -103,6 +104,28 @@ const submit = node => act(async () => node.dispatchEvent(new Event("submit", { 
     assert.equal(byLabel("Next week's tasks").value, "Review offers");
     await click(button("Discard unsaved notes"));
     assert.equal(byLabel("Weekly accomplishments").value, "");
+
+    await click(byLabel("Edit activity 1"));
+    const edit = byLabel("Edit accomplishment");
+    const editField = label => edit.querySelector('[aria-label="' + label + '"]');
+    assert.equal(editField("Accomplishment date").value, "2026-11-10");
+    assert.equal(editField("Choose accomplishment client").value, "7");
+    assert.equal(editField("Accomplishment details").value, "School A");
+    await change(editField("Accomplishment activity"), "other");
+    await change(editField("Accomplishment details"), "Corrected activity");
+    await submit(edit);
+    assert.equal(patches[0].url, "/portal/education/reports/activities/1");
+    assert.deepEqual(patches[0].data, { kind: "other", occurred_on: "2026-11-10", details: "Corrected activity", edit_version: "opened-version" });
+    await act(async () => { patches[0].options.onError({ details: "Edit failed" }); patches[0].options.onFinish(); });
+    assert.equal(editField("Accomplishment details").value, "Corrected activity");
+    await submit(edit);
+    await act(async () => { patches[1].options.onSuccess(); patches[1].options.onFinish(); });
+    assert.equal(byLabel("Edit accomplishment"), null);
+    assert.equal(document.activeElement, byLabel("Edit activity 1"));
+    await click(byLabel("Edit activity 1"));
+    await click(button("Cancel edit"));
+    assert.equal(byLabel("Edit accomplishment"), null);
+    assert.equal(document.activeElement, byLabel("Edit activity 1"));
 
     await click(byLabel("Remove activity 1"));
     assert.equal(deletes[0].url, "/portal/education/reports/activities/1");

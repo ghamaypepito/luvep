@@ -175,6 +175,11 @@ class Lead extends Model
             ->where('is_english_student', false);
     }
 
+    public function scopeInNewLeads($query)
+    {
+        return $query->inLeadPipeline()->where('status', 'New Leads');
+    }
+
     /**
      * The Students module universe — the exact set the Education "Students"
      * page lists across its Education / English / Immigration tabs. It is:

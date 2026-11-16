@@ -6,7 +6,7 @@ const dates = (from, to) => from === to ? dateLabel(from) : `${dateLabel(from)} 
 
 // Counts and buckets are authoritative server values. History is never rebuilt in the browser.
 export default function EducationReportInsights({ insights = {}, department = "Education", range = {} }) {
-    const [expanded, setExpanded] = useState(true);
+    const [expanded, setExpanded] = useState(false);
     const [selectedMetric, setSelectedMetric] = useState("");
     const metrics = insights.metrics || [];
     const metric = metrics.find((item) => item.key === selectedMetric) || metrics[0];
@@ -20,7 +20,7 @@ export default function EducationReportInsights({ insights = {}, department = "E
     const currentCount = metric?.count ?? 0;
 
     return (
-        <div className="mt-4">
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-2">
             <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="w-full flex items-center justify-between gap-3 py-2 text-[13px] font-bold text-gray-800 focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2">
                 <span className="inline-flex items-center gap-2"><BarChart3 size={16} className="text-blue-600" />Additional insights</span>
                 <ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
