@@ -53,6 +53,7 @@ jobs:
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
           node tests/Frontend/education-email.cjs
+          node tests/Frontend/school-visit-mail.cjs
           node tests/Frontend/ticket-attachments.cjs
           node tests/Frontend/ticket-request-edit.cjs
           node tests/Frontend/ticket-board-actions.cjs
