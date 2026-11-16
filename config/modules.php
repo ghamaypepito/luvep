@@ -101,7 +101,7 @@ return [
         // Ships hidden; a super admin grants it per agent from Module Management.
         'referral_cases' => [
             'label' => 'Cases (referral portal)',
-            'description' => "Let a recruiting agent see a list of the immigration cases their own referrals became. Read-only — scoped to that agent's referrals.",
+            'description' => "Manage permitted actions on the agent's own referred Immigration cases, including case edits and documents. Advice-bearing actions remain licence-gated. Department-wide Immigration portal access is separate.",
         ],
     ],
 
