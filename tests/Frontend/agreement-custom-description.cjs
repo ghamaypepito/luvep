@@ -34,25 +34,33 @@ const settle = async () => { const iframe = document.querySelector('iframe[title
 const confirmation = () => [...document.querySelectorAll('h3')].find(node => node.textContent === 'Confirm before submitting')?.parentElement.parentElement;
 const confirm = async () => { await settle(); await click(button('Submit for verification')); assert.ok(confirmation(), 'Existing amount confirmation stays in place'); await click(button('Confirm & submit', confirmation())); };
 (async () => {
-    // Catches absent default text, voucher HTML leaking into the plain-text editor, and custom text surviving a type change.
+    // Catches absent default text, retired voucher options in the picker, and custom text surviving a type change.
     await render({}); assert.ok(description(), 'Supported Philippines agreements provide a custom description editor');
     assert.equal(description().maxLength, 1000); assert.equal(description().value, 'School Enrollment and Documentation Fee');
     assert.equal(preview().searchParams.has('application_description'), false, 'Untouched defaults use trusted template formatting');
+    assert.ok(![...type().options].some(option => option.textContent.includes('With Voucher')));
+    assert.equal(preview().searchParams.has('english_proficiency_fee'), false);
     const cases = [
         ['consultancy_std_single_150', 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee'],
         ['consultancy_std_couple_150', 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee'],
-        ['consultancy_voucher_single_150', 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee'],
-        ['consultancy_voucher_couple_150', 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee'],
         ['consultancy_english_single_100', 'School Enrollment and Documentation Fee'],
         ['consultancy_std_single_100', 'School Enrollment and Documentation Fee'],
     ];
     for (const [value, expected] of cases) { await input(description(), 'Prior document wording'); await input(type(), value); assert.equal(description().value, expected); assert.equal(preview().searchParams.has('application_description'), false); }
+    await input(type(), 'consultancy_english_single_100');
+    assert.equal(preview().searchParams.get('english_proficiency_fee'), '14500');
+    await input(type(), 'consultancy_std_single_100');
+    assert.equal(preview().searchParams.has('english_proficiency_fee'), false);
     const custom = '<school> & visa + partner?\nSecond line'; await input(description(), custom);
     assert.equal(preview().searchParams.get('application_description'), custom, 'URLSearchParams preserves reserved characters and newlines exactly');
     const fee = [...document.querySelectorAll('label')].find(node => node.textContent.includes('School Enrolment')).querySelector('input'); await input(fee, '125000');
     assert.equal(description().value, custom); assert.equal(preview().searchParams.get('school_enrolment_fee'), '125000');
     // Catches preview/download/send divergence while keeping download read-only and final submission deliberately confirmed.
     await settle(); await click(button('Download PDF')); assert.equal(downloads.length, 1); assert.equal(downloads[0].url, '/admin/leads/42/generate/consultancy_std_100/download-preview'); assert.equal(downloads[0].options.body.get('application_description'), custom); assert.equal(requests.length, 0);
+    await click(button('Download cost breakdown'));
+    assert.equal(downloads.length, 2); assert.equal(downloads[1].url, downloads[0].url);
+    assert.deepEqual(Object.fromEntries(downloads[1].options.body), { document: 'cost_breakdown', school_enrolment_fee: '125000', applicant_mode: 'single' });
+    assert.equal(requests.length, 0);
     await settle(); await click(button('Submit for verification')); assert.equal(requests.length, 0); await click(button('Cancel', confirmation())); assert.equal(requests.length, 0);
     await confirm(); const [url, payload, options] = requests.at(-1); assert.equal(url, '/admin/leads/42/generate/consultancy_std_100'); assert.equal(payload.application_description, custom); assert.equal(payload.school_enrolment_fee, 125000); assert.equal(payload.applicant_mode, 'single'); assert.equal(payload.notify, true);
     await act(async () => options.onError({ application_description: 'The custom description must not exceed 1000 characters.' }));
@@ -64,7 +72,7 @@ const confirm = async () => { await settle(); await click(button('Submit for ver
     await render({ open: false }); await render({ open: true }); assert.equal(description().value, 'School Enrollment and Documentation Fee', 'Reopening the same prefilled type starts a fresh document');
     // Catches leaking this field into unrelated agreement types and their payloads.
     for (const [section, selected] of [['offshore', 'consultancy_offshore'], ['offshore', 'consultancy_offshore_zero'], ['onshore', 'consultancy_onshore'], ['english', 'english_engagement'], ['english', 'english_offshore'], ['english', 'english_offshore_1000']]) {
-        await input(category(), section); await input(type(), selected); assert.equal(description(), null); assert.equal(preview().searchParams.has('application_description'), false);
+        await input(category(), section); await input(type(), selected); assert.equal(description(), null); assert.equal(button('Download cost breakdown'), undefined); assert.equal(preview().searchParams.has('application_description'), false);
         if (selected === 'consultancy_onshore') { await click(button('Generate')); } else await confirm();
         assert.equal(Object.hasOwn(requests.at(-1)[1], 'application_description'), false); await act(async () => requests.at(-1)[2].onError({ agreement: 'Synthetic retry.' }));
     }
