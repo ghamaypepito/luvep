@@ -839,13 +839,14 @@ class Lead extends Model
         static::updating(fn (Lead $lead) => $lead->stampLastActivity());
 
         // Older handoffs can qualify for Cases by education_stage alone.
-        // Retain that existing membership when selecting an Education disposition;
-        // do not invent a conversion date or change the Immigration stage.
+        // Retain that existing membership when Education resumes or changes stage.
+        // Do not invent a conversion date, change the Immigration stage, or
+        // override a deliberate case-flag change by an explicit operation.
         static::updating(function (Lead $lead) {
             if ($lead->isDirty('education_stage')
-                && in_array($lead->education_stage, ['Qualified but No Funds', 'Archive'], true)
                 && in_array($lead->getOriginal('education_stage'), self::EDUCATION_STAGES_IMMIGRATION, true)
-                && ! $lead->is_immigration_case) {
+                && ! $lead->is_immigration_case
+                && ! $lead->isDirty('is_immigration_case')) {
                 $lead->is_immigration_case = true;
             }
         });
