@@ -13,7 +13,7 @@ import {
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing, priorityRank } from "@/utils/priority";
-import { immBase, leadBase, isAgentCasePortal } from "@/lib/caseRoutes";
+import { immBase, isAgentCasePortal } from "@/lib/caseRoutes";
 
 // This board is shared by the manager (/portal/immigration), the adviser
 // (/portal/immigration-adviser), and a First-Immigration recruiting agent
@@ -144,7 +144,7 @@ const tabKeyForStage = (stage) => {
     return hit ? hit.key : 'applications';
 };
 
-export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false }) {
+export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false, canManageCaseArchive = false }) {
     // True queue size vs. how many the server actually loaded. When these
     // differ, the safety ceiling truncated the list — warn loudly rather than
     // silently hiding cases (the "For Assessment cases vanished" bug).
@@ -330,6 +330,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                             </button>
                         );
                     })}
+                    {canManageCaseArchive && <Link href="/portal/immigration/cases/archived" className="inline-flex items-center gap-2 px-4 py-3 text-[13px] font-semibold whitespace-nowrap text-gray-500 hover:text-gray-800">Archived Cases</Link>}
                 </div>
 
                 <div className="px-4 sm:px-5 py-2.5 flex items-center gap-3 border-b border-gray-100">
@@ -424,6 +425,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                                     stages={stages}
                                     visaTypes={visaTypes}
                                     readOnly={readOnly}
+                                    canManageCaseArchive={canManageCaseArchive}
                                     isExpanded={expandedId === c.id}
                                     onExpand={() => setExpandedId(expandedId === c.id ? null : c.id)}
                                     stageMenuOpen={openStageMenuId === c.id}
@@ -446,6 +448,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                     stages={stages}
                     visaTypes={visaTypes}
                     agents={agents}
+                    canCorrectCaseNames={canManageCaseArchive}
                     onClose={() => { setCreating(false); setEditingCase(null); }}
                 />
             )}
@@ -472,8 +475,9 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
 
 // ─── Create case modal ─────────────────────────────────────────────────
 
-function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClose }) {
+function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, canCorrectCaseNames = false, onClose }) {
     const isEdit = !!editing;
+    const lockName = isEdit && !canCorrectCaseNames;
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         first_name: editing?.first_name || '',
         middle_name: editing?.middle_name || '',
@@ -570,6 +574,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.first_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('first_name', e.target.value)}
                                 maxLength={80}
                                 autoFocus
@@ -580,6 +585,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.middle_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('middle_name', e.target.value)}
                                 maxLength={80}
                                 className={caseInput(errors.middle_name)}
@@ -589,6 +595,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.last_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('last_name', e.target.value)}
                                 maxLength={80}
                                 className={caseInput(errors.last_name)}
@@ -598,6 +605,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.suffix}
+                                readOnly={lockName}
                                 onChange={(e) => setData('suffix', e.target.value)}
                                 maxLength={20}
                                 className={caseInput(errors.suffix)}
@@ -1010,7 +1018,7 @@ function DistributionGraph({ distribution = [], total = 0, activeStage = null, o
 
 // ─── Table row ──────────────────────────────────────────────────────────
 
-function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, isExpanded, onExpand, stageMenuOpen, onStageMenuToggle, onStageMenuClose, onEdit, onViewFiles, onHandoff }) {
+function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, canManageCaseArchive = false, isExpanded, onExpand, stageMenuOpen, onStageMenuToggle, onStageMenuClose, onEdit, onViewFiles, onHandoff }) {
     // Recruiting agents get this exact board read-only (list of their referrals'
     // cases). When readOnly, the name isn't a link (no case profile for agents),
     // the inline editors render as static chips, and the Actions menu is hidden.
@@ -1226,9 +1234,7 @@ function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, isE
                                 icon: Pencil,
                                 onClick: () => onEdit?.(),
                             },
-                            // A recruiting agent works their referrals but can't
-                            // archive/delete the case — that stays with staff.
-                            ! isAgentCasePortal() && {
+                            canManageCaseArchive && {
                                 key: 'archive',
                                 label: 'Archive case',
                                 icon: Archive,
@@ -2751,16 +2757,12 @@ function requestCasePortal(c) {
     });
 }
 
-// Soft-delete (archive) a case. The Lead row is soft-deleted via the
-// admin/leads/{id} DELETE endpoint; notes/tasks/documents survive and
-// the case can be restored from the archive view. A confirm dialog
-// gates the destructive action — there's no undo button in the table.
 function archiveCase(id, name) {
     const label = (name || 'this case').trim();
     if (! window.confirm(`Archive ${label}?\n\nThe case will be hidden from the Cases list. Notes, tasks, and documents are preserved and the case can be restored later.`)) return;
-    router.delete(`${leadBase()}/${id}`, {
+    router.post(`/portal/immigration/cases/${id}/archive`, {}, {
         preserveScroll: true,
         onSuccess: () => toast.success(`${label} archived`),
-        onError: () => toast.error('Could not archive — please try again.'),
+        onError: (errors) => toast.error(errors.archive || 'Could not archive the case.'),
     });
 }

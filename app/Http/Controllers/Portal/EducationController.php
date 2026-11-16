@@ -1060,6 +1060,7 @@ class EducationController extends Controller
      */
     public function destroyStudent(int $id)
     {
+        \App\Support\CaseRecordAccess::authorizeArchive(request(), [$id]);
         // Match the Students page universe, not just is_student — English
         // learners and student-visa Immigration cases show on the list too and
         // must be editable (they aren't flagged is_student).

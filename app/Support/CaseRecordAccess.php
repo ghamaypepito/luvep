@@ -1,0 +1,35 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\Lead;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+
+class CaseRecordAccess
+{
+    public static function canManage(Request $request): bool
+    {
+        return $request->user()?->is_active && $request->user()->isAdmin()
+            && ! $request->attributes->has('user_view_actor');
+    }
+
+    public static function authorizeArchive(Request $request, array $ids): void
+    {
+        abort_if(! self::canManage($request) && Lead::immigrationCase()->whereKey($ids)->exists(), 403);
+    }
+
+    /** Staff can save other case details while preserving the existing name. */
+    public static function authorizeNameChanges(Request $request, Model $record, array $values, array $fields): void
+    {
+        if (self::canManage($request)) {
+            return;
+        }
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $values) && (string) $values[$field] !== (string) $record->{$field}) {
+                throw ValidationException::withMessages([$field => 'Only an Admin or Super Admin can correct a case name.']);
+            }
+        }
+    }
+}

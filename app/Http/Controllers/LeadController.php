@@ -2513,6 +2513,7 @@ class LeadController extends Controller
      */
     public function destroy($id)
     {
+        \App\Support\CaseRecordAccess::authorizeArchive(request(), [(int) $id]);
         try {
             $lead = Lead::findOrFail($id);
             $label = $lead->lead_id ?: trim("{$lead->first_name} {$lead->last_name}");
