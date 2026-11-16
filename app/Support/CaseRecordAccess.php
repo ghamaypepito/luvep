@@ -24,8 +24,20 @@ class CaseRecordAccess
 
     public static function nameLocked(Request $request, Lead $record): bool
     {
-        return ! self::canManage($request) && ($record->is_immigration_case
-            || in_array($record->education_stage, Lead::EDUCATION_STAGES_IMMIGRATION, true));
+        return ! self::canManage($request) && self::isExistingCase($record);
+    }
+
+    public static function preserveCaseIdentity(Lead $record, array $submission): array
+    {
+        return self::isExistingCase($record)
+            ? array_diff_key($submission, array_flip([...self::NAME_FIELDS, 'lead_id']))
+            : $submission;
+    }
+
+    private static function isExistingCase(Lead $record): bool
+    {
+        return $record->getOriginal('is_immigration_case')
+            || in_array($record->getOriginal('education_stage'), Lead::EDUCATION_STAGES_IMMIGRATION, true);
     }
 
     /** Staff can save other case details while preserving the existing name. */
@@ -35,7 +47,7 @@ class CaseRecordAccess
             return;
         }
         foreach ($fields as $field) {
-            if (array_key_exists($field, $values) && (string) $values[$field] !== (string) $record->{$field}) {
+            if (array_key_exists($field, $values) && (string) $values[$field] !== (string) $record->getOriginal($field)) {
                 throw ValidationException::withMessages([$field => 'Only an Admin or Super Admin can correct a case name.']);
             }
         }

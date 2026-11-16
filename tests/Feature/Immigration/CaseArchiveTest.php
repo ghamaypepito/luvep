@@ -51,7 +51,7 @@ class CaseArchiveTest extends TestCase
 
     public function test_staff_cannot_access_archive_or_change_existing_names(): void
     {
-        $case = $this->case();
+        $case = $this->case(['first_name' => 'Two Names']);
         $archived = $this->case();
         $archived->delete();
         $dependant = CaseDependent::create(['lead_id' => $case->id, 'relationship' => 'child', 'first_name' => 'Existing', 'family_name' => 'Name', 'source' => 'staff']);
@@ -73,7 +73,7 @@ class CaseArchiveTest extends TestCase
             ->assertSessionHasNoErrors();
         $this->assertSame('contact@example.test', $case->fresh()->email);
 
-        $case->update(['is_student' => true, 'first_name' => 'Two Names']);
+        $case->update(['is_student' => true]);
         $education = User::factory()->create(['role' => 'education']);
         $this->actingAs($education)->get('/portal/education/students')
             ->assertInertia(fn (Assert $page) => $page->where('students.0.first_name', 'Two Names')->where('students.0.case_name_locked', true));

@@ -10,6 +10,7 @@ use App\Models\LeadTag;
 use App\Models\Program;
 use App\Models\User;
 use App\Notifications\NewRegistrationReceived;
+use App\Support\CaseRecordAccess;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
 use Illuminate\Http\JsonResponse;
@@ -337,12 +338,8 @@ class LeadController extends Controller
             // along — never demote a Submitted/Engaged lead back to Draft.
             $shouldFlipToDraft = ! in_array($lead->status, ['Submitted', 'Engaged', 'Converted', 'Completed', 'Closed'], true);
 
-            // The assessment form IS the freshest source of truth for the
-            // applicant's identity, so override the conservative "backfill
-            // only" behaviour of LeadIntakeService for these fields. This
-            // means staff see the current name/phone the applicant is using
-            // right now, not whatever they typed into a Quick-Lead months ago.
-            $lead->update(array_filter([
+            // Refresh earlier lead details while retaining the identity of an existing case.
+            $draft = array_filter([
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -350,7 +347,8 @@ class LeadController extends Controller
                 'source' => $source,
                 'ai_analysis' => $request->except(['_token']),
                 'ai_analysis_status' => 'completed',
-            ], fn ($v) => $v !== null));
+            ], fn ($v) => $v !== null);
+            $lead->update(CaseRecordAccess::preserveCaseIdentity($lead, $draft));
 
             // Use a distinct flash key so the page can tell a draft save
             // apart from the final submit — the latter sets `flash.success`
@@ -703,7 +701,7 @@ class LeadController extends Controller
             // Update the existing lead with the full assessment payload —
             // assessment is our richest form so its fields take precedence
             // over any earlier partial submissions.
-            $existing->update($payload);
+            $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $payload));
             $lead = $existing->fresh();
 
             // 3b. Store Education Enrolment document uploads (CV / Passport /
@@ -1081,7 +1079,7 @@ class LeadController extends Controller
                 ));
             }
 
-            $existing->update([
+            $registration = [
                 'lead_id' => str_starts_with((string) $existing->lead_id, 'REG-')
                     ? $existing->lead_id
                     : 'REG-'.strtoupper(uniqid()),
@@ -1170,7 +1168,8 @@ class LeadController extends Controller
                         : $existing->status,
                 'stage' => 'Evaluation',
                 'source' => 'registration',
-            ]);
+            ];
+            $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $registration));
             $lead = $existing->fresh();
 
             // CV / Passport / Diploma / Transcript uploads — stored on the
@@ -1365,7 +1364,7 @@ class LeadController extends Controller
                 'id' => $n->id,
                 'body' => $n->body,
                 'programs' => $n->programs ?? [],
-                'attachments' => collect($n->attachments ?? [])->map(fn ($a, $i) => ['name'=>$a['original_name'] ?? 'Attachment','mime'=>$a['mime'] ?? 'application/octet-stream','size'=>$a['size'] ?? 0,'url'=>url('/admin/leads/'.$n->lead_id.'/notes/'.$n->id.'/attachments/'.$i)]),
+                'attachments' => collect($n->attachments ?? [])->map(fn ($a, $i) => ['name' => $a['original_name'] ?? 'Attachment', 'mime' => $a['mime'] ?? 'application/octet-stream', 'size' => $a['size'] ?? 0, 'url' => url('/admin/leads/'.$n->lead_id.'/notes/'.$n->id.'/attachments/'.$i)]),
                 'author_name' => $n->author_name ?: 'Unknown',
                 'author_role' => $n->author_role ?: 'staff',
                 'user_id' => $n->user_id,

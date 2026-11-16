@@ -568,6 +568,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, canCo
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                     {(!isEdit || tab === 'personal') && (
                     <form id="caseModalForm" onSubmit={submit} className="space-y-4">
+                    {lockName && <p className="text-xs text-gray-500">Only an Admin or Super Admin can change the case name.</p>}
                     {/* Name row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <CaseField label="First name" required error={errors.first_name}>
