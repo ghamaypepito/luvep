@@ -25,7 +25,7 @@ class IntakeSyncsToCaseTest extends TestCase
         ], $overrides));
     }
 
-    public function test_returning_case_submission_syncs_into_the_case(): void
+    public function test_returning_case_submission_syncs_details_and_preserves_the_case_name(): void
     {
         $case = $this->existingCase();
 
@@ -37,7 +37,7 @@ class IntakeSyncsToCaseTest extends TestCase
 
         $case->refresh();
         $this->assertSame('+64 21 999 0000', $case->phone);       // synced
-        $this->assertSame('Cruz', $case->last_name);              // synced
+        $this->assertSame('Old', $case->last_name);
         $this->assertSame('Philippines', $case->citizenship);     // synced
         $this->assertSame('Work Visa (AEWV)', $case->inz_visa_type); // synced
 
