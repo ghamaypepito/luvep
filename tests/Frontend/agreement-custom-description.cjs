@@ -34,19 +34,23 @@ const settle = async () => { const iframe = document.querySelector('iframe[title
 const confirmation = () => [...document.querySelectorAll('h3')].find(node => node.textContent === 'Confirm before submitting')?.parentElement.parentElement;
 const confirm = async () => { await settle(); await click(button('Submit for verification')); assert.ok(confirmation(), 'Existing amount confirmation stays in place'); await click(button('Confirm & submit', confirmation())); };
 (async () => {
-    // Catches absent default text, voucher HTML leaking into the plain-text editor, and custom text surviving a type change.
+    // Catches absent default text, retired voucher options in the picker, and custom text surviving a type change.
     await render({}); assert.ok(description(), 'Supported Philippines agreements provide a custom description editor');
     assert.equal(description().maxLength, 1000); assert.equal(description().value, 'School Enrollment and Documentation Fee');
     assert.equal(preview().searchParams.has('application_description'), false, 'Untouched defaults use trusted template formatting');
+    assert.ok(![...type().options].some(option => option.textContent.includes('With Voucher')));
+    assert.equal(preview().searchParams.has('english_proficiency_fee'), false);
     const cases = [
         ['consultancy_std_single_150', 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee'],
         ['consultancy_std_couple_150', 'School Enrollment and Documentation Fee, Immigration New Zealand (INZ) visa application fee'],
-        ['consultancy_voucher_single_150', 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee'],
-        ['consultancy_voucher_couple_150', 'School Enrollment and Documentation Fee, inclusive of the Immigration New Zealand (INZ) visa application fee'],
         ['consultancy_english_single_100', 'School Enrollment and Documentation Fee'],
         ['consultancy_std_single_100', 'School Enrollment and Documentation Fee'],
     ];
     for (const [value, expected] of cases) { await input(description(), 'Prior document wording'); await input(type(), value); assert.equal(description().value, expected); assert.equal(preview().searchParams.has('application_description'), false); }
+    await input(type(), 'consultancy_english_single_100');
+    assert.equal(preview().searchParams.get('english_proficiency_fee'), '14500');
+    await input(type(), 'consultancy_std_single_100');
+    assert.equal(preview().searchParams.has('english_proficiency_fee'), false);
     const custom = '<school> & visa + partner?\nSecond line'; await input(description(), custom);
     assert.equal(preview().searchParams.get('application_description'), custom, 'URLSearchParams preserves reserved characters and newlines exactly');
     const fee = [...document.querySelectorAll('label')].find(node => node.textContent.includes('School Enrolment')).querySelector('input'); await input(fee, '125000');

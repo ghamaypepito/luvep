@@ -653,7 +653,6 @@ class LeadDocumentController extends Controller
      * Unified generate endpoint for the "Proposal & Agreements" page.
      * Types:
      *   consultancy_std_150      → Scenario #1 STANDARD 150,000
-     *   consultancy_voucher_150  → Scenario #2 WITH VOUCHER 150,000
      *   consultancy_std_100      → Scenario #3 STANDARD 100,000
      *   consultancy_english_100  → Scenario #3 WITH ENGLISH 100,000
      *   english_engagement       → English Engagement Agreement
@@ -1405,7 +1404,6 @@ class LeadDocumentController extends Controller
     {
         return match ($type) {
             'consultancy_std_150' => 'std_150',
-            'consultancy_voucher_150' => 'voucher_150',
             'consultancy_std_100' => 'std_100',
             'consultancy_english_100' => 'english_100',
             default => null,

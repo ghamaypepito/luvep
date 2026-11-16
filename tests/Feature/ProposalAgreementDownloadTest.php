@@ -40,7 +40,7 @@ class ProposalAgreementDownloadTest extends TestCase
         $data = ['currency' => 'nzd', 'school_enrolment_fee' => 43210,
             'english_proficiency_fee' => 1234, 'bank_name' => 'Preview Bank', 'bank_account_number' => 'TEST-123'];
         $response = $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->post("/admin/leads/{$lead->id}/generate/consultancy_std_100/download-preview", $data);
+            ->post("/admin/leads/{$lead->id}/generate/consultancy_english_100/download-preview", $data);
         $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $text = (new Parser)->parseContent($response->getContent())->getText();
         foreach (['43,210', '1,234', 'NZ$', 'Preview Bank', 'TEST-123'] as $value) {
