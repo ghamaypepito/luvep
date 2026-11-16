@@ -9,6 +9,8 @@ use Illuminate\Validation\ValidationException;
 
 class CaseRecordAccess
 {
+    public const NAME_FIELDS = ['first_name', 'middle_name', 'last_name', 'suffix'];
+
     public static function canManage(Request $request): bool
     {
         return $request->user()?->is_active && $request->user()->isAdmin()
@@ -18,6 +20,12 @@ class CaseRecordAccess
     public static function authorizeArchive(Request $request, array $ids): void
     {
         abort_if(! self::canManage($request) && Lead::immigrationCase()->whereKey($ids)->exists(), 403);
+    }
+
+    public static function nameLocked(Request $request, Lead $record): bool
+    {
+        return ! self::canManage($request) && ($record->is_immigration_case
+            || in_array($record->education_stage, Lead::EDUCATION_STAGES_IMMIGRATION, true));
     }
 
     /** Staff can save other case details while preserving the existing name. */

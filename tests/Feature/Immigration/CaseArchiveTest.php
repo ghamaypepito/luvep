@@ -65,11 +65,24 @@ class CaseArchiveTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('first_name');
         $this->postJson(self::BASE."/{$case->id}/personal", ['first_name' => $case->first_name, 'last_name' => 'Modified', 'email' => $case->email])
             ->assertUnprocessable()->assertJsonValidationErrors('last_name');
+        $this->postJson("/admin/leads/{$case->id}/personal", ['first_name' => 'Modified'])
+            ->assertUnprocessable()->assertJsonValidationErrors('first_name');
         $this->putJson(self::BASE."/{$case->id}/dependents/{$dependant->id}", ['relationship' => 'child', 'family_name' => 'Modified'])
             ->assertUnprocessable()->assertJsonValidationErrors('family_name');
         $this->post(self::BASE."/{$case->id}/personal", ['first_name' => $case->first_name, 'last_name' => $case->last_name, 'email' => 'contact@example.test'])
             ->assertSessionHasNoErrors();
         $this->assertSame('contact@example.test', $case->fresh()->email);
+
+        $case->update(['is_student' => true, 'first_name' => 'Two Names']);
+        $education = User::factory()->create(['role' => 'education']);
+        $this->actingAs($education)->get('/portal/education/students')
+            ->assertInertia(fn (Assert $page) => $page->where('students.0.first_name', 'Two Names')->where('students.0.case_name_locked', true));
+        $contact = ['last_name' => $case->last_name, 'email' => $case->fresh()->email, 'phone' => '+64210000000'];
+        $this->postJson("/portal/education/students/{$case->id}/update", ['first_name' => 'Modified'] + $contact)
+            ->assertUnprocessable()->assertJsonValidationErrors('first_name');
+        $this->post("/portal/education/students/{$case->id}/update", ['first_name' => 'Two Names', 'payment' => 'Paid'] + $contact)
+            ->assertSessionHasNoErrors();
+        $this->assertSame('Paid', $case->fresh()->student_payment);
     }
 
     public function test_permanent_delete_requires_archived_empty_case_and_exact_confirmation(): void

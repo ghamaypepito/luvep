@@ -2370,6 +2370,9 @@ class LeadController extends Controller
                     ->map(fn ($v) => $v === '' ? null : $v)
                     ->all();
 
+                if (\App\Support\CaseRecordAccess::nameLocked($request, $lead)) {
+                    \App\Support\CaseRecordAccess::authorizeNameChanges($request, $lead, $patch, \App\Support\CaseRecordAccess::NAME_FIELDS);
+                }
                 $lead->fill($patch);
                 $lead->save();
 
@@ -2379,6 +2382,8 @@ class LeadController extends Controller
                 // flash messages + page-prop refresh.
                 return back()->with('success', 'Personal information updated.');
             });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Lead personal update failed', ['id' => $id, 'error' => $e->getMessage()]);
 
