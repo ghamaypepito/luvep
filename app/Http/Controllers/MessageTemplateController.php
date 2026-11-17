@@ -72,9 +72,8 @@ class MessageTemplateController extends Controller
     {
         $ctx = $this->context($request);
 
-        // When "New template" is opened from inside a department tab, seed the
-        // department picker to that tab (admin only — portals force their own).
-        $defaultDepartment = $request->query('department');
+        // An explicit Shared tab arrives as an empty query value.
+        $defaultDepartment = $request->query->has('department') ? ($request->query('department') ?? '') : null;
         if (! in_array($defaultDepartment, array_merge([''], MessageTemplate::DEPARTMENTS), true)) {
             $defaultDepartment = null;
         }
@@ -85,7 +84,7 @@ class MessageTemplateController extends Controller
             'basePath' => $ctx['basePath'],
             'departmentOptions' => $ctx['departmentOptions'],
             'brandingOptions' => $this->brandingOptions(),
-            'fixedDepartment' => $ctx['department'] ?? $defaultDepartment,
+            'fixedDepartment' => $defaultDepartment ?? $ctx['department'],
             'defaultChannel' => $request->query('channel'),
             // Carried through the New-template form so a template created from
             // inside a folder is saved into that folder.
@@ -188,10 +187,13 @@ class MessageTemplateController extends Controller
                 'required', 'string', 'max:80', 'regex:/^[a-z0-9_]+$/',
                 Rule::unique('message_templates', 'key')->where(fn ($q) => $q->where('department', $department)),
             ],
-            'folder_id' => ['nullable', 'integer', 'exists:template_folders,id'],
+            'folder_id' => ['nullable', 'integer', Rule::exists('template_folders', 'id')->where('department', $department)],
             ...$this->bodyRules(),
             ...$this->imageRules(),
-        ], ['key.regex' => 'Key must be lowercase letters, numbers and underscores only.']);
+        ], [
+            'key.regex' => 'Key must be lowercase letters, numbers and underscores only.',
+            'folder_id.exists' => 'Choose a folder in the selected department, or create the template outside a folder.',
+        ]);
 
         $this->applyImages($request, $data, null);
         $data['email_body'] = $this->sanitizeBody($data['email_body'] ?? null);
@@ -239,6 +241,9 @@ class MessageTemplateController extends Controller
             unset($data['key']); // never change an existing key
         }
         $data['department'] = $department;
+        if ($template->folder_id && $template->department !== $department && $template->folder?->department !== $department) {
+            $data['folder_id'] = null;
+        }
 
         $this->applyImages($request, $data, $template);
         $data['email_body'] = $this->sanitizeBody($data['email_body'] ?? null);

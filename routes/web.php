@@ -21,6 +21,7 @@ use App\Http\Controllers\Portal\Accommodation\CalendarController;
 use App\Http\Controllers\Portal\Accommodation\GasDeliveryController;
 use App\Http\Controllers\Portal\Accommodation\MessageTemplateController;
 use App\Http\Controllers\Portal\Accommodation\PaymentScheduleController;
+use App\Http\Controllers\Portal\Accommodation\PurchaseInvoiceController;
 use App\Http\Controllers\Portal\Accommodation\RentUtilitiesController;
 use App\Http\Controllers\Portal\Accommodation\TenantController;
 use App\Http\Controllers\Portal\AccommodationController;
@@ -1820,6 +1821,11 @@ Route::middleware(['auth'])->group(function () {
             // is a query param, sections stay the same.
             Route::get('/reports', [EducationController::class, 'reports'])->name('reports');
             Route::post('/reports/note', [EducationController::class, 'saveReportNote'])->name('reports.note');
+            Route::get('/reports/clients', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'clients'])->name('reports.clients');
+            Route::post('/reports/activities', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'store'])->name('reports.activities.store');
+            Route::patch('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'update'])->whereNumber('activity')->name('reports.activities.update');
+            Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
+            Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
 
             // ACCOUNT
             Route::get('/profile', [EducationController::class, 'profile'])->name('profile');
@@ -1950,6 +1956,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/pre-screening/{preScreening}/consent-ack', [$preScreen, 'consentAck'])->name('pre-screening.consent-ack');
             Route::post('/pre-screening/{preScreening}/skip', [$preScreen, 'skip'])->name('pre-screening.skip');
             Route::post('/pre-screening/{preScreening}/eligible', [$preScreen, 'eligible'])->name('pre-screening.eligible');
+            Route::post('/pre-screening/{preScreening}/aewv-endorse', [$preScreen, 'endorseAewv'])->name('pre-screening.aewv-endorse');
             Route::post('/pre-screening/{preScreening}/decline', [$preScreen, 'decline'])->name('pre-screening.decline');
             // Staff schedule a consultation / consent meeting directly.
             Route::post('/pre-screening/{preScreening}/book', [$preScreen, 'book'])->name('pre-screening.book');
@@ -2021,6 +2028,13 @@ Route::middleware(['auth'])->group(function () {
                 ->where(['type' => 'resident|work|student|visitor|family|free', 'id' => '[0-9]+'])
                 ->name('assessments.notes.store');
             Route::get('/cases', [ImmigrationController::class, 'cases'])->name('cases');
+            $archive = \App\Http\Controllers\Immigration\CaseArchiveController::class;
+            Route::get('/cases/archived', [$archive, 'index'])->name('cases.archived');
+            Route::post('/cases/{id}/archive', [$archive, 'archive'])->whereNumber('id')->name('cases.archive');
+            Route::get('/cases/archived/{id}/download', [$archive, 'download'])->whereNumber('id')->name('cases.archived.download');
+            Route::post('/cases/archived/{id}/restore', [$archive, 'restore'])->whereNumber('id')->name('cases.archived.restore');
+            Route::patch('/cases/archived/{id}/name', [$archive, 'correctName'])->whereNumber('id')->name('cases.archived.name');
+            Route::delete('/cases/archived/{id}', [$archive, 'remove'])->whereNumber('id')->name('cases.archived.remove');
             // Engagement + Invoice generation workspaces. Declared before the
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
@@ -2061,6 +2075,8 @@ Route::middleware(['auth'])->group(function () {
             // to use LeadController::show via /admin/leads/{id}.
             Route::get('/cases/{lead}/profile', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'show'])
                 ->name('cases.profile');
+            Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
+                ->whereNumber('document')->name('cases.documents.recent-visa');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.
             Route::post('/cases/{lead}/personal', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'updatePersonal'])
                 ->name('cases.personal');
@@ -2069,6 +2085,11 @@ Route::middleware(['auth'])->group(function () {
             // On-demand AI note (OpenRouter) on what's missing from the assessment.
             Route::get('/cases/{lead}/assessment-ai-note', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'assessmentAiNote'])
                 ->name('cases.assessment-ai-note');
+            // Reviewed passport prefill is staff-only and off until processing is approved.
+            Route::get('/cases/{lead}/passport-prefill', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'latest']);
+            Route::post('/cases/{lead}/passport-prefill', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'propose'])->middleware('throttle:10,1');
+            Route::post('/cases/{lead}/passport-prefill/{token}', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'apply'])->whereUuid('token');
+            Route::get('/cases/{lead}/passport-prefill/document/{document}', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'document'])->whereNumber('document');
             // AI "document vs case record" identity scan for the Personal tab.
             Route::post('/cases/{lead}/identity-scan', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'identityScan'])
                 ->name('cases.identity-scan');
@@ -2345,6 +2366,9 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
             Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
             Route::get('/payment-schedule', [PaymentScheduleController::class, 'index'])->name('payment-schedule');
+            Route::get('/purchase-invoices', [PurchaseInvoiceController::class, 'index'])->name('purchase-invoices');
+            Route::post('/tenants/{tenant}/purchase-invoices', [PurchaseInvoiceController::class, 'store'])->name('purchase-invoices.store');
+            Route::get('/purchase-invoices/{invoice}/files/{file}', [PurchaseInvoiceController::class, 'download'])->whereNumber('file')->name('purchase-invoices.download');
             Route::get('/gas-delivery', [GasDeliveryController::class, 'index'])->name('gas-delivery');
             Route::get('/concerns', [App\Http\Controllers\ConcernController::class, 'index'])->name('concerns');
             Route::patch('/concerns/{concern}', [App\Http\Controllers\ConcernController::class, 'update'])->name('concerns.update');
@@ -2372,6 +2396,10 @@ Route::middleware(['auth'])->group(function () {
             Route::put('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'update'])->name('receivables.update');
             Route::delete('/receivables/{receivable}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'destroy'])->name('receivables.destroy');
             Route::post('/receivables/{receivable}/payments', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'recordPayment'])->name('receivables.payments.store');
+            Route::patch('/receivables/{receivable}/internal-settlement', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'updateInternalSettlement'])->name('receivables.internal-settlement');
+            Route::post('/receivables/{receivable}/replace-invoice', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'replaceInvoice'])->name('receivables.replace-invoice');
+            Route::get('/receivables/{receivable}/invoice-history/{version?}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'downloadInvoiceHistory'])
+                ->whereNumber('version')->name('receivables.invoice-history');
             Route::delete('/receivables/{receivable}/payments/{payment}', [\App\Http\Controllers\Portal\FinanceReceivableController::class, 'deletePayment'])->name('receivables.payments.destroy');
 
             // Accounts Payable

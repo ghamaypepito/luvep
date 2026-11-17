@@ -190,6 +190,7 @@ class SystemTicketController extends Controller
             'admin_response' => ['nullable', 'string', 'max:5000'],
             'assigned_to' => ['nullable', Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN]))],
             'waiting_on' => ['nullable', Rule::in(['support', 'requester', 'external'])],
+            'category' => ['sometimes', 'required', Rule::in(SystemTicket::CATEGORIES)],
             'topic' => ['nullable', 'string', 'max:100'],
             'response_target_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
         ]);
@@ -223,6 +224,9 @@ class SystemTicketController extends Controller
             }
             if (array_key_exists('waiting_on', $data) && $data['waiting_on'] !== $ticket->waiting_on) {
                 $event('waiting_changed', ['from' => $ticket->waiting_on, 'to' => $data['waiting_on']]);
+            }
+            if (isset($data['category']) && $data['category'] !== $ticket->category) {
+                $event('category_changed', ['from' => $ticket->category, 'to' => $data['category']]);
             }
             if (isset($data['admin_response']) && trim($data['admin_response']) !== '' && $data['admin_response'] !== $ticket->admin_response) {
                 \App\Models\SystemTicketMessage::create(['ticket_id' => $ticket->id, 'user_id' => $request->user()->id, 'body' => $data['admin_response'], 'is_support' => true]);
@@ -268,7 +272,10 @@ class SystemTicketController extends Controller
         $images = $ticket->images ?? [];
         abort_unless(isset($images[$index]) && Storage::disk('local')->exists($images[$index]), 404);
 
-        return response()->file(Storage::disk('local')->path($images[$index]));
+        return response()->file(Storage::disk('local')->path($images[$index]), [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ])->setPrivate();
     }
 
     public function attachment(Request $request, SystemTicket $ticket, int $index)
@@ -290,6 +297,10 @@ class SystemTicketController extends Controller
             'category' => ['required', Rule::in(SystemTicket::CATEGORIES)],
             'priority' => ['required', Rule::in(SystemTicket::PRIORITIES)],
             'request_version' => ['required', 'string', 'size:64'],
+            'remove_attachments' => ['sometimes', 'array', 'max:10'],
+            'remove_attachments.*' => ['required', 'integer', 'min:0', 'distinct'],
+            'remove_images' => ['sometimes', 'array', 'max:10'],
+            'remove_images.*' => ['required', 'integer', 'min:0', 'distinct'],
         ] + TicketAttachments::rules());
         $stored = [];
         try {
@@ -303,7 +314,20 @@ class SystemTicketController extends Controller
                     ]);
                 }
                 $files = $request->file('attachments', []);
-                if (count($locked->images ?? []) + count($locked->attachments ?? []) + count($files) > TicketAttachments::MAX_FILES) {
+                $removed = [];
+                $evidence = ['images' => $locked->images ?? [], 'attachments' => $locked->attachments ?? []];
+                foreach ($evidence as $type => &$slots) {
+                    foreach ($data['remove_'.$type] ?? [] as $index) {
+                        if (! isset($slots[$index])) {
+                            throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'One of the selected files is no longer on this ticket. Reload the request and try again.']);
+                        }
+                        $removed[] = $type === 'images' ? $slots[$index] : $slots[$index]['path'];
+                        // Keep the slot so an old attachment URL cannot open a different file.
+                        $slots[$index] = null;
+                    }
+                }
+                unset($slots);
+                if (count(array_filter($evidence['images'])) + count(array_filter($evidence['attachments'])) + count($files) > TicketAttachments::MAX_FILES) {
                     throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'This ticket can hold up to 10 files, including existing screenshots and attachments.']);
                 }
                 $changes = [];
@@ -313,17 +337,31 @@ class SystemTicketController extends Controller
                         $locked->{$field} = $data[$field];
                     }
                 }
-                if (! $changes && ! $files) {
+                if (! $changes && ! $files && ! $removed) {
                     return;
                 }
                 $stored = TicketAttachments::store($files, "system-tickets/{$locked->id}/attachments");
-                if ($stored) {
-                    $locked->attachments = array_merge($locked->attachments ?? [], $stored);
+                if (! empty($data['remove_images'])) {
+                    $locked->images = $evidence['images'];
+                }
+                if ($stored || ! empty($data['remove_attachments'])) {
+                    $locked->attachments = [...$evidence['attachments'], ...$stored];
                 }
                 $locked->save();
                 $locked->events()->create(['actor_id' => $user->id, 'kind' => 'request_updated',
                     'from_status' => $locked->status, 'to_status' => $locked->status,
-                    'metadata' => ['changes' => $changes, 'attachments_added' => count($stored)]]);
+                    'metadata' => ['changes' => $changes, 'attachments_added' => count($stored), 'attachments_removed' => count($removed)]]);
+                if ($removed) {
+                    DB::afterCommit(function () use ($removed) {
+                        try {
+                            if (! Storage::disk('local')->delete($removed)) {
+                                report(new \RuntimeException('Unable to clean up removed ticket files.'));
+                            }
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    });
+                }
             });
         } catch (\Throwable $e) {
             TicketAttachments::delete($stored);
@@ -374,7 +412,7 @@ class SystemTicketController extends Controller
             'admin_response' => $t->admin_response,
             'resolver' => optional($t->resolver)->name,
             // Auth-gated stream URLs for each screenshot (never the raw path).
-            'images' => collect($t->images ?? [])
+            'images' => collect(array_filter($t->images ?? []))
                 ->keys()
                 ->map(fn ($i) => url("/system-tickets/{$t->id}/images/{$i}"))
                 ->all(),

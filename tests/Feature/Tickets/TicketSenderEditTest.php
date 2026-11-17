@@ -162,6 +162,34 @@ class TicketSenderEditTest extends TestCase
         $this->assertDatabaseCount('system_ticket_events', 0);
     }
 
+    public function test_sender_can_remove_and_replace_saved_evidence_on_a_completed_ticket(): void
+    {
+        $owner = User::factory()->create(['role' => 'education']);
+        $file = ['path' => 'tickets/wrong.png', 'name' => 'wrong.png', 'mime' => 'image/png', 'size' => 3];
+        Storage::disk('local')->put($file['path'], 'old');
+        Storage::disk('local')->put('tickets/legacy.png', 'legacy');
+        $ticket = $this->ticket($owner, ['status' => 'done', 'images' => ['tickets/legacy.png'], 'attachments' => [$file], 'resolution_report' => ['resolution' => 'Keep this']]);
+        $payload = $this->payload($ticket, ['remove_images' => [0], 'remove_attachments' => [0]]);
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->post("/system-tickets/{$ticket->id}/request", $payload)->assertForbidden();
+        $this->actingAs($owner)->postJson("/system-tickets/{$ticket->id}/request", [...$payload, 'remove_attachments' => [9]])
+            ->assertUnprocessable()->assertJsonValidationErrors('attachments');
+        $this->post("/system-tickets/{$ticket->id}/request", [...$payload, 'attachments' => [UploadedFile::fake()->image('correct.png')]])
+            ->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->get("/system-tickets/{$ticket->id}/images/0")->assertNotFound();
+        $this->get("/system-tickets/{$ticket->id}/attachments/0")->assertNotFound();
+        $this->get("/system-tickets/{$ticket->id}/attachments/1")->assertDownload('correct.png');
+        $this->get('/portal/tickets')->assertInertia(fn (Assert $page) => $page->has('tickets.data.0.images', 0)
+            ->has('tickets.data.0.attachments', 1)->where('tickets.data.0.attachments.0.name', 'correct.png'));
+        $this->assertSame('done', $ticket->fresh()->status);
+        $this->assertSame(['resolution' => 'Keep this'], $ticket->resolution_report);
+        $event = $ticket->events()->where('kind', 'request_updated')->sole();
+        $this->assertSame(2, $event->metadata['attachments_removed']);
+        Storage::disk('local')->assertMissing([$file['path'], 'tickets/legacy.png']);
+        $this->postJson("/system-tickets/{$ticket->id}/request", $payload)->assertUnprocessable()->assertJsonValidationErrors('request_version');
+    }
+
     public function test_permission_and_content_version_are_serialized_for_owner_only_and_noop_does_not_audit(): void
     {
         $owner = User::factory()->create(['role' => 'education']);

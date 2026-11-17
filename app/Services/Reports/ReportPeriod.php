@@ -21,7 +21,7 @@ class ReportPeriod
     public static function fromRequest(Request $request): self
     {
         $now = CarbonImmutable::now(self::TIMEZONE);
-        $preset = $request->input('preset', 'this_month');
+        $preset = $request->input('preset', 'today');
         $start = $now->startOfMonth();
         $end = $now->startOfDay()->addDay();
         if ($preset === 'custom') {

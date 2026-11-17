@@ -51,6 +51,11 @@ class SystemTicket extends Model
         });
     }
 
+    public function activityIgnoredAttributes(): array
+    {
+        return ['images', 'attachments'];
+    }
+
     public function submitter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');

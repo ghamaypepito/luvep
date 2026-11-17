@@ -5,11 +5,15 @@ namespace App\Models;
 use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Property extends Model
 {
     use LogsActivity;
+
+    public const PURCHASE_INVOICE_DELETE_ERROR = 'This property has purchase invoice history. Archive it to preserve those records.';
 
     protected $table = 'accommodation_properties';
 
@@ -112,15 +116,22 @@ class Property extends Model
             if ($property->activeTenants()->exists()) {
                 throw new \RuntimeException('Cannot delete a property with active tenants. All tenants must be vacated first.');
             }
+            if ($property->hasPurchaseInvoiceHistory()) {
+                throw new \DomainException(self::PURCHASE_INVOICE_DELETE_ERROR);
+            }
 
             // Only historical (vacated / soft-deleted) tenant rows remain at
             // this point. Hard-remove them so the restrict FK doesn't block the
             // property delete — deleting the property discards its tenant history.
             $property->tenants()->withTrashed()->forceDelete();
 
-            // Delete each image via Eloquent so its file is cleaned up (the DB
-            // cascade alone would not fire PropertyImage's deleting event).
-            $property->images()->get()->each->delete();
+            $property->load('images');
+        });
+
+        static::deleted(function (Property $property) {
+            // The foreign-key cascade removes image rows. Keep their files until the delete commits.
+            $paths = $property->images->pluck('path')->filter()->all();
+            DB::afterCommit(fn () => Storage::disk('public')->delete($paths));
         });
     }
 
@@ -147,6 +158,13 @@ class Property extends Model
     public function tenants(): HasMany
     {
         return $this->hasMany(Tenant::class, 'property_id');
+    }
+
+    public function hasPurchaseInvoiceHistory(): bool
+    {
+        return AccommodationPurchaseInvoice::where('property_id', $this->id)
+            ->orWhereIn('tenant_id', $this->tenants()->withTrashed()->select('accommodation_tenants.id'))
+            ->exists();
     }
 
     /** Tenants currently in residence (active / notice_given / vacating). */

@@ -433,7 +433,7 @@ function PersonalTab({ lead, adviceOwner, form, onEdit, onCancel, onChange }) {
                 <SectionLabel>Identity</SectionLabel>
                 <dl>
                     <Row label="Full legal name" value={p.full_legal_name}>
-                        {editing && (
+                        {editing && !p.case_name_locked && (
                             <div className="grid grid-cols-3 gap-1.5">
                                 {F('first_name')}{F('middle_name')}{F('last_name')}
                             </div>

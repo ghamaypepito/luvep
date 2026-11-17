@@ -198,6 +198,9 @@ class EngagementPackWorkflow
                     $doc->delete();
                 }
                 foreach ($data['files'] as $file) {
+                    if ($file['invoice_number']) {
+                        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($file['invoice_number']);
+                    }
                     if ($file['invoice_number'] && LeadDocument::where('invoice_number', $file['invoice_number'])->exists()) {
                         $this->fail('That invoice number was issued while you were previewing. Generate the pack again.');
                     }

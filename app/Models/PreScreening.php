@@ -46,6 +46,7 @@ class PreScreening extends Model
         'consent_sent_at' => 'datetime',
         'consent_ack_at' => 'datetime',
         'eligible_at' => 'datetime',
+        'aewv_endorsed_at' => 'datetime',
         'converted_at' => 'datetime',
         'declined_at' => 'datetime',
         'skip_at' => 'datetime',
@@ -98,6 +99,12 @@ class PreScreening extends Model
     public function isTerminal(): bool
     {
         return in_array($this->status, [self::STATUS_CONVERTED, self::STATUS_DECLINED], true);
+    }
+
+    public function aewvEndorsementFailed(): bool
+    {
+        return $this->aewv_endorsement_message_id
+            && MessageLog::whereKey($this->aewv_endorsement_message_id)->value('status') === MessageLog::STATUS_FAILED;
     }
 
     public function isSkipped(): bool

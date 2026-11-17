@@ -11,9 +11,11 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
+use App\Support\CaseRecordAccess;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Immigration\RecentVisaDocuments;
 use App\Services\Immigration\VisaProgressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -49,9 +51,10 @@ class CaseProfileController extends Controller
 
         $this->ensureCanViewCases($user);
 
-        // Hard 404 on non-cases. This endpoint is case-only; non-cases
-        // continue to use LeadController::show via /admin/leads/{id} etc.
-        abort_unless($lead->is_immigration_case, 404);
+        // Match the Cases list, including older Education handoffs whose case
+        // flag was never stamped. Plain leads remain excluded. Reading a case
+        // must not rewrite its conversion flags, dates or audit history.
+        abort_unless(Lead::immigrationCase()->whereKey($lead->getKey())->exists(), 404);
 
         $this->writeAuditView($lead, $user);
 
@@ -79,6 +82,8 @@ class CaseProfileController extends Controller
 
         return Inertia::render($page, [
             'lead' => $this->serializeLead($lead),
+            'passportPrefillAvailable' => ! request()->attributes->has('user_view_actor')
+                && \App\Services\Immigration\PassportPrefillService::enabledFor($user),
             'intake' => $intake ? ['type' => $intakeType, 'data' => $intake] : null,
             'assessmentCompleteness' => $completeness,
             'documents' => $this->loadDocuments($lead),
@@ -150,6 +155,7 @@ class CaseProfileController extends Controller
                 ];
             })(),
             // Cases the dependant can be related to (defaults to this case).
+            'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
             'caseOptions' => Lead::immigrationCase()
                 ->orderBy('first_name')->limit(500)
                 ->get(['id', 'lead_id', 'first_name', 'last_name'])
@@ -424,6 +430,7 @@ class CaseProfileController extends Controller
     {
         $user = $this->guardCase($lead);
         [$data, $invoiceNo] = $this->invoiceData($lead);
+        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($invoiceNo);
 
         $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.invoice', array_merge($data, ['mode' => 'pdf']))
             ->setPaper('a4')->output();
@@ -534,12 +541,17 @@ class CaseProfileController extends Controller
             ], $d->checklistData()))->all();
     }
 
-    private function dependentRules(): array
+    private function dependentRules(?int $existingLink = null): array
     {
         return [
             'relationship' => ['required', \Illuminate\Validation\Rule::in(\App\Models\CaseDependent::RELATIONSHIPS)],
-            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')->where(function ($query) {
-                $query->where('is_immigration_case', true);
+            'linked_lead_id' => ['nullable', \Illuminate\Validation\Rule::exists('leads', 'id')->where(function ($query) use ($existingLink) {
+                $query->where('is_immigration_case', true)->where(function ($state) use ($existingLink) {
+                    $state->whereNull('deleted_at');
+                    if ($existingLink !== null) {
+                        $state->orWhere('id', $existingLink);
+                    }
+                });
                 if (auth()->user()?->role === 'agent') {
                     $query->where('agent_id', auth()->id());
                 }
@@ -596,7 +608,9 @@ class CaseProfileController extends Controller
     {
         $this->guardCase($lead);
         abort_unless($dependent->lead_id === $lead->id, 404);
-        $dependent->update($request->validate($this->dependentRules()));
+        $data = $request->validate($this->dependentRules($dependent->linked_lead_id));
+        CaseRecordAccess::authorizeNameChanges($request, $dependent, $data, ['first_name', 'middle_name', 'family_name']);
+        $dependent->update($data);
 
         return back()->with('success', 'Dependant updated.');
     }
@@ -1475,6 +1489,17 @@ class CaseProfileController extends Controller
         return back()->with('success', 'Partner recommendation saved.');
     }
 
+    /** Explicitly classify an unmatched upload without replacing its file. */
+    public function moveDocumentToRecentVisa(Request $request, Lead $lead, int $document, RecentVisaDocuments $recentVisas)
+    {
+        $user = $request->user();
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
+            || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
+        $recentVisas->move($lead, $document);
+
+        return back()->with('success', 'Document moved to Recent visa / eVisa.');
+    }
+
     /** Shared case guard for the process endpoints. */
     private function guardCase(Lead $lead): User
     {
@@ -1558,6 +1583,7 @@ class CaseProfileController extends Controller
             'ird_number' => 'nullable|string|max:60',
         ]);
 
+        CaseRecordAccess::authorizeNameChanges($request, $lead, $validated, ['first_name', 'middle_name', 'last_name', 'suffix']);
         $lead->update($validated);
 
         // No flash — the Personal tab auto-saves and shows its own inline
@@ -1930,8 +1956,7 @@ class CaseProfileController extends Controller
             ?? ($signers[0]['id'] ?? null);
 
         // Milestone dates for the Overview: when the pack was emailed, when the
-        // Written Agreement was signed, and when the invoice was settled (the
-        // first approved proof of payment).
+        // Written Agreement was signed, and when verified payments settled the invoices.
         $signedAt = LeadDocument::where('lead_id', $lead->id)
             ->where('source_variant', 'engagement:written_agreement')
             ->whereNotNull('client_signed_at')
@@ -1939,7 +1964,8 @@ class CaseProfileController extends Controller
 
         $invoices = \App\Services\PaymentProofService::invoiceQuery($lead)->with('invoicePayments')->get();
         $allPaid = $invoices->isNotEmpty() && $invoices->every(fn ($invoice) => app(\App\Services\PaymentProofService::class)->invoiceSummary($invoice)['paid']);
-        $paidAt = $allPaid ? $invoices->max('reviewed_at') : null;
+        $paidAt = $allPaid ? $invoices->max(fn ($invoice) => $invoice->reviewed_at
+            ?? $invoice->invoicePayments->where('finance_verified', true)->max('paid_at')) : null;
 
         return [
             'sent' => (bool) $lead->engagement_sent_at,

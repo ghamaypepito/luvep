@@ -106,6 +106,8 @@ function Panel({ p, leadBase }) {
                             {p.email && <span>{p.email}</span>}
                             <span className="font-semibold text-gray-700">{p.scenario_label}</span>
                             <span className="uppercase text-[10px] tracking-wider">{p.applicant_mode}</span>
+                            {p.approved_by ? <span>Approved by {p.approved_by}</span>
+                                : p.default_approver && <span>Default approver: {p.default_approver}</span>}
                         </div>
                         <Link href={`${leadBase}/leads/${p.id}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 mt-1">
                             View lead profile <ExternalLink size={11} />
@@ -123,7 +125,7 @@ function Panel({ p, leadBase }) {
                         Request changes
                     </button>
                     <button type="button" onClick={() => approve({ verify_all: true, send_email: true })}
-                        disabled={busy === "verify-all" || p.status === "approved"}
+                        disabled={!p.can_approve || busy === "verify-all" || p.status === "approved"}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40">
                         {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Approve
                     </button>
@@ -310,7 +312,7 @@ function AgreementReviewModal({ p, onClose, metaUpdate, approve, busy, onRequest
                             Request changes
                         </button>
                         <button type="button" onClick={() => approve({ verify_all: true, send_email: true })}
-                            disabled={busy === "verify-all" || p.status === "approved"}
+                            disabled={!p.can_approve || busy === "verify-all" || p.status === "approved"}
                             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40">
                             {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Approve
                         </button>
