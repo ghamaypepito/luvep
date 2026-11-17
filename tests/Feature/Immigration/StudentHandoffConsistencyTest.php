@@ -8,6 +8,7 @@ use App\Models\Lead;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -37,20 +38,32 @@ class StudentHandoffConsistencyTest extends TestCase
         return [['inline'], ['profile'], ['edit'], ['link'], ['create']];
     }
 
-    #[DataProvider('entryPoints')]
-    public function test_stage_handoff_reuses_one_record_defaults_visa_and_notifies_once(string $entry): void
+    public static function conversionEntryPoints(): array
     {
-        $lead = $entry === 'create' ? null : Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Handoff',
-            'email' => 'handoff@example.test', 'phone' => '+64000000000', 'is_student' => $entry !== 'link']);
+        return [...self::entryPoints(), ['convert']];
+    }
+
+    private function handoffRequest(string $entry, ?Lead $lead): array
+    {
         $payload = ['first_name' => 'Synthetic', 'last_name' => 'Handoff', 'email' => 'handoff@example.test',
             'phone' => '+64000000000', 'program_text' => '', 'education_stage' => 'Endorsed to Immigration'];
-        [$url, $data] = match ($entry) {
+
+        return match ($entry) {
             'inline' => ["/portal/education/students/{$lead->id}/dashboard-field", ['education_stage' => 'Endorsed to Immigration']],
             'profile' => ["/admin/leads/{$lead->id}/stage", ['field' => 'education_stage', 'status' => 'Endorsed to Immigration']],
             'edit' => ["/portal/education/students/{$lead->id}/update", $payload],
             'link' => ['/portal/education/students/link-existing', $payload + ['lead_id' => $lead->id]],
             'create' => ['/portal/education/students', $payload],
+            'convert' => ["/admin/leads/{$lead->id}/convert-to-case", []],
         };
+    }
+
+    #[DataProvider('entryPoints')]
+    public function test_stage_handoff_reuses_one_record_defaults_visa_and_notifies_once(string $entry): void
+    {
+        $lead = $entry === 'create' ? null : Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Handoff',
+            'email' => 'handoff@example.test', 'phone' => '+64000000000', 'is_student' => $entry !== 'link']);
+        [$url, $data] = $this->handoffRequest($entry, $lead);
         $this->post($url, $data)->assertRedirect()->assertSessionHasNoErrors()->assertSessionMissing('error');
         $lead = Lead::where('email', 'handoff@example.test')->sole();
         $this->assertTrue($lead->is_student);
@@ -90,6 +103,56 @@ class StudentHandoffConsistencyTest extends TestCase
         $this->assertSame('For Assessment', $lead->immigration_stage);
         $this->assertSame('For PTE Exam', $lead->english_stage);
         Mail::assertQueued(TemplatedMessage::class, 2);
+    }
+
+    public function test_sales_cannot_handoff_another_departments_student_from_profile_or_register(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'sales']));
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Handoff',
+            'email' => 'handoff@example.test', 'is_student' => true]);
+        foreach (['profile', 'inline', 'edit'] as $entry) {
+            [$url, $data] = $this->handoffRequest($entry, $lead);
+            $this->post(str_replace('/portal/education/', '/portal/sales/', $url), $data)->assertForbidden();
+        }
+        $this->assertFalse($lead->refresh()->is_immigration_case);
+        $this->assertNull($lead->education_stage);
+        $this->assertNull($lead->immigration_converted_at);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_an_external_portal_grant_cannot_create_or_link_a_student_and_send_handoff_mail(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'agent', 'portal_access' => ['education']]));
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Handoff',
+            'email' => 'handoff@example.test']);
+        foreach (['create', 'link'] as $entry) {
+            [$url, $data] = $this->handoffRequest($entry, $lead);
+            $this->post($url, $data)->assertForbidden();
+        }
+        $this->assertFalse($lead->refresh()->is_student);
+        $this->assertFalse($lead->is_immigration_case);
+        $this->assertDatabaseCount('leads', 1);
+        Mail::assertNothingOutgoing();
+    }
+
+    #[DataProvider('conversionEntryPoints')]
+    public function test_rolled_back_handoff_never_queues_a_notice(string $entry): void
+    {
+        $lead = $entry === 'create' ? null : Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Handoff',
+            'email' => 'handoff@example.test', 'is_student' => $entry !== 'link']);
+        [$url, $data] = $this->handoffRequest($entry, $lead);
+
+        DB::beginTransaction();
+        try {
+            $this->post($url, $data)->assertRedirect()->assertSessionHasNoErrors()->assertSessionMissing('error');
+            $this->assertTrue(Lead::where('email', 'handoff@example.test')->sole()->is_immigration_case);
+        } finally {
+            DB::rollBack();
+        }
+
+        $this->assertDatabaseCount('leads', $lead === null ? 0 : 1);
+        $this->assertFalse(Lead::where('is_immigration_case', true)->exists());
+        Mail::assertNothingOutgoing();
     }
 
     public function test_unrelated_updates_do_not_implicitly_convert_a_legacy_handoff_record(): void
