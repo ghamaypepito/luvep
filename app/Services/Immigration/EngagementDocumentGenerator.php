@@ -203,6 +203,7 @@ class EngagementDocumentGenerator
         }
 
         if (in_array($type, ['initial_consultation', 'oia'], true)) {
+            $payload['service_fee'] = number_format(self::servicePricing($type, $overrides)['professional_excl'], 2);
             $payload['client']['dob'] = $lead->dob ? \Illuminate\Support\Carbon::parse($lead->dob)->format('d/m/Y') : null;
             $payload['client']['passport'] = $lead->passport_number;
             $payload['consultation'] = array_intersect_key($overrides, array_flip([
@@ -238,6 +239,28 @@ class EngagementDocumentGenerator
             'oia' => ['oia', 'invoice'],
             default => ['written_agreement', 'invoice', 'professional_standards', 'code_of_conduct', 'complaints_procedure'],
         };
+    }
+
+    public static function servicePricing(string $type, array $settings): ?array
+    {
+        $default = match ($type) {
+            'initial_consultation' => 250,
+            'oia' => 500,
+            default => null,
+        };
+        if ($default === null) {
+            return null;
+        }
+
+        $fee = (float) ($settings['service_fee'] ?? $default);
+        $gst = $type === 'oia' ? round($fee * VisaType::GST_RATE, 2) : 0;
+
+        return [
+            'professional_excl' => $fee,
+            'gst' => $gst,
+            'grand_total' => round($fee + $gst, 2),
+            'currency' => $type === 'oia' ? 'NZD' : 'USD',
+        ];
     }
 
     /** Client + visa-fee + signing-adviser data for the Written Agreement. */

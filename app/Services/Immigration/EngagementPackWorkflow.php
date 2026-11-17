@@ -47,19 +47,18 @@ class EngagementPackWorkflow
 
     public function invoiceOptions(Lead $lead, string $type, array $settings): array
     {
-        if ($type === 'initial_consultation' || $type === 'oia') {
-            $fee = $type === 'oia' ? 500 : 250;
+        if ($pricing = EngagementDocumentGenerator::servicePricing($type, $settings)) {
             $items = [[
                 'description' => $type === 'oia'
                     ? 'Official Information Act / Privacy Act request service - payable in advance'
                     : 'Initial visa consultation - non-refundable booking fee, credited toward a subsequent visa processing engagement',
-                'quantity' => 1, 'unit_price' => $fee,
+                'quantity' => 1, 'unit_price' => $pricing['professional_excl'],
             ]];
             if ($type === 'oia') {
-                $items[] = ['description' => 'GST (15%)', 'quantity' => 1, 'unit_price' => 75];
+                $items[] = ['description' => 'GST (15%)', 'quantity' => 1, 'unit_price' => $pricing['gst']];
             }
 
-            return ['items' => $items, 'currency' => $type === 'oia' ? 'NZD' : 'USD', 'include_disbursement' => false];
+            return ['items' => $items, 'currency' => $pricing['currency'], 'include_disbursement' => false];
         }
 
         $options = array_intersect_key($settings, array_flip(['fee_tier', 'fee_location', 'include_gst']));
@@ -125,8 +124,10 @@ class EngagementPackWorkflow
             }
         }
         $files = [];
-        $total = $type === 'oia' ? 575 : ($type === 'initial_consultation' ? 250 : $this->generator->feeTotals($lead, $settings)['grand_total']);
-        $currency = $type === 'initial_consultation' ? 'USD' : 'NZD';
+        $pricing = EngagementDocumentGenerator::servicePricing($type, $settings) ?? $this->generator->feeTotals($lead, $settings);
+        $total = $pricing['grand_total'];
+        $currency = $pricing['currency'] ?? 'NZD';
+        $feeExcl = $pricing['professional_excl'];
         foreach ($types as $key) {
             $snapshot = null;
             $invoiceFinance = null;
@@ -157,9 +158,6 @@ class EngagementPackWorkflow
                 'invoice_total' => $key === 'invoice' ? $invoiceTotal : null, 'invoice_finance' => $invoiceFinance,
             ];
         }
-        $feeExcl = match ($type) {
-            'oia' => 500, 'initial_consultation' => 250, default => $this->generator->feeTotals($lead, $settings)['professional_excl']
-        };
         $data = compact('files', 'settings', 'total', 'currency', 'feeExcl') + ['pack_id' => $packId, 'lead_id' => $lead->id];
         $token = $this->remember('prepared', $data);
 
