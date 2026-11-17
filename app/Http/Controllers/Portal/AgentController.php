@@ -469,8 +469,12 @@ class AgentController extends Controller
             'program_offered' => 'nullable|string|max:200',
         ]);
 
-        $lead->first_name = trim($validated['first_name']);
-        $lead->last_name = trim(($validated['last_name'] ?? '').' '.($validated['suffix'] ?? ''));
+        if (\App\Support\CaseRecordAccess::nameLocked($request, $lead)) {
+            \App\Support\CaseRecordAccess::authorizeNameChanges($request, $lead, $validated, \App\Support\CaseRecordAccess::NAME_FIELDS);
+        } else {
+            $lead->first_name = trim($validated['first_name']);
+            $lead->last_name = trim(($validated['last_name'] ?? '').' '.($validated['suffix'] ?? ''));
+        }
         $lead->email = $validated['email'] ?? null;
         $lead->phone = $validated['phone'] ?? null;
         $lead->residence_city = $validated['residence_city'] ?? null;

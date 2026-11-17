@@ -9,6 +9,7 @@ use App\Models\Program;
 use App\Services\Reports\EducationReportService;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
+use App\Support\CaseRecordAccess;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
 use Illuminate\Http\Request;
@@ -355,6 +356,9 @@ class EducationController extends Controller
                                             ?? optional($l->stageUpdater)->name,
                         'updated_desc' => $l->last_activity_desc,
                         'name' => trim("{$l->first_name} {$l->last_name}") ?: 'Unknown',
+                        'first_name' => $l->first_name,
+                        'last_name' => $l->last_name,
+                        'case_name_locked' => CaseRecordAccess::nameLocked(request(), $l),
                         'avatar_url' => $l->faceImageUrl(),
                         'email' => $l->email,
                         'phone' => $l->phone,
@@ -833,7 +837,7 @@ class EducationController extends Controller
             })
             ->orderBy('first_name')
             ->limit(50)
-            ->get(['id', 'lead_id', 'first_name', 'middle_name', 'last_name', 'suffix', 'gender', 'email', 'phone', 'referral', 'agent_id', 'residence_country', 'is_immigration_case', 'immigration_stage', 'inz_visa_type'])
+            ->get(['id', 'lead_id', 'first_name', 'middle_name', 'last_name', 'suffix', 'gender', 'email', 'phone', 'referral', 'agent_id', 'residence_country', 'is_immigration_case', 'education_stage', 'immigration_stage', 'inz_visa_type'])
             ->map(fn (Lead $l) => [
                 'id' => $l->id,
                 'lead_id' => $l->lead_id,
@@ -850,6 +854,7 @@ class EducationController extends Controller
                 'location' => $l->residence_country,
                 // Context chip so staff recognise where the person came from.
                 'is_immigration_case' => (bool) $l->is_immigration_case,
+                'case_name_locked' => CaseRecordAccess::nameLocked(request(), $l),
                 'immigration_stage' => $l->immigration_stage,
                 'inz_visa_type' => $l->inz_visa_type,
             ]);
@@ -878,6 +883,12 @@ class EducationController extends Controller
         }
 
         $data = $this->validateStudentPayload($request, $lead->id);
+        if (CaseRecordAccess::nameLocked($request, $lead)) {
+            CaseRecordAccess::authorizeNameChanges($request, $lead, array_filter(
+                Arr::only($data, CaseRecordAccess::NAME_FIELDS),
+                fn ($value) => $value !== null && $value !== '',
+            ), CaseRecordAccess::NAME_FIELDS);
+        }
 
         try {
             // Profile fields — only overwrite when the modal actually sent a
@@ -970,13 +981,13 @@ class EducationController extends Controller
         // must be editable (they aren't flagged is_student).
         $lead = Lead::inStudentsRegister()->findOrFail($id);
         $data = $this->validateStudentPayload($request, $lead->id);
+        $name = Arr::only($data, CaseRecordAccess::NAME_FIELDS);
+        if (CaseRecordAccess::nameLocked($request, $lead)) {
+            CaseRecordAccess::authorizeNameChanges($request, $lead, $name, CaseRecordAccess::NAME_FIELDS);
+        }
 
         try {
-            $lead->fill([
-                'first_name' => $data['first_name'],
-                'middle_name' => $data['middle_name'] ?? null,
-                'last_name' => $data['last_name'],
-                'suffix' => $data['suffix'] ?? null,
+            $lead->fill($name + [
                 'gender' => $data['gender'] ?? null,
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
@@ -1060,6 +1071,7 @@ class EducationController extends Controller
      */
     public function destroyStudent(int $id)
     {
+        \App\Support\CaseRecordAccess::authorizeArchive(request(), [$id]);
         // Match the Students page universe, not just is_student — English
         // learners and student-visa Immigration cases show on the list too and
         // must be editable (they aren't flagged is_student).
@@ -1328,6 +1340,7 @@ class EducationController extends Controller
 
             return inertia('portal/education/Reports', app(EducationReportService::class)->build($period) + [
                 'weeklyReport' => $week ? $week->notes('education') + ['tasks' => $week->tasks('education')] : null,
+                'personalReport' => app(\App\Services\Reports\EducationPersonalReport::class)->build($period, $request->user(), is_string($request->query('activity_kind')) ? $request->query('activity_kind') : null),
             ]);
         } catch (\Throwable $e) {
             Log::error('Education reports failed', ['error' => $e->getMessage()]);
@@ -1352,6 +1365,9 @@ class EducationController extends Controller
     {
         $this->authorizeReport($request);
         if ($request->has('week_start')) {
+            if ($request->has('entry_action')) {
+                return \App\Services\Reports\EducationWeeklyNotes::save($request);
+            }
             return ReportWeek::save($request, 'education');
         }
 

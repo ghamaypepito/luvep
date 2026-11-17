@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Lead;
 use App\Models\User;
+use App\Services\ConsultancyReviewService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Illuminate\Support\Str;
 
 /**
@@ -44,16 +48,19 @@ class ConsultancyVerificationController extends Controller
         $userIds = $leads->flatMap(function (Lead $l) {
             $r = is_array($l->consultancy_review) ? $l->consultancy_review : [];
 
-            return [$r['submitted_by'] ?? null, $r['verified_by'] ?? null, $r['approved_by'] ?? null];
+            return [$r['submitted_by'] ?? null, $r['verified_by'] ?? null, $r['approved_by'] ?? null, $r['default_approver_id'] ?? null];
         })->filter()->unique()->values();
         $userNames = User::whereIn('id', $userIds)->pluck('name', 'id');
 
         $counts = ['pending' => 0, 'verified' => 0, 'approved_today' => 0];
 
-        $rows = $leads->map(function (Lead $l) use ($userNames, &$counts) {
+        $defaultApprover = ConsultancyReviewService::defaultApprover();
+        $isAuthorizedApprover = $request->user()->is_active && $request->user()->isAdmin();
+        $rows = $leads->map(function (Lead $l) use ($userNames, &$counts, $defaultApprover, $isAuthorizedApprover) {
             $review = is_array($l->consultancy_review) ? $l->consultancy_review : [];
             $meta = is_array($review['items'] ?? null) ? $review['items'] : [];
             $status = $review['status'] ?? 'pending';
+            $educationConsultancy = ConsultancyReviewService::isEducationConsultancy($review['scenario'] ?? null);
 
             if ($status === 'pending') {
                 $counts['pending']++;
@@ -128,6 +135,10 @@ class ConsultancyVerificationController extends Controller
                 'submitted_by' => $userNames[$review['submitted_by'] ?? null] ?? null,
                 'verified_by' => $userNames[$review['verified_by'] ?? null] ?? null,
                 'approved_by' => $userNames[$review['approved_by'] ?? null] ?? null,
+                'default_approver' => $educationConsultancy
+                    ? ($userNames[$review['default_approver_id'] ?? null] ?? $defaultApprover?->name)
+                    : null,
+                'can_approve' => ! $educationConsultancy || $isAuthorizedApprover,
                 'items' => $items,
                 'items_count' => $total,
                 'confirmed_count' => $confirmed,
@@ -302,54 +313,69 @@ class ConsultancyVerificationController extends Controller
      */
     public function approve(Request $request, Lead $lead)
     {
-        $review = is_array($lead->consultancy_review) ? $lead->consultancy_review : [];
-        abort_unless(in_array($review['status'] ?? null, ['pending', 'verified'], true), 422, 'This agreement cannot be approved.');
-
         $sendEmail = $request->boolean('send_email', true);
         $verifyAll = $request->boolean('verify_all', false);
+        $approver = $request->user();
+        $issued = null;
 
-        if ($verifyAll) {
-            $meta = is_array($review['items'] ?? null) ? $review['items'] : [];
-            foreach ($meta as $key => $m) {
-                $meta[$key] = array_merge(is_array($m) ? $m : [], ['status' => 'verified']);
-            }
-            $review['items'] = $meta;
-            if (($review['status'] ?? null) === 'pending') {
-                $review['verified_at'] = now()->toIso8601String();
-                $review['verified_by'] = $request->user()->id;
-            }
-        }
-
-        $review['status'] = 'approved';
-        $review['approved_at'] = now()->toIso8601String();
-        $review['approved_by'] = $request->user()->id;
-        $review['emailed'] = $sendEmail;
-        unset($review['changes_requested']);
-        $lead->consultancy_review = $review;
-
-        // Advance the lead's pipeline: an approved agreement is now live with
-        // the client (posted to their tracker, and emailed unless opted out),
-        // so the Agreements tab reads "Sent" rather than "Generated". Don't
-        // downgrade a lead that's already marked Signed.
-        if ($lead->status !== 'Consultancy Agreement Signed') {
-            $lead->status = 'Consultancy Agreement Sent';
-        }
-        $lead->save();
-
-        // Now generate the final PDF (with the reviewer's confirmed fees) and
-        // attach it to the lead's documents — it's this approval, not the
-        // original submit, that produces the client-facing agreement.
         try {
-            \App\Services\ConsultancyReviewService::generatePdf(
-                app(\App\Services\AgreementGenerator::class),
-                $lead,
-                $review['scenario'] ?? null,
-                \App\Services\ConsultancyReviewService::overridesForGeneration($review),
-            );
-        } catch (\Throwable $e) {
-            Log::error('Consultancy PDF generation on approval failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
+            $lead = DB::transaction(function () use ($lead, $sendEmail, $verifyAll, $approver, &$issued) {
+                $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+                $review = is_array($lead->consultancy_review) ? $lead->consultancy_review : [];
+                abort_unless(in_array($review['status'] ?? null, ['pending', 'verified'], true), 422, 'This agreement cannot be approved.');
+                if (ConsultancyReviewService::isEducationConsultancy($review['scenario'] ?? null)) {
+                    abort_unless($approver->is_active && $approver->isAdmin(), 403, 'An authorized admin must approve this agreement.');
+                }
+
+                if ($verifyAll) {
+                    $meta = is_array($review['items'] ?? null) ? $review['items'] : [];
+                    foreach ($meta as $key => $item) {
+                        $meta[$key] = array_merge(is_array($item) ? $item : [], ['status' => 'verified']);
+                    }
+                    $review['items'] = $meta;
+                    if ($review['status'] === 'pending') {
+                        $review['verified_at'] = now()->toIso8601String();
+                        $review['verified_by'] = $approver->id;
+                    }
+                }
+
+                $issued = ConsultancyReviewService::generatePdf(
+                    app(\App\Services\AgreementGenerator::class),
+                    $lead,
+                    $review['scenario'] ?? null,
+                    ConsultancyReviewService::overridesForGeneration($review),
+                );
+
+                $disk = Storage::disk('local');
+                if (! $disk->exists($issued->file_path) || $disk->size($issued->file_path) !== $issued->size) {
+                    throw new \RuntimeException('The issued PDF did not save.');
+                }
+
+                $review['status'] = 'approved';
+                $review['approved_at'] = now()->toIso8601String();
+                $review['approved_by'] = $approver->id;
+                $review['emailed'] = $sendEmail;
+                unset($review['changes_requested']);
+                $lead->consultancy_review = $review;
+                if ($lead->status !== 'Consultancy Agreement Signed') {
+                    $lead->status = 'Consultancy Agreement Sent';
+                }
+                $lead->saveOrFail();
+
+                return $lead;
+            });
+        } catch (HttpExceptionInterface $error) {
+            throw $error;
+        } catch (\Throwable $error) {
+            if ($issued?->file_path) {
+                Storage::disk('local')->delete($issued->file_path);
+            }
+            Log::error('Agreement issuance failed', ['lead_id' => $lead->id, 'exception' => $error]);
+
+            return back()->withErrors(['agreement' => 'Could not issue the agreement. Try again before sending it to the client.']);
         }
 
+        $review = $lead->consultancy_review;
         if ($sendEmail) {
             try {
                 // Fire the Education "Consultancy agreement approved" automation

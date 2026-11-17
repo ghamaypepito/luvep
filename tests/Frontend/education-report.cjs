@@ -37,9 +37,9 @@ const render = async props => act(async () => root.render(React.createElement(Re
 const change = async (node, value) => act(async () => { Object.getOwnPropertyDescriptor(node.tagName === 'TEXTAREA' ? dom.window.HTMLTextAreaElement.prototype : dom.window.HTMLInputElement.prototype, 'value').set.call(node, value); node.dispatchEvent(new Event('input', { bubbles: true })); node.dispatchEvent(new Event('change', { bubbles: true })); });
 const metric = (key, label, count, previous) => ({ key, label, count, previous_count: previous, points: [{ from: '2026-11-01', to: '2026-11-01', previous_from: '2026-10-30', previous_to: '2026-10-30', count, previous_count: previous }, { from: '2026-11-02', to: '2026-11-02', previous_from: '2026-10-31', previous_to: '2026-10-31', count: 0, previous_count: 0 }] });
 const department = (name, count) => ({ total: count, register_total: 20, activity_total: count, event_count: 9, scope: 'activity', stages: [{ stage: `${name} enrolled`, count, moved: count, clients: [{ id: name, name: `${name} student`, ref: 'TEST', school: null, date: '1999-01-01', moved: true }] }], insights: { metrics: [metric(`${name} enrolled`, 'Enrolled', count, 1), metric(`${name} offer`, 'Offer issued', 2, 0)], largest: { stage: `${name} enrolled`, count, share: 60 }, active_students: count, register_total: 20, missing_stage: 3, missing_history: 4 } });
-const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-02', days: 2, label: 'This month', timezone: 'Pacific/Auckland', all: false, compare: true, bucket_days: 1, bucket_label: 'Daily', previous: { from: '2026-10-30', to: '2026-10-31' } }, departments: { education: department('Education', 6), english: department('English', 7) }, pipeline: [{ stage: 'Qualified', count: 1, moved: 1, num: 1 }], register: { Qualified: [{ id: 9, name: 'Recorded lead', date: null }] }, totalRegister: 1, movements: 1, programs: { total: null, published: null, draft: null, history_available: false, scope: 'unavailable' }, pipeline_history: { source: 'audit', notice: 'Only recorded lead status audit changes are included.' }, conclusion: { auto: 'Recorded activity.', note: '', note_key: '2026-11', stats: { movements: 1, qualified: 1, proposals: 0, register: 1 }, labels: { movements: 'Recorded status events' } } };
+const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-02', days: 2, label: 'This month', timezone: 'Pacific/Auckland', all: false, compare: true, bucket_days: 1, bucket_label: 'Daily', previous: { from: '2026-10-30', to: '2026-10-31' } }, departments: { education: department('Education', 6), english: department('English', 7) }, pipeline: [{ stage: 'Qualified', count: 1, moved: 1, num: 1 }], register: { Qualified: [{ id: 9, name: 'Recorded lead', date: null }] }, totalRegister: 1, movements: 1, programs: { total: 12, published: 9, draft: 2, history_available: false, scope: 'current' }, pipeline_history: { source: 'audit', notice: 'Only recorded lead status audit changes are included.' }, conclusion: { auto: 'Recorded activity.', note: '', note_key: '2026-11', stats: { movements: 1, qualified: 1, proposals: 0, register: 1 }, labels: { movements: 'Recorded status events' } } };
 (async () => {
-    // Catches legacy-only presets, absent server insights and accidentally showing current catalogue totals for dated filters.
+    // Catches legacy-only presets, absent server insights and missing current catalogue totals on dated filters.
     await render(props);
     const contactProps = {
         ...props,
@@ -55,19 +55,29 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     };
     await render(contactProps);
     const statusCards = [...document.querySelectorAll('button[aria-label$="with recorded entries"]')];
-    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Contact Attempted', 'Contacted', 'Education enrolled']);
+    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Education enrolled']);
     assert.ok(statusCards.every(node => !node.textContent.includes('Period')));
-    await click(statusCards[2]);
-    assert.match(document.body.textContent, /Reached lead/);
+    assert.doesNotMatch(document.body.textContent, /Attempted lead|Reached lead/, 'Shared contact totals must not appear as student accomplishments');
     await render(props);
     assert.match(document.querySelector('h1').nextElementSibling.textContent, /1 Nov – 2 Nov/, 'NZ calendar date labels must not shift date-only boundaries into tomorrow');
     assert.deepEqual([...document.querySelectorAll('[aria-label="Report period"] button')].map(n => n.textContent), ['Today', 'This week', 'Last week', 'This month', 'This year', 'Custom', 'All']);
+    const insights = button('Additional insights');
+    const pipelinePanel = [...document.querySelectorAll('details')].find(node => node.querySelector('summary')?.textContent.includes('Department pipeline position'));
+    const conclusion = [...document.querySelectorAll('h2')].find(node => node.textContent === 'Conclusion');
+    assert.equal(insights.getAttribute('aria-expanded'), 'false');
+    assert.ok(conclusion.compareDocumentPosition(insights) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(conclusion.compareDocumentPosition(pipelinePanel) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(pipelinePanel.open, false);
+    await click(insights);
+    await click(pipelinePanel.querySelector('summary'));
+    assert.equal(pipelinePanel.open, true);
     assert.ok(document.querySelector('svg[aria-label*="6 distinct students"]'), 'Uses the server metric count rather than reconstructing client dates');
     assert.match(document.querySelector('table').textContent, /6/);
     assert.match(document.body.textContent, /4 records lack.*3 have no current stage/s);
     assert.match(document.body.textContent, /snapshot coverage counts, independent of the selected dates/i);
     assert.match(document.body.textContent, /Only recorded lead status audit changes/);
-    assert.equal([...document.querySelectorAll('[aria-label="Program totals"] .tabular-nums')].map(n => n.textContent).join(','), '—,—,—');
+    assert.match(document.body.textContent, /Current catalogue totals apply across all report periods/);
+    assert.equal([...document.querySelectorAll('[aria-label="Program totals"] .tabular-nums')].map(n => n.textContent).join(','), '12,9,2');
     await click(document.querySelector('[aria-label="Education enrolled: 6 students with recorded entries"]'));
     assert.match(document.body.textContent, /Education student/);
     await click(button('This year')); assert.equal(requests.at(-1).url, '/portal/education/reports'); assert.deepEqual(requests.at(-1).data, { preset: 'this_year' }); assert.equal(requests.at(-1).options.preserveState, true);
@@ -89,7 +99,7 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
     await act(async () => { select.value = 'English offer'; select.dispatchEvent(new Event('change', { bubbles: true })); });
     await click(button('Add note')); await change(document.querySelector('textarea'), 'Keep this commentary draft');
     await act(async () => window.dispatchEvent(new Event('focus')));
-    assert.ok(reloads.at(-1).only.includes('range')); assert.ok(reloads.at(-1).only.includes('error')); assert.ok(reloads.at(-1).only.includes('pipeline_history'));
+    assert.ok(reloads.at(-1).only.includes('range')); assert.ok(reloads.at(-1).only.includes('error')); assert.ok(reloads.at(-1).only.includes('pipeline_history')); assert.ok(reloads.at(-1).only.includes('personalReport'));
     await act(async () => reloads.at(-1).onError({ report: 'Refresh failed. Try again.' }));
     assert.match(document.querySelector('[role=alert]').textContent, /Refresh failed/);
     await render({ ...props, generated_at: '2026-11-02T03:00:00Z' });

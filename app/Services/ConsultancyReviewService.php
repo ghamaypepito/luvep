@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Lead;
+use App\Models\LeadDocument;
+use App\Models\User;
 
 /**
  * Builds the fee line-items for a consultancy agreement and submits it into the
@@ -26,6 +28,19 @@ class ConsultancyReviewService
         'pte_exam' => 'PTE Examination Fee',
         'english_package' => 'English Review & Exam (Package)',
     ];
+
+    public static function isEducationConsultancy(?string $scenario): bool
+    {
+        return str_starts_with((string) $scenario, 'consultancy_');
+    }
+
+    public static function defaultApprover(): ?User
+    {
+        return User::where('email', 'eireen@dimmigration.co')
+            ->where('is_active', true)
+            ->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])
+            ->first(['id', 'name']);
+    }
 
     /** A short human label for the chosen agreement variant. */
     public static function scenarioLabel(string $type): string
@@ -119,6 +134,7 @@ class ConsultancyReviewService
             'status' => 'pending',
             'submitted_at' => now()->toIso8601String(),
             'submitted_by' => $submittedBy,
+            'default_approver_id' => static::isEducationConsultancy($type) ? static::defaultApprover()?->id : null,
             'scenario' => $type,
             'scenario_label' => static::scenarioLabel($type),
             'applicant_mode' => $overrides['applicant_mode'] ?? 'single',
@@ -199,23 +215,17 @@ class ConsultancyReviewService
     }
 
     /** Generate + attach the final PDF for an approved agreement. */
-    public static function generatePdf(\App\Services\AgreementGenerator $g, Lead $lead, ?string $type, array $overrides): void
+    public static function generatePdf(AgreementGenerator $generator, Lead $lead, ?string $type, array $overrides): LeadDocument
     {
-        if ($type === 'consultancy_onshore') {
-            $g->onshoreEngagement($lead, $overrides);
-        } elseif ($type === 'english_engagement') {
-            $g->englishEngagement($lead, $overrides['currency'] ?? 'php', $overrides);
-        } elseif ($type === 'english_offshore') {
-            $g->englishOffshore($lead, $overrides['currency'] ?? 'nzd', $overrides);
-        } elseif ($type === 'english_offshore_1000') {
-            $g->englishOffshore($lead, $overrides['currency'] ?? 'nzd', array_merge($overrides, ['offshore_variant' => 'package_1000']));
-        } elseif ($type === 'consultancy_offshore_zero') {
-            $g->consultancyOffshore($lead, array_merge($overrides, ['zero_fees' => true]));
-        } elseif ($type === 'consultancy_offshore') {
-            $g->consultancyOffshore($lead, $overrides);
-        } else {
-            $g->consultancy($lead, static::scenarioKey($type), $overrides);
-        }
+        return match ($type) {
+            'consultancy_onshore' => $generator->onshoreEngagement($lead, $overrides),
+            'english_engagement' => $generator->englishEngagement($lead, $overrides['currency'] ?? 'php', $overrides),
+            'english_offshore' => $generator->englishOffshore($lead, $overrides['currency'] ?? 'nzd', $overrides),
+            'english_offshore_1000' => $generator->englishOffshore($lead, $overrides['currency'] ?? 'nzd', array_merge($overrides, ['offshore_variant' => 'package_1000'])),
+            'consultancy_offshore_zero' => $generator->consultancyOffshore($lead, array_merge($overrides, ['zero_fees' => true])),
+            'consultancy_offshore' => $generator->consultancyOffshore($lead, $overrides),
+            default => $generator->consultancy($lead, static::scenarioKey($type), $overrides),
+        };
     }
 
     /** Stored agreement type → AgreementGenerator scenario key. */

@@ -43,11 +43,8 @@ trait SyncsIntakeToCase
                 return; // no existing case for this exact person — nothing to sync
             }
 
-            // Resident uses last_name/nationality; the other funnels use
-            // family_name/country_of_citizenship — accept whichever is present.
+            // Keep the submitted name on the assessment and the verified name on the case.
             $patch = [
-                'first_name' => $intake->first_name ?? null,
-                'last_name' => $intake->last_name ?? ($intake->family_name ?? null),
                 'phone' => $intake->phone ?? null,
                 'passport_number' => $intake->passport_number ?? null,
                 'passport_expiry' => $intake->passport_expiry ?? null,

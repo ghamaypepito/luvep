@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\Lead;
+use App\Support\CaseRecordAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -71,6 +72,7 @@ class LeadIntakeService
                 'residence_country' => empty($lead->residence_country) ? ($payload['country'] ?? null) : null,
             ], fn ($v) => ! is_null($v) && $v !== '');
 
+            $backfill = CaseRecordAccess::preserveCaseIdentity($lead, $backfill);
             empty($backfill) ?: $lead->update($backfill);
 
             ActivityLog::record('lead.resubmitted', [

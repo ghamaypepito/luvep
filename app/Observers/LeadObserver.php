@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Models\Lead;
 use App\Models\User;
 use App\Notifications\LeadAssignedToYou;
+use App\Support\CaseRecordAccess;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -38,6 +39,14 @@ class LeadObserver
             && in_array($lead->immigration_stage, self::LODGED_STAGES, true)
             && empty($lead->inz_lodged_at)) {
             $lead->inz_lodged_at = now();
+        }
+    }
+
+    public function updating(Lead $lead): void
+    {
+        $request = request();
+        if ($lead->isDirty(CaseRecordAccess::NAME_FIELDS) && $request->user() && CaseRecordAccess::nameLocked($request, $lead)) {
+            CaseRecordAccess::authorizeNameChanges($request, $lead, $lead->getDirty(), CaseRecordAccess::NAME_FIELDS);
         }
     }
 

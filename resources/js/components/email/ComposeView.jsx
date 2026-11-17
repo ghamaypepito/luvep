@@ -9,6 +9,7 @@ import EmailBuilder from "@/components/templates/EmailBuilder";
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 const statusTone = (s) => ({ sent: "bg-emerald-50 text-emerald-700", queued: "bg-amber-50 text-amber-700", failed: "bg-rose-50 text-rose-700", bounced: "bg-rose-50 text-rose-700" }[s] || "bg-gray-100 text-gray-500");
+const isFullHtml = (html) => /^\s*<(!doctype|html)\b/i.test(html || "");
 
 /**
  * Compose module — reused by the admin area and every department portal. Left:
@@ -16,7 +17,7 @@ const statusTone = (s) => ({ sent: "bg-emerald-50 text-emerald-700", queued: "bg
  * picked leads and/or typed addresses, subject, the shared body editor +
  * drag-and-drop builder, attachments).
  */
-export default function ComposeView({ basePath = "/admin/email/compose", sent = [] }) {
+export default function ComposeView({ basePath = "/admin/email/compose", sent = [], templates = [] }) {
     const [leads, setLeads] = useState([]);      // [{id,name,email}]
     const [emails, setEmails] = useState([]);     // [string]
     const [subject, setSubject] = useState("");
@@ -61,6 +62,14 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const removeEmail = (v) => setEmails((p) => p.filter((x) => x !== v));
     const pickFiles = (e) => { setAttachments((p) => [...p, ...Array.from(e.target.files || [])]); e.target.value = ""; };
     const removeFile = (i) => setAttachments((p) => p.filter((_, ix) => ix !== i));
+    const applyTemplate = (id) => {
+        const template = templates.find((item) => String(item.id) === id);
+        if (!template) return;
+        if ((subject.trim() || body.trim()) && !window.confirm("Replace the draft subject and body with this template?")) return;
+        setSubject(template.email_subject || "");
+        setBody(template.email_body);
+        setDesignJson(template.design_json);
+    };
 
     const resetForm = () => {
         setLeads([]); setEmails([]); setSubject(""); setBody(""); setDesignJson(null);
@@ -87,7 +96,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     };
 
     const inp = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-300";
-    const bodyDoc = (html) => `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;color:#333;} .em{max-width:600px;margin:16px auto;background:#fff;padding:24px 28px;font-size:14px;line-height:1.6;} img{max-width:100%;}</style></head><body>${/^\s*<(!doctype|html)/i.test(html || "") ? (html || "") : `<div class="em">${html || ""}</div>`}</body></html>`;
+    const bodyDoc = (html) => isFullHtml(html) ? html : `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;color:#333;} .em{max-width:600px;margin:16px auto;background:#fff;padding:24px 28px;font-size:14px;line-height:1.6;} img{max-width:100%;}</style></head><body><div class="em">${html || ""}</div></body></html>`;
 
     return (
         <div className="flex h-[calc(100vh-120px)] gap-4 max-w-[1400px] mx-auto">
@@ -164,6 +173,20 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                 )}
                             </div>
 
+                            {templates.length > 0 && (
+                                <label className="block">
+                                    <span className="block text-xs font-semibold text-gray-600 mb-1">Email template</span>
+                                    <select value="" onChange={(e) => applyTemplate(e.target.value)} className={inp}>
+                                        <option value="">Choose an email template</option>
+                                        {templates.map((template) => (
+                                            <option key={template.id} value={template.id}>
+                                                {template.name}{template.department ? ` · ${template.department}` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
+
                             {/* Subject */}
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Subject</span>
@@ -179,7 +202,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                         <button type="button" onClick={() => setPreviewOpen(true)} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1"><Eye size={12} /> Preview</button>
                                     </div>
                                 </div>
-                                {designJson ? (
+                                {designJson || isFullHtml(body) ? (
                                     <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-100">
                                         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white text-[11px] text-gray-600"><Wand2 size={13} className="text-[#436235]" /> Built with the visual editor — click <strong>Customize email body</strong> to edit.</div>
                                         <iframe title="Body" srcDoc={body} sandbox="" className="w-full bg-gray-100" style={{ height: 360 }} />

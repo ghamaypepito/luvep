@@ -45,9 +45,7 @@ function PresetPreview({ url, label, onPick }) {
  * portal. `basePath` drives every link/submit so the same form works under
  * /admin/message-templates and /portal/<role>/email-templates.
  *
- * When `departmentOptions` is provided (admin only), a department selector is
- * shown on create. Department is immutable after creation. Portal staff never
- * see the selector — the controller forces their own department.
+ * The department selector uses the current library tab or folder as a default.
  */
 export default function TemplateEditorView({
     template = null,
@@ -161,9 +159,6 @@ export default function TemplateEditorView({
         const footer = shownFooter ? `<img src="${shownFooter}" style="display:block;width:100%;max-width:600px;height:auto;border:0;">` : "";
         return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#eef0f4;font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#333;} .wrap{max-width:600px;margin:0 auto;background:#fff;} .pad{padding:28px 36px;font-size:14px;line-height:1.6;} img{max-width:100%;} table{max-width:100%;}</style></head><body><div class="wrap">${banner}<div class="pad">${fill(data.email_body)}</div>${footer}</div></body></html>`;
     };
-    // Admin (cross-department) context supplies departmentOptions — show the
-    // selector on both create and edit so scope (shared / a department) is
-    // changeable. Portal staff never get options, so it stays hidden for them.
     const showDeptSelector = !!departmentOptions;
     // Warn when a system-triggered template is being scoped off Shared.
     const systemKeyOffShared = SYSTEM_TEMPLATE_KEYS.includes(data.key) && data.department !== "";
@@ -270,7 +265,8 @@ export default function TemplateEditorView({
                         <div className="grid grid-cols-2 gap-4">
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Key {keyLocked && <span className="text-gray-400">(immutable)</span>}{isDraft && <span className="text-indigo-500">(set a key)</span>}</span>
-                                <input value={data.key} onChange={(e) => setData("key", e.target.value)} disabled={keyLocked} placeholder="application_status_update" className={`${inp} ${keyLocked ? "bg-gray-50 text-gray-500" : ""}`} />
+                                <input value={data.key} onChange={(e) => setData("key", e.target.value)} disabled={keyLocked} placeholder="welcome_follow_up" className={`${inp} ${keyLocked ? "bg-gray-50 text-gray-500" : ""}`} />
+                                {!keyLocked && <span className="text-[11px] text-gray-500 block mt-1">Required. Use lowercase letters, numbers and underscores.</span>}
                                 {errors.key && <span className="text-xs text-rose-600">{errors.key}</span>}
                             </label>
                             <label className="block">
@@ -282,7 +278,7 @@ export default function TemplateEditorView({
                         {showDeptSelector && (
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Department</span>
-                                <select value={data.department} onChange={(e) => { const v = e.target.value; setData("department", v); setData("branding", v || "default"); }} className={inp}>
+                                <select value={data.department} onChange={(e) => { const v = e.target.value; setData("department", v); setData("branding", v || "default"); if (!editing) setData("folder_id", null); }} className={inp}>
                                     {departmentOptions.map((o) => (
                                         <option key={o.value} value={o.value}>{o.label}</option>
                                     ))}
@@ -444,6 +440,14 @@ export default function TemplateEditorView({
                             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5"><Smartphone size={15} /> SMS</h3>
                             <textarea value={data.sms_body} onChange={(e) => setData("sms_body", e.target.value)} rows={3} className={`${inp}`} />
                             <p className={`text-xs ${segments > 1 ? "text-amber-600" : "text-gray-400"}`}>{smsLen} chars · {segments} segment{segments === 1 ? "" : "s"}{segments > 1 ? " (multi-segment costs more)" : ""}</p>
+                        </div>
+                    )}
+
+                    {Object.keys(errors).length > 0 && (
+                        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                            <ul className="list-disc pl-4">
+                                {Object.entries(errors).map(([field, message]) => <li key={field}>{message}</li>)}
+                            </ul>
                         </div>
                     )}
 

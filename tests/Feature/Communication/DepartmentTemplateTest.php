@@ -91,6 +91,48 @@ class DepartmentTemplateTest extends TestCase
         $this->assertDatabaseMissing('message_templates', ['key' => 'edu_note', 'department' => 'education']);
     }
 
+    public function test_education_template_from_the_shared_tab_defaults_to_shared(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->get('/portal/education/email-templates/create?department=')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('fixedDepartment', ''));
+    }
+
+    public function test_education_template_creation_reports_invalid_inputs_then_persists_corrected_draft(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $inputs = [
+            'name' => 'Welcome', 'channels' => ['email'], 'is_active' => true,
+            'email_subject' => 'Welcome {{first_name}}', 'email_body' => '<p>Hello {{first_name}}</p>',
+        ];
+
+        $this->post('/portal/education/email-templates', $inputs)
+            ->assertSessionHasErrors('key');
+        $this->assertDatabaseMissing('message_templates', ['name' => 'Welcome']);
+
+        $this->post('/portal/education/email-templates', $inputs + ['key' => 'education_welcome'])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+        $this->assertDatabaseHas('message_templates', ['key' => 'education_welcome', 'department' => 'education', 'is_active' => true]);
+    }
+
+    public function test_template_cannot_be_saved_into_a_folder_from_another_department(): void
+    {
+        $owner = User::factory()->create(['role' => 'education']);
+        $folder = \App\Models\TemplateFolder::create(['name' => 'Education only', 'department' => 'education', 'created_by' => $owner->id]);
+        $inputs = ['key' => 'welcome_from_folder', 'name' => 'Welcome from folder', 'channels' => ['email'],
+            'email_subject' => 'Welcome', 'email_body' => 'Hello', 'folder_id' => $folder->id];
+        $this->actingAs($owner)->post('/portal/education/email-templates', ['department' => 'sales', ...$inputs])
+            ->assertSessionHasErrors('folder_id');
+        $this->post('/portal/education/email-templates', ['department' => 'education', ...$inputs])
+            ->assertSessionHasNoErrors();
+        $template = MessageTemplate::where('key', $inputs['key'])->sole();
+        $this->actingAs($owner)->put('/portal/education/email-templates/'.$template->id, ['department' => 'sales', ...$inputs])
+            ->assertSessionHasNoErrors();
+        $this->assertNull($template->fresh()->folder_id);
+    }
+
     public function test_staff_can_view_and_edit_another_departments_and_shared_templates(): void
     {
         $sales = $this->tmpl(['department' => 'sales']);

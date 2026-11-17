@@ -41,7 +41,8 @@ class AgreementCustomDescriptionTest extends TestCase
         $this->assertStringContainsString('Custom enrolment &amp; documentation support', $response->getContent());
         $this->assertStringContainsString('&lt;img src=x onerror=alert(1)&gt;', $response->getContent());
         $this->assertStringNotContainsString('<img src=x onerror=alert(1)>', $response->getContent());
-        $this->assertStringContainsString('MAIN APPLICANT (Couple)', $response->getContent());
+        $response->assertSee('MAIN APPLICANT (Couple)')->assertSee('SCOPE OF SERVICES')
+            ->assertDontSee('INDICATIVE COST BREAKDOWN')->assertDontSee('WITHOUT A VOUCHER');
         $this->assertDatabaseCount('lead_documents', 0);
         $this->assertNull($this->lead->fresh()->consultancy_review);
     }
@@ -54,6 +55,9 @@ class AgreementCustomDescriptionTest extends TestCase
         ])->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $text = (new Parser)->parseContent($response->getContent())->getText();
         $this->assertStringContainsString('Custom description for the selected application only.', $text);
+        $this->assertStringContainsString('SCOPE OF SERVICES', $text);
+        $this->assertStringNotContainsString('INDICATIVE COST BREAKDOWN', $text);
+        $this->assertStringNotContainsString('English Proficiency Fee:', $text);
         $this->assertSame($before, $this->lead->fresh()->getAttributes());
         $this->assertDatabaseCount('lead_documents', 0);
         Mail::assertNothingOutgoing();
@@ -89,6 +93,31 @@ class AgreementCustomDescriptionTest extends TestCase
             [$blank] = $generator->buildConsultancyPayload($this->lead, $key, ['application_description' => '   ']);
             $this->assertSame($payload['scenario_description'], $blank['scenario_description']);
         }
+    }
+
+    public function test_english_proficiency_fee_appears_in_article_one_without_the_reference_tables(): void
+    {
+        $base = '/admin/leads/'.$this->lead->id.'/generate/consultancy_english_100';
+        $fees = ['school_enrolment_fee' => 103000, 'english_proficiency_fee' => 17650];
+        $this->actingAs($this->staff)->get($base.'/preview?'.http_build_query($fees))
+            ->assertOk()->assertSee('English Proficiency Fee:')->assertSee('Php 17,650.00')
+            ->assertDontSee('INDICATIVE COST BREAKDOWN');
+
+        $pdf = $this->post($base.'/download-preview', $fees)->assertOk()->getContent();
+        $text = (new Parser)->parseContent($pdf)->getText();
+        $this->assertStringContainsString('Php 17,650.00', $text);
+        $this->assertStringNotContainsString('INDICATIVE COST BREAKDOWN', $text);
+    }
+
+    public function test_retired_voucher_type_cannot_be_previewed_or_submitted_as_a_new_agreement(): void
+    {
+        $base = '/admin/leads/'.$this->lead->id.'/generate/consultancy_voucher_150';
+        $this->actingAs($this->staff)->get($base.'/preview')->assertStatus(400);
+        $this->post($base.'/download-preview')->assertStatus(400);
+        $this->post($base)->assertSessionHasErrors('error');
+        $this->assertNull($this->lead->fresh()->consultancy_review);
+        $this->assertDatabaseCount('lead_documents', 0);
+        Mail::assertNothingOutgoing();
     }
 
     public function test_description_type_and_length_are_validated_for_preview_download_and_submission(): void
