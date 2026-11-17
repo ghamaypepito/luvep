@@ -1,5 +1,6 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
 import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
+import EducationNoteDocuments from '@/components/education/EducationNoteDocuments';
 import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
@@ -1093,9 +1094,10 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
             )}
 
             {/* ── Documents tab ── */}
-            {activeTab === 'documents' && (
+            {activeTab === 'documents' && <>
                 <DocumentsPanel lead={backendLead} checklistFiles={checklistFiles} orphans={documentOrphans} currentUser={currentUser} threads={documentThreads} staffOptions={staffOptions} />
-            )}
+                <EducationNoteDocuments notes={notes} portalBase={portalBase} currentUser={currentUser} />
+            </>}
 
             {/* ── Communications tab — message history sent to this lead ── */}
             {activeTab === 'communications' && (
