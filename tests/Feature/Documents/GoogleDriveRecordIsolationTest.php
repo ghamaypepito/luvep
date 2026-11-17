@@ -16,6 +16,7 @@ use Google\Service\Drive\Resource\Permissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -38,6 +39,8 @@ class GoogleDriveRecordIsolationTest extends TestCase
     private bool $losePermissionResponse = false;
 
     private bool $denyRemote = false;
+
+    private ?string $moveFoundFolderTo = null;
 
     private string $keyPath;
 
@@ -66,6 +69,9 @@ class GoogleDriveRecordIsolationTest extends TestCase
             $found = array_filter($this->remote, fn ($file) => ! $file->getTrashed()
                 && ($file->getAppProperties()[$property[1]] ?? null) === $property[2]
                 && in_array($parent[1], $file->getParents() ?? [], true));
+            if ($this->moveFoundFolderTo !== null && $property[1] === 'luvep_lead_id' && $found) {
+                reset($found)->setParents([$this->moveFoundFolderTo]);
+            }
 
             return new FileList(['files' => array_values($found)]);
         });
@@ -309,5 +315,41 @@ class GoogleDriveRecordIsolationTest extends TestCase
         }
         $this->expectExceptionMessage('Multiple Drive folders match this record');
         $this->service->syncApprovedDocument($this->document($lead));
+    }
+
+    #[DataProvider('folderMappingOrigins')]
+    public function test_client_folder_moved_beneath_another_client_is_rejected_before_upload_or_share(bool $cached): void
+    {
+        config(['services.google_drive.share_with' => 'approved-reviewer@example.test']);
+        $other = $this->client();
+        $lead = $this->client();
+        $this->remote['other-client'] = new DriveFile(['id' => 'other-client', 'parents' => ['test-drive'],
+            'mimeType' => 'application/vnd.google-apps.folder', 'driveId' => 'test-drive',
+            'appProperties' => ['luvep_lead_id' => (string) $other->id]]);
+        $other->forceFill(['gdrive_folder_id' => 'other-client'])->save();
+        $this->remote['moved-folder'] = new DriveFile(['id' => 'moved-folder', 'parents' => [$cached ? 'other-client' : 'test-drive'],
+            'mimeType' => 'application/vnd.google-apps.folder', 'driveId' => 'test-drive',
+            'appProperties' => ['luvep_lead_id' => (string) $lead->id]]);
+        if ($cached) {
+            $lead->forceFill(['gdrive_folder_id' => 'moved-folder'])->save();
+        } else {
+            $this->moveFoundFolderTo = 'other-client';
+        }
+        $doc = $this->document($lead);
+
+        $this->expectExceptionMessage('folder mapping requires');
+        try {
+            $this->service->syncApprovedDocument($doc);
+        } finally {
+            $this->assertSame(0, $this->fileWrites);
+            $this->assertSame(0, $this->permissionWrites);
+            $this->assertNull($doc->fresh()->gdrive_synced_at);
+            $this->assertSame($cached ? 'moved-folder' : null, $lead->fresh()->gdrive_folder_id);
+        }
+    }
+
+    public static function folderMappingOrigins(): array
+    {
+        return ['saved mapping' => [true], 'moved after recovery lookup' => [false]];
     }
 }

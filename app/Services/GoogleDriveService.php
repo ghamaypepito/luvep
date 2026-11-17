@@ -155,6 +155,7 @@ class GoogleDriveService
             $properties = $folder->getAppProperties() ?? [];
             if ($folder->getTrashed() || $folder->getMimeType() !== self::FOLDER_MIME
                 || $folder->getDriveId() !== $this->sharedDriveId()
+                || $folder->getParents() !== [$this->sharedDriveId()]
                 || (isset($properties['luvep_lead_id']) && $properties['luvep_lead_id'] !== (string) $lead->id)
                 || Lead::withTrashed()->where('gdrive_folder_id', $folderId)->whereKeyNot($lead->id)->exists()) {
                 throw new RuntimeException('Drive folder mapping requires authorised record review before upload.');
