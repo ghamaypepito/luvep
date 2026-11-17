@@ -2517,14 +2517,16 @@ class LeadDocumentController extends Controller
         // ?inline=1 streams with Content-Disposition: inline so the browser
         // renders the PDF in-tab instead of forcing a download — used by the
         // "View" button on the agreements panel.
+        $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
         if ($request->boolean('inline')) {
             return response()->file(Storage::disk($disk)->path($doc->file_path), [
+                ...$headers,
                 'Content-Type' => $doc->mime ?: 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$doc->original_name.'"',
-            ]);
+                'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $doc->original_name, 'document'),
+            ])->setPrivate();
         }
 
-        return Storage::disk($disk)->download($doc->file_path, $doc->original_name);
+        return Storage::disk($disk)->download($doc->file_path, $doc->original_name, $headers);
     }
 
     /**

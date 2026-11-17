@@ -22,6 +22,7 @@ export default function EducationLayout({ children }) {
         { name: "List of Leads", href: "/portal/education/leads", icon: <UserSquare2 size={20} />, badge: badges.new_leads_today, badgeTone: "warning" },
         { name: "Proposal & Agreements", href: "/portal/education/leads/proposals-agreements", icon: <FileText size={20} /> },
         { name: "Students",  href: "/portal/education/students",  icon: <Users size={20} /> },
+        { name: "Offers of Place", href: "/portal/education/offers-of-place", icon: <FileText size={20} /> },
         { name: "Intake Monitoring", href: "/portal/education/students/intake-monitoring", icon: <CalendarDays size={20} /> },
         // Restricted module — only shows when granted (e.g. to Dinah). Two
         // parts, each its own grantable feature.

@@ -39,6 +39,7 @@ export default function SalesLayout({ children }) {
         { name: "Bookings",  href: "/portal/sales/bookings",  icon: <CalendarCheck size={20} />, badge: badges.bookings_this_week, badgeTone: "default" },
         { name: "Programs",  href: "/portal/sales/programs",  icon: <GraduationCap size={20} /> },
         { name: "Reports",       href: "/portal/sales/reports", icon: <LineChart size={20} /> },
+        { name: "Offers of Place", href: "/portal/sales/offers-of-place", icon: <FileText size={20} /> },
         { name: "Visa Approved", href: "/admin/visa-approvals", icon: <Award size={20} /> },
 
         { name: "Outreach", section: true },
