@@ -58,17 +58,22 @@ class SendEducationSchoolMail implements ShouldQueue
 
                 return;
             }
-            $t = $m->template_snapshot;
-            $subject = $audience->render($t['subject'], $current['context'], false);
-            $body = $audience->render($t['body'], $current['context'], true);
+            $t = $m->template_snapshot ?? [];
+            $message = $audience->renderedMessage($t, $current['context']);
+            if (! $message) {
+                $r->update(['status' => 'skipped', 'detail' => 'The saved message is incomplete or has no verified preview. Review it again.']);
+
+                return;
+            }
+            ['subject' => $subject, 'body' => $body, 'html' => $html] = $message;
             // Durable claim before I/O. An uncertain delivery is never retried automatically.
             $r->update(['status' => 'sending']);
             $log = MessageLog::create(['source' => 'education-school-mail', 'channel' => 'email', 'recipient_type' => 'raw',
                 'recipient_id' => null, 'recipient_address' => $r->email, 'subject' => $subject, 'body' => $body, 'status' => 'queued', 'triggered_by_user_id' => $u->id]);
             $r->update(['message_log_id' => $log->id]);
             try {
-                Mail::sendNow((new TemplatedMessage($subject, $body, [], $t['banner'], $t['footer'], $log->id, $t['from_email'], $t['from_name'],
-                    replyToEmail: $t['reply_to_email'], replyToName: $t['reply_to_name']))->to($r->email));
+                Mail::sendNow((new TemplatedMessage($subject, $body, logId: $log->id, fromEmail: $t['from_email'], fromName: $t['from_name'],
+                    replyToEmail: $t['reply_to_email'], replyToName: $t['reply_to_name']))->html($html)->to($r->email));
                 $log->update(['status' => 'sent', 'sent_at' => now()]);
                 $r->update(['status' => 'sent', 'detail' => 'Accepted by the configured mail transport. Inbox delivery is not guaranteed.']);
             } catch (\Throwable $e) {

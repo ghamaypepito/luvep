@@ -14,7 +14,7 @@ const { act } = React;
 const { createRoot } = require("react-dom/client");
 const root = createRoot(document.getElementById("root"));
 const posts = [];
-const inertia = { Head: () => null, router: { post: (url, data) => posts.push({ url, data }), get: (url,data) => posts.push({url,data,method:"get"}) } };
+const inertia = { Head: () => null, router: { post: (url, data, options) => posts.push({ url, data, options }), get: (url,data) => posts.push({url,data,method:"get"}) } };
 
 function load(entryPoint) {
     const output = buildSync({
@@ -48,7 +48,9 @@ const change=(node,value)=>act(async()=>{
         filters:{visit_ids:[11],audience:'registered',purpose:'email_follow_up'},
         recipients:[{id:'a'.repeat(64),name:'<Alex> Taylor',email:'alex@example.test',eligible:true,schools:['Jose Maria College'],attendance:'Registered',context:{full_name:'<Alex> Taylor',school:'Jose Maria College'}},
             {id:'b'.repeat(64),name:'Excluded',email:'excluded@example.test',eligible:false,reason:'Missing permission',schools:['Jose Maria College'],attendance:'Registered'}],
-        templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p>'}],mailings:[]};
+        templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p>',review:'c'.repeat(64),
+            from_email:'staff@example.test',from_name:'Education',reply_to_email:'replies@example.test',reply_to_name:'Education Replies',
+            shell:'<title>&lt;!-- school-mail-subject --&gt;</title><header>Branding</header><!-- school-mail-body -->'}],mailings:[]};
     await act(async()=>root.render(React.createElement(SchoolMail,props)));
     assert.match(document.body.textContent,/Attendance can be marked automatically/);
     assert.equal(button('Queue 0 emails').disabled,true);
@@ -58,13 +60,26 @@ const change=(node,value)=>act(async()=>{
     await change(document.querySelector('[aria-label="Mailing name"]'),'Synthetic follow up');
     await change(document.querySelector('[aria-label="Template"]'),'7');
     assert.match(document.body.textContent,/Hello <Alex> Taylor/);
-    assert.equal(document.querySelector('alex'),null,'Personalisation must not inject HTML');
+    assert.match(document.body.textContent,/From: Education <staff@example\.test>/);
+    const preview=document.querySelector('[title="Email preview"]');
+    assert.ok(preview.hasAttribute('sandbox'));
+    assert.match(preview.srcdoc,/<header>Branding<\/header><p>&lt;Alex&gt; Taylor Jose Maria College<\/p>/);
     const confirmation=[...document.querySelectorAll('label')].find(n=>n.textContent.includes('I reviewed')).querySelector('input');
     assert.equal(button('Queue 1 emails').disabled,true);
     await click(confirmation);await click(button('Queue 1 emails'));
     assert.equal(posts.length,1);assert.equal(posts[0].url,'/portal/education/school-mail');
     assert.deepEqual(posts[0].data.recipient_keys,['a'.repeat(64)]);assert.equal(posts[0].data.confirmed,true);
+    assert.equal(posts[0].data.template_review,'c'.repeat(64));
     assert.deepEqual(posts[0].data.visit_ids,[11]);assert.equal(posts[0].data.purpose,'email_follow_up');
+    await act(async()=>{
+        root.render(React.createElement(SchoolMail,{...props,templates:[{...props.templates[0],subject:'Updated {{full_name}}',review:'d'.repeat(64)}]}));
+        posts[0].options.onError({template_review:'The template or email branding changed. Review the updated message and confirm again.'});
+        posts[0].options.onFinish();
+    });
+    assert.equal(button('Queue 1 emails').disabled,true);
+    assert.equal(confirmation.checked,false);
+    assert.match(document.querySelector('[role="alert"]').textContent,/Review the updated message/);
+    assert.match(document.body.textContent,/Updated <Alex> Taylor/);
     await change(document.querySelector('[aria-label="Audience"]'),'attended');
     assert.match(document.body.textContent,/Filters changed/);assert.equal(button('Queue 1 emails'),undefined);
     await click(button('Load recipients'));assert.equal(posts[1].method,'get');assert.equal(posts[1].data.audience,'attended');

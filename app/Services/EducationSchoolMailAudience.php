@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\TemplatedMessage;
 use App\Models\EducationEventEmailSubscription;
 use App\Models\EducationEventRegistration;
 use App\Models\EducationRsvp;
@@ -15,6 +16,10 @@ use Illuminate\Validation\ValidationException;
 class EducationSchoolMailAudience
 {
     public const TOKENS = ['first_name', 'last_name', 'full_name', 'email', 'school', 'event_name', 'event_date', 'event_time', 'event_location'];
+
+    private const SUBJECT_MARKER = '<!-- school-mail-subject -->';
+
+    private const BODY_MARKER = '<!-- school-mail-body -->';
 
     public function rows(array $filters, ?string $onlyEmail = null): Collection
     {
@@ -81,15 +86,81 @@ class EducationSchoolMailAudience
 
     public function compatible(MessageTemplate $t): bool
     {
+        if (! $this->hasContent($t->email_subject, $t->email_body)) {
+            return false;
+        }
+
         // Never offer credential/account templates to a person who may have no account.
-        preg_match_all('/\{\{\s*([^{}]+?)\s*\}\}/', ($t->email_subject ?? '').' '.($t->email_body ?? ''), $m);
+        preg_match_all('/\{\{\s*([^{}]+?)\s*\}\}/', $t->email_subject.' '.$t->email_body, $m);
 
         return empty(array_diff(array_map(fn ($s) => strtolower(trim($s)), $m[1]), self::TOKENS));
     }
 
-    public function render(string $text, array $context, bool $html): string
+    private function render(string $text, array $context, bool $html): string
     {
         return preg_replace_callback('/\{\{\s*([a-z0-9_]+)\s*\}\}/i', fn ($m) => $html ? e($context[strtolower($m[1])] ?? '') : ($context[strtolower($m[1])] ?? ''), $text);
+    }
+
+    private function hasContent(?string $subject, ?string $body): bool
+    {
+        $hasText = fn (string $text) => preg_match('/[^\s\p{Z}\x{200B}\x{FEFF}]/u', $text) === 1;
+        $body = preg_replace('~<(script|style)\b[^>]*>.*?</\1\s*>~is', '', $body ?? '');
+
+        return $hasText($subject ?? '') && ($hasText(html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8'))
+            || preg_match('/<img\b[^>]*\ssrc\s*=\s*["\']?[^"\'\s>]/i', $body) === 1);
+    }
+
+    public function templateSnapshot(MessageTemplate $t): array
+    {
+        $mailer = config('mail.mailers.'.config('mail.default'), []);
+        $from = $mailer['from'] ?? config('mail.from');
+        $replyTo = $mailer['reply_to'] ?? config('mail.reply_to');
+        $fromEmail = $t->from_email ?: $from['address'];
+        $fromName = $t->from_email ? $t->from_name : ($from['name'] ?? null);
+        $replyTo = match (true) {
+            filled($t->reply_to_email) => ['address' => $t->reply_to_email, 'name' => $t->reply_to_name],
+            filled(config('services.contact.reply_to')) => ['address' => config('services.contact.reply_to')],
+            filled($replyTo['address'] ?? null) => $replyTo,
+            default => ['address' => $fromEmail, 'name' => $fromName],
+        };
+
+        // Freeze the same shell the mailer would render, including effective footer and banner.
+        $shell = view('emails.branded', [
+            'subjectLine' => self::SUBJECT_MARKER,
+            'bodyHtml' => self::BODY_MARKER,
+            'bannerImage' => $t->banner_image,
+            'footerImage' => $t->footer_image,
+            'branding' => $t->branding,
+        ])->render();
+
+        return [
+            'id' => $t->id, 'subject' => $t->email_subject, 'body' => $t->email_body,
+            'body_html' => (new TemplatedMessage($t->email_subject, $t->email_body))->content()->with['bodyHtml'],
+            'shell' => $shell, 'banner' => $t->banner_image, 'footer' => $t->footer_image, 'branding' => $t->branding,
+            'from_email' => $fromEmail, 'from_name' => $fromName,
+            'reply_to_email' => $replyTo['address'], 'reply_to_name' => $replyTo['name'] ?? null,
+        ];
+    }
+
+    public function templateReview(array $snapshot): string
+    {
+        return hash_hmac('sha256', json_encode($snapshot, JSON_THROW_ON_ERROR), config('app.key'));
+    }
+
+    public function renderedMessage(array $snapshot, array $context): ?array
+    {
+        if (! isset($snapshot['shell'], $snapshot['body_html']) || ! $this->hasContent($snapshot['subject'] ?? null, $snapshot['body'] ?? null)) {
+            return null;
+        }
+        $subject = $this->render($snapshot['subject'], $context, false);
+        $body = $this->render($snapshot['body_html'], $context, true);
+        if (! $this->hasContent($subject, $body)) {
+            return null;
+        }
+
+        return ['subject' => $subject, 'body' => $body, 'html' => strtr($snapshot['shell'], [
+            e(self::SUBJECT_MARKER) => e($subject), self::BODY_MARKER => $body,
+        ])];
     }
 
     public function selected(array $filters, array $keys): Collection

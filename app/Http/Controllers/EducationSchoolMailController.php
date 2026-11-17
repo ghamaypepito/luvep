@@ -11,6 +11,7 @@ use App\Services\EducationSchoolMailAudience;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class EducationSchoolMailController extends Controller
 {
@@ -39,7 +40,14 @@ class EducationSchoolMailController extends Controller
         return inertia('portal/education/SchoolMail', [
             'visits' => EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->get()->map(fn ($v) => ['id' => $v->id, 'school' => $v->school, 'activity' => $v->activity, 'summary' => $v->summary()]),
             'filters' => $filters, 'recipients' => $rows->map(fn ($r) => collect($r)->except('source_refs')->all()),
-            'templates' => $audience->templates()->map(fn ($t) => ['id' => $t->id, 'name' => $t->name, 'subject' => $t->email_subject, 'body' => $t->email_body]),
+            'templates' => $audience->templates()->map(function ($t) use ($audience) {
+                $snapshot = $audience->templateSnapshot($t);
+
+                return ['id' => $t->id, 'name' => $t->name, 'subject' => $snapshot['subject'], 'body' => $snapshot['body_html'],
+                    'shell' => $snapshot['shell'], 'from_email' => $snapshot['from_email'], 'from_name' => $snapshot['from_name'],
+                    'reply_to_email' => $snapshot['reply_to_email'], 'reply_to_name' => $snapshot['reply_to_name'],
+                    'review' => $audience->templateReview($snapshot)];
+            }),
             'mailings' => EducationSchoolMailing::latest()->limit(20)->get()->map(fn ($m) => [
                 'id' => $m->id, 'name' => $m->name, 'created_at' => $m->created_at->toIso8601String(),
                 'counts' => $m->recipients()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status'),
@@ -53,7 +61,7 @@ class EducationSchoolMailController extends Controller
         $this->authorizeStaff($request);
         $filters = $this->filters($request, true);
         $data = $request->validate(['submission_id' => 'required|uuid', 'name' => 'required|string|max:160',
-            'template_id' => 'required|integer|exists:message_templates,id', 'recipient_keys' => 'required|array|min:1|max:1000',
+            'template_id' => 'required|integer|exists:message_templates,id', 'template_review' => 'required|string|size:64', 'recipient_keys' => 'required|array|min:1|max:1000',
             'recipient_keys.*' => 'required|string|size:64|distinct', 'confirmed' => 'required|accepted']);
         $prior = EducationSchoolMailing::where('submission_id', $data['submission_id'])->first();
         if ($prior) {
@@ -61,19 +69,26 @@ class EducationSchoolMailController extends Controller
 
             return redirect('/portal/education/school-mail')->with('success', 'This mailing was already created. Check its history.');
         }
-        $template = MessageTemplate::active()->findOrFail($data['template_id']);
-        abort_unless($template->hasChannel('email') && $audience->compatible($template), 422, 'Choose a school-visit compatible email template.');
+        $template = MessageTemplate::active()->find($data['template_id']);
+        if (! $template || ! $template->hasChannel('email') || ! $audience->compatible($template)) {
+            throw ValidationException::withMessages(['template_id' => 'Choose an active school-visit email template with a subject and message body.']);
+        }
+        $snapshot = $audience->templateSnapshot($template);
+        if (! hash_equals($audience->templateReview($snapshot), $data['template_review'])) {
+            throw ValidationException::withMessages(['template_review' => 'The template or email branding changed. Review the updated message and confirm again.']);
+        }
         $rows = $audience->selected($filters, $data['recipient_keys']);
-        DB::transaction(function () use ($request, $data, $filters, $template, $rows) {
+        if (! $rows->every(fn ($row) => $audience->renderedMessage($snapshot, $row['context']) !== null)) {
+            throw ValidationException::withMessages(['template_id' => 'The template produces a blank subject or message for a selected recipient. Choose another template.']);
+        }
+        DB::transaction(function () use ($request, $data, $filters, $snapshot, $rows) {
             $mailing = EducationSchoolMailing::create(['submission_id' => $data['submission_id'], 'created_by' => $request->user()->id, 'name' => $data['name'], 'filters' => $filters,
-                'template_snapshot' => ['id' => $template->id, 'subject' => $template->email_subject, 'body' => $template->email_body,
-                    'banner' => $template->banner_image, 'footer' => $template->footer_image, 'from_email' => $template->from_email, 'from_name' => $template->from_name,
-                    'reply_to_email' => $template->reply_to_email, 'reply_to_name' => $template->reply_to_name]]);
+                'template_snapshot' => $snapshot]);
             foreach ($rows as $r) {
                 $recipient = $mailing->recipients()->create(['email' => $r['email'], 'name' => $r['name'], 'source_refs' => $r['source_refs'], 'context_snapshot' => $r['context']]);
                 DB::afterCommit(fn () => SendEducationSchoolMail::enqueue($recipient->id));
             }
-            ActivityLog::record('education.school_mail.created', ['portal' => 'education', 'properties' => ['mailing_id' => $mailing->id, 'filters' => $filters, 'recipient_count' => $rows->count(), 'template_id' => $template->id]]);
+            ActivityLog::record('education.school_mail.created', ['portal' => 'education', 'properties' => ['mailing_id' => $mailing->id, 'filters' => $filters, 'recipient_count' => $rows->count(), 'template_id' => $snapshot['id']]]);
         });
 
         return redirect('/portal/education/school-mail')->with('success', 'School-visit mailing saved for delivery. Check history for worker results.');

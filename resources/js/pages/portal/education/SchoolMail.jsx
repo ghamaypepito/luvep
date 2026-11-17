@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 const base='/portal/education/school-mail';
 const input='rounded-lg border border-gray-300 px-3 py-2';
-const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fill=(value,context,html=false)=>String(value||'').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi,(_,key)=>html?escape(context?.[key.toLowerCase()]??''):(context?.[key.toLowerCase()]??''));
+const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const fill=(value,context,html=false)=>String(value||'').replace(/\{\{[ \t\r\n\f\v]*([a-z0-9_]+)[ \t\r\n\f\v]*\}\}/gi,(_,key)=>html?escape(context?.[key.toLowerCase()]??''):(context?.[key.toLowerCase()]??''));
 export default function SchoolMail(props) {
     return <SchoolMailForm key={JSON.stringify(props.filters)} {...props} />;
 }
@@ -15,7 +15,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const [search,setSearch]=useState('');
     const [name,setName]=useState('');
     const [templateId,setTemplateId]=useState('');
-    const [confirmed,setConfirmed]=useState(false);
+    const [confirmedReview,setConfirmed]=useState(null);
     const [sending,setSending]=useState(false);
     const [errors,setErrors]=useState({});
     const [submissionId]=useState(()=>crypto.randomUUID());
@@ -24,15 +24,19 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const chosen=recipients.filter(r=>r.eligible && selected.has(r.id));
     const preview=chosen[0]||rows.find(r=>r.eligible);
     const template=templates.find(t=>String(t.id)===templateId);
-    const resetReview=()=>{setConfirmed(false);setSelected(new Set());};
+    const confirmed=Boolean(template&&confirmedReview===template.review);
+    const previewSubject=template&&preview?fill(template.subject,preview.context):'';
+    const previewHtml=template&&preview?template.shell.replace(/&lt;!-- school-mail-subject --&gt;|<!-- school-mail-body -->/g,
+        marker=>marker.startsWith('&lt;')?escape(previewSubject):fill(template.body,preview.context,true)):'';
+    const resetReview=()=>{setConfirmed(null);setSelected(new Set());};
     const toggleVisit=id=>{resetReview();setVisits(ids=>ids.includes(id)?ids.filter(v=>v!==id):[...ids,id]);};
-    const toggle=id=>{setConfirmed(false);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
+    const toggle=id=>{setConfirmed(null);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
     const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose},{preserveState:false});
     const send=()=>{
         if (!confirmed||dirty||sending||!chosen.length||!template||!name.trim()) return;
         setSending(true);setErrors({});
-        router.post(base,{...filters,name,template_id:Number(templateId),recipient_keys:chosen.map(r=>r.id),submission_id:submissionId,confirmed:true},{
-            preserveState:false,onError:e=>setErrors(e),onFinish:()=>setSending(false),
+        router.post(base,{...filters,name,template_id:Number(templateId),template_review:confirmedReview,recipient_keys:chosen.map(r=>r.id),submission_id:submissionId,confirmed:true},{
+            preserveState:'errors',onError:e=>{setConfirmed(null);setErrors(e);},onFinish:()=>setSending(false),
         });
     };
     return <main className="mx-auto max-w-6xl space-y-6 pb-12">
@@ -64,7 +68,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
             <section className="space-y-3 rounded-xl border bg-white p-5">
                 <h2 className="font-semibold">Recipients: {chosen.length} selected · {recipients.filter(r=>r.eligible).length} eligible · {recipients.length} unique addresses</h2>
                 <input aria-label="Search recipients" placeholder="Search name or email" className={input} value={search} onChange={e=>setSearch(e.target.value)} />
-                <button className="ml-3 underline" onClick={()=>{setConfirmed(false);setSelected(new Set(rows.filter(r=>r.eligible).map(r=>r.id)));}}>Select eligible matches</button>
+                <button className="ml-3 underline" onClick={()=>{setConfirmed(null);setSelected(new Set(rows.filter(r=>r.eligible).map(r=>r.id)));}}>Select eligible matches</button>
                 <button className="ml-3 underline" onClick={resetReview}>Clear selection</button>
                 <p className="text-sm text-gray-600">Selection is listed below even when search hides a recipient. One email per address across the selected visits.</p>
                 {chosen.length>0&&<p className="text-sm">Selected: {chosen.map(r=>`${r.name} (${r.email})`).join(', ')}</p>}
@@ -77,15 +81,17 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
             </section>
             <section className="space-y-4 rounded-xl border bg-white p-5">
                 <h2 className="font-semibold">Message and review</h2>
-                <label className="block">Mailing name <input aria-label="Mailing name" className={`${input} ml-3`} value={name} onChange={e=>{setConfirmed(false);setName(e.target.value);}} maxLength={160} /></label>
-                <label className="block">Template <select aria-label="Template" className={`${input} ml-3`} value={templateId} onChange={e=>{setConfirmed(false);setTemplateId(e.target.value);}}>
+                <label className="block">Mailing name <input aria-label="Mailing name" className={`${input} ml-3`} value={name} onChange={e=>{setConfirmed(null);setName(e.target.value);}} maxLength={160} /></label>
+                <label className="block">Template <select aria-label="Template" className={`${input} ml-3`} value={templateId} onChange={e=>{setConfirmed(null);setTemplateId(e.target.value);}}>
                     <option value="">Choose a compatible email template</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                 </select></label>
                 <p className="text-sm text-gray-600">Account/password templates and unsupported placeholders are excluded. Supported fields: first_name, last_name, full_name, email, school, event_name, event_date, event_time and event_location.</p>
                 {template&&preview&&<div className="space-y-3 border-t pt-3"><p className="text-sm text-gray-500">Sample for {preview.name}. Visit fields use the first matching registration for that address.</p>
-                    <p className="font-semibold">{fill(template.subject,preview.context)}</p><div className="prose" dangerouslySetInnerHTML={{__html:fill(template.body,preview.context,true)}} />
+                    <p className="text-sm">From: {template.from_name} &lt;{template.from_email}&gt;<br />Reply to: {template.reply_to_name} &lt;{template.reply_to_email}&gt;</p>
+                    <p className="font-semibold">{previewSubject}</p>
+                    <iframe title="Email preview" sandbox="" srcDoc={previewHtml} className="h-96 w-full rounded-lg border" />
                 </div>}
-                <label className="flex gap-3"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} />
+                <label className="flex gap-3"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked?template?.review:null)} />
                     <span>I reviewed the selected visits, email purpose, recipients and message.</span></label>
                 {Object.keys(errors).length>0&&<div role="alert" className="text-red-700">{Object.values(errors).join(' ')}</div>}
                 <button disabled={!confirmed||!chosen.length||chosen.length>1000||!template||!name.trim()||sending} onClick={send} className="rounded-lg bg-teal-800 px-5 py-3 text-white disabled:opacity-50">{sending?'Queueing…':`Queue ${chosen.length} emails`}</button>

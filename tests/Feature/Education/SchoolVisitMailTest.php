@@ -10,6 +10,7 @@ use App\Models\EducationRsvp;
 use App\Models\EducationSchoolMailing;
 use App\Models\EducationSchoolMailRecipient;
 use App\Models\EducationVisit;
+use App\Models\EmailBranding;
 use App\Models\EmailReply;
 use App\Models\Lead;
 use App\Models\MessageLog;
@@ -65,14 +66,20 @@ class SchoolVisitMailTest extends TestCase
 
     private function payload(EducationVisit $v, array $a = []): array
     {
-        return $a + $this->filters($v) + ['submission_id' => (string) Str::uuid(), 'name' => 'Synthetic test', 'template_id' => $this->template()->id, 'recipient_keys' => $this->rows($this->filters($v))->pluck('id')->all(), 'confirmed' => true];
+        $template = $this->template();
+        $audience = app(EducationSchoolMailAudience::class);
+
+        return $a + $this->filters($v) + ['submission_id' => (string) Str::uuid(), 'name' => 'Synthetic test', 'template_id' => $template->id,
+            'template_review' => $audience->templateReview($audience->templateSnapshot($template)), 'recipient_keys' => $this->rows($this->filters($v))->pluck('id')->all(), 'confirmed' => true];
     }
 
     private function mailing(EducationVisit $v): EducationSchoolMailRecipient
     {
         $u = $this->staff();
         $row = $this->rows($this->filters($v))->first();
-        $m = EducationSchoolMailing::create(['created_by' => $u->id, 'submission_id' => (string) Str::uuid(), 'name' => 'Synthetic', 'filters' => $this->filters($v), 'template_snapshot' => ['subject' => 'Hi {{full_name}}', 'body' => '<p>{{full_name}} {{school}}</p>', 'banner' => null, 'footer' => null, 'from_email' => 'staff@example.test', 'from_name' => 'Education', 'reply_to_email' => null, 'reply_to_name' => null]]);
+        $template = $this->template(['from_email' => 'staff@example.test', 'from_name' => 'Education']);
+        $m = EducationSchoolMailing::create(['created_by' => $u->id, 'submission_id' => (string) Str::uuid(), 'name' => 'Synthetic', 'filters' => $this->filters($v),
+            'template_snapshot' => app(EducationSchoolMailAudience::class)->templateSnapshot($template)]);
 
         return $m->recipients()->create(['email' => $row['email'], 'name' => $row['name'], 'source_refs' => $row['source_refs'], 'context_snapshot' => $row['context']]);
     }
@@ -158,6 +165,94 @@ class SchoolVisitMailTest extends TestCase
         Queue::assertPushed(SendEducationSchoolMail::class, 1);
     }
 
+    public function test_editing_a_reviewed_template_field_rejects_submission_before_queueing(): void
+    {
+        Queue::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $data = $this->payload($v);
+        $template = MessageTemplate::findOrFail($data['template_id']);
+        $this->actingAs($this->staff());
+        $this->get('/portal/education/school-mail?'.http_build_query($this->filters($v)))
+            ->assertInertia(function ($page) use (&$data) {
+                $page->where('templates.0.review', $data['template_review']);
+                $data['template_review'] = $page->toArray()['props']['templates'][0]['review'];
+            });
+
+        foreach (['email_subject' => 'Changed subject', 'email_body' => '<p>Changed body</p>', 'from_email' => 'changed@example.test', 'reply_to_email' => 'replies@example.test', 'branding' => 'immigration', 'banner_image' => 'new-banner.png', 'footer_image' => 'new-footer.png'] as $field => $value) {
+            $original = $template->{$field};
+            $template->update([$field => $value]);
+            $this->post('/portal/education/school-mail', $data)->assertSessionHasErrors('template_review');
+            $template->update([$field => $original]);
+        }
+        EmailBranding::create(['department' => 'default', 'footer_company' => 'Changed branding']);
+        $this->post('/portal/education/school-mail', $data)->assertSessionHasErrors('template_review');
+        $this->assertDatabaseCount('education_school_mailings', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_worker_uses_the_reviewed_sender_body_and_branding_after_queueing(): void
+    {
+        Queue::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $brand = EmailBranding::create(['department' => 'default', 'footer_company' => 'Reviewed branding']);
+        config(['mail.from.address' => 'reviewed@example.test', 'services.contact.reply_to' => 'replies@example.test']);
+        $data = $this->payload($v);
+        $this->actingAs($this->staff())->post('/portal/education/school-mail', $data)->assertSessionHasNoErrors();
+        Queue::assertPushed(SendEducationSchoolMail::class, 1);
+        MessageTemplate::findOrFail($data['template_id'])->update(['email_subject' => 'Changed subject', 'email_body' => 'Changed body', 'from_email' => 'changed@example.test']);
+        $brand->update(['footer_company' => 'Changed branding']);
+        config(['mail.from.address' => 'changed@example.test', 'services.contact.reply_to' => 'changed@example.test']);
+
+        Mail::fake();
+        (new SendEducationSchoolMail(EducationSchoolMailRecipient::sole()->id))->handle(app(EducationSchoolMailAudience::class));
+        Mail::assertSent(TemplatedMessage::class, 1);
+        $mail = Mail::sent(TemplatedMessage::class)->sole();
+        $this->assertSame('Hello Alex Taylor', $mail->subjectLine);
+        $this->assertSame('reviewed@example.test', $mail->envelope()->from->address);
+        $this->assertSame('replies@example.test', $mail->envelope()->replyTo[0]->address);
+        $html = $mail->render();
+        $this->assertStringContainsString('<title>Hello Alex Taylor</title>', $html);
+        $this->assertStringContainsString('Reviewed branding', $html);
+        $this->assertStringContainsString('<p>Jose Maria College Foundation, Inc. Alex Taylor</p>', $html);
+        $this->assertStringNotContainsString('Changed branding', $html);
+        $this->assertSame('sent', EducationSchoolMailRecipient::sole()->status);
+    }
+
+    public function test_incomplete_templates_are_excluded_and_cannot_be_queued(): void
+    {
+        Queue::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $data = $this->payload($v);
+        $incomplete = collect([['email_subject' => null], ['email_body' => null], ['email_subject' => '   '], ['email_body' => "\n   "], ['email_body' => '<p>&nbsp;<br></p>']])
+            ->map(fn ($attributes) => $this->template($attributes));
+        $this->actingAs($this->staff())->get('/portal/education/school-mail')
+            ->assertInertia(fn ($p) => $p->has('templates', 1)->where('templates.0.id', $data['template_id']));
+        foreach ($incomplete as $template) {
+            $this->post('/portal/education/school-mail', array_replace($data, ['template_id' => $template->id, 'template_review' => str_repeat('a', 64)]))
+                ->assertSessionHasErrors('template_id');
+        }
+        $this->assertDatabaseCount('education_school_mailings', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_worker_skips_an_incomplete_snapshot_without_sending(): void
+    {
+        Mail::fake();
+        $v = $this->visit();
+        $this->rsvp($v);
+        $item = $this->mailing($v);
+        $item->mailing->update(['template_snapshot' => array_replace($item->mailing->template_snapshot, ['body' => '<p>&nbsp;<br></p>'])]);
+
+        (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
+
+        $this->assertSame('skipped', $item->fresh()->status);
+        $this->assertDatabaseCount('message_logs', 0);
+        Mail::assertNothingSent();
+    }
+
     public function test_forged_recipient_keys_wrong_school_and_stale_permission_are_rejected(): void
     {
         Queue::fake();
@@ -182,7 +277,7 @@ class SchoolVisitMailTest extends TestCase
         $data = $this->payload($v);
         $this->actingAs($this->staff());
         $bad = $this->template(['email_body' => 'Password {{password}}']);
-        $this->post('/portal/education/school-mail', array_replace($data, ['template_id' => $bad->id]))->assertStatus(422);
+        $this->post('/portal/education/school-mail', array_replace($data, ['template_id' => $bad->id]))->assertSessionHasErrors('template_id');
         $this->post('/portal/education/school-mail', array_replace($data, ['confirmed' => false]))->assertSessionHasErrors('confirmed');
         $this->assertDatabaseCount('education_school_mailings', 0);
     }
