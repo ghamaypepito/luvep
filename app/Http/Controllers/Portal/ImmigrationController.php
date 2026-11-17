@@ -11,6 +11,7 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
+use App\Support\CaseRecordAccess;
 use App\Models\UserReview;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
@@ -326,7 +327,9 @@ class ImmigrationController extends Controller
      */
     public function cases()
     {
-        return inertia('portal/immigration/Cases', $this->casesPayload());
+        return inertia('portal/immigration/Cases', $this->casesPayload() + [
+            'canManageCaseArchive' => CaseRecordAccess::canManage(request()),
+        ]);
     }
 
     /**
@@ -1360,13 +1363,14 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
+        $name = [
+            'first_name' => $data['first_name'],
+            'last_name' => $data['last_name'],
+        ] + array_intersect_key($data, array_flip(['middle_name', 'suffix']));
+        CaseRecordAccess::authorizeNameChanges($request, $lead, $name, ['first_name', 'middle_name', 'last_name', 'suffix']);
         $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead->fill([
-            'first_name' => $data['first_name'],
-            'middle_name' => $data['middle_name'] ?? null,
-            'last_name' => $data['last_name'],
-            'suffix' => $data['suffix'] ?? null,
+        $lead->fill($name + [
             'gender' => $data['gender'] ?? null,
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
@@ -2588,6 +2592,10 @@ class ImmigrationController extends Controller
 
         return inertia('portal/immigration/AssessmentProfile', [
             'intake' => $row,
+            'can_endorse_aewv' => $row['visa_type'] === 'work' && ! $preScreening->isTerminal()
+                && ! $row['case_url'] && ! $row['conversion_issue']
+                && (auth()->user()->isAdmin() || auth()->user()->role === 'immigration_manager'),
+            'aewv_endorsement_failed' => $preScreening->aewvEndorsementFailed(),
             // The two pre-screening meetings (consultation, then consent).
             'bookings' => [
                 'consult' => $fmtBooking($preScreening->consultBooking),

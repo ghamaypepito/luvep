@@ -79,6 +79,49 @@ class BulkEmailTest extends TestCase
         Queue::assertPushed(SendCampaign::class);
     }
 
+    public function test_education_new_leads_uses_current_pipeline_status(): void
+    {
+        $new = $this->lead(['stage' => 'Consultation Done', 'status' => 'New Leads']);
+        $contacted = $this->lead(['stage' => 'New Leads', 'status' => 'Contact Attempted']);
+        $student = $this->lead(['stage' => 'New Leads', 'status' => 'New Leads', 'is_student' => true]);
+        $case = $this->lead(['stage' => 'New Leads', 'status' => 'New Leads', 'is_immigration_case' => true]);
+
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->get('/portal/education/bulk-email')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->has('recipients', 4)
+                ->where('recipients', fn ($recipients) => collect($recipients)->pluck('is_new_lead', 'id')->all() === [
+                    $new->id => true,
+                    $contacted->id => false,
+                    $student->id => false,
+                    $case->id => false,
+                ]));
+    }
+
+    public function test_education_rejects_changed_recipient_selection_when_sending_to_new_leads(): void
+    {
+        Queue::fake();
+        $new = $this->lead(['status' => 'New Leads']);
+        $contacted = $this->lead(['stage' => 'New Leads', 'status' => 'Contact Attempted']);
+        $template = $this->tmpl(['department' => 'education']);
+
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $campaign = [
+            'name' => 'Welcome', 'template_id' => $template->id, 'new_leads_only' => true,
+            'recipient_lead_ids' => [$new->id, $contacted->id], 'action' => 'send_now',
+        ];
+
+        $this->post('/portal/education/bulk-email', $campaign)->assertSessionHasErrors('recipient_lead_ids');
+        $this->assertDatabaseCount('email_campaigns', 0);
+        Queue::assertNotPushed(SendCampaign::class);
+
+        $this->post('/portal/education/bulk-email', array_replace($campaign, ['recipient_lead_ids' => [$new->id]]))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+        $this->assertSame([$new->id], EmailCampaign::sole()->recipient_lead_ids);
+        Queue::assertPushed(SendCampaign::class, 1);
+    }
+
     public function test_schedule_stores_future_campaign_without_dispatching(): void
     {
         Queue::fake();
@@ -92,8 +135,67 @@ class BulkEmailTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('email_campaigns', ['name' => 'Later', 'status' => 'scheduled']);
+        $this->assertDatabaseHas('email_campaigns', [
+            'name' => 'Later', 'status' => 'scheduled', 'new_leads_only' => false, 'skipped_count' => 0,
+        ]);
         Queue::assertNotPushed(SendCampaign::class);
+    }
+
+    public function test_scheduled_education_new_leads_campaign_skips_people_who_leave_new_leads(): void
+    {
+        Mail::fake();
+        $template = $this->tmpl(['department' => 'education']);
+        $new = $this->lead(['email' => 'new@example.com', 'status' => 'New Leads']);
+        $contacted = $this->lead(['email' => 'contacted@example.com', 'status' => 'New Leads', 'stage' => 'New Leads']);
+        $student = $this->lead(['email' => 'student@example.com', 'status' => 'New Leads']);
+        $notSelected = $this->lead(['email' => 'not-selected@example.com', 'status' => 'Contact Attempted']);
+        $education = User::factory()->create(['role' => 'education']);
+
+        $this->actingAs($education)->post('/portal/education/bulk-email', [
+            'name' => 'Welcome tomorrow', 'template_id' => $template->id, 'new_leads_only' => true,
+            'recipient_lead_ids' => [$new->id, $contacted->id, $student->id],
+            'action' => 'schedule', 'scheduled_at' => now()->addHour()->toDateTimeString(),
+        ])->assertSessionHas('success');
+        Mail::assertNothingQueued();
+
+        $contacted->update(['status' => 'Contact Attempted']);
+        $student->update(['is_student' => true]);
+        $notSelected->update(['status' => 'New Leads']);
+        $this->travel(2)->hours();
+        $this->artisan('campaigns:dispatch-due')->assertSuccessful();
+
+        Mail::assertQueued(TemplatedMessage::class, 1);
+        Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $mail) => $mail->hasTo($new->email));
+        $campaign = EmailCampaign::sole();
+        $this->assertTrue($campaign->new_leads_only);
+        $this->get("/portal/education/bulk-email/{$campaign->id}")->assertInertia(fn ($page) => $page
+            ->where('campaign.sent', 1)
+            ->where('campaign.failed', 0)
+            ->where('campaign.skipped', 2)
+            ->where('recipients', fn ($recipients) => collect($recipients)->where('status', 'skipped')
+                ->filter(fn ($recipient) => str_contains($recipient['error'], 'no longer in New Leads'))->count() === 2));
+    }
+
+    public function test_new_leads_campaign_with_no_eligible_recipients_completes_as_skipped(): void
+    {
+        Mail::fake();
+        $lead = $this->lead(['status' => 'New Leads']);
+        $campaign = EmailCampaign::create([
+            'name' => 'Welcome tomorrow', 'department' => 'education', 'subject' => 'Welcome',
+            'body' => 'Hello', 'status' => 'sending', 'new_leads_only' => true,
+            'total_recipients' => 1, 'recipient_lead_ids' => [$lead->id],
+        ]);
+        $lead->delete();
+
+        $job = new SendCampaign($campaign->id);
+        $job->handle(app(CommunicationService::class));
+        $job->handle(app(CommunicationService::class));
+
+        Mail::assertNothingQueued();
+        $campaign->refresh();
+        $this->assertSame(EmailCampaign::STATUS_SKIPPED, $campaign->status);
+        $this->assertSame(1, $campaign->skipped_count);
+        $this->assertSame(1, $campaign->logs()->count());
     }
 
     public function test_only_emailable_recipients_are_snapshotted(): void

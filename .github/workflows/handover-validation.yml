@@ -52,10 +52,18 @@ jobs:
           node tests/Frontend/hr-work-insights.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
+          node tests/Frontend/education-email.cjs
           node tests/Frontend/ticket-attachments.cjs
           node tests/Frontend/ticket-request-edit.cjs
           node tests/Frontend/ticket-board-actions.cjs
           node tests/Frontend/media-drive.cjs
+          node tests/Frontend/education-note-activity.cjs
           node tests/Frontend/education-report.cjs
+          node tests/Frontend/education-weekly-notes.cjs
+          node tests/Frontend/student-referral-name.cjs
+          node tests/Frontend/education-dispositions.cjs
           node tests/Frontend/assessment-case-link.cjs
+          node tests/Frontend/passport-prefill.cjs
+          node tests/Frontend/recent-visa.cjs
+          node tests/Frontend/education-personal-report.cjs
           node --test tests/Frontend/ep-admin.test.cjs tests/js/ep-admin.test.mjs tests/js/ep-admin-time.test.mjs tests/Frontend/ep-agent.test.cjs tests/Frontend/ep-manager.test.cjs tests/Frontend/ep-navigation.test.cjs tests/js/ep-agent-client.test.mjs tests/Frontend/assessment-notes.cjs tests/js/task-comments.test.mjs tests/js/case-thread-replies.test.mjs tests/js/http-client-csrf.test.mjs tests/js/compose-message-panel.test.mjs tests/js/payment-proof-upload.test.mjs tests/js/payment-proof-review.test.mjs

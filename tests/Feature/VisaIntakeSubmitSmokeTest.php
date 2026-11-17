@@ -179,6 +179,23 @@ class VisaIntakeSubmitSmokeTest extends TestCase
 
         $res->assertOk();
         $res->assertJson(['draft_saved' => true]);
+        $this->assertDatabaseHas('leads', ['email' => 'ana.draft@example.test', 'status' => 'Draft']);
+    }
+
+    public function test_visa_draft_does_not_replace_a_students_staff_selected_status(): void
+    {
+        $lead = \App\Models\Lead::create([
+            'first_name' => 'Ana', 'last_name' => 'Cruz', 'email' => 'ana.cruz@example.test',
+            'status' => 'Proposal Sent', 'is_student' => true, 'education_stage' => 'Proposal Sent',
+        ]);
+
+        $this->postJson('/visa-interest/student/draft', $this->base())->assertOk()
+            ->assertJson(['draft_saved' => true, 'draft_id' => $lead->lead_id]);
+
+        $lead->refresh();
+        $this->assertSame('Proposal Sent', $lead->status);
+        $this->assertSame('Proposal Sent', $lead->education_stage);
+        $this->assertNotEmpty($lead->ai_analysis);
     }
 
     public static function draftVisas(): array

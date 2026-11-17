@@ -2526,6 +2526,7 @@ function SharedDocRow({ doc: d }) {
 function ClientSignModal({ doc: d, onClose }) {
     const [submitting, setSubmitting] = useState(false);
     const [hasDrawing, setHasDrawing] = useState(false);
+    const [error, setError] = useState(null);
     // Terms acknowledgment lives in the sign panel now — the checkbox
     // in the PDF body is a mirror only. Client must tick this before
     // the Sign button unlocks.
@@ -2546,6 +2547,7 @@ function ClientSignModal({ doc: d, onClose }) {
     // Push the current signature into the live document preview so it
     // appears on the agreement's signature line in real time.
     const pushSignature = (dataUrl) => {
+        if (!d.preview_url) return;
         iframeRef.current?.contentWindow?.postMessage(
             { type: 'applicant-signature', value: dataUrl || '' },
             '*'
@@ -2554,6 +2556,7 @@ function ClientSignModal({ doc: d, onClose }) {
     // Mirror the ack tick into the preview's checkbox glyph so the client
     // sees the doc update as they toggle.
     const pushAck = (value) => {
+        if (!d.preview_url) return;
         iframeRef.current?.contentWindow?.postMessage(
             { type: 'acknowledged', value: !! value },
             '*'
@@ -2598,14 +2601,16 @@ function ClientSignModal({ doc: d, onClose }) {
     };
 
     const submit = () => {
+        setError(null);
         setSubmitting(true);
         router.post(d.sign_url, {
             signature_data: canvasRef.current.toDataURL('image/png'),
             acknowledged: acknowledged ? 1 : 0,
+            ...(d.issued_agreement_hash ? { issued_agreement_hash: d.issued_agreement_hash } : {}),
         }, {
             preserveScroll: true,
             onSuccess: () => onClose(),
-            onError: () => setSubmitting(false),
+            onError: (errors) => setError(Object.values(errors)[0]),
             onFinish: () => setSubmitting(false),
         });
     };
@@ -2645,6 +2650,10 @@ function ClientSignModal({ doc: d, onClose }) {
                         <p className="text-[12px] text-gray-500 mb-3">
                             Review the agreement on the left, then draw your signature below. By signing you confirm you have read and agree to its terms.
                         </p>
+                        {d.issued_agreement_hash && (
+                            <p className="text-xs text-gray-500 mb-3">Your signature will appear on a confirmation page at the end of this agreement.</p>
+                        )}
+                        {error && <p role="alert" className="text-xs text-red-700 mb-3">{error}</p>}
                         <p className="text-[10px] font-bold tracking-[0.14em] uppercase text-gray-400 mb-2 flex items-center gap-1.5">
                             <PenTool size={12} /> Draw your signature
                         </p>

@@ -1,8 +1,10 @@
+import EducationPersonalReport from "../../../components/education/PersonalReport";
 import WeeklyReport, { WEEK_PRESETS } from "../../../components/WeeklyReport";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { BookOpen, CheckCircle2, FileText, PencilLine, Save, X, RefreshCw } from "lucide-react";
 import EducationReportInsights from "../../../components/EducationReportInsights";
+import EducationNoteActivityReport from "../../../components/education/EducationNoteActivityReport";
 
 // Public report presets. Legacy URL aliases are resolved by the server.
 const PRESETS = [
@@ -20,7 +22,7 @@ const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(
 const errorText = (errors) => Object.values(errors || {}).flat().join(" ") || "The report could not be refreshed. Please try again.";
 
 const SUMMARY_TITLES = { __new_students: "New students", __total_students: "Total students", __new_leads: "New leads", __register: "In the pipeline" };
-const CONTACT_CARD_STATUSES = { "Contact Attempted": "Contact Attempted", Contacted: "Contacted for Booking" };
+
 
 // Each Students tab (Education / English / Immigration) tracks its own status
 // set. Literal class strings only — Tailwind v4 JIT can't see concatenated names.
@@ -42,11 +44,13 @@ export default function EducationReports(props) {
     return <EducationReportContent {...(displayed || { range: props.range })} error={props.error} hasTrustedData={Boolean(displayed)} />;
 }
 
-function EducationReportContent({ range = {}, pipeline = [], summary = {}, summaryLists = {}, totalRegister = 0, movements = 0, register = {}, departments = {}, programs = {}, conclusion = {}, generated_at = null, generated_by = null, error = null, errors = {}, pipeline_history = {}, weeklyReport, hasTrustedData = false }) {
+function EducationReportContent({ range = {}, pipeline = [], summary = {}, summaryLists = {}, totalRegister = 0, movements = 0, register = {}, departments = {}, programs = {}, conclusion = {}, generated_at = null, generated_by = null, error = null, errors = {}, pipeline_history = {}, weeklyReport, personalReport, hasTrustedData = false }) {
     const [customFrom, setCustomFrom] = useState(range.from || "");
     const [customTo, setCustomTo] = useState(range.to || "");
     const [customOpen, setCustomOpen] = useState(range.preset === "custom");
     const [requestError, setRequestError] = useState("");
+    const [activeDepartment, setActiveDepartment] = useState("education");
+    const departmentKey = departments[activeDepartment] ? activeDepartment : Object.keys(DEPT_META).find(key => departments[key]);
     const today = nzToday();
     const visitOptions = () => ({ preserveScroll: true, preserveState: true, onError: (messages) => setRequestError(errorText(messages)), onSuccess: () => setRequestError("") });
     useEffect(() => {
@@ -99,7 +103,7 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
     useEffect(() => {
         const refresh = () => router.reload({
             ...visitOptions(),
-            only: ["range", "pipeline", "pipeline_history", "summary", "summaryLists", "register", "departments", "totalRegister", "movements", "programs", "conclusion", "weeklyReport", "generated_at", "generated_by", "error", "errors"],
+            only: ["range", "pipeline", "pipeline_history", "summary", "summaryLists", "register", "departments", "totalRegister", "movements", "programs", "conclusion", "weeklyReport", "personalReport", "generated_at", "generated_by", "error", "errors"],
         });
         const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
         const id = setInterval(refresh, 20000);
@@ -170,49 +174,56 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
             )}
             {hasTrustedData && (
                 <>
+                    <EducationPersonalReport data={personalReport} />
                     {/* Section 01 — Education (the students register, broken down by
                         department: Education / English / Immigration, each under its
                         own real status set) */}
                     <Section n="01" title="Education">
-                        <DepartmentBreakdown departments={departments} range={range} leadRegister={register} />
+                        <DepartmentBreakdown departments={departments} range={range} activeKey={departmentKey} setActive={setActiveDepartment} />
                     </Section>
 
-                    {/* Section 02 — Pipeline overview. Graph only by default; a
-                        client-list panel opens to the right when a bar is clicked. */}
-                    <Section n="02" title="Pipeline position">
-                        <p className="mb-3 text-[11px] leading-relaxed text-gray-500">{pipeline_history.notice || (range.all ? "Current Leads queue, including undated records." : "Recorded lead status changes only. Missing audit history stays unknown.")}</p>
-                        <div className="flex flex-col lg:flex-row gap-4 items-start">
-                            <div className="w-full min-w-0 lg:flex-1">
-                                <div ref={graphRef}>
-                                    <PipelineChart pipeline={pipeline} all={range.all} selected={selectedStage} onSelect={(s) => setSelectedStage(selectedStage === s ? null : s)} />
-                                </div>
-                                <p className="mt-2 text-[11px] text-gray-400">Click any bar to open that stage's client list on the right.</p>
-                            </div>
-                            {openList && (
-                                <div className="w-full lg:w-96 shrink-0">
-                                    <div className="flex flex-col" style={graphH ? { height: graphH } : undefined}>
-                                        <StageCard stage={openList.title} rows={openList.rows} singleCol fill onClose={() => setSelectedStage(null)} />
-                                    </div>
-                                    <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-400"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> {range.all ? "Current queue position" : "Recorded change in selected period"}</p>
-                                </div>
-                            )}
-                        </div>
-                    </Section>
-
-                    {/* Section 03 — ePortal Programs */}
-                    <Section n="03" title="ePortal Programs">
-                        <p className="text-[11px] text-gray-500 mb-3">{range.all ? "Current catalogue snapshot." : "Dated program-change history is unavailable. Select All for current catalogue totals. A dash means unavailable, not zero changes."}</p>
+                    {/* Section 02 — ePortal Programs */}
+                    <Section n="02" title="ePortal Programs">
+                        <p className="text-[11px] text-gray-500 mb-3">Current catalogue totals apply across all report periods.</p>
                         <div role="group" aria-label="Program totals" className="grid grid-cols-3 gap-3">
-                            <Stat icon={BookOpen} value={range.all ? programs.total : "—"} label="Total programs" sub={range.all ? "In the catalogue" : "History unavailable"} />
-                            <Stat icon={CheckCircle2} value={range.all ? programs.published : "—"} label="Published" sub={range.all ? "Live on the site" : "History unavailable"} />
-                            <Stat icon={FileText} value={range.all ? programs.draft : "—"} label="Drafts" sub={range.all ? "Not yet published" : "History unavailable"} />
+                            <Stat icon={BookOpen} value={programs.total ?? "—"} label="Total programs" sub="In the catalogue" />
+                            <Stat icon={CheckCircle2} value={programs.published ?? "—"} label="Published" sub="Live on the site" />
+                            <Stat icon={FileText} value={programs.draft ?? "—"} label="Drafts" sub="Not yet published" />
                         </div>
                     </Section>
 
-                    {/* Section 04 — Conclusion */}
-                    <Section n="04" title="Conclusion">
+                    {/* Section 03 — Conclusion */}
+                    <Section n="03" title="Conclusion">
                         <ConclusionCard conclusion={conclusion} />
                     </Section>
+
+                    <EducationNoteActivityReport data={summary.note_activity} />
+
+                    {departmentKey && <EducationReportInsights insights={departments[departmentKey].insights} department={DEPT_META[departmentKey].label} range={range} />}
+
+                    <details className="rounded-xl border border-gray-200 bg-white p-4">
+                        <summary className="cursor-pointer text-sm font-bold text-gray-800">Department pipeline position</summary>
+                        <div className="mt-3">
+                            <p className="mb-2 text-xs text-gray-500">Shared department figures. Your contact-stage counts are shown separately in My lead contact activity.</p>
+                            <p className="mb-3 text-[11px] leading-relaxed text-gray-500">{pipeline_history.notice || (range.all ? "Current Leads queue, including undated records." : "Recorded lead status changes only. Missing audit history stays unknown.")}</p>
+                            <div className="flex flex-col lg:flex-row gap-4 items-start">
+                                <div className="w-full min-w-0 lg:flex-1">
+                                    <div ref={graphRef}>
+                                        <PipelineChart pipeline={pipeline.filter(row => !["Contact Attempted", "Contacted", "Contacted for Booking"].includes(row.stage))} all={range.all} selected={selectedStage} onSelect={(s) => setSelectedStage(selectedStage === s ? null : s)} />
+                                    </div>
+                                    <p className="mt-2 text-[11px] text-gray-400">Click any bar to open that stage's client list on the right.</p>
+                                </div>
+                                {openList && (
+                                    <div className="w-full lg:w-96 shrink-0">
+                                        <div className="flex flex-col" style={graphH ? { height: graphH } : undefined}>
+                                            <StageCard stage={openList.title} rows={openList.rows} singleCol fill onClose={() => setSelectedStage(null)} />
+                                        </div>
+                                        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-400"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> {range.all ? "Current queue position" : "Recorded change in selected period"}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </details>
 
                     <p className="text-center text-[11px] text-gray-400">
                         Generated {generated_at ? new Date(generated_at).toLocaleString("en-NZ", { timeZone: range.timezone || "Pacific/Auckland" }) : "—"}{generated_by ? ` · ${generated_by}` : ""} · EP Education
@@ -293,21 +304,16 @@ function Section({ n, title, children }) {
 // Immigration) has its OWN status set; a client can appear under more than one
 // department, matching the Students-page tab badges. Click a status card to
 // reveal the clients sitting at it.
-function DepartmentBreakdown({ departments = {}, range = {}, leadRegister = {} }) {
-    const keys = ["education", "english", "immigration"].filter((k) => departments[k]);
-    const [active, setActive] = useState(keys[0] || "education");
+function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActive }) {
+    const keys = Object.keys(DEPT_META).filter((k) => departments[k]);
     const [openStage, setOpenStage] = useState(null);
-    const activeKey = departments[active] ? active : keys[0] || "education";
     const dept = departments[activeKey] || { total: 0, event_count: 0, stages: [] };
     const meta = DEPT_META[activeKey] || DEPT_META.education;
-    const studentStages = dept.stages.filter(({ stage }) => stage !== "No stage set");
+    const studentStages = dept.stages.filter(({ stage }) => stage !== "No stage set"
+        && !["Contact Attempted", "Contacted", "Contacted for Booking"].includes(stage));
     const stages = activeKey === "education" ? [
         studentStages.find(({ stage }) => stage === "New Lead") || { stage: "New Lead", count: 0, clients: [] },
-        ...Object.entries(CONTACT_CARD_STATUSES).map(([stage, status]) => {
-            const clients = leadRegister[status] || [];
-            return { stage, count: clients.length, clients, leadStatus: true };
-        }),
-        ...studentStages.filter(({ stage }) => stage !== "New Lead" && !Object.hasOwn(CONTACT_CARD_STATUSES, stage)),
+        ...studentStages.filter(({ stage }) => stage !== "New Lead"),
     ] : studentStages;
     const open = openStage ? stages.find((s) => s.stage === openStage) || null : null;
     const switchTo = (k) => { setActive(k); setOpenStage(null); };
@@ -326,7 +332,7 @@ function DepartmentBreakdown({ departments = {}, range = {}, leadRegister = {} }
         ro.observe(el);
         window.addEventListener("resize", update);
         return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-    }, [active, openStage, stages.length]);
+    }, [activeKey, openStage, stages.length]);
 
     if (keys.length === 0) {
         return <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center text-[13px] text-gray-400">No department data.</div>;
@@ -352,7 +358,7 @@ function DepartmentBreakdown({ departments = {}, range = {}, leadRegister = {} }
 
             <p className="text-[11px] leading-relaxed text-gray-500">
                 {range.all ? "All shows the current register, including records with missing dates or stages." : `Student cards count distinct students who entered each stage during ${fmtDate(range.from)} – ${fmtDate(range.to)}. A student can appear in multiple stages; the tab total counts each student once. Missing dates are excluded.`}
-                {activeKey === "education" && (range.all ? " Contact cards show the current lead queue." : " Contact cards use recorded lead status changes in those dates.")}
+
             </p>
 
             {/* Status cards on the left; the client list opens as a panel on the
@@ -392,7 +398,6 @@ function DepartmentBreakdown({ departments = {}, range = {}, leadRegister = {} }
                     </div>
                 )}
             </div>
-            <EducationReportInsights insights={dept.insights} department={meta.label} range={range} />
         </div>
     );
 }

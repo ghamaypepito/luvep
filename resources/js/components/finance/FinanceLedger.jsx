@@ -159,14 +159,38 @@ function EntryModal({ kind, cfg, row, currencyDefault, onClose }) {
 // Detail + payment ledger for one entry.
 function DetailModal({ cfg, row, onEdit, onClose }) {
     const [pay, setPay] = useState({ amount: "", paid_on: today(), method: "", reference: "", notes: "" });
+    const [replacement, setReplacement] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [errors, setErrors] = useState({});
     const set = (k) => (e) => setPay((p) => ({ ...p, [k]: e.target.value }));
 
     const record = () => {
+        setErrors({});
         setSaving(true);
         router.post(`${cfg.base}/${row.id}/payments`, pay, {
             preserveScroll: true,
             onSuccess: () => setPay({ amount: "", paid_on: today(), method: "", reference: "", notes: "" }),
+            onError: setErrors,
+            onFinish: () => setSaving(false),
+        });
+    };
+    const updateSettlement = () => {
+        setErrors({});
+        setSaving(true);
+        router.patch(`${cfg.base}/${row.id}/internal-settlement`, { pending: !row.internal_settlement_pending }, {
+            preserveScroll: true,
+            onError: setErrors,
+            onFinish: () => setSaving(false),
+        });
+    };
+    const issueReplacement = (event) => {
+        event.preventDefault();
+        setErrors({});
+        setSaving(true);
+        router.post(`${cfg.base}/${row.id}/replace-invoice`, replacement, {
+            preserveScroll: true,
+            onSuccess: () => setReplacement(null),
+            onError: setErrors,
             onFinish: () => setSaving(false),
         });
     };
@@ -209,6 +233,40 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                         <a href={row.document_url} className="mt-3 inline-block font-semibold text-indigo-700 underline">Open Invoice workspace</a>
                     </div>
                 ) : <div className="p-6 space-y-5">
+                    {(row.can_replace_invoice || row.invoice_history?.length > 0) && (
+                        <section className="border border-gray-200 rounded-xl p-4 space-y-3" aria-label="Invoice history">
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                                <a className="text-xs font-semibold text-indigo-700 underline" href={`${cfg.base}/${row.id}/invoice-history`}>Download current invoice</a>
+                                {row.can_replace_invoice && !replacement && <button type="button" className="text-xs font-semibold text-indigo-700" onClick={() => {
+                                    setErrors({});
+                                    setReplacement({ invoice_number: "", reason: "", expected_number: row[cfg.numberField] });
+                                }}>Replace invoice number</button>}
+                            </div>
+                            {replacement && <form onSubmit={issueReplacement} className="space-y-3">
+                                <p className="text-xs text-gray-600">This issues a new PDF for the same receivable and retains the previous PDF in history.</p>
+                                <label className="block text-xs font-semibold">Replacement number
+                                    <input className={inputCls} required maxLength={40} value={replacement.invoice_number}
+                                        onChange={(e) => setReplacement({ ...replacement, invoice_number: e.target.value })} />
+                                </label>
+                                <label className="block text-xs font-semibold">Reason for correction
+                                    <textarea className={inputCls} required maxLength={500} value={replacement.reason}
+                                        onChange={(e) => setReplacement({ ...replacement, reason: e.target.value })} />
+                                </label>
+                                {(errors.invoice_number || errors.expected_number || errors.reason) && <p role="alert" className="text-xs text-rose-700">{errors.invoice_number || errors.expected_number || errors.reason}</p>}
+                                <div className="flex justify-end gap-3">
+                                    <button type="button" disabled={saving} className="text-xs text-gray-600" onClick={() => setReplacement(null)}>Cancel</button>
+                                    <button disabled={saving} className="px-3 py-2 rounded-md bg-indigo-700 text-white text-xs font-semibold disabled:opacity-60">Issue replacement</button>
+                                </div>
+                            </form>}
+                            {row.invoice_history?.length > 0 && <ul className="space-y-2 text-xs text-gray-600">
+                                {row.invoice_history.map((version) => <li key={version.id}>
+                                    <a className="text-indigo-700 underline" href={`${cfg.base}/${row.id}/invoice-history/${version.id}`}>Download previous invoice {version.previous_number}</a>
+                                    <span className="ml-2">Replaced by {version.replacement_number} · {version.date}</span>
+                                    <p>{version.reason}</p>
+                                </li>)}
+                            </ul>}
+                        </section>
+                    )}
                     <div className="grid grid-cols-3 gap-3">
                         <div className="rounded-xl border border-gray-200 p-3">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Amount</p>
@@ -246,22 +304,38 @@ function DetailModal({ cfg, row, onEdit, onClose }) {
                     </div>
 
                     {/* Record payment */}
-                    {row.payment_status !== "void" && (
+                    {row.payment_status !== "void" && (!row.student_visa_invoice || row.can_manage_student_visa_invoice) && (
                         <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
                             <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 mb-2 flex items-center gap-1.5"><CreditCard size={13} /> Record a payment</p>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                <input type="number" step="0.01" min="0.01" className={inputCls} value={pay.amount} onChange={set("amount")} placeholder="Amount" />
-                                <input type="date" className={inputCls} value={pay.paid_on} onChange={set("paid_on")} />
-                                <input className={inputCls} value={pay.method} onChange={set("method")} placeholder="Method" />
-                                <input className={inputCls} value={pay.reference} onChange={set("reference")} placeholder="Reference" />
+                                <input aria-label="Amount" type="number" step="0.01" min="0.01" className={inputCls} value={pay.amount} onChange={set("amount")} placeholder="Amount" />
+                                <input aria-label="Payment date" type="date" className={inputCls} value={pay.paid_on} onChange={set("paid_on")} />
+                                <input aria-label="Payment method" className={inputCls} value={pay.method} onChange={set("method")} placeholder="Method" />
+                                <input aria-label="Payment reference" aria-required={row.student_visa_invoice || undefined} className={inputCls} value={pay.reference} onChange={set("reference")} placeholder={row.student_visa_invoice ? "Reference (required)" : "Reference"} />
                             </div>
                             <div className="flex justify-end mt-2">
-                                <button onClick={record} disabled={!pay.amount || Number(pay.amount) <= 0 || saving} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-60">
+                                <button onClick={record} disabled={!pay.amount || Number(pay.amount) <= 0 || (row.student_visa_invoice && (!pay.paid_on || !pay.reference.trim())) || saving} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-60">
                                     <Plus size={14} /> {saving ? "Recording…" : "Add payment"}
                                 </button>
                             </div>
                         </div>
                     )}
+
+                    {row.can_manage_student_visa_invoice && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 p-4">
+                            <div>
+                                <p className="text-xs font-bold text-gray-800">Internal settlement</p>
+                                {row.internal_settlement_pending && <p className="text-xs text-amber-800">Pending</p>}
+                                {!row.internal_settlement_pending && !row.can_flag_internal_settlement && row.payment_status !== "void" && (
+                                    <p className="text-xs text-gray-500">Record the full client payment on this invoice first.</p>
+                                )}
+                            </div>
+                            <button type="button" onClick={updateSettlement} disabled={saving || (!row.internal_settlement_pending && !row.can_flag_internal_settlement)} className="px-3 py-2 rounded-lg border border-gray-200 text-xs font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
+                                {row.internal_settlement_pending ? "Clear pending flag" : "Flag as pending"}
+                            </button>
+                        </div>
+                    )}
+                    {Object.keys(errors).length > 0 && <p role="alert" className="text-sm text-rose-700">{Object.values(errors).join(" ")}</p>}
 
                     {row.notes && (
                         <div>
@@ -404,6 +478,7 @@ export default function FinanceLedger({ kind, rows = [], summary = {}, filters =
                                     </td>
                                     <td className="px-3 py-3">
                                         <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${STATUS_BADGE[r.payment_status] || "bg-gray-100 text-gray-600"}`}>{STATUS_LABEL[r.payment_status] || r.payment_status}</span>
+                                        {r.internal_settlement_pending && <p className="mt-1 text-[11px] text-amber-800">Internal settlement pending</p>}
                                     </td>
                                 </tr>
                             ))}

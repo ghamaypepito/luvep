@@ -19,6 +19,10 @@ return [
 
     'enabled' => env('AI_ENABLED', true),
 
+    // Enable only after approving private passport processing and staging review.
+    'passport_prefill_enabled' => env('PASSPORT_PREFILL_ENABLED', false),
+    'passport_prefill_processing_approved' => env('PASSPORT_PREFILL_PROCESSING_APPROVED', false),
+
     'provider' => 'openrouter',
     'api_key'  => env('OPENROUTER_API_KEY'),
     'base_url' => 'https://openrouter.ai/api/v1',

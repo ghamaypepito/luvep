@@ -78,7 +78,7 @@ class IntakeDocumentMigrator
     }
 
     /** [key => [paths...]] of every non-LeadDocument file recorded on the lead. */
-    private static function leadPaths(Lead $lead): array
+    public static function leadPaths(Lead $lead): array
     {
         $notes = $lead->education_notes;
         $out = self::normalize(is_array($notes) ? ($notes['uploaded_files'] ?? []) : []);

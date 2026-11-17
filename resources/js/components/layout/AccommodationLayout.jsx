@@ -14,6 +14,7 @@ const ACCOMMODATION_NAV = [
     { name: "Viewings", href: "/portal/accommodation/viewings", icon: <CalendarCheck size={20} /> },
     { name: "Calendar", href: "/portal/accommodation/calendar", icon: <CalendarDays size={20} /> },
     { name: "Rent & Utilities", href: "/portal/accommodation/rent-utilities", icon: <Receipt size={20} /> },
+    { name: "Invoices & Receipts", href: "/portal/accommodation/purchase-invoices", icon: <FileText size={20} /> },
     { name: "PM Payment Schedule", href: "/portal/accommodation/payment-schedule", icon: <Wallet size={20} /> },
     { name: "Task Tracker", href: "/portal/accommodation/tasks", icon: <ClipboardList size={20} /> },
     { name: "Gas Delivery Tracker", href: "/portal/accommodation/gas-delivery", icon: <Flame size={20} /> },
