@@ -583,6 +583,13 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
+    const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
+    const defaultServiceFee = consultation ? 250 : 500;
+    const serviceFee = serviceFees[engagementType];
+    const serviceFeeOverride = specialService && serviceFee != null && serviceFee !== "" ? String(serviceFee) : null;
+    const serviceFeeValid = serviceFeeOverride === null || (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(serviceFeeOverride) && Number(serviceFeeOverride) <= 9999999);
+    const baseServiceFee = Number(serviceFeeOverride ?? defaultServiceFee);
+    const serviceGst = consultation ? 0 : Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100;
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
@@ -804,6 +811,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         engagement_type: engagementType, types: selectedTypes, signer_id: signerId,
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
+        ...(specialService ? { service_fee: serviceFeeOverride } : {}),
         ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
             consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
@@ -815,6 +823,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
+        ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
         ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
             consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}), _r: familyRefresh,
     });
@@ -1109,7 +1118,20 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
-                                <p className="font-semibold">{consultation ? "USD 250.00 booking fee" : "NZD 500.00 + 75.00 GST = NZD 575.00"}</p>
+                                <label className="block text-xs font-semibold">
+                                    {consultation ? "Booking fee (USD)" : "Service fee (NZD, ex GST)"}
+                                    <input type="text" inputMode="decimal" disabled={!!draft?.signed}
+                                        value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
+                                        onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
+                                        aria-invalid={!serviceFeeValid} aria-describedby="engagement-service-fee-note"
+                                        className={`${ctrlCls} mt-1.5`} />
+                                </label>
+                                <p id="engagement-service-fee-note" className={`mt-1 text-xs ${serviceFeeValid ? "" : "text-red-700"}`}>
+                                    {serviceFeeValid ? "Leave blank to use the standard fee." : "Enter an amount from 0 to 9,999,999 with up to two decimal places."}
+                                </p>
+                                {serviceFeeValid && <p className="mt-2 font-semibold tabular-nums">
+                                    {consultation ? `Total USD ${fmtFee(baseServiceFee)}` : `NZD ${fmtFee(baseServiceFee)} + ${fmtFee(serviceGst)} GST = NZD ${fmtFee(baseServiceFee + serviceGst)}`}
+                                </p>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
                             </div>}
@@ -1209,7 +1231,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => { if (!submitting) onClose(); }} disabled={submitting} className="px-3 py-2 text-sm font-semibold text-gray-600 disabled:opacity-50">Close</button>
                         <button type="button" onClick={flow.generate}
-                            disabled={!selectedCase || !selectedTypes.length || !signerId || submitting || selectedSigner?.licence_current === false || !!draft?.signed}
+                            disabled={!selectedCase || !selectedTypes.length || !signerId || submitting || !serviceFeeValid || selectedSigner?.licence_current === false || !!draft?.signed}
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                             {flow.busy === "prepare" ? "Generating…" : "Generate"}
                         </button>

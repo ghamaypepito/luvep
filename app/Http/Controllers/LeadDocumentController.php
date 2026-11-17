@@ -1509,10 +1509,16 @@ class LeadDocumentController extends Controller
             ]);
         }
 
+        $engageType = $this->engagementTypeFor($type);
+        $engagementType = $type === 'engage_invoice' ? $request->query('engagement_type', 'immigration_advice') : $engageType;
+        $serviceFee = in_array($engagementType, ['initial_consultation', 'oia'], true)
+            ? $request->validate(['service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE])
+            : [];
+
         // The invoice rides in the engagement pack but renders through the
         // InvoiceGenerator, priced off the same tier / location / GST / fee.
         if ($type === 'engage_invoice') {
-            $engOverrides = [];
+            $engOverrides = $serviceFee;
             if (in_array($request->query('fee_tier'), \App\Models\VisaType::FEE_TIERS, true)) {
                 $engOverrides['fee_tier'] = $request->query('fee_tier');
             }
@@ -1526,7 +1532,6 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $engOverrides['professional_fee'] = (float) $profFee;
             }
-            $engagementType = $request->query('engagement_type', 'immigration_advice');
             $invoiceOptions = app(\App\Services\Immigration\EngagementPackWorkflow::class)->invoiceOptions($lead, $engagementType, $engOverrides);
             $html = app(\App\Services\Immigration\InvoiceGenerator::class)->renderHtml($lead, $invoiceOptions);
 
@@ -1534,13 +1539,12 @@ class LeadDocumentController extends Controller
         }
 
         // Immigration engagement docs render through their own generator.
-        $engageType = $this->engagementTypeFor($type);
         if ($engageType !== null) {
             $signer = $request->query('signer');
             $assistSigner = $request->query('assist_signer');
             $tier = $request->query('fee_tier');
             $location = $request->query('fee_location');
-            $opts = [];
+            $opts = $serviceFee;
             if ($signer) {
                 $opts['signer_id'] = (int) $signer;
             }

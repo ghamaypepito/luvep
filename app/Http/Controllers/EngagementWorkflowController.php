@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 
 class EngagementWorkflowController extends Controller
 {
+    public const SERVICE_FEE_RULE = 'nullable|numeric|decimal:0,2|min:0|max:9999999';
+
     private function lead($id): Lead
     {
         $lead = Lead::findOrFail($id);
@@ -27,6 +29,7 @@ class EngagementWorkflowController extends Controller
             'fee_tier' => ['nullable', Rule::in(['normal', 'discounted'])],
             'fee_location' => ['nullable', Rule::in(['onshore', 'offshore'])],
             'include_gst' => 'sometimes|boolean', 'professional_fee' => 'nullable|numeric|min:0|max:9999999',
+            'service_fee' => self::SERVICE_FEE_RULE,
             'pack_id' => 'nullable|uuid',
             'consultation_date' => 'required_if:engagement_type,initial_consultation|nullable|date_format:Y-m-d',
             'consultation_time' => 'required_if:engagement_type,initial_consultation|nullable|date_format:H:i',
