@@ -95,7 +95,7 @@ class Library
         $this->event($file->folder, $inline ? 'file_previewed' : 'file_downloaded', $share ? null : request()->user()?->id, $share?->id, $file);
         $headers = ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer'];
         if ($inline && in_array($file->mime, ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'text/plain', 'text/csv'], true)) {
-            return response()->file(Storage::disk('local')->path($file->file_path), [...$headers, 'Content-Type' => $file->mime, 'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $file->original_name, 'file')]);
+            return response()->file(Storage::disk('local')->path($file->file_path), [...$headers, 'Content-Type' => $file->mime, 'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $file->original_name, 'file')])->setPrivate();
         }
 
         return Storage::disk('local')->download($file->file_path, $file->original_name, $headers);

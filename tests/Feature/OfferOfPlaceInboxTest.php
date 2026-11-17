@@ -4,9 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Lead;
 use App\Models\LeadDocument;
+use App\Models\MediaFile;
+use App\Models\MediaFolder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -65,14 +68,34 @@ class OfferOfPlaceInboxTest extends TestCase
             ->where('documents.total', 1)->where('clients', 1)->where('documents.data.0.id', $student->id));
         $this->get('/portal/education/offers-of-place/'.$sales->id.'/download')->assertNotFound();
         $this->get('/portal/education/offers-of-place/'.$case->id.'/download')->assertNotFound();
-        $this->get('/portal/education/offers-of-place/'.$student->id.'/download')->assertOk()->assertDownload('offer.pdf');
-        $this->get('/portal/education/offers-of-place/'.$student->id.'/download?inline=1')->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->get('/portal/education/offers-of-place/'.$student->id.'/download')
+            ->assertOk()->assertDownload('offer.pdf')->assertHeader('Cache-Control', 'no-store, private');
+        $this->get('/portal/education/offers-of-place/'.$student->id.'/download?inline=1')
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertHeader('Cache-Control', 'no-store, private');
 
         $this->actingAs($salesUser)->get('/portal/sales/offers-of-place')->assertInertia(fn (Assert $p) => $p
             ->component('portal/sales/OffersOfPlace')->where('documents.total', 1)->where('documents.data.0.id', $sales->id));
         $this->get('/portal/sales/offers-of-place/'.$student->id.'/download')->assertNotFound();
         $this->get('/portal/sales/offers-of-place/'.$case->id.'/download')->assertNotFound();
         $this->get('/portal/education/offers-of-place')->assertForbidden();
+    }
+
+    public function test_media_drive_offer_preview_disables_shared_caching(): void
+    {
+        Storage::fake('local');
+        $lead = $this->lead();
+        $user = User::factory()->create(['role' => 'education']);
+        $folder = MediaFolder::create(['lead_id' => $lead->id, 'client_key' => 'lead:'.$lead->id, 'name' => 'Files']);
+        $bytes = '%PDF synthetic offer';
+        $path = 'media-drive/assets/offer.pdf';
+        Storage::disk('local')->put($path, $bytes);
+        $file = MediaFile::create(['folder_id' => $folder->id, 'original_name' => 'offer.pdf', 'file_path' => $path,
+            'mime' => 'application/pdf', 'size' => strlen($bytes), 'sha256' => hash('sha256', $bytes),
+            'upload_key' => (string) Str::uuid(), 'actor_key' => 'user:'.$user->id]);
+        $doc = $this->offer($lead, ['file_path' => '', 'media_file_id' => $file->id]);
+
+        $this->actingAs($user)->get('/portal/education/offers-of-place/'.$doc->id.'/download?inline=1')
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertHeader('Cache-Control', 'no-store, private');
     }
 
     public function test_unrelated_roles_and_guests_cannot_open_the_view_or_download_files(): void
