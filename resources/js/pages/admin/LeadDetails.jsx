@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import EducationAge from '@/components/education/EducationAge';
 import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
 import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
@@ -545,7 +546,7 @@ function ProgramReviewModal({ program, leadId, writeBase, onClose }) {
 const WriteBaseContext = React.createContext('/admin');
 const useWriteBase = () => useContext(WriteBaseContext);
 
-export default function LeadDetails({ lead: backendLead, proposal = null, activity = [], stageTimeline = [], checklistFiles = {}, documentThreads = [], programOptions = [], documentOrphans = [], statuses = [], stageLists = {}, notes = [], tags = [], allTags = [], tasks = [], staffOptions = [], eventRegistration = null, currentUser = null, portalBase = '/admin', writeBase = '/admin', overview = null }) {
+export default function LeadDetails({ lead: backendLead, proposal = null, activity = [], stageTimeline = [], checklistFiles = {}, documentThreads = [], programOptions = [], documentOrphans = [], statuses = [], stageLists = {}, notes = [], tags = [], allTags = [], tasks = [], staffOptions = [], eventRegistration = null, currentUser = null, portalBase = '/admin', writeBase = '/admin', overview = null, ageReferenceDate = null }) {
     // Derive the "Back to Leads" URL from the current path so sales users
     // return to /portal/sales/leads, education users to /portal/education/leads,
     // and admins to /admin/leads — never a 403.
@@ -1341,10 +1342,9 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                             <Field editing={editing} label="Gender" field="gender" form={form} setF={setF} errors={errors} type="select" options={GENDER_OPTIONS} />
                             <Field editing={editing} label="Marital Status" field="marital_status" form={form} setF={setF} errors={errors} type="select" options={MARITAL_OPTIONS} />
                             <Field editing={editing} label="Date of Birth" field="dob" form={form} setF={setF} errors={errors} type="date" />
-                            {/* Age is derived from DOB by the Lead model
-                                (see getAgeAttribute) — read-only, always
-                                shown so staff don't have to do the math. */}
-                            <DataRow label="Age" value={form.age != null && form.age !== '' ? `${form.age}` : null} />
+                            {ageReferenceDate
+                                ? <EducationAge dob={form.dob} referenceDate={ageReferenceDate} fallbackAge={!backendLead.dob ? form.age : null} />
+                                : <DataRow label="Age" value={form.age != null && form.age !== '' ? `${form.age}` : null} />}
                             <Field editing={editing} label="Country of Birth" field="country_of_birth" form={form} setF={setF} errors={errors} />
                             <Field editing={editing} label="Place of Birth" field="place_of_birth" form={form} setF={setF} errors={errors} />
                             <Field editing={editing} label="Citizenship" field="citizenship" form={form} setF={setF} errors={errors} />
