@@ -46,9 +46,9 @@ const change=(node,value)=>act(async()=>{
 (async()=>{
     const props={visits:[{id:11,school:'Jose Maria College',activity:'Visit',summary:'Date TBC'},{id:12,school:'Tagum',activity:'Visit',summary:'Date TBC'}],
         filters:{visit_ids:[11],audience:'registered',purpose:'email_follow_up'},
-        recipients:[{id:'a'.repeat(64),name:'<Alex> Taylor',email:'alex@example.test',eligible:true,schools:['Jose Maria College'],attendance:'Registered',context:{full_name:'<Alex> Taylor',school:'Jose Maria College'}},
+        recipients:[{id:'a'.repeat(64),name:'<Alex> Taylor',email:'alex@example.test',eligible:true,schools:['Jose Maria College'],attendance:'Registered',context:{full_name:'<Alex> Taylor',email:'alex@example.test',school:'Jose Maria College'}},
             {id:'b'.repeat(64),name:'Excluded',email:'excluded@example.test',eligible:false,reason:'Missing permission',schools:['Jose Maria College'],attendance:'Registered'}],
-        templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p>',review:'c'.repeat(64),
+        templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p><img src="https://tracker.example.test/{{email}}"><style>@import "https://tracker.example.test/sample.css";</style>',review:'c'.repeat(64),
             from_email:'staff@example.test',from_name:'Education',reply_to_email:'replies@example.test',reply_to_name:'Education Replies',
             shell:'<title>&lt;!-- school-mail-subject --&gt;</title><header>Branding</header><!-- school-mail-body -->'}],mailings:[]};
     await act(async()=>root.render(React.createElement(SchoolMail,props)));
@@ -59,11 +59,17 @@ const change=(node,value)=>act(async()=>{
     await click(button('Select eligible matches'));
     await change(document.querySelector('[aria-label="Mailing name"]'),'Synthetic follow up');
     await change(document.querySelector('[aria-label="Template"]'),'7');
-    assert.match(document.body.textContent,/Hello <Alex> Taylor/);
+    assert.match(document.body.textContent,/Hello Jamie Rivera/);
     assert.match(document.body.textContent,/From: Education <staff@example\.test>/);
     const preview=document.querySelector('[title="Email preview"]');
     assert.ok(preview.hasAttribute('sandbox'));
-    assert.match(preview.srcdoc,/<header>Branding<\/header><p>&lt;Alex&gt; Taylor Jose Maria College<\/p>/);
+    assert.match(preview.srcdoc,/<header>Branding<\/header><p>Jamie Rivera Example College<\/p>/);
+    assert.match(preview.srcdoc,/tracker\.example\.test\/jamie\.rivera@example\.test/);
+    assert.doesNotMatch(preview.srcdoc,/Alex|alex@example\.test|Jose Maria College|excluded@example\.test/);
+    const policy=preview.srcdoc.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/);
+    assert.ok(policy&&policy.index<preview.srcdoc.indexOf('<img'), 'CSP must precede untrusted resource tags');
+    assert.match(policy[1],/default-src 'none'/);
+    assert.match(policy[1],/style-src 'unsafe-inline'/);
     const confirmation=[...document.querySelectorAll('label')].find(n=>n.textContent.includes('I reviewed')).querySelector('input');
     assert.equal(button('Queue 1 emails').disabled,true);
     await click(confirmation);await click(button('Queue 1 emails'));
@@ -79,7 +85,7 @@ const change=(node,value)=>act(async()=>{
     assert.equal(button('Queue 1 emails').disabled,true);
     assert.equal(confirmation.checked,false);
     assert.match(document.querySelector('[role="alert"]').textContent,/Review the updated message/);
-    assert.match(document.body.textContent,/Updated <Alex> Taylor/);
+    assert.match(document.body.textContent,/Updated Jamie Rivera/);
     await change(document.querySelector('[aria-label="Audience"]'),'attended');
     assert.match(document.body.textContent,/Filters changed/);assert.equal(button('Queue 1 emails'),undefined);
     await click(button('Load recipients'));assert.equal(posts[1].method,'get');assert.equal(posts[1].data.audience,'attended');

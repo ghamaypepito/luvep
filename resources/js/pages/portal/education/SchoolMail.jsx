@@ -2,6 +2,12 @@ import { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 const base='/portal/education/school-mail';
 const input='rounded-lg border border-gray-300 px-3 py-2';
+const sampleContext = {
+    first_name: 'Jamie', last_name: 'Rivera', full_name: 'Jamie Rivera', email: 'jamie.rivera@example.test',
+    school: 'Example College', event_name: 'School visit', event_date: '15 October 2026',
+    event_time: '10:00 AM', event_location: 'Example College auditorium',
+};
+const previewPolicy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">`;
 const escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const fill=(value,context,html=false)=>String(value||'').replace(/\{\{[ \t\r\n\f\v]*([a-z0-9_]+)[ \t\r\n\f\v]*\}\}/gi,(_,key)=>html?escape(context?.[key.toLowerCase()]??''):(context?.[key.toLowerCase()]??''));
 export default function SchoolMail(props) {
@@ -22,12 +28,12 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const dirty=JSON.stringify(visitIds)!==JSON.stringify(filters.visit_ids.map(String)) || audience!==filters.audience || purpose!==filters.purpose;
     const rows=useMemo(()=>recipients.filter(r=>`${r.name} ${r.email}`.toLowerCase().includes(search.toLowerCase())),[recipients,search]);
     const chosen=recipients.filter(r=>r.eligible && selected.has(r.id));
-    const preview=chosen[0]||rows.find(r=>r.eligible);
     const template=templates.find(t=>String(t.id)===templateId);
     const confirmed=Boolean(template&&confirmedReview===template.review);
-    const previewSubject=template&&preview?fill(template.subject,preview.context):'';
-    const previewHtml=template&&preview?template.shell.replace(/&lt;!-- school-mail-subject --&gt;|<!-- school-mail-body -->/g,
-        marker=>marker.startsWith('&lt;')?escape(previewSubject):fill(template.body,preview.context,true)):'';
+    const previewSubject=template?fill(template.subject,sampleContext):'';
+    const previewHtml=template?`<!doctype html>${previewPolicy}${template.shell.replace(/^<!doctype html>/i,'').replace(
+        /&lt;!-- school-mail-subject --&gt;|<!-- school-mail-body -->/g,
+        marker=>marker.startsWith('&lt;')?escape(previewSubject):fill(template.body,sampleContext,true))}`:'';
     const resetReview=()=>{setConfirmed(null);setSelected(new Set());};
     const toggleVisit=id=>{resetReview();setVisits(ids=>ids.includes(id)?ids.filter(v=>v!==id):[...ids,id]);};
     const toggle=id=>{setConfirmed(null);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
@@ -61,7 +67,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 </select></label>
                 <button className="rounded-lg bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!visitIds.length||visitIds.length>20} onClick={load}>Load recipients</button>
             </div>
-            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. “Recorded attended” does not independently verify physical attendance. RSVP email addresses must be verified. Missing or conflicting permissions remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
+            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. “Recorded attended” does not independently verify physical attendance. RSVP email addresses must be verified. Programme registrations need a confirmed email choice or a matching verified RSVP. Missing or conflicting permissions remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
         </section>
         {dirty&&<p role="alert" className="text-amber-800">Filters changed. Load recipients again before reviewing or sending.</p>}
         {!dirty&&<>
@@ -86,10 +92,10 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                     <option value="">Choose a compatible email template</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                 </select></label>
                 <p className="text-sm text-gray-600">Account/password templates and unsupported placeholders are excluded. Supported fields: first_name, last_name, full_name, email, school, event_name, event_date, event_time and event_location.</p>
-                {template&&preview&&<div className="space-y-3 border-t pt-3"><p className="text-sm text-gray-500">Sample for {preview.name}. Visit fields use the first matching registration for that address.</p>
+                {template&&<div className="space-y-3 border-t pt-3"><p className="text-sm text-gray-500">This preview uses sample recipient and visit details. Images and external resources are hidden. Emails use the first matching registration for each address.</p>
                     <p className="text-sm">From: {template.from_name} &lt;{template.from_email}&gt;<br />Reply to: {template.reply_to_name} &lt;{template.reply_to_email}&gt;</p>
                     <p className="font-semibold">{previewSubject}</p>
-                    <iframe title="Email preview" sandbox="" srcDoc={previewHtml} className="h-96 w-full rounded-lg border" />
+                    <iframe title="Email preview" sandbox="" referrerPolicy="no-referrer" srcDoc={previewHtml} className="h-96 w-full rounded-lg border" />
                 </div>}
                 <label className="flex gap-3"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked?template?.review:null)} />
                     <span>I reviewed the selected visits, email purpose, recipients and message.</span></label>

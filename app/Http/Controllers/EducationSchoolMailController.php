@@ -39,7 +39,7 @@ class EducationSchoolMailController extends Controller
 
         return inertia('portal/education/SchoolMail', [
             'visits' => EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->get()->map(fn ($v) => ['id' => $v->id, 'school' => $v->school, 'activity' => $v->activity, 'summary' => $v->summary()]),
-            'filters' => $filters, 'recipients' => $rows->map(fn ($r) => collect($r)->except('source_refs')->all()),
+            'filters' => $filters, 'recipients' => $rows->map(fn ($r) => collect($r)->except(['source_refs', 'context'])->all()),
             'templates' => $audience->templates()->map(function ($t) use ($audience) {
                 $snapshot = $audience->templateSnapshot($t);
 

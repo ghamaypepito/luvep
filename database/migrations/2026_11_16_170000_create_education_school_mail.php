@@ -21,7 +21,7 @@ return new class extends Migration
             $t->id();
             $t->foreignId('mailing_id')->constrained('education_school_mailings')->cascadeOnDelete();
             $t->string('email', 254);
-            $t->string('name', 180);
+            $t->string('name', 255);
             $t->json('source_refs');
             $t->json('context_snapshot');
             $t->string('status', 20)->default('pending');

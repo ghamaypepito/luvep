@@ -26,8 +26,6 @@ class EducationSchoolMailAudience
         $ids = $filters['visit_ids'];
         $visits = EducationVisit::whereIn('id', $ids)->where('status', '!=', 'cancelled')->get()->keyBy('id');
         $rows = collect();
-        $confirmation = $filters['purpose'] === 'email_follow_up' ? 'follow_up_confirmed_at' : 'newsletter_confirmed_at';
-        $subscriptions = EducationEventEmailSubscription::whereNull('exited_at')->whereNotNull($confirmation)->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM(email)) = ?', [$onlyEmail]))->get()->keyBy('registration_id');
         $suppressed = MessageLog::where('channel', 'email')->where('status', 'bounced')->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM(recipient_address)) = ?', [$onlyEmail]))->pluck('recipient_address')
             ->merge(EmailReply::where('direction', 'inbound')->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM(from_email)) = ?', [$onlyEmail]))->where(fn ($q) => $q->whereRaw('LOWER(subject) LIKE ?', ['%unsubscribe%'])
                 ->orWhereRaw('LOWER(TRIM(body_text)) IN (?, ?, ?, ?)', ['unsubscribe', 'please unsubscribe me', 'stop', 'remove me']))->pluck('from_email'))
@@ -43,13 +41,22 @@ class EducationSchoolMailAudience
         // Programme registrations and RSVPs are independent. Never manufacture Lead links.
         // Recorded-attendance mode uses RSVP evidence only.
         if ($filters['audience'] === 'registered') {
-            foreach (EducationEventRegistration::whereIn('education_visit_id', $visits->keys())->whereHas('lead')->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM('.$q->getQuery()->getGrammar()->wrap('contact_details->email').')) = ?', [$onlyEmail]))->orderBy('id')->get() as $r) {
+            $registrations = EducationEventRegistration::whereIn('education_visit_id', $visits->keys())->whereHas('lead')->with('lead:id,email')
+                ->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM('.$q->getQuery()->getGrammar()->wrap('contact_details->email').')) = ?', [$onlyEmail]))->orderBy('id')->get();
+            $confirmation = $filters['purpose'] === 'email_follow_up' ? 'follow_up_confirmed_at' : 'newsletter_confirmed_at';
+            $subscriptions = EducationEventEmailSubscription::whereIntegerInRaw('registration_id', $registrations->modelKeys())->whereNotNull($confirmation)->get()->keyBy('registration_id');
+            $verifiedRsvps = $rows->where('eligible', true)->groupBy('email');
+            foreach ($registrations as $r) {
                 $c = $r->contact_details ?? [];
                 $name = trim(($c['first_name'] ?? '').' '.($c['last_name'] ?? ''));
-                $rows->push($this->row('registration', $r->id, $name, $c['email'] ?? '', $r->education_visit_id,
-                    $r->consented_at && ($r->{$filters['purpose']} || (isset($subscriptions[$r->id])
-                        && $subscriptions[$r->id]->lead_id === $r->lead_id
-                        && strtolower(trim($subscriptions[$r->id]->email)) === strtolower(trim($c['email'] ?? '')))), 'Programme registration', $visits[$r->education_visit_id]));
+                $email = strtolower(trim($c['email'] ?? ''));
+                $nameKey = EducationRsvpWorkflow::nameKey($name);
+                $subscription = $subscriptions->get($r->id);
+                $confirmed = $subscription && $subscription->lead_id === $r->lead_id && strtolower(trim($subscription->email)) === $email;
+                $verified = $r->{$filters['purpose']} && $verifiedRsvps->get($email)?->contains(fn ($rsvp) =>
+                    $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
+                $rows->push($this->row('registration', $r->id, $name, $email, $r->education_visit_id,
+                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || $verified), 'Programme registration', $visits[$r->education_visit_id]));
             }
         }
 

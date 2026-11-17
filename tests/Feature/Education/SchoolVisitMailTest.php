@@ -44,6 +44,11 @@ class SchoolVisitMailTest extends TestCase
         return EducationEventRegistration::create($a + ['lead_id' => $l->id, 'submission_id' => (string) Str::uuid(), 'payload_hash' => str_repeat('a', 64), 'education_visit_id' => $v->id, 'event_name' => 'School visit', 'event_timezone' => 'Asia/Manila', 'country' => 'Philippines', 'school' => $v->school, 'goal' => 'Study', 'planning_timeline' => 'Later', 'education_level' => 'Bachelor', 'contact_details' => ['first_name' => 'Alex', 'last_name' => 'Taylor', 'email' => 'alex@example.test'], 'consented_at' => now(), 'email_follow_up' => true]);
     }
 
+    private function confirmFollowUp(EducationEventRegistration $registration): void
+    {
+        EducationEventEmailSubscription::create(['lead_id' => $registration->lead_id, 'registration_id' => $registration->id, 'email' => 'alex@example.test', 'follow_up_confirmed_at' => now()]);
+    }
+
     private function template(array $a = []): MessageTemplate
     {
         return MessageTemplate::create($a + ['key' => (string) Str::uuid(), 'name' => 'School follow-up', 'department' => 'education', 'is_active' => true, 'channels' => ['email'], 'email_subject' => 'Hello {{full_name}}', 'email_body' => '<p>{{school}} {{full_name}}</p>']);
@@ -73,11 +78,11 @@ class SchoolVisitMailTest extends TestCase
             'template_review' => $audience->templateReview($audience->templateSnapshot($template)), 'recipient_keys' => $this->rows($this->filters($v))->pluck('id')->all(), 'confirmed' => true];
     }
 
-    private function mailing(EducationVisit $v): EducationSchoolMailRecipient
+    private function mailing(EducationVisit $v, array $templateAttributes = []): EducationSchoolMailRecipient
     {
         $u = $this->staff();
         $row = $this->rows($this->filters($v))->first();
-        $template = $this->template(['from_email' => 'staff@example.test', 'from_name' => 'Education']);
+        $template = $this->template($templateAttributes + ['from_email' => 'staff@example.test', 'from_name' => 'Education']);
         $m = EducationSchoolMailing::create(['created_by' => $u->id, 'submission_id' => (string) Str::uuid(), 'name' => 'Synthetic', 'filters' => $this->filters($v),
             'template_snapshot' => app(EducationSchoolMailAudience::class)->templateSnapshot($template)]);
 
@@ -92,7 +97,7 @@ class SchoolVisitMailTest extends TestCase
         $this->rsvp($other, ['email' => 'other@example.test']);
         $this->actingAs($this->staff())->get('/portal/education/school-mail?'.http_build_query($this->filters($v)))
             ->assertOk()->assertInertia(fn ($p) => $p->component('portal/education/SchoolMail')->has('visits', 2)->has('recipients', 1)
-            ->where('recipients.0.email', 'alex@example.test')->where('recipients.0.eligible', true));
+            ->where('recipients.0.email', 'alex@example.test')->where('recipients.0.eligible', true)->missing('recipients.0.context'));
         $this->assertDatabaseCount('leads', 0);
     }
 
@@ -141,13 +146,71 @@ class SchoolVisitMailTest extends TestCase
         $v = $this->visit();
         $this->rsvp($v);
         $reg = $this->registration($v, ['email_follow_up' => false]);
-        EducationEventEmailSubscription::create(['lead_id' => $reg->lead_id, 'registration_id' => $reg->id, 'email' => 'alex@example.test', 'follow_up_confirmed_at' => now()]);
+        $this->confirmFollowUp($reg);
         $this->assertTrue($this->rows($this->filters($v))[0]['eligible']);
         EmailReply::create(['direction' => 'inbound', 'from_email' => 'alex@example.test', 'to_email' => 'staff@example.test', 'subject' => 'Unsubscribe', 'message_id' => 'test-unsubscribe', 'body_text' => 'Please stop']);
         $this->assertFalse($this->rows($this->filters($v))[0]['eligible']);
         EmailReply::query()->delete();
         MessageLog::create(['channel' => 'email', 'recipient_type' => 'raw', 'recipient_address' => 'alex@example.test', 'status' => 'bounced']);
         $this->assertFalse($this->rows($this->filters($v))[0]['eligible']);
+    }
+
+    public function test_programme_form_choice_needs_verified_permission_for_the_exact_visit_and_identity(): void
+    {
+        $v = $this->visit();
+        $other = $this->visit(['school' => 'Another school']);
+        $this->registration($v);
+        $this->rsvp($other);
+        $this->assertFalse($this->rows($this->filters($v, ['visit_ids' => [$v->id, $other->id]]))->sole()['eligible']);
+
+        $rsvp = $this->rsvp($v, ['verified_at' => null]);
+        $this->assertFalse($this->rows($this->filters($v))->sole()['eligible']);
+        $rsvp->update(['verified_at' => now()]);
+        $this->assertTrue($this->rows($this->filters($v))->sole()['eligible']);
+    }
+
+    public function test_nurture_exit_does_not_cancel_a_confirmed_newsletter_choice(): void
+    {
+        $v = $this->visit();
+        $registration = $this->registration($v);
+        EducationEventEmailSubscription::create(['lead_id' => $registration->lead_id, 'registration_id' => $registration->id,
+            'email' => 'alex@example.test', 'newsletter_confirmed_at' => now()->subDays(15), 'exited_at' => now()]);
+
+        $this->assertTrue($this->rows($this->filters($v, ['purpose' => 'email_newsletter']))->sole()['eligible']);
+        $this->assertFalse($this->rows($this->filters($v))->sole()['eligible']);
+    }
+
+    public function test_changed_current_programme_email_blocks_queueing_and_dispatch_to_the_old_address(): void
+    {
+        Queue::fake();
+        Mail::fake();
+        $v = $this->visit();
+        $registration = $this->registration($v);
+        $this->confirmFollowUp($registration);
+        $data = $this->payload($v);
+        $this->actingAs($this->staff())->post('/portal/education/school-mail', $data)->assertSessionHasNoErrors();
+        Queue::assertPushed(SendEducationSchoolMail::class, 1);
+        $registration->lead->update(['email' => 'changed@example.test']);
+
+        $this->assertFalse($this->rows($this->filters($v))->sole()['eligible']);
+        $this->post('/portal/education/school-mail', array_replace($data, ['submission_id' => (string) Str::uuid()]))->assertSessionHasErrors('recipient_keys');
+        $item = EducationSchoolMailRecipient::sole();
+        (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
+        $this->assertSame('skipped', $item->fresh()->status);
+        Queue::assertPushed(SendEducationSchoolMail::class, 1);
+        Mail::assertNothingSent();
+    }
+
+    public function test_a_confirmed_programme_name_can_use_the_full_form_length(): void
+    {
+        Queue::fake();
+        $v = $this->visit();
+        $first = str_repeat('A', 100);
+        $last = str_repeat('B', 100);
+        $registration = $this->registration($v, ['contact_details' => ['first_name' => $first, 'last_name' => $last, 'email' => 'alex@example.test']]);
+        $this->confirmFollowUp($registration);
+        $this->actingAs($this->staff())->post('/portal/education/school-mail', $this->payload($v))->assertSessionHasNoErrors();
+        $this->assertSame("$first $last", EducationSchoolMailRecipient::sole()->name);
     }
 
     public function test_create_snapshots_recipients_and_repeated_submission_does_not_duplicate(): void
@@ -322,11 +385,12 @@ class SchoolVisitMailTest extends TestCase
         Mail::fake();
         $v = $this->visit();
         $this->rsvp($v, ['full_name' => '<Alex> Taylor']);
-        $item = $this->mailing($v);
+        $item = $this->mailing($v, ['email_body' => '<p><a href="mailto:{{email}}">{{full_name}}</a></p>']);
         $job = new SendEducationSchoolMail($item->id);
         $job->handle(app(EducationSchoolMailAudience::class));
         $job->handle(app(EducationSchoolMailAudience::class));
-        Mail::assertSent(TemplatedMessage::class, fn ($mail) => $mail->hasTo('alex@example.test') && str_contains($mail->markdownBody, '&lt;Alex&gt;') && ! str_contains($mail->markdownBody, '<Alex>'));
+        Mail::assertSent(TemplatedMessage::class, fn ($mail) => $mail->hasTo('alex@example.test')
+            && str_contains($mail->markdownBody, '<a href="mailto:alex@example.test">&lt;Alex&gt; Taylor</a>'));
         Mail::assertSentCount(1);
         $this->assertSame('sent', $item->fresh()->status);
         $this->assertDatabaseCount('message_logs', 1);
@@ -377,7 +441,8 @@ class SchoolVisitMailTest extends TestCase
     {
         Mail::fake();
         $v = $this->visit();
-        $this->registration($v);
+        $this->confirmFollowUp($this->registration($v));
+        $this->assertTrue($this->rows($this->filters($v))->sole()['eligible']);
         $item = $this->mailing($v);
         EmailReply::create(['direction' => 'inbound', 'from_email' => 'alex@example.test', 'to_email' => 'staff@example.test', 'subject' => 'Unsubscribe', 'message_id' => 'worker-unsubscribe', 'body_text' => 'unsubscribe']);
         (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
