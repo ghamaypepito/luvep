@@ -940,16 +940,15 @@ class EducationController extends Controller
                         ? \App\Models\Program::where('title', $firstTitle)->first()
                         : null;
 
-                    \App\Models\LeadStudyPlan::updateOrCreate(
-                        ['lead_id' => $lead->id],
-                        array_filter([
+                    $lead->studyPlans()->firstOrNew([], ['qualification_level' => ''])
+                        ->fill(array_filter([
                             'preferred_course' => $data['program_text'] ?? null,
                             'program_schools' => $data['program_schools'] ?? null,
-                            'qualification_level' => $program?->level ?? null,
+                            'qualification_level' => $program?->level,
                             'preferred_intake' => $data['intake'] ?? null,
                             'english_test_type' => $data['english_test'] ?? null,
-                        ], fn ($v) => $v !== null && $v !== '')
-                    );
+                        ], fn ($v) => $v !== null && $v !== ''))
+                        ->save();
                 }
 
                 $handoff->notify($lead, $becameImmigrationCase);
@@ -1026,32 +1025,28 @@ class EducationController extends Controller
                 $becameImmigrationCase = $handoff->prepare($lead, $data['education_stage'] ?? null);
                 $lead->save();
 
-                // Update or create the primary study plan row.
-                $plan = $lead->studyPlans()->first() ?: new \App\Models\LeadStudyPlan(['lead_id' => $lead->id]);
-                if (array_key_exists('program_text', $data)) {
-                    $plan->preferred_course = $data['program_text'] ?: null;
-                    $plan->program_schools = $data['program_schools'] ?? null;
-                    if (! empty($data['program_text'])) {
-                        $firstTitle = trim(explode(' · ', $data['program_text'])[0]);
-                        $match = $firstTitle ? \App\Models\Program::where('title', $firstTitle)->first() : null;
-                        if ($match && empty($plan->qualification_level)) {
-                            $plan->qualification_level = $match->level ?? '';
+                if (Arr::hasAny($data, ['program_text', 'intake', 'english_test'])) {
+                    $plan = $lead->studyPlans()->firstOrNew([], ['qualification_level' => '']);
+                    if (array_key_exists('program_text', $data)) {
+                        $plan->preferred_course = $data['program_text'] ?: null;
+                        $plan->program_schools = $data['program_schools'] ?? null;
+                        if (! empty($data['program_text'])) {
+                            $firstTitle = trim(explode(' · ', $data['program_text'])[0]);
+                            $match = $firstTitle ? \App\Models\Program::where('title', $firstTitle)->first() : null;
+                            if ($match && empty($plan->qualification_level)) {
+                                $plan->qualification_level = $match->level ?? '';
+                            }
                         }
                     }
-                    // The legacy column is NOT NULL — give it an empty string
-                    // on new plans where we couldn't resolve a level.
-                    if (! $plan->exists && empty($plan->qualification_level)) {
-                        $plan->qualification_level = '';
+                    if (array_key_exists('intake', $data)) {
+                        $plan->preferred_intake = $data['intake'] ?: null;
                     }
-                }
-                if (array_key_exists('intake', $data)) {
-                    $plan->preferred_intake = $data['intake'] ?: null;
-                }
-                if (array_key_exists('english_test', $data)) {
-                    $plan->english_test_type = $data['english_test'] ?: null;
-                }
-                if ($plan->isDirty() || ! $plan->exists) {
-                    $plan->save();
+                    if (array_key_exists('english_test', $data)) {
+                        $plan->english_test_type = $data['english_test'] ?: null;
+                    }
+                    if ($plan->isDirty() || ! $plan->exists) {
+                        $plan->save();
+                    }
                 }
 
                 $handoff->notify($lead, $becameImmigrationCase);

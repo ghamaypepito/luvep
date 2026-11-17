@@ -46,13 +46,13 @@ class StudentHandoffConsistencyTest extends TestCase
     private function handoffRequest(string $entry, ?Lead $lead): array
     {
         $payload = ['first_name' => 'Synthetic', 'last_name' => 'Handoff', 'email' => 'handoff@example.test',
-            'phone' => '+64000000000', 'program_text' => '', 'education_stage' => 'Endorsed to Immigration'];
+            'phone' => '+64000000000', 'education_stage' => 'Endorsed to Immigration'];
 
         return match ($entry) {
             'inline' => ["/portal/education/students/{$lead->id}/dashboard-field", ['education_stage' => 'Endorsed to Immigration']],
             'profile' => ["/admin/leads/{$lead->id}/stage", ['field' => 'education_stage', 'status' => 'Endorsed to Immigration']],
             'edit' => ["/portal/education/students/{$lead->id}/update", $payload],
-            'link' => ['/portal/education/students/link-existing', $payload + ['lead_id' => $lead->id]],
+            'link' => ['/portal/education/students/link-existing', $payload + ['lead_id' => $lead->id, 'program_text' => 'Free-form program']],
             'create' => ['/portal/education/students', $payload],
             'convert' => ["/admin/leads/{$lead->id}/convert-to-case", []],
         };
@@ -71,6 +71,9 @@ class StudentHandoffConsistencyTest extends TestCase
         $this->assertSame('Student Visa', $lead->inz_visa_type);
         $this->assertNotNull($lead->immigration_converted_at);
         $this->assertSame(auth()->id(), $lead->immigration_converted_by);
+        if ($entry === 'link') {
+            $this->assertSame('Free-form program', $lead->studyPlans()->sole()->preferred_course);
+        }
         $converted = $lead->immigration_converted_at->toIso8601String();
         Mail::assertQueued(TemplatedMessage::class, 2);
         $this->get('/portal/education/students')->assertInertia(fn (Assert $page) => $page
