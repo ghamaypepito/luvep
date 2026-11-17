@@ -2080,6 +2080,11 @@ Route::middleware(['auth'])->group(function () {
             // On-demand AI note (OpenRouter) on what's missing from the assessment.
             Route::get('/cases/{lead}/assessment-ai-note', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'assessmentAiNote'])
                 ->name('cases.assessment-ai-note');
+            // Reviewed passport prefill is staff-only and off until processing is approved.
+            Route::get('/cases/{lead}/passport-prefill', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'latest']);
+            Route::post('/cases/{lead}/passport-prefill', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'propose'])->middleware('throttle:10,1');
+            Route::post('/cases/{lead}/passport-prefill/{token}', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'apply'])->whereUuid('token');
+            Route::get('/cases/{lead}/passport-prefill/document/{document}', [\App\Http\Controllers\Immigration\PassportPrefillController::class, 'document'])->whereNumber('document');
             // AI "document vs case record" identity scan for the Personal tab.
             Route::post('/cases/{lead}/identity-scan', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'identityScan'])
                 ->name('cases.identity-scan');
