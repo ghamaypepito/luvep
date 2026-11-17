@@ -1,7 +1,7 @@
 # TKT-GYXYEE - Education Overview attachments in Documents
 
 ## Findings
-Reviewed origin/main 0549d9cc and open PR titles. No equivalent change was found. Overview uploads are stored as LeadNote attachments on private storage, or references to Media Drive assets. The Documents panel reads checklist LeadDocuments and other unmatched LeadDocuments; it does not render note attachments. The screenshot is consistent with this separation, rather than proof of a missing file. The specific live upload was not opened or changed.
+Reviewed origin/main 0549d9cc and open PR titles; checked again against main d80b940b after its handoff/Drive/OOP releases by merging main into this branch. Those releases did not add this attachment display. No equivalent change was found. Overview uploads are stored as LeadNote attachments on private storage, or references to Media Drive assets. The Documents panel reads checklist LeadDocuments and other unmatched LeadDocuments; it does not render note attachments. The screenshot is consistent with this separation, rather than proof of a missing file. The specific live upload was not opened or changed.
 
 ## Resolution
 Add an Education-only Other Documents - Internal note attachments section to the existing profile Documents tab. Reuse the profile's existing note attachment metadata and the existing authorized note attachment view/download endpoints. Earlier notes and replies are included, and equal filenames remain distinct. No copy, migration, backfill, LeadDocument promotion, checklist status or approval change is needed. Note text is not repeated in the new section. The source remains the internal note, and deleted notes disappear after profile refresh.

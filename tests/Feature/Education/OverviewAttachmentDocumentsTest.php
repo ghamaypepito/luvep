@@ -52,7 +52,7 @@ class OverviewAttachmentDocumentsTest extends TestCase
     {
         $lead = $this->student();
         $existing = LeadDocument::create(['lead_id' => $lead->id, 'checklist_key' => 'acad.transcript', 'original_name' => 'approved.pdf', 'file_path' => 'approved.pdf', 'status' => 'Approved', 'source' => 'upload']);
-        $before = $existing->getRawOriginal();
+        $before = $existing->fresh()->getRawOriginal();
         $note = $this->upload($lead);
         $reply = $this->upload($lead, $note->id);
         $other = $this->upload($this->student());
