@@ -56,7 +56,7 @@ class EmployeeController extends Controller
         abort_unless(app(HrAccess::class)->allows($request->user(), 'people'), 403);
         abort_if(app(HrContext::class)->isPreview($request), 403);
         $search = mb_substr((string) $request->query('search', ''), 0, 100);
-        $employees = HrEmployee::with('user')->when($search, fn ($q) => $q->whereHas('user', fn ($q) => $q->where('name', 'like', '%'.$search.'%')))
+        $employees = HrEmployee::with('user')->whereHas('user')->when($search, fn ($q) => $q->whereHas('user', fn ($q) => $q->where('name', 'like', '%'.$search.'%')))
             ->orderBy('id')->paginate(25)->withQueryString()->through(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name, 'department' => $e->department, 'position' => $e->position, 'status' => $e->status]);
 
         return Inertia::render('hr/Employees', compact('employees', 'search'));
