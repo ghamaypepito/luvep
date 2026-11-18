@@ -1,0 +1,8 @@
+# Interactive HR workspace
+Approved basis: the 18 November Garden/Split preview and user's explicit request to implement it. Garden becomes the default production layout; retain a compact Split density choice locally. Existing Luvep green, Urbanist and logo remain.
+
+Personal workspace contains only the viewer's HR records. Team workspace is additional and permission scoped: team DTR, leave, reports, roster. Exclude general Admin Task Board activity and Client Media Drive from HR navigation/overview. Keep all existing HR tools reachable in related groups and enforce server permissions independently of navigation.
+
+Staff status is derived from active open HR shifts and breaks, never browser presence. Only authorized Admin/report viewers see the staff roster; omit inactive/archived/deleted personnel. No sensitive profile data in roster. Display refresh time and refresh periodically while visible.
+
+DTR report-content changes save immediately with optimistic concurrency, immutable audit history and a before/after sidebar. Existing clock correction, daily review and weekly signoff rules remain. Existing submitted/reviewed reports may have content edited independently without silently changing clock times or approval status; changed report content invalidates the weekly signoff. Submission requires a reason and an assigned active Department Head other than self. Acknowledgement records review of a fixed saved version, never gates or reverts saved content. Newer report edits make older pending acknowledgements superseded. Department Head can acknowledge or request clarification; unrelated staff cannot read or decide. No outward email sends are required for this rollout; Head inbox is the notification surface.

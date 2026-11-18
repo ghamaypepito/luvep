@@ -1031,3 +1031,103 @@
 @media (max-width: 600px) { .hr-shortcuts, .hr-report-filter-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1100px) { .hr-work-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hr-work-feeds { grid-template-columns: 1fr; gap: 0; } }
 @media (max-width: 500px) { .hr-work-summary { column-gap: 12px; } .hr-work-summary > div { padding-right: 0; } .hr-work-summary dd { font-size: 26px; } }
+
+/* Garden and Split share the approved HR identity and the same records. */
+.hr-app {
+    --hr-ink: #223c30;
+    --hr-muted: #607166;
+    --hr-line: #dfe5dc;
+    background: #f7f8f4;
+    min-height: calc(100dvh - 48px);
+    width: calc(100% - 48px);
+    max-width: 1700px;
+    margin: 24px auto;
+    border: 1px solid #d5ded0;
+    border-radius: 20px;
+    overflow: clip;
+}
+body:has(.hr-app) { background: #e9eee5; }
+.hr-sidebar { width: 226px; background: #f5f7f1; height: calc(100dvh - 48px); }
+.hr-nav-content { min-height: 0; }
+.hr-sidebar nav { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.hr-nav-group { flex-shrink: 0; }
+.hr-nav-group > summary { list-style: none; display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 9px; }
+.hr-nav-group > summary::-webkit-details-marker { display: none; }
+.hr-nav-group > summary > span { flex: 1; }
+.hr-nav-group[open] > summary > svg:last-child { transform: rotate(180deg); }
+.hr-nav-group > summary:hover { background: #eaf0e2; }
+.hr-nav-group > div { padding: 4px 0 8px 8px; }
+.hr-nav-group > div > a { font-size: 13px; font-weight: 500; gap: 10px; min-height: 42px; padding: 10px; }
+.hr-sidebar nav a[aria-current] { color: #274c32; background: #dbedb4; }
+.hr-topbar { background: #fbfcf8; min-height: 78px; padding: 18px 36px; }
+#hr-main { padding: 34px 36px 18px; max-width: 1380px; }
+.hr-page-heading h1 { font-size: 32px; line-height: 1.2; }
+.hr-page-heading p { font-size: 14px; }
+.hr-panel { padding: 25px; border-radius: 15px; }
+.hr-panel h2 { font-size: 20px; line-height: 1.35; }
+.hr-attendance { background: #eaf1df; border-color: #d9e4cc; border-radius: 15px; padding: 25px; }
+.hr-metric { border-radius: 15px; }
+.hr-button, .hr-button-secondary { border-radius: 9px; }
+.hr-density-control { display: flex; padding: 3px; border: 1px solid var(--hr-line); border-radius: 9px; background: #fff; }
+.hr-density-control button { flex: 1; justify-content: center; min-height: 36px; padding: 6px; font-size: 12px; border-radius: 6px; }
+.hr-density-control button[aria-pressed="true"] { background: #e4efcd; color: #253f32; font-weight: 600; }
+.hr-team-invitation { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; background: #edf3e7; }
+.hr-density-split.hr-app { width: 100%; max-width: none; margin: 0; border: 0; border-radius: 0; min-height: 100dvh; background: #f8faf6; }
+.hr-density-split .hr-sidebar { width: 212px; height: 100dvh; background: white; padding: 24px 13px; }
+.hr-density-split .hr-logo img { width: 88px; height: 50px; }
+.hr-density-split .hr-topbar { min-height: 68px; padding: 16px 30px; background: white; }
+.hr-density-split #hr-main { padding: 28px 30px 18px; }
+.hr-density-split .hr-page-heading h1 { font-size: 28px; }
+.hr-density-split .hr-panel, .hr-density-split .hr-attendance { padding: 22px; }
+.hr-density-split .hr-attendance { background: white; border-color: var(--hr-line); }
+.hr-staff-filters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 24px 0; }
+.hr-staff-filters button { text-align: left; border: 1px solid var(--hr-line); background: #f6f8f2; border-radius: 10px; padding: 14px 16px; }
+.hr-staff-filters button > span { display: block; font-size: 13px; }
+.hr-staff-filters button > strong { display: block; font-size: 28px; line-height: 1.2; font-weight: 600; margin-top: 10px; }
+.hr-staff-filters button[aria-pressed="true"] { background: #e9f1db; border-color: #a8bc8b; }
+.hr-staff-search { display: flex; align-items: center; gap: 9px; max-width: 390px; margin-bottom: 24px; padding: 0 12px; background: #fafbf7; border: 1px solid #cdd8c8; border-radius: 9px; }
+.hr-staff-search input { width: 100%; min-width: 0; font: inherit; padding: 11px 0; border: 0; background: transparent; font-size: 14px; }
+.hr-staff-table { width: 100%; min-width: 680px; }
+.hr-staff-table th, .hr-staff-table td { text-align: left; padding: 17px 12px; vertical-align: middle; font-size: 13px; border-bottom: 1px solid var(--hr-line); }
+.hr-staff-table thead th { font-size: 12px; color: var(--hr-muted); font-weight: 400; }
+.hr-person-cell { display: flex; align-items: center; gap: 12px; }
+.hr-person-cell .hr-avatar { flex-shrink: 0; width: 32px; height: 32px; font-size: 11px; }
+.hr-staff-state { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.hr-staff-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.hr-staff-working { background: #ebf4e3; color: #36602e; }
+.hr-staff-on_break { background: #fff2d5; color: #7e5b20; }
+.hr-staff-off_shift { background: #edf0ed; color: #5d6b62; }
+.hr-panel .hr-staff-refresh { font-size: 12px; margin-top: 18px; }
+.hr-dtr-edit-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(280px,340px); gap: 24px; align-items: start; }
+.hr-dtr-edit-grid > * { min-width: 0; }
+.hr-change-sidebar { position: sticky; top: 20px; background: #f0f4e9; border: 1px solid #dbe4cf; border-radius: 15px; padding: 23px; }
+.hr-change-sidebar h2, .hr-subheading { font-size: 18px; font-weight: 600; margin-bottom: 14px; }
+.hr-change-sidebar p { color: var(--hr-muted); font-size: 13px; line-height: 1.6; }
+.hr-change-sidebar .hr-form { margin-top: 20px; }
+.hr-report-diff > section { border-top: 1px solid var(--hr-line); padding: 16px 0; }
+.hr-report-diff h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.hr-report-diff > section > div { background: #ffffff91; border-radius: 7px; padding: 10px 12px; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.hr-report-diff > section > div:last-child { background: #e2edce; }
+.hr-report-diff small { display: block; font-size: 11px; color: #5b6f4f; margin-bottom: 5px; }
+.hr-report-diff ul { margin: 0; padding-left: 16px; list-style: disc; }
+.hr-report-diff li + li { margin-top: 10px; }
+.hr-report-diff li span { display: block; }
+@media (max-width: 1100px) {
+    .hr-dtr-edit-grid { grid-template-columns: minmax(0,1fr); }
+    .hr-change-sidebar { position: static; }
+}
+@media (max-width: 800px) {
+    .hr-app, .hr-density-split.hr-app { width: 100%; margin: 0; border: 0; border-radius: 0; min-height: 100dvh; }
+    .hr-sidebar, .hr-density-split .hr-sidebar { width: 100%; height: auto; min-height: 0; padding: 20px 18px; }
+    .hr-sidebar nav { overflow: visible; flex: none; }
+    .hr-sidebar-footer { margin-top: 18px; }
+    .hr-topbar, .hr-density-split .hr-topbar { padding: 16px 20px; }
+    #hr-main, .hr-density-split #hr-main { padding: 26px 18px 18px; }
+}
+@media (max-width: 600px) {
+    .hr-staff-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .hr-page-heading h1, .hr-density-split .hr-page-heading h1 { font-size: 27px; }
+    .hr-panel, .hr-density-split .hr-panel, .hr-attendance, .hr-density-split .hr-attendance { padding: 20px; }
+    .hr-staff-search input { font-size: 16px; }
+}
+.hr-report-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 20px; }

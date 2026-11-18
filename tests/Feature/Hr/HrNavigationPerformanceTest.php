@@ -51,9 +51,13 @@ class HrNavigationPerformanceTest extends TestCase
             $expected[$ability] = $access->allows($user, $ability);
         }
         $this->assertSame($expected, $this->contextFor($user)['permissions']);
+        $this->assertFalse($this->contextFor($user)['can_view_staff_status']);
+        $user->update(['module_permissions' => ['hr.reports']]);
+        $this->assertTrue($this->contextFor($user)['can_view_staff_status']);
 
         $user->update(['module_permissions' => []]);
         $this->assertFalse($this->contextFor($user)['permissions']['documents.medical']);
+        $this->assertFalse($this->contextFor($user)['can_view_staff_status']);
         $employee->update(['status' => 'archived']);
         $props = $this->contextFor($user);
         $this->assertNull($props['employee']);
@@ -70,6 +74,7 @@ class HrNavigationPerformanceTest extends TestCase
         $props = $this->contextFor($manager);
         $this->assertTrue($props['permissions']['leave.review']);
         $this->assertTrue($props['permissions']['dtr.review']);
+        $this->assertTrue($props['can_view_staff_status']);
         $this->assertFalse($props['permissions']['documents.medical']);
         $this->assertFalse($props['permissions']['access.manage']);
     }

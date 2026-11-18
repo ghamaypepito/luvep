@@ -63,6 +63,9 @@ $hrRoutes = function () {
         Route::get('/dtr/corrections', [\App\Http\Controllers\Hr\DtrController::class, 'corrections'])->name('dtr.corrections');
         Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
         Route::get('/dtr/changes', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'index'])->name('dtr.changes');
+        Route::post('/dtr/{entry}/report', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'saveReport'])->name('dtr.report.save');
+        Route::post('/dtr/{entry}/acknowledgements', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'submitAcknowledgement'])->name('dtr.acknowledgements.submit');
+        Route::post('/dtr/acknowledgements/{acknowledgement}/decision', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'decideAcknowledgement'])->name('dtr.acknowledgements.decide');
         Route::get('/dtr/{entry}/history', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'show'])->name('dtr.history');
         Route::post('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'store'])->name('dtr.store');
         Route::post('/dtr/week/sign', [\App\Http\Controllers\Hr\DtrController::class, 'signWeek'])->name('dtr.week.sign');
@@ -81,6 +84,7 @@ $hrRoutes = function () {
         Route::post('/profile/avatar', [\App\Http\Controllers\UserController::class, 'uploadAvatar'])->name('profile.avatar.upload');
         Route::delete('/profile/avatar', [\App\Http\Controllers\UserController::class, 'deleteAvatar'])->name('profile.avatar.delete');
         Route::patch('/profile', [EmployeeController::class, 'update'])->name('profile.update');
+        Route::get('/team', \App\Http\Controllers\Hr\TeamController::class)->name('team');
         Route::get('/people', [EmployeeController::class, 'index'])->name('people');
         Route::get('/people/new', [\App\Http\Controllers\Hr\EnrollmentController::class, 'create'])->name('people.create');
         Route::post('/people', [\App\Http\Controllers\Hr\EnrollmentController::class, 'store'])->name('people.store');

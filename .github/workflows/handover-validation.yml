@@ -51,6 +51,8 @@ jobs:
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
           node tests/Frontend/hr-work-insights.cjs
+          node tests/Frontend/hr-report-changes.cjs
+          node tests/Frontend/hr-team.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
           node tests/Frontend/education-email.cjs
