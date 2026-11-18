@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { useForm } from "@inertiajs/react";
 import { ArrowLeft, ArrowRight, Send, ImagePlus } from "lucide-react";
-import TicketAttachmentPicker from "@/components/TicketAttachmentPicker";
+import TicketAttachmentPicker, { TICKET_ATTACHMENT_MAX_FILES } from "@/components/TicketAttachmentPicker";
 import { briefSections } from "./briefSections";
 
 const designExamples = {
@@ -23,7 +23,7 @@ export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
         return () => { modal.close(); document.body.style.overflow = overflow; };
     }, []);
     const submitting = useRef(false);
-    const form = useForm({ project: "", types: [], other: "", attachments: [], ...Object.fromEntries(briefSections.flatMap(section => section.fields.map(([key]) => [key, ""]))) });
+    const form = useForm({ project: "", types: [], other: "", attachments: [], asset_attachments: [], ...Object.fromEntries(briefSections.flatMap(section => section.fields.map(([key]) => [key, ""]))) });
     const dismiss = () => {
         if (form.processing) return;
         dialog.current.close();
@@ -40,7 +40,7 @@ export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
         submitting.current = true;
         form.post("/creative-requests", { forceFormData: true, onFinish: () => { submitting.current = false; }, onError: errors => {
             const index = briefSections.findIndex(section => section.fields.some(([key]) => errors[key]));
-            setStep(errors.project ? 0 : errors.types || errors.other ? 2 : Object.keys(errors).some(key => key.startsWith("attachments")) ? 3 : Math.max(0, index));
+            setStep(errors.project ? 0 : errors.types || errors.other ? 2 : Object.keys(errors).some(key => key.startsWith("asset_attachments")) ? 4 : Object.keys(errors).some(key => key.startsWith("attachments")) ? 3 : Math.max(0, index));
         } });
     };
     return <dialog ref={dialog} className="cw-brief-dialog" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); dismiss(); }}><form className="cw-brief cw-panel" onSubmit={submit} noValidate>
@@ -51,8 +51,8 @@ export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
         {!owner && <p className="cw-error-summary" role="alert">Sharry’s active account is unavailable. An administrator must check the assignment before you submit.</p>}
         {briefSections.map((section, i) => <section key={section.title} hidden={step !== i} aria-label={section.title}>
             <h3 className="cw-form-title">{section.title}</h3>
-            <div className="cw-fields">{i === 2 ? <><fieldset><legend>Design type * <span className="cw-muted">Select all that apply</span></legend><div className="cw-design-types">{designTypes.map(type => <label key={type}><input type="checkbox" checked={form.data.types.includes(type)} onChange={e => form.setData("types", e.target.checked ? [...form.data.types, type] : form.data.types.filter(value => value !== type))} /><span>{type}{designExamples[type] && <small>{designExamples[type]}</small>}</span></label>)}</div></fieldset>{form.data.types.includes("Other") && field(["other", "Other design type", "Describe the format", true, "text"])}</> : section.fields.map(field)}
-            {i === 3 && <div className="cw-reference-upload"><h3><ImagePlus size={18} /> Sample designs & reference attachments</h3><p className="cw-muted">Attach examples that show the direction you like.</p><TicketAttachmentPicker label="Sample designs / references" files={form.data.attachments} onChange={files => form.setData("attachments", files)} errors={form.errors} disabled={form.processing} /></div>}
+            <div className="cw-fields">{i === 2 ? <><fieldset><legend>Design type * <span className="cw-muted">Select all that apply</span></legend><div className="cw-design-types">{designTypes.map(type => <label key={type}><input type="checkbox" checked={form.data.types.includes(type)} onChange={e => form.setData("types", e.target.checked ? [...form.data.types, type] : form.data.types.filter(value => value !== type))} /><span>{type}{designExamples[type] && <small>{designExamples[type]}</small>}</span></label>)}</div></fieldset>{form.data.types.includes("Other") && field(["other", "Other design type", "Describe the format", true, "text"])}</> : section.fields.map(spec => <Fragment key={spec[0]}>{field(spec)}{spec[0] === "assets" && <div className="cw-reference-upload"><h3><ImagePlus size={18} /> Curated asset files</h3><p className="cw-muted">Attach logos, photos, footage and other files. Up to {TICKET_ATTACHMENT_MAX_FILES} files total across references and curated assets.</p><TicketAttachmentPicker name="asset_attachments" label="Curated asset files" files={form.data.asset_attachments} maxFiles={TICKET_ATTACHMENT_MAX_FILES - form.data.attachments.length} onChange={files => form.setData("asset_attachments", files)} errors={form.errors} disabled={form.processing} /></div>}</Fragment>)}
+            {i === 3 && <div className="cw-reference-upload"><h3><ImagePlus size={18} /> Sample designs & reference attachments</h3><p className="cw-muted">Attach examples that show the direction you like.</p><TicketAttachmentPicker label="Sample designs / references" files={form.data.attachments} maxFiles={TICKET_ATTACHMENT_MAX_FILES - form.data.asset_attachments.length} onChange={files => form.setData("attachments", files)} errors={form.errors} disabled={form.processing} /></div>}
             </div>
         </section>)}
         <footer className="cw-form-footer"><p className="cw-muted">Section {step + 1} of {briefSections.length} · * Required<br /><small>Assigned to {owner?.name || "Sharry"} after submission.</small></p><div className="cw-actions">{step > 0 && <button type="button" className="cw-button cw-secondary" onClick={() => setStep(step - 1)}><ArrowLeft size={16} /> Back</button>}<button type="submit" className="cw-button" disabled={form.processing || !owner}>{step === lastStep ? <><Send size={16} /> {form.processing ? "Submitting…" : "Submit creative request"}</> : <>Next: {briefSections[step + 1].short}<ArrowRight size={16} /></>}</button></div></footer>

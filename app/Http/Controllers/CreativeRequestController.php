@@ -65,7 +65,10 @@ class CreativeRequestController extends Controller
         foreach (['draft_due', 'feedback_due'] as $field) {
             $rules[$field] = ['nullable', 'date_format:Y-m-d', 'before_or_equal:'.($final ?: 'deadline')];
         }
-        $data = $request->validate($rules + TicketAttachments::rules());
+        $data = $request->validate($rules + TicketAttachments::rules() + TicketAttachments::rules('asset_attachments'));
+        if (count($data['attachments'] ?? []) + count($data['asset_attachments'] ?? []) > TicketAttachments::MAX_FILES) {
+            throw ValidationException::withMessages(['asset_attachments' => 'Attach up to '.TicketAttachments::MAX_FILES.' files in total across references and curated assets.']);
+        }
         if (in_array('Other', $data['types'], true) && ! trim($data['other'] ?? '')) {
             throw ValidationException::withMessages(['other' => 'Describe the other design type.']);
         }
@@ -76,7 +79,7 @@ class CreativeRequestController extends Controller
         if (! $owner) {
             throw ValidationException::withMessages(['assignee' => 'Sharry’s active Luvep account could not be found. Contact an administrator before submitting.']);
         }
-        unset($data['attachments']);
+        unset($data['attachments'], $data['asset_attachments']);
         $data['final_due'] = $data['final_due'] ?? ($data['deadline'] ?? null);
         if (! filter_var(config('creative.notification_email'), FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages(['notification' => 'The creative request email alert is not configured. Contact an administrator before submitting.']);
@@ -91,6 +94,9 @@ class CreativeRequestController extends Controller
                     'due_at' => ! empty($data['deadline']) ? \Illuminate\Support\Carbon::parse($data['deadline'].' 23:59:59', $data['timezone'])->utc() : null]);
                 $creative = CreativeRequest::create(['request_ref' => 'CR-'.strtoupper(Str::random(8)), 'lead_task_id' => $task->id, 'brief' => $data]);
                 $stored = TicketAttachments::store($request->file('attachments', []), "creative-requests/{$creative->id}");
+                foreach (TicketAttachments::store($request->file('asset_attachments', []), "creative-requests/{$creative->id}/assets") as $file) {
+                    $stored[] = [...$file, 'group' => 'assets'];
+                }
                 $creative->update(['attachments' => $stored ?: null]);
                 $task->update(['description' => Str::limit($data['overview'], 1500)."\n\nFull creative brief: ".$creative->url()]);
 

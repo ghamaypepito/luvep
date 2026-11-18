@@ -47,19 +47,22 @@ class CreativeRequest extends Model
         $task = $this->task;
         $viewer = auth()->user();
         $deleted = $this->trashed();
+        $files = $this->attachments ?? [];
+        $assets = array_filter($files, fn ($file) => ($file['group'] ?? null) === 'assets');
 
         return [
             'id' => $this->id, 'request_ref' => $this->request_ref, 'title' => $task->title,
             'status' => $task->status, 'deadline' => $task->due_at?->copy()->timezone($this->brief['timezone'] ?? 'Asia/Manila')->toDateString() ?? ($this->brief['deadline'] ?? null),
             'types' => $this->brief['types'], 'assignee' => $task->assignee?->name,
-            'submitter' => $task->creator?->name, 'attachment_count' => count($this->attachments ?? []),
+            'submitter' => $task->creator?->name, 'attachment_count' => count($files), 'asset_attachment_count' => count($assets),
             'task_id' => $task->id, 'url' => $this->url(),
             'is_deleted' => $deleted,
             'can_manage' => ! $deleted && ! $task->trashed() && $viewer && $this->canManage($viewer),
             'can_delete' => ! $deleted && (bool) $viewer?->isAdmin(),
             'can_restore' => $deleted && (bool) $viewer?->isAdmin(),
             ...($detail ? ['brief' => $this->brief,
-                'attachments' => TicketAttachments::serialize($this->attachments ?? [], "/creative-requests/{$this->id}/attachments")] : []),
+                'attachments' => TicketAttachments::serialize(array_diff_key($files, $assets), "/creative-requests/{$this->id}/attachments"),
+                'asset_attachments' => TicketAttachments::serialize($assets, "/creative-requests/{$this->id}/attachments")] : []),
         ];
     }
 
