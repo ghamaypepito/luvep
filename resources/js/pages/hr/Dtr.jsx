@@ -1,4 +1,5 @@
 import DtrHistory from "@/components/hr/DtrHistory";
+import AssignedCreativeWork from "@/components/creative/AssignedCreativeWork";
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
@@ -380,7 +381,7 @@ export function Editor({ entry, locked, reportChanges = false, sidebar }) {
         </div>{sidebar?.(form.data, form.isDirty, form.processing)}</div>
     );
 }
-export default function Dtr({ entries, weeks, today, date_filter }) {
+export default function Dtr({ entries, weeks, today, date_filter, creativeRequests = [] }) {
     const { hr } = usePage().props;
     useEffect(() => {
         const changed = () => router.reload({ only: ["entries", "today"] });
@@ -398,6 +399,7 @@ export default function Dtr({ entries, weeks, today, date_filter }) {
                 <h1>My time records</h1>
                 <p>Your attendance, work and review history in one place.</p>
             </div>
+            <AssignedCreativeWork requests={creativeRequests} preview={!!hr.preview} />
             <section className="hr-panel">
                 <div className="hr-section-bar">
                     <h2>Daily record</h2>

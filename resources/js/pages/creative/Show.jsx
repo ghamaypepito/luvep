@@ -1,0 +1,19 @@
+import { Head, Link, useForm } from "@inertiajs/react";
+import { ArrowLeft, Paperclip } from "lucide-react";
+import RoleLayout from "@/components/layout/RoleLayout";
+import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
+import { briefSections } from "@/components/creative/CreativeBriefForm";
+import { creativeStatuses } from "@/components/creative/AssignedCreativeWork";
+import TicketAttachments from "@/components/TicketAttachments";
+import "../../../css/creative.css";
+
+export default function CreativeRequest({ creative, isAdmin }) {
+    const status = useForm({ status: creative.status, expected_status: creative.status });
+    return <div className="creative-workspace"><Head title={`${creative.request_ref} · Creative request`} /><header className="cw-page-heading"><div><p className="cw-eyebrow">Digital · {creative.request_ref}</p><h1>{creative.title}</h1><p className="cw-muted">Requested by {creative.submitter} · Assigned to {creative.assignee}</p></div><span className={`cw-status cw-status-${creative.status}`}>{creativeStatuses[creative.status]}</span></header>
+        <TicketTypeTabs active="digital" isAdmin={isAdmin} /><div className="cw-queue-heading"><Link href={isAdmin ? "/admin/system-tickets?type=digital" : "/creative-requests"} className="cw-text-button"><ArrowLeft size={16} /> Back to queue</Link><p className="cw-muted">Project deadline: {creative.deadline}</p></div>
+        <div className="cw-detail-grid"><div className="cw-panel"><div className="cw-workflow" aria-label="Creative workflow">{Object.entries(creativeStatuses).map(([key, label]) => <span key={key} aria-current={creative.status === key ? "step" : undefined}>{label}</span>)}</div>
+        {briefSections.map((section, i) => <section className="cw-brief-section" key={section.title}><h2>{section.title}</h2><dl>{i === 2 ? <><dt>Design type</dt><dd>{creative.types.join(" · ")}{creative.brief.other && ` · ${creative.brief.other}`}</dd></> : section.fields.map(([key, label]) => <div key={key} className={key === "caption" ? "cw-caption-read" : ""}><dt>{label}</dt><dd>{creative.brief[key] || "Not specified"}</dd></div>)}</dl>{i === 3 && <div className="cw-reference-upload"><h3><Paperclip size={16} /> Sample designs / references</h3>{creative.attachments.length ? <TicketAttachments attachments={creative.attachments} /> : <p className="cw-muted">No reference files attached.</p>}</div>}</section>)}
+        </div><aside className="cw-side-rail"><section className="cw-panel"><h2>Creative task</h2><p className="cw-muted">One task, shared across the queue and task board.</p>{creative.can_manage && <form className="cw-status-form" onSubmit={e => { e.preventDefault(); status.post(`/creative-requests/${creative.id}/status`, { preserveScroll: true, onSuccess: () => status.setData("expected_status", status.data.status) }); }}><label>Progress<select value={status.data.status} onChange={e => status.setData("status", e.target.value)}>{Object.entries(creativeStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>{status.errors.status && <p className="cw-error" role="alert">{status.errors.status}</p>}<button className="cw-button" disabled={status.processing}>Update status</button></form>}<p className="cw-footnote">Record actual work time in your DTR. Workflow changes do not add hours.</p></section></aside></div>
+    </div>;
+}
+CreativeRequest.layout = page => <RoleLayout>{page}</RoleLayout>;
