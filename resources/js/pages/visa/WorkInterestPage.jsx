@@ -24,6 +24,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOTAL_STEPS = 9;
 
 const FIELD_TO_STEP = {
+    'vif_answers.work_visa_category': 2,
     terms_accepted: 1,
     family_name: 2, first_name: 2, other_names: 2, gender: 2, dob: 2,
     country_of_birth: 2, place_of_birth: 2, current_address: 2, email: 2, phone: 2,

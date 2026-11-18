@@ -1,6 +1,6 @@
 # TKT-BBOQ6I — LIA-reviewed VIF additions
 
-Status: implementation branch; full regression/staging acceptance pending. Do not mark Done from this document alone.
+Status: implementation branch. Check the current PR CI result and obtain staging/LIA acceptance before closure. Do not mark Done from this document alone.
 
 ## Findings
 
