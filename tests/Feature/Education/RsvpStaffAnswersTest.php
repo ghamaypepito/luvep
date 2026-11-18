@@ -141,6 +141,15 @@ class RsvpStaffAnswersTest extends TestCase
         $this->assertNotNull($delivery->fresh()->sent_at);
         $this->assertNull($rsvp->fresh()->verified_at);
         $this->assertSame(1, ActivityLog::where('action', 'education.rsvp.confirmation_requested')->count());
+        $this->post(route('education.rsvps.confirmation', $rsvp), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('education_outreach', 1);
+        $delivery->update(['sent_at' => now()->subDays(31)]);
+        $this->post(route('education.rsvps.confirmation', $rsvp), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('education_outreach', 2);
+        EducationOutreach::latest('id')->first()->update(['attempts' => 8]);
+        $this->post(route('education.rsvps.confirmation', $rsvp), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('education_outreach', 3);
+        $this->assertSame(1, EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count());
         $rsvp->update(['phone' => '+639171111111']);
         $this->postJson(route('education.rsvps.confirmation', $rsvp), $data)->assertUnprocessable()->assertJsonValidationErrors('revision');
         $this->actingAs(User::factory()->create(['role' => 'sales']))

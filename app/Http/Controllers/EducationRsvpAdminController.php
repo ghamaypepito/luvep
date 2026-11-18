@@ -156,13 +156,16 @@ class EducationRsvpAdminController extends Controller
                 throw ValidationException::withMessages(['revision' => 'This RSVP changed. Reload and check the email address before requesting a verification email.']);
             }
             abort_unless(! $current->verified_at && app(\App\Services\EducationRsvpContactUpdate::class)->contactAllowed($current), 422);
-            $delivery = $workflow->receipt('rsvp:'.$current->id.':staff-confirmation:'.$current->public_id, ['education_rsvp_id' => $current->id, 'channel' => 'mail', 'kind' => 'confirmation']);
-            if ($delivery->wasRecentlyCreated) {
-                EducationOutreach::where('education_rsvp_id', $current->id)->where('kind', 'confirmation')->whereKeyNot($delivery->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['cancelled_at' => now()]);
-                ActivityLog::record('education.rsvp.confirmation_requested', ['portal' => 'education', 'entity_type' => EducationRsvp::class, 'entity_id' => $current->id]);
+            $prefix = 'rsvp:'.$current->id.':staff-confirmation:'.$current->public_id;
+            $prior = EducationOutreach::where('event_key', 'like', $prefix.'%')->latest('id')->first();
+            if ($prior && ! $prior->cancelled_at && ($prior->sent_at ? $prior->sent_at->gt(now()->subDays(30)) : $prior->attempts < 8)) {
+                return false;
             }
+            $delivery = $workflow->receipt($prefix.':'.Str::uuid(), ['education_rsvp_id' => $current->id, 'channel' => 'mail', 'kind' => 'confirmation']);
+            EducationOutreach::where('education_rsvp_id', $current->id)->where('kind', 'confirmation')->whereKeyNot($delivery->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['cancelled_at' => now()]);
+            ActivityLog::record('education.rsvp.confirmation_requested', ['portal' => 'education', 'entity_type' => EducationRsvp::class, 'entity_id' => $current->id]);
 
-            return $delivery->wasRecentlyCreated;
+            return true;
         });
 
         return back()->with('status', $created ? 'Verification email queued for the current RSVP address.' : 'A verification email has already been requested for these details.');
