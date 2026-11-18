@@ -178,4 +178,114 @@ class CreativeRequestTest extends TestCase
         $this->actingAs(User::factory()->create(['role' => 'sales', 'is_active' => false]))
             ->post('/creative-requests', $this->brief())->assertRedirect('/login');
     }
+
+    public function test_delivered_updates_the_shared_task_and_removes_open_dtr_work_without_alerts(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->post('/creative-requests', $this->brief());
+        $creative = CreativeRequest::firstOrFail();
+        Notification::fake();
+        $this->actingAs($owner)->post("/creative-requests/{$creative->id}/status", ['status' => 'completed', 'expected_status' => 'not_started'])->assertRedirect();
+        $this->assertTrue($creative->task->fresh()->completed);
+        $this->assertSame($owner->id, $creative->task->fresh()->completed_by);
+        $this->assertSame([], CreativeRequest::assignedFor($owner));
+        $this->get('/creative-requests?status=completed')->assertInertia(fn (Assert $p) => $p->where('requests.data.0.status', 'completed')->where('requests.data.0.can_delete', true));
+        Notification::assertNothingSent();
+        $this->assertDatabaseCount('dtr_entries', 0);
+    }
+
+    public function test_delete_is_recoverable_and_hides_the_task_and_private_files_until_restored(): void
+    {
+        $owner = $this->owner();
+        $sender = User::factory()->create(['role' => 'sales']);
+        $this->actingAs($sender)->post('/creative-requests', $this->brief(['attachments' => [UploadedFile::fake()->image('reference.png')]]));
+        $creative = CreativeRequest::firstOrFail();
+        $taskId = $creative->lead_task_id;
+        $path = $creative->attachments[0]['path'];
+        $creative->task->comments()->create(['user_id' => $owner->id, 'body' => 'Keep this feedback.']);
+        Notification::fake();
+        $this->actingAs($owner)->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertRedirect();
+        $this->assertSoftDeleted('creative_requests', ['id' => $creative->id]);
+        $this->assertSoftDeleted('lead_tasks', ['id' => $taskId]);
+        $this->assertNull(LeadTask::find($taskId));
+        $this->assertSame([], CreativeRequest::assignedFor($owner));
+        Storage::disk('local')->assertExists($path);
+        $this->assertDatabaseHas('lead_task_comments', ['lead_task_id' => $taskId, 'body' => 'Keep this feedback.']);
+        $this->get('/creative-requests')->assertInertia(fn (Assert $p) => $p->has('requests.data', 0));
+        $this->get('/creative-requests?view=deleted')->assertInertia(fn (Assert $p) => $p->has('requests.data', 1)->where('requests.data.0.can_restore', true)->where('requests.data.0.is_deleted', true));
+        $this->get("/creative-requests/{$creative->id}")->assertNotFound();
+        $this->get("/creative-requests/{$creative->id}/attachments/0")->assertNotFound();
+        $this->patchJson("/api/tasks/{$taskId}", ['status' => 'completed'])->assertNotFound();
+        $this->post("/creative-requests/{$creative->id}/restore", ['expected_status' => 'not_started'])->assertRedirect();
+        $this->assertNotNull(CreativeRequest::find($creative->id));
+        $this->assertSame('not_started', LeadTask::findOrFail($taskId)->status);
+        $this->assertCount(1, CreativeRequest::assignedFor($owner));
+        $this->actingAs($sender)->get("/creative-requests/{$creative->id}/attachments/0")->assertOk();
+        Notification::assertNothingSent();
+        $this->assertDatabaseCount('dtr_entries', 0);
+    }
+
+    public function test_only_admins_can_delete_restore_or_browse_deleted_requests(): void
+    {
+        $owner = $this->owner();
+        $owner->update(['role' => 'education']);
+        $sender = User::factory()->create(['role' => 'sales']);
+        $this->actingAs($sender)->post('/creative-requests', $this->brief());
+        $creative = CreativeRequest::firstOrFail();
+        foreach ([$sender, $owner] as $user) {
+            $this->actingAs($user)->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertForbidden();
+            $this->get('/creative-requests?view=deleted')->assertForbidden();
+        }
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertRedirect();
+        $this->actingAs($sender)->post("/creative-requests/{$creative->id}/restore", ['expected_status' => 'not_started'])->assertForbidden();
+    }
+
+    public function test_stale_or_unconfirmed_deletion_does_not_hide_a_request(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs($owner)->post('/creative-requests', $this->brief());
+        $creative = CreativeRequest::firstOrFail();
+        $this->delete("/creative-requests/{$creative->id}")->assertSessionHasErrors('expected_status');
+        $creative->task->update(['status' => 'in_progress']);
+        $this->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertSessionHasErrors('status');
+        $this->assertNotNull(CreativeRequest::find($creative->id));
+        $this->assertNotNull(LeadTask::find($creative->lead_task_id));
+    }
+
+    public function test_ordinary_lead_task_deletion_keeps_its_existing_contract(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $lead = \App\Models\Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client']);
+        $task = LeadTask::create(['lead_id' => $lead->id, 'title' => 'Ordinary task', 'created_by' => $admin->id]);
+        $this->actingAs($admin)->delete("/admin/leads/{$lead->id}/tasks/{$task->id}")->assertRedirect();
+        $this->assertDatabaseMissing('lead_tasks', ['id' => $task->id]);
+    }
+
+    public function test_linked_creative_task_cannot_be_permanently_deleted_from_a_lead(): void
+    {
+        $admin = $this->owner();
+        $this->actingAs($admin)->post('/creative-requests', $this->brief());
+        $creative = CreativeRequest::firstOrFail();
+        $lead = \App\Models\Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client']);
+        $creative->task->update(['lead_id' => $lead->id]);
+        $this->post("/admin/leads/{$lead->id}/tasks/{$creative->lead_task_id}", ['completed' => true])->assertForbidden();
+        $this->delete("/admin/leads/{$lead->id}/tasks/{$creative->lead_task_id}")->assertForbidden();
+        $this->assertNotNull($creative->task->fresh());
+        $this->assertNotNull($creative->fresh());
+    }
+
+    public function test_deleted_task_no_longer_grants_finance_access_to_client_files(): void
+    {
+        $owner = $this->owner();
+        $finance = User::factory()->create(['role' => 'finance']);
+        $this->actingAs($owner)->post('/creative-requests', $this->brief());
+        $creative = CreativeRequest::firstOrFail();
+        $lead = \App\Models\Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client']);
+        $creative->task->update(['lead_id' => $lead->id, 'assignee_id' => $finance->id]);
+        $access = app(\App\Services\MediaDrive\Access::class);
+        $this->assertTrue($access->leads($finance)->whereKey($lead->id)->exists());
+        $this->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertRedirect();
+        $this->assertFalse($access->leads($finance)->whereKey($lead->id)->exists());
+    }
 }

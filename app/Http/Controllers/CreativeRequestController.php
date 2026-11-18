@@ -34,8 +34,11 @@ class CreativeRequestController extends Controller
     public function index(Request $request)
     {
         $user = $this->staff($request);
-        $filters = $request->validate(['status' => ['nullable', Rule::in(LeadTask::STATUSES)]]);
+        $filters = $request->validate(['status' => ['nullable', Rule::in(LeadTask::STATUSES)], 'view' => ['nullable', Rule::in(['active', 'deleted'])]]);
+        $deleted = ($filters['view'] ?? 'active') === 'deleted';
+        abort_if($deleted && ! $user->isAdmin(), 403);
         $requests = CreativeRequest::visibleTo($user)->with(['task.assignee:id,name', 'task.creator:id,name'])
+            ->when($deleted, fn ($q) => $q->onlyTrashed())
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->whereHas('task', fn ($q) => $q->where('status', $status)))
             ->latest()->paginate(20)->withQueryString()->through(fn ($r) => $r->row());
 
@@ -160,5 +163,40 @@ class CreativeRequestController extends Controller
         $this->authorizeRequest($request, $creative);
 
         return TicketAttachments::stream($request, $creative->attachments ?? [], $index);
+    }
+
+    public function destroy(Request $request, CreativeRequest $creative)
+    {
+        abort_unless($this->staff($request)->isAdmin(), 403);
+        $data = $request->validate(['expected_status' => ['required', Rule::in(LeadTask::STATUSES)]]);
+        DB::transaction(function () use ($creative, $data) {
+            $task = LeadTask::whereKey($creative->lead_task_id)->lockForUpdate()->firstOrFail();
+            $locked = CreativeRequest::whereKey($creative->id)->lockForUpdate()->firstOrFail();
+            if ($task->status !== $data['expected_status']) {
+                throw ValidationException::withMessages(['status' => 'This request changed. Refresh before deleting it.']);
+            }
+            $task->delete();
+            $locked->delete();
+        });
+
+        return redirect('/admin/system-tickets?type=digital')
+            ->with('success', 'Request moved to Deleted requests. Its brief, files and task are kept for recovery.');
+    }
+
+    public function restore(Request $request, CreativeRequest $creative)
+    {
+        abort_unless($this->staff($request)->isAdmin(), 403);
+        $data = $request->validate(['expected_status' => ['required', Rule::in(LeadTask::STATUSES)]]);
+        DB::transaction(function () use ($creative, $data) {
+            $task = LeadTask::withTrashed()->whereKey($creative->lead_task_id)->lockForUpdate()->firstOrFail();
+            $locked = CreativeRequest::onlyTrashed()->whereKey($creative->id)->lockForUpdate()->firstOrFail();
+            if ($task->status !== $data['expected_status']) {
+                throw ValidationException::withMessages(['status' => 'This request changed. Refresh before restoring it.']);
+            }
+            $task->restore();
+            $locked->restore();
+        });
+
+        return back()->with('success', 'Creative request restored with its original task status and files.');
     }
 }
