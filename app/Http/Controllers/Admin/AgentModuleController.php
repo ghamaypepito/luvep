@@ -211,7 +211,7 @@ class AgentModuleController extends Controller
     public function agreements(Request $request)
     {
         $filters = $request->validate(['search' => 'nullable|string|max:150', 'status' => 'nullable|in:Draft,Generated,Sent,Pending Signature,Signed,Expired']);
-        $query = AgentAgreement::with(['agent' => fn ($q) => $q->withTrashed()->select('id', 'name', 'deleted_at')]);
+        $query = AgentAgreement::with(['agent' => fn ($q) => $q->withTrashed()->select('id', 'name', 'role', 'deleted_at')]);
         if ($search = trim($filters['search'] ?? '')) {
             $query->whereHas('agent', fn ($q) => $q->withTrashed()->where('name', 'like', '%'.$search.'%'));
         }
@@ -239,7 +239,7 @@ class AgentModuleController extends Controller
         return inertia('admin/agents/Agreements', [
             'filters' => $filters,
             'agreements' => $query->latest('id')->paginate(25)->withQueryString()->through(fn ($agreement) => $agreement->historyPayload("/admin/agents/{$agreement->agent_id}/agreement")
-                + ['partner_name' => $agreement->agent->name, 'partner_archived' => $agreement->agent->trashed(), 'profile_url' => $agreement->agent->trashed() ? null : "/admin/agents/{$agreement->agent_id}"]),
+                + ['partner_name' => $agreement->agent->name, 'partner_archived' => $agreement->agent->trashed(), 'profile_url' => ! $agreement->agent->trashed() && $agreement->agent->role === 'agent' ? "/admin/agents/{$agreement->agent_id}" : null]),
         ]);
     }
 
@@ -277,8 +277,6 @@ class AgentModuleController extends Controller
 
     public function downloadAgreement(Request $request, User $agent)
     {
-        abort_unless($agent->role === 'agent', 404);
-
         $agreement = $this->selectedAgreement($request, $agent);
 
         abort_unless(Storage::disk('local')->exists($agreement->file_path), 404);
@@ -289,8 +287,6 @@ class AgentModuleController extends Controller
     /** Stream the agreement PDF inline (viewable in the browser, no download). */
     public function viewAgreement(Request $request, User $agent)
     {
-        abort_unless($agent->role === 'agent', 404);
-
         $agreement = $this->selectedAgreement($request, $agent);
         abort_unless(Storage::disk('local')->exists($agreement->file_path), 404);
 

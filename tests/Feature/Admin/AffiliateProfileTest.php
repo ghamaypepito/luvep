@@ -12,6 +12,17 @@ class AffiliateProfileTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_partner_counts_english_and_accommodation_conversions_once(): void
+    {
+        $partner = User::factory()->create(['role' => 'agent']);
+        foreach ([['is_english_student' => true], ['is_accommodation_client' => true], ['is_student' => true, 'is_english_student' => true, 'is_immigration_case' => true]] as $flags) {
+            Lead::create($flags + ['first_name' => 'Count', 'last_name' => 'Example', 'agent_id' => $partner->id, 'status' => 'New Leads']);
+        }
+        Lead::create(['first_name' => 'Other', 'last_name' => 'Example', 'agent_id' => User::factory()->create(['role' => 'agent'])->id, 'is_student' => true]);
+        $this->actingAs($partner)->get('/portal/agent/dashboard')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('stats.total', 3)->where('stats.converted', 3));
+    }
+
     public function test_profile_paginates_complete_history_and_preserves_referral_source_after_assignment(): void
     {
         $admin = User::factory()->create(['role' => 'super_admin']);

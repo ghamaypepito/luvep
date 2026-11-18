@@ -115,6 +115,11 @@ class AffiliateAgreementHistoryTest extends TestCase
     public function test_deleted_partner_history_remains_readable_without_reenabling_mutations(): void
     {
         [$staff, $agent, $agreement] = $this->setupAgreement();
+        $agent->update(['role' => 'sales']);
+        $this->get('/admin/agents/agreements')->assertOk()->assertInertia(fn ($p) => $p->where('agreements.data.0.profile_url', null));
+        $this->get("/admin/agents/{$agent->id}/agreement/view?agreement={$agreement->id}")->assertOk();
+        $this->post("/admin/agents/{$agent->id}/agreement/generate")->assertNotFound();
+        $agent->update(['role' => 'agent']);
         $agent->delete();
         $this->get('/admin/agents/agreements?search='.urlencode($agent->name))->assertOk()
             ->assertInertia(fn ($p) => $p->where('agreements.data.0.partner_name', $agent->name)

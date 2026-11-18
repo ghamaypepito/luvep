@@ -68,7 +68,7 @@ class AgentController extends Controller
                 'total' => $base()->count(),
                 'this_week' => $base()->where('created_at', '>=', now()->startOfWeek())->count(),
                 'this_month' => $base()->where('created_at', '>=', now()->startOfMonth())->count(),
-                'converted' => $base()->where(fn ($q) => $q->where('status', 'Converted')->orWhere('is_student', true)->orWhere('is_immigration_case', true))->count(),
+                'converted' => $base()->where(fn ($q) => $q->where('status', 'Converted')->orWhere('is_student', true)->orWhere('is_english_student', true)->orWhere('is_immigration_case', true)->orWhere('is_accommodation_client', true))->count(),
             ],
             'recent' => $recent->map(fn ($l) => $this->leadRow($l)),
             'referral' => [
