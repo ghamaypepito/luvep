@@ -21,7 +21,7 @@ function useForm(initial) {
     const form = {
         data, errors, clearErrors: () => setErrors({}),
         setData: (key, value) => set(previous => ({ ...previous, [key]: value })),
-        transform: fn => { transform.current = fn; return form; },
+        transform: fn => { transform.current = fn; },
         post: (url, options) => router.post(url, transform.current(data), { ...options, onError: setErrors }),
     };
     return form;

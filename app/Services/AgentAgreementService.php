@@ -348,7 +348,7 @@ class AgentAgreementService
     {
         if (! preg_match('~^data:image/(?:png|jpeg);base64,([a-zA-Z0-9+/=\r\n]+)$~D', $signatureData, $match)
             || ! ($bytes = base64_decode($match[1], true)) || ! ($image = @getimagesizefromstring($bytes)) || ! in_array($image[2], [IMAGETYPE_PNG, IMAGETYPE_JPEG], true)
-            || $image[0] > 4096 || $image[1] > 4096) {
+            || $image[0] > 4096 || $image[1] > 4096 || ! @imagecreatefromstring($bytes)) {
             throw ValidationException::withMessages(['signature_data' => 'Use a valid PNG or JPEG signature image.']);
         }
 

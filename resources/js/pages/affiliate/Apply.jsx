@@ -17,7 +17,8 @@ export default function Apply({ submitted = false }) {
     const submit = event => {
         event.preventDefault();
         if (form.processing) return;
-        form.transform(data => renewal ? { email: data.email } : data).post(renewal ? "/affiliate/apply/resend" : "/affiliate/apply", {
+        form.transform(data => renewal ? { email: data.email } : data);
+        form.post(renewal ? "/affiliate/apply/resend" : "/affiliate/apply", {
             onSuccess: () => setComplete(true),
         });
     };

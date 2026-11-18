@@ -20,7 +20,7 @@ class AffiliateOnboardingTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
 
     private function application(): AffiliateApplication
     {
@@ -193,6 +193,31 @@ class AffiliateOnboardingTest extends TestCase
         $this->assertFalse($user->fresh()->is_active);
         $this->post("/admin/users/{$user->id}/toggle-active")->assertSessionHasErrors('user');
         $this->assertNull($user->fresh()->ensureReferralCode());
+    }
+
+    public function test_undecodable_signature_leaves_the_document_and_account_untouched(): void
+    {
+        $app = $this->application();
+        $user = $this->approve($app, User::factory()->create(['role' => 'admin']));
+        $service = app(\App\Services\AgentAgreementService::class);
+        $agreement = $service->generate($user, []);
+        $agreement = $service->recordCompanySignature($agreement, 'EP', self::PNG);
+        $original = Storage::disk('local')->get($agreement->file_path);
+
+        // Former one-pixel fixture has valid dimensions but undecodable pixel data.
+        $invalid = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        try {
+            $service->recordAgentSignature($agreement, 'Applicant', $invalid, '127.0.0.1', null, [], $app);
+            $this->fail('An unreadable image must fail signature validation.');
+        } catch (\Illuminate\Validation\ValidationException $error) {
+            $this->assertArrayHasKey('signature_data', $error->errors());
+        }
+
+        $this->assertNull($agreement->fresh()->agent_signed_at);
+        $this->assertSame($agreement->file_path, $agreement->fresh()->file_path);
+        $this->assertSame($original, Storage::disk('local')->get($agreement->file_path));
+        $this->assertNull($app->fresh()->activated_at);
+        $this->assertFalse($user->fresh()->is_active);
     }
 
     public function test_signature_image_dimensions_are_bounded_before_rendering(): void

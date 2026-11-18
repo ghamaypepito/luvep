@@ -111,7 +111,7 @@ class AgentModuleTest extends TestCase
 
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'Lillian']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($agent)
             ->post('/portal/agent/agreement/sign', [
                 'signer_name' => 'Lillian Ejorango',
@@ -146,7 +146,7 @@ class AgentModuleTest extends TestCase
         $agent = User::factory()->create(['role' => 'agent']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'X']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $payload = ['signer_name' => 'A', 'signature_data' => $png, 'terms_accepted' => 1];
 
         $this->actingAs($agent)->post('/portal/agent/agreement/sign', $payload)->assertRedirect();
@@ -160,7 +160,7 @@ class AgentModuleTest extends TestCase
         $agent = User::factory()->create(['role' => 'agent']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'Lillian']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($agent)
             ->post('/portal/agent/agreement/sign', [
                 'signer_name' => 'Lillian Ejorango',
@@ -259,7 +259,7 @@ class AgentModuleTest extends TestCase
         // Inline view works.
         $this->actingAs($super)->get("/admin/agents/{$agent->id}/agreement/view")->assertOk();
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($super)
             ->post("/admin/agents/{$agent->id}/agreement/sign", ['signer_name' => 'Dinah Suarin', 'signature_data' => $png])
             ->assertRedirect();
