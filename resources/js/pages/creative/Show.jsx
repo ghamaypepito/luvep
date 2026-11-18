@@ -5,7 +5,6 @@ import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
 import { briefSections } from "@/components/creative/CreativeBriefForm";
 import { creativeStatuses } from "@/components/creative/AssignedCreativeWork";
 import TicketAttachments from "@/components/TicketAttachments";
-import "../../../css/creative.css";
 
 export default function CreativeRequest({ creative, isAdmin }) {
     const status = useForm({ status: creative.status, expected_status: creative.status });
