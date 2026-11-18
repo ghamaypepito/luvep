@@ -12,7 +12,9 @@ class CreativeRequest extends Model
 {
     use SoftDeletes;
 
-    public const DESIGN_TYPES = ['Social media graphic', 'Poster / flyer', 'Video / reel', 'Other'];
+    public const DESIGN_TYPES = ['Digital media', 'Print media', 'Video / reel', 'Other'];
+
+    public const LEGACY_DESIGN_TYPES = ['Social media graphic', 'Poster / flyer'];
 
     protected $fillable = ['request_ref', 'lead_task_id', 'brief', 'attachments'];
 
@@ -48,7 +50,7 @@ class CreativeRequest extends Model
 
         return [
             'id' => $this->id, 'request_ref' => $this->request_ref, 'title' => $task->title,
-            'status' => $task->status, 'deadline' => $task->due_at?->copy()->timezone($this->brief['timezone'] ?? 'Asia/Manila')->toDateString() ?? $this->brief['deadline'],
+            'status' => $task->status, 'deadline' => $task->due_at?->copy()->timezone($this->brief['timezone'] ?? 'Asia/Manila')->toDateString() ?? ($this->brief['deadline'] ?? null),
             'types' => $this->brief['types'], 'assignee' => $task->assignee?->name,
             'submitter' => $task->creator?->name, 'attachment_count' => count($this->attachments ?? []),
             'task_id' => $task->id, 'url' => $this->url(),

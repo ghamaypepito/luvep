@@ -54,6 +54,37 @@ class CreativeRequestTest extends TestCase
         $this->assertDatabaseCount('system_tickets', 0);
     }
 
+    public function test_updated_brief_uses_media_groups_and_creates_an_undated_task_without_approval_fields(): void
+    {
+        $owner = $this->owner();
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->post('/creative-requests', [
+            'project' => 'Short creative brief', 'overview' => 'Create a campaign to encourage consultation bookings.',
+            'message' => 'Plan your next chapter.', 'copy' => 'Headline: Study in NZ. Caption: Book a consultation. #StudyInNZ',
+            'cta' => 'Book a consultation', 'types' => ['Digital media', 'Print media'],
+            'references' => 'https://example.test/reference', 'assets' => 'https://example.test/approved-assets',
+            'notes' => 'Use the approved logo.', 'attachments' => [UploadedFile::fake()->image('reference.png')],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $creative = CreativeRequest::firstOrFail();
+        $this->assertNull($creative->task->due_at);
+        $this->assertNull($creative->row()['deadline']);
+        $this->assertSame(['Digital media', 'Print media'], $creative->brief['types']);
+        $this->assertStringContainsString('Caption: Book a consultation.', $creative->brief['copy']);
+        $this->assertArrayNotHasKey('approver', $creative->brief);
+        $this->assertCount(1, $creative->attachments);
+        $this->assertSame(1, LeadTask::count());
+        Notification::assertSentTo($owner, CreativeRequestAssigned::class, function ($notification) use ($owner) {
+            $this->assertStringNotContainsString('Due ', $notification->toArray($owner)['body']);
+            $this->assertStringNotContainsString('Deadline:', implode(' ', $notification->toMail($owner)->introLines));
+
+            return true;
+        });
+        Notification::assertSentOnDemand(CreativeRequestAssigned::class);
+        $this->actingAs($owner)->get('/admin/system-tickets?type=digital')->assertInertia(fn (Assert $p) => $p
+            ->where('designTypes', ['Digital media', 'Print media', 'Video / reel', 'Other'])
+            ->where('requests.data.0.deadline', null));
+        $this->assertDatabaseCount('dtr_entries', 0);
+    }
+
     public function test_missing_or_inactive_owner_never_silently_routes_a_request(): void
     {
         $sender = User::factory()->create(['role' => 'sales']);
