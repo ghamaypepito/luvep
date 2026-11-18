@@ -26,6 +26,7 @@ $hrRoutes = function () {
         Route::post('/checklists/templates/{template}', [\App\Http\Controllers\Hr\ChecklistController::class, 'template'])->name('checklists.template.update');
         Route::post('/checklists/tasks/{task}/complete', [\App\Http\Controllers\Hr\ChecklistController::class, 'complete'])->name('checklists.complete');
         Route::get('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'index'])->name('equipment');
+        Route::post('/equipment/self', [\App\Http\Controllers\Hr\EquipmentController::class, 'recordOwn'])->name('equipment.self');
         Route::post('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'store'])->name('equipment.store');
         Route::post('/equipment/{item}/return', [\App\Http\Controllers\Hr\EquipmentController::class, 'recordReturn'])->name('equipment.return');
         Route::get('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'index'])->name('requests');
@@ -34,6 +35,8 @@ $hrRoutes = function () {
         Route::post('/requests/{case}/reply', [\App\Http\Controllers\Hr\RequestController::class, 'reply'])->name('requests.reply');
         Route::post('/requests/{case}/assign', [\App\Http\Controllers\Hr\RequestController::class, 'assign'])->name('requests.assign');
         Route::post('/requests/{case}/close', [\App\Http\Controllers\Hr\RequestController::class, 'close'])->name('requests.close');
+        Route::get('/policies/versions/{version}/attachment', [\App\Http\Controllers\Hr\PolicyController::class, 'download'])->name('policies.attachment');
+        Route::get('/policies/{policy}/draft/attachment', [\App\Http\Controllers\Hr\PolicyController::class, 'downloadDraft'])->name('policies.draft.attachment');
         Route::get('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'index'])->name('policies');
         Route::post('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.store');
         Route::post('/policies/{policy}/draft', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.draft');

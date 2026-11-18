@@ -13,7 +13,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentService
@@ -21,39 +20,33 @@ class DocumentService
     public function upload(User $actor, HrEmployee $employee, UploadedFile $file, array $metadata): HrDocumentVersion
     {
         $data = Validator::make($metadata, ['document_id' => 'nullable|integer|exists:hr_documents,id', 'title' => 'required|string|max:200', 'classification' => ['required', Rule::in(HrDocumentPolicy::CLASSES)]])->validate();
-        abort_unless(app(HrDocumentPolicy::class)->manageClass($actor, $data['classification']), 403);
-        Validator::make(['file' => $file], ['file' => 'required|file|max:10240|mimetypes:application/pdf,image/png,image/jpeg'])->validate();
-        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($file->getRealPath());
-        $extension = strtolower($file->getClientOriginalExtension());
-        $valid = match ($mime) {
-            'application/pdf' => ['pdf'],'image/png' => ['png'],'image/jpeg' => ['jpg', 'jpeg'],default => []
-        };
-        if ($file->getSize() < 1 || ! in_array($extension, $valid, true)) {
-            throw ValidationException::withMessages(['file' => 'Upload a non-empty PDF, PNG or JPEG whose filename matches its content.']);
-        }
-        $key = 'documents/'.Str::uuid().'.'.$valid[0];
-        $stored = false;
+        $policy = app(HrDocumentPolicy::class);
+        $manager = $policy->manageClass($actor, $data['classification']);
+        abort_unless($manager || ($data['classification'] === 'employee_shared' && $policy->selfUpload($actor, $employee)), 403);
+        $attributes = app(HrFile::class)->validate($file);
+        $key = 'documents/'.Str::uuid().'.'.$attributes['extension'];
         try {
-            return DB::transaction(function () use ($actor, $employee, $file, $data, $key, $mime, &$stored) {
+            return DB::transaction(function () use ($actor, $employee, $file, $data, $key, $attributes) {
                 HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
                 abort_if($employee->fresh()->status === 'archived', 409, 'This employee record is archived.');
                 if (! empty($data['document_id'])) {
                     $document = HrDocument::whereKey($data['document_id'])->lockForUpdate()->firstOrFail();
+                    abort_unless(app(HrDocumentPolicy::class)->upload($actor, $document), 403);
                     abort_unless($document->hr_employee_id === $employee->id && $document->classification === $data['classification'] && ! $document->archived_at, 422, 'Choose the existing document’s employee and classification.');
                 } else {
-                    $document = HrDocument::create(['hr_employee_id' => $employee->id, 'title' => $data['title'], 'classification' => $data['classification']]);
+                    $document = HrDocument::create(['hr_employee_id' => $employee->id, 'title' => $data['title'], 'classification' => $data['classification'], 'submitted_by' => $data['classification'] === 'employee_shared' && app(HrDocumentPolicy::class)->selfUpload($actor, $employee) ? $actor->id : null]);
                 }
-                Storage::disk('hr_private')->put($key, file_get_contents($file->getRealPath()));
-                $stored = true;
-                $version = HrDocumentVersion::create(['hr_document_id' => $document->id, 'version' => (int) $document->versions()->max('version') + 1, 'storage_key' => $key, 'original_filename' => mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 200), 'mime' => $mime, 'size' => $file->getSize(), 'sha256' => hash_file('sha256', $file->getRealPath()), 'created_by' => $actor->id, 'created_at' => now()]);
+                if (! Storage::disk('hr_private')->put($key, file_get_contents($file->getRealPath()))) {
+                    throw new \RuntimeException('The private file could not be stored.');
+                }
+                $version = HrDocumentVersion::create(['hr_document_id' => $document->id, 'version' => (int) $document->versions()->max('version') + 1, 'storage_key' => $key, ...array_diff_key($attributes, ['extension' => true]), 'created_by' => $actor->id, 'created_at' => now()]);
                 app(HrAudit::class)->record($actor, 'document.uploaded', $version, ['employee_id' => $employee->id, 'version' => $version->version]);
 
                 return $version;
             });
         } catch (\Throwable $error) {
-            if ($stored) {
-                Storage::disk('hr_private')->delete($key);
-            }throw $error;
+            Storage::disk('hr_private')->delete($key);
+            throw $error;
         }
     }
 
@@ -77,7 +70,8 @@ class DocumentService
         $policy = app(HrDocumentPolicy::class);
         $access = app(HrAccess::class);
         abort_unless($access->internal($actor) && $document->hr_employee_id === $subject->id, 404);
-        $visible = ! $document->archived_at && $subject->user && $access->employee($subject->user)?->id === $subject->id && $version->released_at;
+        $visible = ! $document->archived_at && $subject->user && $access->employee($subject->user)?->id === $subject->id
+            && ($version->released_at || ($document->classification === 'employee_shared' && $document->submitted_by === $subject->user_id && $version->created_by === $subject->user_id));
         $manager = $policy->manage($actor, $document);
         abort_unless($preview ? ($visible && $manager) : ($manager || ($actor->id === $subject->user_id && $visible)), 404);
         abort_unless(Storage::disk('hr_private')->exists($version->storage_key), 404);
@@ -92,7 +86,7 @@ class DocumentService
         DB::transaction(function () use ($actor, $document) {
             $document = HrDocument::whereKey($document->id)->lockForUpdate()->firstOrFail();
             $document->update(['archived_at' => now()]);
-            app(HrAudit::class)->record($actor,'document.archived',$document,['employee_id' => $document->hr_employee_id]);
+            app(HrAudit::class)->record($actor, 'document.archived', $document, ['employee_id' => $document->hr_employee_id]);
         });
     }
 }

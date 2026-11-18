@@ -47,7 +47,7 @@ export default function HrLayout({ children }) {
         [hrPath("/dtr/changes?scope=mine"), "My DTR changes", ClipboardCheck],
         [hrPath("/leave"), "Leave", CalendarDays],
     );
-    personal.push([hrPath("/profile"), "My profile", UserRound]);
+    personal.push([hrPath("/profile"), "My Info", UserRound]);
     const team = [];
     if (hr?.can_view_staff_status) team.push([hrPath("/team"), "Staff status", UsersRound]);
     if (hr?.permissions?.["leave.review"]) team.push([hrPath("/leave/review"), "Leave decisions", ClipboardCheck]);
@@ -70,8 +70,10 @@ export default function HrLayout({ children }) {
     if (hr?.permissions?.audit) settings.push([hrPath("/audit"), "Activity & delivery", ClipboardCheck]);
     const groups = [["My workspace", personal, UserRound], ["Team workspace", team, UsersRound], ["Resources & support", resources, FolderLock], ["Settings", settings, Settings]];
     const overview = [hrPath("/dashboard"), "Overview", LayoutDashboard];
+    const inMyInfo = pageUrl.includes("scope=mine") && ["/documents", "/policies", "/equipment"].some(p => path === hrPath(p));
     const matches = ([href]) => {
         const [linkPath, query] = href.split("?");
+        if (inMyInfo && ["/profile", "/documents", "/policies", "/equipment"].some(p => linkPath === hrPath(p))) return linkPath === hrPath("/profile");
         if (query) return pageUrl === href;
         if (linkPath === hrPath("/dtr/changes") && pageUrl.includes("scope=mine")) return false;
         return path === linkPath || path.startsWith(`${linkPath}/`);

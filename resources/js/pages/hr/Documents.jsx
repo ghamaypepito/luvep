@@ -1,9 +1,11 @@
 import { hrPath } from "@/lib/hrPath";
-import { Head, useForm, router, usePage } from "@inertiajs/react";
+import { Head, Link, useForm, router, usePage } from "@inertiajs/react";
 import { Errors } from "./Dtr";
+import MyInfoTabs from "@/components/hr/MyInfoTabs";
+import PersonalDocumentUpload, { hrDocumentAccept } from "@/components/hr/PersonalDocumentUpload";
 const label = (value) => value.replaceAll("_", " ");
-export default function Documents({ documents, employees, classifications }) {
-    const { hr } = usePage().props;
+export default function Documents({ documents, employees, classifications, scope, selfUpload = false, selfEmployeeId }) {
+    const { hr, auth } = usePage().props;
     const form = useForm({
         employee_id: "",
         document_id: "",
@@ -16,14 +18,17 @@ export default function Documents({ documents, employees, classifications }) {
     return (
         <>
             <Head title="Documents · Luvep" />
+            {scope === "mine" && <MyInfoTabs />}
             <div className="hr-page-heading">
-                <h1>Documents</h1>
+                <h1>{scope === "mine" ? "My documents" : "Documents"}</h1>
                 <p>
                     Private personnel files and versions explicitly shared with
                     you.
                 </p>
             </div>
-            {classifications.length > 0 && !hr.preview && (
+            {scope === "mine" && (['admin', 'super_admin'].includes(auth?.user?.role) || Object.entries(hr.permissions || {}).some(([key, value]) => key.startsWith('documents.') && value)) && <p><Link className="hr-text-link" href={hrPath('/documents')}>Manage employee documents</Link></p>}
+            {selfUpload && (scope === 'mine' || !classifications.length) && !hr.preview && <PersonalDocumentUpload employeeId={selfEmployeeId} documents={documents} />}
+            {classifications.length > 0 && scope !== 'mine' && !hr.preview && (
                 <details className="hr-panel">
                     <summary>
                         <strong>Upload a private document</strong>
@@ -127,11 +132,11 @@ export default function Documents({ documents, employees, classifications }) {
                             </select>
                         </label>
                         <label>
-                            File · PDF, PNG or JPEG, up to 10 MiB
+                            File · PDF, Word, PNG or JPEG, up to 10 MiB
                             <input
                                 type="file"
                                 required
-                                accept="application/pdf,image/png,image/jpeg"
+                                accept={hrDocumentAccept}
                                 onChange={(e) =>
                                     form.setData(
                                         "file",
@@ -165,7 +170,7 @@ export default function Documents({ documents, employees, classifications }) {
                                 <h2>{d.title}</h2>
                                 <p>
                                     {d.employee_name} ·{" "}
-                                    {label(d.classification)}
+                                    {label(d.classification)}{d.submitted_by ? " · Staff-uploaded" : ""}
                                     {d.archived ? " · Archived" : ""}
                                 </p>
                             </div>
@@ -203,7 +208,7 @@ export default function Documents({ documents, employees, classifications }) {
                                                 v.created_at,
                                             ).toLocaleDateString()}{" "}
                                             ·{" "}
-                                            {v.released_at
+                                            {v.owner_uploaded ? "Uploaded by employee · available in My Info" : v.released_at
                                                 ? "Shared with employee"
                                                 : "Private"}
                                         </p>
@@ -215,7 +220,7 @@ export default function Documents({ documents, employees, classifications }) {
                                         >
                                             Download
                                         </a>
-                                        {d.can_manage && !d.archived && (
+                                        {d.can_manage && !d.archived && !v.owner_uploaded && (
                                             <button
                                                 className="hr-button-secondary"
                                                 onClick={() =>

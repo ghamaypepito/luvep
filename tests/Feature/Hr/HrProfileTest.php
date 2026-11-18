@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Hr;
 
+use App\Models\HrAuditEvent;
 use App\Models\HrEmployee;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -28,8 +30,15 @@ class HrProfileTest extends TestCase
     {
         $employee = $this->employee();
         $this->actingAs($employee->user)->get('https://hr.luvep.com/profile')->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('hr/Profile')->where('profile.id', $employee->id)
+            ->assertInertia(fn (Assert $page) => $page->component('hr/Profile')->where('profile.id', $employee->id)->where('auth.user.role', 'sales')
                 ->where('profile.emergency_contact', 'Family 555')->missing('profile.user.password')->missing('profile.user.module_permissions'));
+    }
+
+    public function test_admin_profile_without_employee_serializes_role_for_my_info_management_tabs(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->get('https://hr.luvep.com/profile')->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->where('auth.user.role', 'admin')->where('profile.id', null)->missing('auth.user.module_permissions'));
     }
 
     public function test_employee_cannot_read_other_employee_record_or_roster(): void
@@ -49,6 +58,46 @@ class HrProfileTest extends TestCase
         $this->patchJson('https://hr.luvep.com/profile', ['role' => 'admin', 'status' => 'active', 'module_permissions' => ['hr'], 'manager_user_id' => $employee->user_id])->assertUnprocessable();
         $this->assertSame('sales', $employee->user->fresh()->role);
         $this->assertNull($employee->fresh()->manager_user_id);
+    }
+
+    public function test_employee_can_edit_display_name_without_changing_login_or_employment(): void
+    {
+        $employee = $this->employee();
+        $email = $employee->user->email;
+        $this->actingAs($employee->user)->patch('https://hr.luvep.com/profile', ['name' => 'My display name', 'phone' => '555', 'emergency_contact' => 'Family'])->assertRedirect();
+        $this->assertSame('My display name', $employee->user->fresh()->name);
+        $this->assertSame($email, $employee->user->fresh()->email);
+        $audit = HrAuditEvent::where('action', 'profile.updated')->sole();
+        $this->assertSame(['name', 'phone', 'emergency_contact'], $audit->metadata['fields']);
+        $this->assertStringNotContainsString('My display name', json_encode($audit->metadata));
+
+        foreach (['email' => 'other@example.com', 'employment_details' => 'Self assigned terms', 'user_id' => $employee->user_id] as $field => $value) {
+            $this->patchJson('https://hr.luvep.com/profile', [$field => $value])->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        foreach (['', str_repeat('a', 256)] as $name) {
+            $this->patchJson('https://hr.luvep.com/profile', ['name' => $name])->assertUnprocessable()->assertJsonValidationErrors('name');
+        }
+    }
+
+    public function test_employment_details_are_encrypted_hidden_and_visible_only_to_owner_or_hr_manager(): void
+    {
+        $employee = $this->employee();
+        $details = "Employment agreement\nPrivate employment terms";
+        $employee->update(['employment_details' => $details]);
+        $stored = DB::table('hr_employees')->where('id', $employee->id)->value('employment_details');
+        $this->assertNotNull($stored);
+        $this->assertStringNotContainsString('Private employment terms', $stored);
+        $this->assertSame($details, decrypt($stored, false));
+        $this->assertArrayNotHasKey('employment_details', $employee->fresh()->toArray());
+        $this->actingAs($employee->user)->get('https://hr.luvep.com/profile')->assertInertia(fn (Assert $page) => $page->where('profile.employment_details', $details));
+        $this->get('https://hr.luvep.com/people/'.$employee->id)->assertInertia(fn (Assert $page) => $page->where('profile.employment_details', $details));
+
+        $viewer = User::factory()->create(['role' => 'sales', 'module_permissions' => ['hr.profile.view', 'hr.preview']]);
+        $this->actingAs($viewer)->get('https://hr.luvep.com/people/'.$employee->id)->assertInertia(fn (Assert $page) => $page->missing('profile.employment_details'));
+        $this->withSession(['hr_preview_employee_id' => $employee->id])->get('https://hr.luvep.com/profile')->assertInertia(fn (Assert $page) => $page->missing('profile.employment_details')->where('hr.preview.read_only', true));
+        $this->flushSession();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->get('https://hr.luvep.com/people/'.$employee->id)->assertInertia(fn (Assert $page) => $page->where('profile.employment_details', $details));
     }
 
     public function test_hr_host_rejects_unrelated_routes_and_external_accounts(): void
