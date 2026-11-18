@@ -211,7 +211,7 @@ class SchoolVisitMailTest extends TestCase
         $this->rsvp($v, ['email' => 'cancelled@example.test', 'attendance_status' => 'cancelled']);
         $this->rsvp($v, ['email' => 'newsletter@example.test', 'email_follow_up' => false, 'email_newsletter' => true]);
         $this->assertCount(3, $this->rows($this->filters($v)));
-        $this->assertFalse($this->rows($this->filters($v))->contains('eligible', true));
+        $this->assertSame('alex@example.test', $this->rows($this->filters($v))->firstWhere('eligible', true)['email']);
         $this->assertSame('newsletter@example.test', $this->rows($this->filters($v, ['purpose' => 'email_newsletter']))->firstWhere('eligible', true)['email']);
         $w = $this->visit();
         $this->rsvp($w, ['full_name' => 'Another Person']);
@@ -243,24 +243,51 @@ class SchoolVisitMailTest extends TestCase
         $this->assertFalse($this->rows($this->filters($v))[0]['eligible']);
     }
 
-    public function test_programme_form_choice_needs_verified_permission_for_the_exact_visit_and_identity(): void
+    public function test_follow_up_uses_recorded_permission_without_verification_for_both_sources(): void
     {
         $v = $this->visit();
-        $other = $this->visit(['school' => 'Another school']);
         $this->registration($v);
-        $this->rsvp($other);
-        $this->assertFalse($this->rows($this->filters($v, ['visit_ids' => [$v->id, $other->id]]))->sole()['eligible']);
-
-        $rsvp = $this->rsvp($v, ['verified_at' => null]);
-        $this->assertFalse($this->rows($this->filters($v))->sole()['eligible']);
-        $rsvp->update(['verified_at' => now()]);
         $this->assertTrue($this->rows($this->filters($v))->sole()['eligible']);
+        $rsvp = $this->rsvp($v, ['verified_at' => null]);
+        $this->assertTrue($this->rows($this->filters($v))->sole()['eligible']);
+        $rsvp->update(['email_follow_up' => false]);
+        $this->assertFalse($this->rows($this->filters($v))->sole()['eligible']);
+        $this->assertNull($rsvp->fresh()->verified_at);
+        $this->assertNull($rsvp->fresh()->lead_id);
+    }
+
+    public function test_unverified_consented_follow_up_can_be_reviewed_queued_and_dispatched(): void
+    {
+        Queue::fake();
+        Mail::fake();
+        $v = $this->visit();
+        $rsvp = $this->rsvp($v, ['verified_at' => null]);
+        $this->registration($v);
+        $this->actingAs($this->staff())->post('/portal/education/school-mail', $this->payload($v))->assertSessionHasNoErrors();
+        Queue::assertPushed(SendEducationSchoolMail::class, 1);
+        (new SendEducationSchoolMail(EducationSchoolMailRecipient::sole()->id))->handle(app(EducationSchoolMailAudience::class));
+        Mail::assertSent(TemplatedMessage::class, 1);
+        $this->assertSame('sent', EducationSchoolMailRecipient::sole()->status);
+        $this->assertNull($rsvp->fresh()->verified_at);
+        $this->assertNull($rsvp->fresh()->lead_id);
+        $this->assertDatabaseCount('education_event_email_subscriptions', 0);
+    }
+
+    public function test_newsletters_still_need_verification_or_a_confirmed_subscription(): void
+    {
+        $v = $this->visit();
+        $this->registration($v, ['email_newsletter' => true]);
+        $rsvp = $this->rsvp($v, ['email_newsletter' => true, 'verified_at' => null]);
+        $filters = $this->filters($v, ['purpose' => 'email_newsletter']);
+        $this->assertFalse($this->rows($filters)->sole()['eligible']);
+        $rsvp->update(['verified_at' => now()]);
+        $this->assertTrue($this->rows($filters)->sole()['eligible']);
     }
 
     public function test_nurture_exit_does_not_cancel_a_confirmed_newsletter_choice(): void
     {
         $v = $this->visit();
-        $registration = $this->registration($v);
+        $registration = $this->registration($v, ['email_follow_up' => false]);
         EducationEventEmailSubscription::create(['lead_id' => $registration->lead_id, 'registration_id' => $registration->id,
             'email' => 'alex@example.test', 'newsletter_confirmed_at' => now()->subDays(15), 'exited_at' => now()]);
 

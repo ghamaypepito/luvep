@@ -122,6 +122,11 @@ class EducationOutreachService
                 return;
             }
             $r = $d->rsvp?->load('visit');
+            // Staff may revoke the delivery while its RSVP is being loaded.
+            $d = $d->fresh();
+            if (! $d || $d->cancelled_at) {
+                return;
+            }
             if ($d->kind === 'thank_you' && ! $this->canSendThankYou($d, $r)) {
                 return;
             }
@@ -146,6 +151,7 @@ class EducationOutreachService
             }
             if ($d->kind === 'phone_request' && $r && ! app(EducationRsvpContactUpdate::class)->needsNumber($r)) {
                 $d->update(['cancelled_at' => now()]);
+
                 return;
             }
             $slack = app(ProgramSlackNotifier::class);

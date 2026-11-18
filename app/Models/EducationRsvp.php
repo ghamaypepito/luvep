@@ -10,6 +10,11 @@ class EducationRsvp extends Model
 
     protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'linked_at' => 'datetime', 'email_reminders' => 'boolean', 'future_invites' => 'boolean', 'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean'];
 
+    public function answersRevision(): string
+    {
+        return hash('sha256', json_encode($this->only(['full_name', 'email', 'phone', 'role', 'email_reminders', 'future_invites', 'email_follow_up', 'email_newsletter', 'public_id', 'verified_at', 'lead_id'])));
+    }
+
     public function folders()
     {
         return $this->belongsToMany(EducationRsvpFolder::class, 'education_rsvp_folder_members', 'education_rsvp_id', 'folder_id')->withTimestamps()->orderBy('name');

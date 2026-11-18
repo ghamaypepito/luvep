@@ -32,5 +32,7 @@ Route::middleware(['auth', 'portal:admin,education'])->group(function () {
     Route::post('/portal/education/rsvp-visits/{visit}/logo', [\App\Http\Controllers\EducationRsvpAdminController::class, 'logo']);
     Route::post('/portal/education/rsvps/bulk-attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'bulkAttendance'])->name('education.rsvps.bulk-attendance');
     Route::put('/portal/education/rsvps/{rsvp}/attendance', [\App\Http\Controllers\EducationRsvpAdminController::class, 'attendance']);
+    Route::put('/portal/education/rsvps/{rsvp}/answers', [\App\Http\Controllers\EducationRsvpAdminController::class, 'answers'])->name('education.rsvps.answers');
+    Route::post('/portal/education/rsvps/{rsvp}/confirmation', [\App\Http\Controllers\EducationRsvpAdminController::class, 'confirmation'])->name('education.rsvps.confirmation');
     Route::post('/portal/education/rsvps/slack', [\App\Http\Controllers\EducationRsvpAdminController::class, 'slack']);
 });

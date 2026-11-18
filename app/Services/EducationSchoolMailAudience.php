@@ -24,6 +24,7 @@ class EducationSchoolMailAudience
     public function rows(array $filters, ?string $onlyEmail = null): Collection
     {
         $ids = $filters['visit_ids'];
+        $followUp = $filters['purpose'] === 'email_follow_up';
         $visits = EducationVisit::whereIn('id', $ids)->where('status', '!=', 'cancelled')->get()->keyBy('id');
         $rows = collect();
         $suppressed = MessageLog::where('channel', 'email')->where('status', 'bounced')->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM(recipient_address)) = ?', [$onlyEmail]))->pluck('recipient_address')
@@ -35,7 +36,7 @@ class EducationSchoolMailAudience
                 continue;
             }
             $rows->push($this->row('rsvp', $r->id, $r->full_name, $r->email, $r->education_visit_id,
-                $r->consented_at && $r->verified_at && $r->{$filters['purpose']},
+                $r->consented_at && $r->{$filters['purpose']} && ($followUp || $r->verified_at),
                 $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id], $r->created_at));
         }
         // Programme registrations and RSVPs are independent. Never manufacture Lead links.
@@ -45,7 +46,7 @@ class EducationSchoolMailAudience
                 ->when($onlyEmail, fn ($q) => $q->whereRaw('LOWER(TRIM('.$q->getQuery()->getGrammar()->wrap('contact_details->email').')) = ?', [$onlyEmail]))->orderBy('id')->get();
             $confirmation = $filters['purpose'] === 'email_follow_up' ? 'follow_up_confirmed_at' : 'newsletter_confirmed_at';
             $subscriptions = EducationEventEmailSubscription::whereIntegerInRaw('registration_id', $registrations->modelKeys())->whereNotNull($confirmation)->get()->keyBy('registration_id');
-            $verifiedRsvps = $rows->where('eligible', true)->groupBy('email');
+            $eligibleRsvps = $rows->where('eligible', true)->groupBy('email');
             foreach ($registrations as $r) {
                 $c = $r->contact_details ?? [];
                 $name = trim(($c['first_name'] ?? '').' '.($c['last_name'] ?? ''));
@@ -53,9 +54,9 @@ class EducationSchoolMailAudience
                 $nameKey = EducationRsvpWorkflow::nameKey($name);
                 $subscription = $subscriptions->get($r->id);
                 $confirmed = $subscription && $subscription->lead_id === $r->lead_id && strtolower(trim($subscription->email)) === $email;
-                $verified = $r->{$filters['purpose']} && $verifiedRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
+                $matchedRsvp = $r->{$filters['purpose']} && $eligibleRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
                 $rows->push($this->row('registration', $r->id, $name, $email, $r->education_visit_id,
-                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || $verified), 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
+                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || ($followUp && $r->email_follow_up) || $matchedRsvp), 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
             }
         }
 
@@ -80,7 +81,7 @@ class EducationSchoolMailAudience
             $eligible = ! isset($suppressed[$email]) && filter_var($email, FILTER_VALIDATE_EMAIL) && $sameName && $group->every(fn ($r) => $r['eligible']);
 
             return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
-                'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.'),
+                'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : ($filters['purpose'] === 'email_follow_up' ? 'Missing follow-up permission, identity mismatch, invalid address, unsubscribe or prior bounce.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.')),
                 'schools' => $matches->pluck('school')->unique()->values()->all(),
                 'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
                 'source_refs' => $group->pluck('ref')->values()->all(), 'member_refs' => $matches->pluck('ref')->values()->all(), 'context' => $first['context']];
