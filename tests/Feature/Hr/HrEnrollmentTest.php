@@ -6,6 +6,7 @@ use App\Models\DtrSetting;
 use App\Models\HrEmployee;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class HrEnrollmentTest extends TestCase
@@ -17,6 +18,28 @@ class HrEnrollmentTest extends TestCase
         config(['hr.enabled' => true]);
 
         return User::factory()->create(['role' => 'admin']);
+    }
+
+    public function test_people_hides_removed_accounts_but_keeps_archived_employees_and_restores(): void
+    {
+        $admin = $this->admin();
+        $this->withoutVite();
+        foreach (['active', 'archived'] as $status) {
+            $user = User::factory()->create(['role' => 'sales', 'name' => $status.' employee']);
+            HrEmployee::create(['user_id' => $user->id, 'status' => $status]);
+        }
+        $demo = User::factory()->create(['role' => 'sales', 'name' => 'Removed demo']);
+        HrEmployee::create(['user_id' => $demo->id, 'status' => 'archived']);
+        $demo->delete();
+
+        $this->actingAs($admin)->get('https://hr.luvep.com/people')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('employees.data', 2)
+                ->where('employees.data.0.name', 'active employee')
+                ->where('employees.data.1.name', 'archived employee'));
+        $demo->restore();
+        $this->get('https://hr.luvep.com/people')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('employees.data', 3)
+                ->where('employees.data.2.name', 'Removed demo'));
     }
 
     public function test_enrollment_is_candidate_first_and_rejects_external_accounts(): void

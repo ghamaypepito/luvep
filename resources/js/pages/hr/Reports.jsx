@@ -59,7 +59,7 @@ export default function Reports({
             <WeeklyReport report={weeklyReport} saveUrl={hrPath("/reports/note")} />
             <section className="hr-panel">
                 <form
-                    className="hr-form"
+                    className="hr-form hr-report-filters"
                     onSubmit={(e) => {
                         e.preventDefault();
                         f.get(hrPath("/reports"), { preserveState: false });
@@ -86,7 +86,7 @@ export default function Reports({
                             ))}
                         </select>
                     </label>
-                    <div className="hr-form-grid">
+                    <div className="hr-report-filter-grid">
                         <label>
                             From
                             <input
@@ -207,7 +207,7 @@ export default function Reports({
                 )}
                 {rows.length ? (
                     <div className="hr-table-wrap">
-                        <table>
+                        <table className="hr-report-table">
                             <thead>
                                 <tr>
                                     {Object.keys(rows[0]).map((k) => (

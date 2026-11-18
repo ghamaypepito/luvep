@@ -4717,6 +4717,31 @@ class ImmigrationController extends Controller
         $declines = $stageRows('Decline Visa');
         $signatures = $stageRows('Agreement Signed');
 
+        $quotations = $stageRows('For Agreement & Invoice');
+        $quotedInvoices = LeadDocument::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->where('source', LeadDocument::SOURCE_GENERATED)->where('source_variant', 'invoice')
+            ->where('status', '!=', LeadDocument::STATUS_REJECTED)
+            ->where(fn ($query) => $query->whereNotNull('notes->engagement_sent_at')
+                ->orWhere('status', LeadDocument::STATUS_STAFF_SHARED)->orWhere('notes->invoice_finance->draft', false));
+        foreach ($quotedInvoices->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->notes['engagement_sent_at']
+                ?? ($invoice->status === LeadDocument::STATUS_STAFF_SHARED ? $invoice->reviewed_at : null)
+                ?? ($invoice->notes['invoice_finance']['issue_date'] ?? null));
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        // Use the verified Afirmo invoice date, so historical imports stay in their original reporting period.
+        foreach (\App\Models\FinanceReceivable::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->whereIn('status', ['sent', 'paid'])->where('notes', 'like', '%[afirmo-source:INVOICE:%')
+            ->whereDate('issue_date', '>=', $rangeFrom)->whereDate('issue_date', '<=', $rangeTo)->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->issue_date?->toDateString());
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        $quotations = $quotations->sortByDesc('date')->unique('id')->values();
+
         // ── Activity in the selected window ──────────────────────────────
         $activity = [
             'new_clients' => $newCases()->count(),
@@ -4792,12 +4817,12 @@ class ImmigrationController extends Controller
         };
 
         // Pipeline position — mostly current snapshots (new_clients is in-window).
-        // "For quotation" = the pricing/invoice stage; "on hold" is omitted.
         $pipeline = [
             'new_clients' => $activity['new_clients'],
             'in_progress' => $inCase()->whereNotIn('immigration_stage', array_merge($withInzStages, $terminalStages))
                 ->where(fn ($q) => $q->whereNotNull('immigration_stage'))->count(),
-            'for_quotation' => $count('For Agreement & Invoice'),
+            'for_quotation' => $quotations->count(),
+            'quotation_cases' => $quotations,
             'endorsed_lia' => $liaEndorsements->count(),
             'agreements_sent' => $count('Agreement Sent'),
             'with_inz' => $count($withInzStages),

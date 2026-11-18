@@ -72,6 +72,28 @@ class HrReportsTest extends TestCase
         $this->assertStringNotContainsString('PRIVATE MEDICAL NOTE', json_encode($rows));
     }
 
+    public function test_leave_report_shows_the_recorded_approver_and_decision_within_existing_scope(): void
+    {
+        [$employee, $reviewer, $other] = $this->fixture();
+        $reviewer->update(['name' => 'Sharry Fixture']);
+        \App\Models\DtrLeave::create([
+            'user_id' => $employee->user_id, 'full_name' => 'Employee Fixture', 'type' => 'Annual Leave',
+            'start_date' => '2026-10-20', 'end_date' => '2026-10-21', 'total_days' => 2,
+            'status' => 'approved', 'decision' => 'Approved', 'reviewed_by' => $reviewer->id,
+            'reviewed_at' => '2026-10-19T03:00:00Z', 'reason' => 'PRIVATE REASON',
+        ]);
+        $manager = User::factory()->create(['role' => 'admin', 'module_permissions' => ['hr.reports']]);
+        $service = app(ReportService::class);
+        $rows = $service->rows($manager, 'leave', $this->filters())->all();
+        $this->assertCount(1, $rows);
+        $this->assertSame('Sharry Fixture', $rows[0]['reviewed_by']);
+        $this->assertSame('Approved', $rows[0]['decision']);
+        $this->assertSame('2026-10-19T03:00:00+00:00', $rows[0]['reviewed_at']);
+        $this->assertStringNotContainsString('PRIVATE REASON', json_encode($rows));
+        $this->assertCount(0, $service->rows($other, 'leave', $this->filters()));
+        $this->assertFalse(app(\App\Services\Hr\HrAccess::class)->allows($manager, 'leave.review', $employee));
+    }
+
     public function test_export_survives_database_json_key_reordering_but_not_changed_filters(): void
     {
         [$e, $r] = $this->fixture();
