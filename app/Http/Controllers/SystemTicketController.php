@@ -135,6 +135,9 @@ class SystemTicketController extends Controller
     public function adminIndex(Request $request)
     {
         abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
+        if ($request->query('type') === 'digital') {
+            return app(CreativeRequestController::class)->index($request);
+        }
         $request->validate([
             'tab' => ['nullable', Rule::in(['active', 'archived'])],
             'status' => ['nullable', Rule::in([...SystemTicket::STATUSES, 'all'])],

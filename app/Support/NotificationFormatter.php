@@ -38,6 +38,7 @@ class NotificationFormatter
         }
 
         $meta = match ($type) {
+            'CreativeRequestAssigned' => ['icon' => 'Ticket', 'color' => 'emerald', 'title' => $data['title'] ?? 'New creative request'],
             'HrActionRequired' => ['icon' => 'Bell', 'color' => 'emerald', 'title' => $data['title'] ?? 'Luvep HR update'],
             'VisaTypePriceChanged' => [
                 'icon' => 'DollarSign',
