@@ -3,6 +3,8 @@
 namespace Tests\Feature\Immigration;
 
 use App\Models\Lead;
+use App\Models\FinanceReceivable;
+use App\Models\LeadDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -11,6 +13,78 @@ use Tests\TestCase;
 class ReportLiaEndorsementTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_quotation_card_counts_dated_movements_and_issued_invoices_once_per_case(): void
+    {
+        $this->withoutVite();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-18T00:00:00Z'));
+        $case = fn ($name, $history = []) => Lead::create([
+            'first_name' => $name, 'last_name' => 'Fixture', 'is_immigration_case' => true,
+            'immigration_stage' => 'Invoice Paid', 'stage_history' => $history,
+        ]);
+        $event = fn ($at, $department = 'immigration') => ['department' => $department, 'stage' => 'For Agreement & Invoice', 'at' => $at];
+        $moved = $case('Moved', [$event('2026-11-16T02:00:00Z'), $event('2026-11-17T02:00:00Z')]);
+        $old = $case('Old', [$event('2026-11-10T02:00:00Z')]);
+        $old->update(['immigration_stage' => 'For Agreement & Invoice']);
+        $case('Education', [$event('2026-11-17T02:00:00Z', 'education')]);
+        $case('Undated', [['department' => 'immigration', 'stage' => 'For Agreement & Invoice']]);
+        $issued = $case('Portal');
+        $imported = $case('Afirmo');
+        $prior = $case('Historical');
+        $draft = $case('Draft');
+
+        foreach ([$moved, $issued, $draft] as $client) {
+            LeadDocument::create([
+                'lead_id' => $client->id, 'source' => LeadDocument::SOURCE_GENERATED, 'source_variant' => 'invoice',
+                'invoice_number' => 'INV-'.$client->id, 'invoice_total' => 100, 'original_name' => 'Fixture invoice.pdf',
+                'file_path' => 'fixture.pdf', 'mime' => 'application/pdf', 'size' => 100, 'status' => 'Submitted',
+                'notes' => ['invoice_finance' => ['draft' => $client->id === $draft->id, 'issue_date' => '2026-11-16']],
+            ]);
+        }
+        foreach ([[$imported, '2026-11-16', 'sent'], [$imported, '2026-11-18', 'paid'], [$prior, '2026-11-10', 'paid'], [$draft, '2026-11-17', 'draft']] as $index => [$client, $date, $status]) {
+            FinanceReceivable::create([
+                'lead_id' => $client->id, 'invoice_no' => 'INV-AF-'.$index, 'client_name' => $client->first_name,
+                'issue_date' => $date, 'due_date' => $date, 'currency' => 'NZD', 'amount' => 100, 'status' => $status,
+                'notes' => '[afirmo-source:INVOICE:INVOICE-AF-'.$index.']',
+            ]);
+        }
+        FinanceReceivable::create([
+            'invoice_no' => 'INV-UNMATCHED', 'client_name' => 'Unmatched', 'issue_date' => '2026-11-17', 'due_date' => '2026-11-17',
+            'currency' => 'NZD', 'amount' => 100, 'status' => 'sent', 'notes' => '[afirmo-source:INVOICE:INVOICE-UNMATCHED]',
+        ]);
+        $this->actingAs(User::factory()->create(['role' => 'immigration']))
+            ->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('pipeline.for_quotation', 3)->has('pipeline.quotation_cases', 3));
+        $this->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pipeline.for_quotation', 2)->has('pipeline.quotation_cases', 2));
+    }
+
+    public function test_quotation_invoice_send_dates_use_the_new_zealand_week_boundary(): void
+    {
+        $this->withoutVite();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-18T00:00:00Z'));
+        foreach (['2026-11-15T10:59:59Z', '2026-11-15T11:00:00Z', '2026-11-18T02:00:00Z'] as $index => $sentAt) {
+            $client = Lead::create(['first_name' => 'Boundary '.$index, 'last_name' => 'Fixture', 'is_immigration_case' => true]);
+            LeadDocument::create([
+                'lead_id' => $client->id, 'source' => 'generated', 'source_variant' => 'invoice',
+                'invoice_number' => 'INV-BOUNDARY-'.$index, 'original_name' => 'Fixture.pdf', 'file_path' => 'fixture.pdf',
+                'mime' => 'application/pdf', 'size' => 100, 'status' => 'Submitted',
+                'notes' => ['engagement_sent_at' => $sentAt, 'invoice_finance' => ['draft' => true, 'issue_date' => '2026-10-01']],
+            ]);
+        }
+        $today = Lead::create(['first_name' => 'Today', 'last_name' => 'Fixture', 'is_immigration_case' => true]);
+        FinanceReceivable::create([
+            'lead_id' => $today->id, 'invoice_no' => 'INV-TODAY', 'client_name' => 'Today Fixture',
+            'issue_date' => '2026-11-18', 'due_date' => '2026-11-18', 'currency' => 'NZD', 'amount' => 100,
+            'status' => 'sent', 'notes' => '[afirmo-source:INVOICE:INVOICE-TODAY]',
+        ]);
+        $this->actingAs(User::factory()->create(['role' => 'immigration']))
+            ->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('pipeline.for_quotation', 2)->where('pipeline.quotation_cases.0.name', 'Today Fixture')
+                ->where('pipeline.quotation_cases.1.name', 'Boundary 1 Fixture'));
+        $this->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pipeline.for_quotation', 1)->where('pipeline.quotation_cases.0.name', 'Boundary 0 Fixture'));
+    }
 
     public function test_report_counts_documented_endorsements_in_period_regardless_of_current_assignee_or_stage(): void
     {

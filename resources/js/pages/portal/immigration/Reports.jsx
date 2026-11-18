@@ -96,7 +96,7 @@ export default function ImmigrationReports({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard icon={<UserPlus size={16} />} value={pipeline.new_clients ?? 0} label="New clients" hint="Opened this period" />
                 <StatCard icon={<ActivityIcon size={16} />} value={pipeline.in_progress ?? 0} label="In progress" hint="Active, pre-INZ" />
-                <StatCard icon={<FileText size={16} />} value={pipeline.for_quotation ?? 0} label="For quotation" hint="Awaiting pricing / invoice" />
+                <StatCard icon={<FileText size={16} />} value={pipeline.for_quotation ?? 0} label="For quotation / invoice" hint="Cases recorded this period · includes Afirmo" items={pipeline.quotation_cases} />
                 <StatCard icon={<BadgeCheck size={16} />} value={pipeline.endorsed_lia ?? 0} label="Endorsed to LIA" hint="Recorded this period" />
                 <StatCard icon={<Handshake size={16} />} value={pipeline.agreements_sent ?? 0} label="Agreements sent" hint="Awaiting signature" />
                 <StatCard icon={<Clock size={16} />} value={pipeline.with_inz ?? 0} label="With INZ" hint="Awaiting decision" tone="dark" />
@@ -283,7 +283,7 @@ function DeckHeader({ n, eyebrow, title }) {
     );
 }
 
-function StatCard({ icon, value, label, hint, tone = "teal" }) {
+function StatCard({ icon, value, label, hint, tone = "teal", items }) {
     const iconCls = tone === "dark" ? "text-white" : "text-white";
     const iconBg = tone === "dark" ? "#374151" : TEAL;
     return (
@@ -294,6 +294,15 @@ function StatCard({ icon, value, label, hint, tone = "teal" }) {
             </div>
             <p className="text-[13px] font-bold text-gray-800 mt-3">{label}</p>
             {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
+            {items?.length > 0 && <details className="mt-2 text-xs text-gray-600">
+                <summary className="cursor-pointer">View cases</summary>
+                <ul className="mt-2 space-y-1">
+                    {items.map((item) => <li key={item.id}>
+                        <a href={`/portal/immigration/cases/${item.id}/profile`} className="font-medium text-teal-700 hover:underline">{item.name}</a>
+                        {item.date && <span> · {fmtDate(item.date)}</span>}
+                    </li>)}
+                </ul>
+            </details>}
         </div>
     );
 }
