@@ -1,3 +1,4 @@
+import StaffSignatureUpload from '@/components/immigration/StaffSignatureUpload';
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Head, router, Link } from "@inertiajs/react";
@@ -183,8 +184,9 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [] }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], canUploadSignature = false, internalSignatureNotificationsReady = false }) {
     const [modalOpen, setModalOpen] = useState(false);
+    const [signatureFor, setSignatureFor] = useState(null);
     const [auditFor, setAuditFor] = useState(null);   // { case_name, audit } for the audit-trail modal
     const [manageFor, setManageFor] = useState(null); // the draft row being managed
     const [preselectedCase, setPreselectedCase] = useState(null);
@@ -376,6 +378,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                                         <Check size={11} /> Signed
                                                     </span>
+                                                    {c.signature_uploaded_by && <p className="mt-1 text-[10px] text-gray-500">Uploaded by staff: {c.signature_uploaded_by}</p>}
                                                     {(c.signer_name || c.signed_at) && (
                                                         <div className="text-[10px] text-gray-400 mt-1">
                                                             {c.signer_name}{c.signer_name && c.signed_at ? " · " : ""}{c.signed_at ? fmtDate(c.signed_at) : ""}
@@ -413,6 +416,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 >
                                                     <ScrollText size={13} />
                                                 </button>
+                                                {canUploadSignature && !c.signed && !c.is_draft && c.documents.some((doc) => ['written_agreement', 'initial_consultation', 'oia'].includes(doc.type_key) && !doc.signed) && <button type="button" onClick={() => setSignatureFor(c)} className="rounded-lg border px-2 py-1 text-[11px] font-semibold text-teal-800">Upload signature</button>}
                                                 <DeleteCaseDocsButton
                                                     caseId={c.case_id}
                                                     packId={c.pack_id}
@@ -455,6 +459,8 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                     )}
                 </div>
             )}
+
+            {signatureFor && <StaffSignatureUpload record={signatureFor} internalReady={internalSignatureNotificationsReady} onClose={() => setSignatureFor(null)} onSaved={() => router.reload({ preserveScroll: true })} />}
 
             {modalOpen && (
                 <NewEngagementModal
@@ -517,6 +523,7 @@ function AuditTrailModal({ caseName, audit = {}, onClose }) {
                                     {signed ? "Signed" : "Awaiting signature"}
                                 </span>
                             } />
+                            {audit.signature_uploaded_by && <Row label="Signature source" value={`Client-provided signature uploaded by ${audit.signature_uploaded_by}`} />}
                             <Row label="Status timestamp" value={<span className="whitespace-pre-line tabular-nums">{fmt(audit.status_at)} UTC</span>} />
                         </dl>
                     </section>

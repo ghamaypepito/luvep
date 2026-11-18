@@ -954,6 +954,7 @@ class ImmigrationController extends Controller
                         'signed' => (bool) $signedAt,
                         'signed_at' => optional($signedAt)?->toIso8601String(),
                         'signer_name' => optional($waDoc)->client_signer_name,
+                        'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         // Audit trail for the Written Agreement — who sent it, who
                         // signed, and when (drives the Audit trail modal).
                         'audit' => [
@@ -967,6 +968,7 @@ class ImmigrationController extends Controller
                             'client_email' => $lead?->email,
                             'signer_name' => optional($waDoc)->client_signer_name,
                             'signed_at' => optional($signedAt)?->toIso8601String(),
+                            'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         ],
                         'documents' => $docs->concat($packInvoice ? [$packInvoice] : [])->map(fn ($d) => [
                             'id' => $d->id,
@@ -1007,6 +1009,8 @@ class ImmigrationController extends Controller
                 'default_signer_id' => $this->defaultSignerId(),
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
+                'canUploadSignature' => \App\Services\Immigration\StaffEngagementSignature::permitted(auth()->user()),
+                'internalSignatureNotificationsReady' => app(\App\Services\Immigration\StaffEngagementSignature::class)->internalRecipients()->isNotEmpty(),
             ]);
         } catch (\Throwable $e) {
             Log::error('Immigration engagement page failed', ['error' => $e->getMessage()]);

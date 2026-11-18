@@ -51,6 +51,7 @@ jobs:
           node tests/Frontend/affiliate-performance.cjs
           node tests/Frontend/affiliate-onboarding.cjs
           node tests/Frontend/engagement-email-review.cjs
+          node tests/Frontend/staff-engagement-signature.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
           node tests/Frontend/hr-work-insights.cjs
