@@ -1131,3 +1131,7 @@ body:has(.hr-app) { background: #e9eee5; }
     .hr-staff-search input { font-size: 16px; }
 }
 .hr-report-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 20px; }
+.hr-info-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--hr-line); margin-bottom: 28px; padding-bottom: 10px; }
+.hr-info-tabs a { text-decoration: none; border-radius: 8px; padding: 11px 14px; font-size: 14px; color: var(--hr-muted); }
+.hr-info-tabs a[aria-current] { color: #274c32; background: #dbedb4; font-weight: 700; }
+.hr-employment-text { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -8,9 +8,11 @@ class HrPolicy extends Model
 {
     protected $guarded = ['id'];
 
+    protected $hidden = ['draft_attachment'];
+
     protected $attributes = ['revision' => 0];
 
-    protected $casts = ['revision' => 'integer'];
+    protected $casts = ['revision' => 'integer', 'draft_attachment' => 'array'];
 
     public function versions()
     {
