@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "@inertiajs/react";
 import { ArrowLeft, ArrowRight, Send, ImagePlus } from "lucide-react";
 import TicketAttachmentPicker from "@/components/TicketAttachmentPicker";
@@ -14,8 +14,23 @@ export const briefSections = [
 
 export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
     const [step, setStep] = useState(0);
+    const dialog = useRef(null);
+    const titleId = useId();
+    useEffect(() => {
+        const modal = dialog.current;
+        const overflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        modal.showModal();
+        modal.querySelector('input[name="project"]').focus();
+        return () => { modal.close(); document.body.style.overflow = overflow; };
+    }, []);
     const submitting = useRef(false);
     const form = useForm({ project: "", deadline: "", types: [], other: "", attachments: [], ...Object.fromEntries(briefSections.flatMap(section => section.fields.map(([key]) => [key, ""]))) });
+    const dismiss = () => {
+        if (form.processing) return;
+        dialog.current.close();
+        onCancel();
+    };
     const field = ([key, label, placeholder, required, type]) => <label key={key} className={key === "caption" ? "cw-caption-field" : ""}>{label}{required ? " *" : ""}
         {type ? <input type={type} name={key} required={!!required} value={form.data[key]} onChange={e => form.setData(key, e.target.value)} placeholder={placeholder} maxLength={key === "approver" ? 160 : undefined} /> : <textarea name={key} required={!!required} rows={key === "caption" ? 4 : 3} value={form.data[key]} onChange={e => form.setData(key, e.target.value)} placeholder={placeholder} maxLength={key === "overview" ? 5000 : 10000} />}
         {key === "caption" && <small>This accompanies the post. Keep text placed on the design in Required copy.</small>}
@@ -31,8 +46,8 @@ export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
             setStep(errors.project || errors.deadline ? 0 : errors.types || errors.other ? 2 : Object.keys(errors).some(key => key.startsWith("attachments")) ? 3 : Math.max(0, index));
         } });
     };
-    return <form className="cw-brief cw-panel" onSubmit={submit} noValidate>
-        <div className="cw-section-heading"><div><p className="cw-eyebrow">Creative request</p><h2>Tell us what you have in mind.</h2></div><button type="button" className="cw-text-button" onClick={onCancel} disabled={form.processing}>Back to queue</button></div>
+    return <dialog ref={dialog} className="cw-brief-dialog" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); dismiss(); }}><form className="cw-brief cw-panel" onSubmit={submit} noValidate>
+        <div className="cw-section-heading"><div><p className="cw-eyebrow">Creative request</p><h2 id={titleId}>New creative request</h2></div><button type="button" className="cw-text-button" onClick={dismiss} disabled={form.processing}>Close</button></div>
         <div className="cw-project-fields"><label>Project name *<input name="project" value={form.data.project} onChange={e => form.setData("project", e.target.value)} maxLength={160} placeholder="e.g. Study in New Zealand campaign" /></label><label>Deadline *<input type="date" name="deadline" value={form.data.deadline} onChange={e => form.setData("deadline", e.target.value)} /></label></div>
         <nav className="cw-steps" aria-label="Creative brief sections">{briefSections.map((section, i) => <button type="button" key={section.short} onClick={() => setStep(i)} aria-current={step === i ? "step" : undefined}><span>{String(i + 1).padStart(2, "0")}</span>{section.short}</button>)}</nav>
         {!!Object.keys(form.errors).length && <div className="cw-error-summary" role="alert">{Object.entries(form.errors).map(([key, value]) => <p key={key}>{value}</p>)}</div>}
@@ -45,5 +60,5 @@ export default function CreativeBriefForm({ owner, designTypes, onCancel }) {
         </section>)}
         <footer className="cw-form-footer"><p className="cw-muted">Section {step + 1} of 6 · * Required<br /><small>Assigned to {owner?.name || "Sharry"} after submission.</small></p><div className="cw-actions">{step > 0 && <button type="button" className="cw-button cw-secondary" onClick={() => setStep(step - 1)}><ArrowLeft size={16} /> Back</button>}<button type="submit" className="cw-button" disabled={form.processing || !owner}>{step === 5 ? <><Send size={16} /> {form.processing ? "Submitting…" : "Submit creative request"}</> : <>Next: {briefSections[step + 1].short}<ArrowRight size={16} /></>}</button></div></footer>
         {form.progress && <p role="status">Uploading {form.progress.percentage}%</p>}
-    </form>;
+    </form></dialog>;
 }
