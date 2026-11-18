@@ -22,7 +22,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const [folderId,setFolderId]=useState(String(filters.folder_id||''));
     const [registeredFrom,setRegisteredFrom]=useState(filters.registered_from||'');
     const [registeredTo,setRegisteredTo]=useState(filters.registered_to||'');
-    const [selected,setSelected]=useState(new Set());
+    const [selected,setSelected]=useState(()=>new Set(recipients.filter(row=>row.selected&&row.eligible).map(row=>row.id)));
     const [search,setSearch]=useState('');
     const [name,setName]=useState('');
     const [templateId,setTemplateId]=useState('');
@@ -48,7 +48,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const resetReview=()=>{setConfirmed(null);setSelected(new Set());};
     const toggleVisit=id=>{resetReview();setVisits(ids=>ids.includes(id)?ids.filter(v=>v!==id):[...ids,id]);};
     const toggle=id=>{setConfirmed(null);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
-    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose,list_id:listId,folder_id:folderId,registered_from:registeredFrom,registered_to:registeredTo,recipient_list_id:filters.recipient_list_id},{preserveState:false});
+    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose,list_id:listId,folder_id:folderId,registered_from:registeredFrom,registered_to:registeredTo,recipient_list_id:filters.recipient_list_id,...(filters.edit_members?{edit_members:1}:{})},{preserveState:false});
     const saveList=()=>{
         if(dirty||savingList||!listName.trim()) return;
         setSavingList(true);setListErrors({});
@@ -71,9 +71,11 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
         </header>
         <section className="space-y-4 rounded-xl border bg-white p-5">
             <h2 className="font-semibold">School visits</h2>
-            <label className="block text-sm">My event recipient lists<select aria-label="My event recipient lists" className={`${input} mt-1 w-full`} value={filters.recipient_list_id||''} onChange={event=>router.get(base,event.target.value?{recipient_list_id:event.target.value,load_saved_list:true,purpose}:{},{preserveState:false})}>
+            <label className="block text-sm">My event recipient lists<select aria-label="My event recipient lists" className={`${input} mt-1 w-full`} value={filters.recipient_list_id||''} onChange={event=>router.get(base,event.target.value?{recipient_list_id:event.target.value,load_saved_list:1,purpose}:{},{preserveState:false})}>
                 <option value="">Choose a saved event list</option>{recipientLists.map(list=><option key={list.id} value={list.id}>{list.name} · {list.mode==='smart'?'Smart':'Custom'}</option>)}
             </select></label>
+            {activeList?.mode==='custom'&&!filters.edit_members&&<button type="button" className="text-sm text-teal-700 underline" onClick={()=>router.get(base,{recipient_list_id:activeList.id,load_saved_list:1,edit_members:1,purpose},{preserveState:false})}>Edit list members</button>}
+            {filters.edit_members&&<p className="text-sm text-teal-800">Editing custom list members. Choose registrants below, then update the event list.</p>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-sm">Saved RSVP smart list<select aria-label="Saved RSVP smart list" value={listId} className={`${input} mt-1 w-full`} onChange={event=>{
                     resetReview();setListId(event.target.value);setFolderId('');

@@ -83,7 +83,7 @@ class EducationSchoolMailAudience
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.'),
                 'schools' => $matches->pluck('school')->unique()->values()->all(),
                 'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
-                'source_refs' => $group->pluck('ref')->values()->all(), 'context' => $first['context']];
+                'source_refs' => $group->pluck('ref')->values()->all(), 'member_refs' => $matches->pluck('ref')->values()->all(), 'context' => $first['context']];
         })->filter()->sortBy('name')->values();
     }
 

@@ -24,7 +24,7 @@ class EducationSchoolMailController extends Controller
 
     private function filters(Request $request, bool $required = false): array
     {
-        $request->validate(['recipient_list_id' => ['nullable', 'integer'], 'load_saved_list' => ['sometimes', 'boolean']]);
+        $request->validate(['recipient_list_id' => ['nullable', 'integer'], 'load_saved_list' => ['sometimes', 'boolean'], 'edit_members' => ['sometimes', 'boolean']]);
         $recipientList = $request->filled('recipient_list_id') ? EducationRecipientList::where('created_by', $request->user()->id)
             ->where('source', 'school')->findOrFail($request->input('recipient_list_id')) : null;
         if ($recipientList && $request->boolean('load_saved_list')) {
@@ -48,7 +48,11 @@ class EducationSchoolMailController extends Controller
         if ($recipientList) {
             $filters['recipient_list_id'] = $recipientList->id;
             if ($recipientList->mode === 'custom') {
-                $filters['member_refs'] = $recipientList->source_refs;
+                if ($request->boolean('edit_members')) {
+                    $filters['edit_members'] = 1;
+                } else {
+                    $filters['member_refs'] = $recipientList->source_refs;
+                }
             }
         }
 
@@ -60,10 +64,14 @@ class EducationSchoolMailController extends Controller
         $this->authorizeStaff($request);
         $filters = $request->has('audience') || $request->filled('recipient_list_id') ? $this->filters($request) + ['visit_ids' => []] : ['visit_ids' => [], 'audience' => 'registered', 'purpose' => 'email_follow_up'];
         $rows = empty($filters['visit_ids']) ? collect() : $audience->rows($filters);
+        $savedList = isset($filters['recipient_list_id']) ? EducationRecipientList::findOrFail($filters['recipient_list_id']) : null;
+        $savedRefs = collect($savedList?->source_refs ?? [])->map(fn ($ref) => $ref['type'].':'.$ref['id'])->flip();
 
         return inertia('portal/education/SchoolMail', [
             'visits' => EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->get()->map(fn ($v) => ['id' => $v->id, 'school' => $v->school, 'activity' => $v->activity, 'summary' => $v->summary()]),
-            'filters' => $filters, 'recipients' => $rows->map(fn ($r) => collect($r)->except(['source_refs', 'context'])->all()),
+            'filters' => $filters, 'recipients' => $rows->map(fn ($row) => collect($row)->except(['source_refs', 'member_refs', 'context'])->all() + [
+                'selected' => $row['eligible'] && collect($row['member_refs'])->contains(fn ($ref) => $savedRefs->has($ref['type'].':'.$ref['id'])),
+            ]),
             'audienceLists' => \App\Models\EducationRsvpSavedList::with('folder:id,name')->orderBy('name')->get(['id', 'name', 'folder_id', 'filters']),
             'audienceGroups' => \App\Models\EducationRsvpFolder::orderBy('name')->get(['id', 'name']),
             'recipientLists' => EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'school')->orderBy('name')->get(['id', 'name', 'mode']),
@@ -97,10 +105,10 @@ class EducationSchoolMailController extends Controller
             'recipient_keys' => ['exclude_unless:mode,custom', 'required', 'array', 'min:1', 'max:1000'],
             'recipient_keys.*' => ['string', 'size:64', 'distinct'],
         ]);
-        $refs = $data['mode'] === 'custom' ? $audience->selected($filters, $data['recipient_keys'])->pluck('source_refs')->flatten(1)->unique(fn ($ref) => $ref['type'].':'.$ref['id'])->values()->all() : [];
+        $refs = $data['mode'] === 'custom' ? $audience->selected($filters, $data['recipient_keys'])->pluck('member_refs')->flatten(1)->unique(fn ($ref) => $ref['type'].':'.$ref['id'])->values()->all() : [];
         try {
             $list->fill(['name' => $data['list_name'], 'mode' => $data['mode'],
-                'filters' => collect($filters)->except(['purpose', 'recipient_list_id', 'member_refs'])->all(), 'lead_ids' => [], 'source_refs' => $refs])->save();
+                'filters' => collect($filters)->except(['purpose', 'recipient_list_id', 'member_refs', 'edit_members'])->all(), 'lead_ids' => [], 'source_refs' => $refs])->save();
         } catch (\Illuminate\Database\UniqueConstraintViolationException $exception) {
             throw ValidationException::withMessages(['list_name' => 'You already have a recipient list with this name.']);
         }

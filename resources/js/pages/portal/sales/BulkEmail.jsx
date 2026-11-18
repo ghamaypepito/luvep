@@ -163,8 +163,9 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         }, isSms, filterNewLeads));
     }, [recipients, search, stage, eventId, registeredFrom, registeredTo, isSms, filterNewLeads]);
 
-    const selectionFollowsFilters = newLeadsOnly || (filterNewLeads && listMode === "smart");
+    const selectionFollowsFilters = newLeadsOnly || (filterNewLeads && Boolean(listId) && listMode === "smart");
     const visibleSelection = selectionFollowsFilters ? new Set(filtered.filter((r) => selected.has(r.id)).map((r) => r.id)) : selected;
+    const outsideFilterCount = visibleSelection.size - filtered.filter(recipient => visibleSelection.has(recipient.id)).length;
     const previewLead = recipients.find((r) => visibleSelection.has(r.id)) || filtered[0] || null;
 
     const toggle = (id) => setSelected((prev) => {
@@ -315,6 +316,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                         <button onClick={selectAllMatching} className="px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">Select all matching ({filtered.length})</button>
                         <button onClick={clearAll} className="px-2.5 py-1 rounded-md text-gray-500 hover:bg-gray-50 font-medium">Clear</button>
                     </div>
+                    {outsideFilterCount > 0 && <p className="text-xs text-gray-600">{outsideFilterCount} selected recipients are outside the current filters.</p>}
                     <ul className="max-h-72 overflow-y-auto divide-y divide-gray-50 -mx-2">
                         {filtered.length === 0 ? (
                             <li className="px-2 py-8 text-center text-sm text-gray-400">No leads match.</li>

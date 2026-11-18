@@ -112,6 +112,7 @@ const change=(node,value)=>act(async()=>{
     await click(button('Save event list'));
     assert.equal('recipient_keys' in posts.at(-1).data,false,'Event smart lists save rules without member snapshots');
     await change(document.querySelector('[aria-label="My event recipient lists"]'),'41');
-    assert.equal(posts.at(-1).method,'get');assert.equal(posts.at(-1).data.recipient_list_id,'41');assert.equal(posts.at(-1).data.load_saved_list,true);
+    assert.equal(posts.at(-1).method,'get');assert.equal(posts.at(-1).data.recipient_list_id,'41');
+    assert.equal(new URLSearchParams(posts.at(-1).data).get('load_saved_list'),'1','The query flag must pass Laravel boolean validation');
     await act(async()=>root.unmount());console.log('School visit audience, consent exclusions, review, payload and stale-filter behaviour verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});

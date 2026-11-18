@@ -37,6 +37,7 @@ class SchoolVisitMailTest extends TestCase
         $this->assertSame('Selected college', $row['context']['school']);
         $this->assertSame(['Selected college'], $row['schools']);
         $this->assertCount(2, $row['source_refs']);
+        $this->assertCount(1, $row['member_refs']);
         $this->assertTrue($row['eligible']);
     }
 
@@ -61,6 +62,20 @@ class SchoolVisitMailTest extends TestCase
             $this->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $list->id, 'load_saved_list' => true]))
                 ->assertOk()->assertInertia(fn ($page) => $page->has('recipients', $list->mode === 'custom' ? 1 : 2));
         }
+        $this->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $custom->id, 'load_saved_list' => 1, 'edit_members' => 1]))
+            ->assertOk()->assertInertia(fn ($page) => $page->has('recipients', 2)
+            ->where('recipients', function ($rows) {
+                $byEmail = collect($rows)->keyBy('email');
+
+                return $byEmail['alex@example.test']['selected'] === true && $byEmail['new-match@example.test']['selected'] === false;
+            }));
+        $this->post('/portal/education/school-mail/recipient-lists', $this->filters($visit) + [
+            'recipient_list_id' => $custom->id, 'edit_members' => 1, 'save_list_id' => $custom->id,
+            'list_name' => $custom->name, 'mode' => 'custom', 'recipient_keys' => $this->rows($this->filters($visit))->pluck('id')->all(),
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertCount(2, $custom->fresh()->source_refs);
+        $this->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $custom->id, 'load_saved_list' => 1]))
+            ->assertOk()->assertInertia(fn ($page) => $page->has('recipients', 2));
         $this->actingAs($this->staff())->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $custom->id, 'load_saved_list' => true]))->assertNotFound();
         Queue::assertNothingPushed();
     }

@@ -178,6 +178,14 @@ const chooseFiles = async files => {
     })));
     await change(document.querySelector('[aria-label="Saved recipient list"]'), "10");
     assert.match(document.body.textContent, /3 selected · 3 shown/, "Reopened smart lists include new matching leads");
+    await change(document.querySelector('[aria-label="Saved recipient list"]'), "");
+    await change(document.querySelector('[aria-label="Search recipients"]'), "range@example.test");
+    await click(button("Select all matching (1)"));
+    await change(document.querySelector('[aria-label="Search recipients"]'), "other@example.test");
+    await click(button("Select all matching (1)"));
+    await change(document.querySelector('input[placeholder="June re-engagement"]'), "Manual selections");
+    await click(button("Send · 2 leads"));
+    assert.deepEqual(posts.at(-1).data.recipient_lead_ids, [1, 2], "Ordinary campaigns preserve manual selections across searches");
     await act(async () => root.unmount());
     console.log("Education Compose templates, consecutive attachments, removal, retry and New Leads recipients verified");
 })().catch(error => { console.error(error); process.exitCode = 1; });
