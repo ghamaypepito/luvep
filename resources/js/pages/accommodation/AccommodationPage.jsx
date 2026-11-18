@@ -173,7 +173,6 @@ const Accommodation = ({ properties = [], bookingTimezone = 'Pacific/Auckland' }
               spaceBetween={24}
               slidesPerView={1.2}
               loop={true}
-              loopAdditionalSlides={4}
               speed={800}
               autoplay={{ delay: 2500, disableOnInteraction: false, pauseOnMouseEnter: true }}
               breakpoints={{

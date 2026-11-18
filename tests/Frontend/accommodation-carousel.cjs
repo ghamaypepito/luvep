@@ -23,7 +23,8 @@ loaded.require = name => externals.slice(2).includes(name) ? () => null : module
 loaded._compile(output, entry);
 const Page = loaded.exports.default;
 const root = createRoot(document.getElementById('root'));
-const properties = ['Harbour House', 'Central Studio', 'Garden Room'].map((name, i) => ({ id: i + 1, name, slug: `qa-property-${i + 1}`, suburb: ['Auckland', 'City', 'Garden'][i], room_type: 'Single', bed_type: 'Single', property_type: i === 1 ? 'Studio' : 'House', rental_mode: 'per_room', rent_single: 200 + i * 10, images: [] }));
+const allProperties = ['Harbour House', 'Central Studio', 'Garden Room', 'Quiet Apartment'].map((name, i) => ({ id: i + 1, name, slug: `qa-property-${i + 1}`, suburb: ['Auckland', 'City', 'Garden', 'Park'][i], room_type: 'Single', bed_type: 'Single', property_type: i === 1 ? 'Studio' : 'House', rental_mode: 'per_room', rent_single: 200 + i * 10, images: [] }));
+const properties = allProperties.slice(0, 3);
 const click = async name => act(async () => document.querySelector(`button[aria-label="${name}"]`).click());
 const finishTransition = async () => act(async () => document.querySelector('.swiper-wrapper').dispatchEvent(new Event('transitionend', { bubbles: true })));
 (async () => {
@@ -51,6 +52,21 @@ const finishTransition = async () => act(async () => document.querySelector('.sw
     const listings = [...document.querySelectorAll('h3')].map(el => el.textContent);
     assert.ok(listings.includes('Central Studio'));
     assert.ok(!listings.includes('Harbour House'));
+    for (const count of [1, 2, 4]) {
+        await act(async () => root.render(React.createElement(Page, { key: count, properties: allProperties.slice(0, count) })));
+        const instance = document.querySelector('.swiper').swiper;
+        assert.ok(instance.initialized);
+        assert.ok(instance.autoplay.running);
+        const initial = instance.realIndex;
+        if (count > 1) {
+            await click('Next'); await finishTransition();
+            assert.notEqual(instance.realIndex, initial, `${count} properties: Next advances`);
+            await click('Previous'); await finishTransition();
+            assert.equal(instance.realIndex, initial, `${count} properties: Previous returns to the starting slide`);
+        } else {
+            assert.equal(document.querySelector('button[aria-label="Next"]'), null);
+        }
+    }
     await act(async () => root.render(React.createElement(Page, { properties: [] })));
     assert.match(document.body.textContent, /No properties to show yet/);
     assert.equal(document.querySelector('.swiper'), null);
