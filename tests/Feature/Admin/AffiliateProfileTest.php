@@ -28,6 +28,7 @@ class AffiliateProfileTest extends TestCase
         $this->actingAs($admin)->get("/admin/agents/{$source->id}")->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('leads', 25)
                 ->where('leadsCount', 26)->where('convertedCount', 26)
+                ->where('statusCounts', fn ($rows) => collect($rows)->sum('count') === 26)
                 ->where('leadPagination.2.url', fn ($url) => str_contains($url, 'page=2'))
                 ->where('agent.referral.url', fn ($url) => str_contains($url, '/affiliate/register/')));
         $this->get("/admin/agents/{$source->id}?page=2")->assertOk()

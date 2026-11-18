@@ -29,7 +29,7 @@ export default function AgentShow({
     const [viewOpen, setViewOpen] = useState(false);
 
     // Same rule as the Sales agent-leads screen: everything not closed out.
-    const inPipeline = leads.filter((l) => l.status !== "Closed" && l.status !== "Not Qualified").length;
+    const inPipeline = statusCounts.filter((row) => row.status !== "Closed" && row.status !== "Not Qualified").reduce((total, row) => total + row.count, 0);
 
     const initials = (name = "") =>
         (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join("") || "?";
@@ -149,7 +149,7 @@ export default function AgentShow({
                                     </button>
                                 )}
                                 <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
-                                    <RefreshCw size={14} /> New version
+                                    <RefreshCw size={14} /> {agreement.is_draft ? "Edit draft" : "New version"}
                                 </button>
                             </>
                         )}
@@ -243,7 +243,7 @@ export default function AgentShow({
                     fieldGroups={agreementFieldGroups}
                     defaults={agreementDefaults}
                     previewBase={previewBase}
-                    isRegenerate={!! agreement}
+                    isRegenerate={!! agreement && ! agreement.is_draft}
                     draftId={agreement?.is_draft ? agreement.id : null}
                     expiresOn={agreement?.expires_on || ""}
                     onClose={() => setModalOpen(false)}
