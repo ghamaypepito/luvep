@@ -63,13 +63,10 @@ export default function DtrChanges({ mode, records = { data: [] }, entries = [],
     const history = mine ? acknowledgements.filter(a => a.dtr_entry_id === entry?.id) : acknowledgements;
     return <>
         <Head title="DTR changes · Luvep" />
-        <div className="hr-page-heading"><h1>{mine ? 'My DTR changes' : 'Team DTR changes'}</h1><p>{mine ? 'Update report details, see each change, and send the saved version to your Department Head.' : 'Acknowledge report changes and view your team’s daily-report history.'}</p></div>
         {mine ? <>
-            <section className="hr-panel">
-                <div className="hr-section-bar"><h2>Work report</h2><label className="hr-select-label">Work date<select value={entry?.id || ''} onChange={e => select(Number(e.target.value))}>{entries.map(e => <option key={e.id} value={e.id}>{e.work_date}</option>)}</select></label></div>
+            <section className="hr-dtr-report">
                 {entry ? <>
-                    <p className="hr-notice">Edits update report content immediately when saved. Attendance and its review status remain separate.</p>
-                    <Editor key={`${entry.id}:${entry.hr_version}`} entry={entry} locked={!!hr.preview} reportChanges sidebar={(draft, dirty, saving) => <SubmitChanges key={entry.hr_version} entry={entry} departmentHead={departmentHead} draft={draft} dirty={dirty} saving={saving} acknowledgements={acknowledgements} />} />
+                    <Editor heading={<div className="hr-section-bar"><h2>Work report</h2><label className="hr-select-label">Work date<select value={entry?.id || ''} onChange={e => select(Number(e.target.value))}>{entries.map(e => <option key={e.id} value={e.id}>{e.work_date}</option>)}</select></label></div>} key={`${entry.id}:${entry.hr_version}`} entry={entry} locked={!!hr.preview} reportChanges sidebar={(draft, dirty, saving) => <SubmitChanges key={entry.hr_version} entry={entry} departmentHead={departmentHead} draft={draft} dirty={dirty} saving={saving} acknowledgements={acknowledgements} />} />
                     {!hr.preview && <DtrHistory key={`${entry.id}:${entry.hr_version}:history`} entry={entry} />}
                 </> : <p>No time records yet. <Link className="hr-text-link" href={hrPath('/dtr')}>Open my time records</Link> to begin.</p>}
             </section>

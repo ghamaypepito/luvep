@@ -1,10 +1,11 @@
-import { usePage } from "@inertiajs/react";
+import { Link, usePage } from "@inertiajs/react";
 import { ChevronDown, UserRound, Eye } from "lucide-react";
 
 export default function ProfileMenu() {
     const { auth, hr } = usePage().props;
     const user = auth?.user;
     if (!hr?.enabled) return null;
+    const ProfileLink = new URL(hr.url, window.location.href).origin === window.location.origin ? Link : "a";
     return (
         <details className="hr-profile-menu">
             <summary
@@ -20,13 +21,13 @@ export default function ProfileMenu() {
                 <ChevronDown size={16} />
             </summary>
             <div className="hr-dropdown">
-                <a href={`${hr.url}profile`}>
+                <ProfileLink href={`${hr.url}profile`}>
                     <UserRound size={16} /> My Info
-                </a>
+                </ProfileLink>
                 {hr.permissions?.preview && (
-                    <a href={`${hr.url}preview`}>
+                    <ProfileLink href={`${hr.url}preview`}>
                         <Eye size={16} /> Login as employee
-                    </a>
+                    </ProfileLink>
                 )}
             </div>
         </details>

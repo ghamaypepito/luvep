@@ -36,3 +36,16 @@ assert.match(html, /href="https:\/\/luvep.com"/);
 assert.match(html, /Back to Luvep/);
 assert.doesNotMatch(html, /data-inertia/);
 console.log('HR Admin return and cross-origin navigation tests passed');
+
+let hrProps = {enabled:true,url:'https://hr.luvep.com/',permissions:{preview:true}};
+const profileSource=buildSync({entryPoints:['resources/js/components/hr/ProfileMenu.jsx'],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:['react','@inertiajs/react']}).outputFiles[0].text;
+const profileModule=new Module(path.resolve('hr-profile-menu-test.cjs'),module);
+profileModule.filename=path.resolve('hr-profile-menu-test.cjs');profileModule.paths=module.paths;
+profileModule.require=name=>name==='@inertiajs/react'?{usePage:()=>({props:{hr:hrProps,auth:{user:{name:'Alex'}}}}),Link:({children,...props})=>React.createElement('a',{...props,'data-inertia':'true'},children)}:module.require(name);
+profileModule._compile(profileSource,profileModule.filename);
+html=renderToStaticMarkup(React.createElement(profileModule.exports.default));
+assert.equal((html.match(/data-inertia="true"/g)||[]).length,2,'Both internal profile routes preserve the clock provider');
+hrProps={...hrProps,url:'https://luvep.com/portal/hr/'};
+html=renderToStaticMarkup(React.createElement(profileModule.exports.default));
+assert.doesNotMatch(html,/data-inertia/,'Cross-origin profile navigation keeps normal links');
+console.log('HR profile navigation preserves the clock session on same-origin routes.');
