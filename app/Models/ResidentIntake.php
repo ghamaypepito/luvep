@@ -11,6 +11,7 @@ class ResidentIntake extends Model
     use LogsActivity;
 
     protected $fillable = [
+        'vif_answers',
         'intake_id',
         'payment_status',
         'payment_session_id',
@@ -67,6 +68,7 @@ class ResidentIntake extends Model
     ];
 
     protected $casts = [
+        'vif_answers' => 'array',
         'dob' => 'date',
         'passport_expiry' => 'date',
         'current_visa_expiry' => 'date',

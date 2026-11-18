@@ -50,6 +50,7 @@ class ResidentIntakeController extends Controller
     private function intakeRules(bool $requireTerms = true): array
     {
         return [
+            ...\App\Support\VifSupplement::rules('resident'),
             'terms_accepted' => ($requireTerms ? 'required|accepted' : 'nullable|boolean'),
 
             'first_name' => 'required|string|max:255',

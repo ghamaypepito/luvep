@@ -94,6 +94,7 @@ class FamilyIntakeController extends Controller
         $yn = 'nullable|string|max:10';
 
         return [
+            ...\App\Support\VifSupplement::rules('family'),
             // Shared document-tab rules (passport, visa copies, files, …).
             ...$this->intakeDocumentRules(),
             // A — Identity

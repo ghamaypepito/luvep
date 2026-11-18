@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import React, { useState, useEffect, useRef } from 'react';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import {
@@ -145,6 +146,7 @@ const freshDocumentFiles = () => ({
 });
 
 const FORM_DEFAULTS = {
+    vif_answers: {},
     terms_accepted: false,
     // Personal
     first_name: '',
@@ -255,6 +257,7 @@ function loadDraftStep() {
 function editIntakeToFormData(intake) {
     if (!intake) return null;
     return {
+        vif_answers: intake.vif_answers || {},
         terms_accepted: true,
         first_name: intake.first_name || '',
         last_name: intake.last_name || '',
@@ -759,7 +762,7 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
                                             {step === 6 && <StepExperience data={data} setData={setData} errors={localErrors} />}
                                             {step === 7 && <StepEnglishFamily data={data} setData={setData} errors={localErrors} />}
                                             {step === 8 && <StepDocuments data={data} setData={setData} docChecked={docChecked} docTotal={docTotal} />}
-                                            {step === 9 && <StepDisclosures data={data} setData={setData} errors={localErrors} />}
+                                            {step === 9 && <><VifSupplementFields type="resident" values={data} onChange={setData} errors={localErrors} /><StepDisclosures data={data} setData={setData} errors={localErrors} /></>}
                                         </motion.div>
                                     </AnimatePresence>
                                 </div>

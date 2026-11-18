@@ -88,6 +88,7 @@ class VisitorIntakeController extends Controller
     private function rules(): array
     {
         return [
+            ...\App\Support\VifSupplement::rules('visitor'),
             // Shared document-tab rules (passport, visa copies, files, …).
             ...$this->intakeDocumentRules(),
             'family_name' => 'required|string|max:255',
