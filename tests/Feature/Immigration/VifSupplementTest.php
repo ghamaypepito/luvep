@@ -154,6 +154,9 @@ class VifSupplementTest extends TestCase
         $document = LeadDocument::where('lead_id', $lead->id)->where('source_variant', 'vif')->firstOrFail();
         $oldPath = $document->file_path;
         $document->update(['status' => LeadDocument::STATUS_APPROVED, 'reviewed_by' => $staff->id, 'reviewed_at' => now()]);
+        $this->actingAs($staff)->patchJson("/portal/immigration/intakes/work/{$intake->id}", ['fields' => ['vif_answers' => []]])->assertOk();
+        $this->assertSame(LeadDocument::STATUS_APPROVED, $document->refresh()->status);
+        $this->assertSame($oldPath, $document->file_path);
         $this->actingAs($staff)->patchJson("/portal/immigration/intakes/work/{$intake->id}", ['fields' => ['vif_answers' => ['middle_name' => 'Staff confirmed synthetic name']]])->assertOk();
         $this->assertSame(LeadDocument::STATUS_CHECKED, $document->refresh()->status);
         $this->assertNull($document->reviewed_by);

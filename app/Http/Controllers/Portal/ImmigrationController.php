@@ -3354,6 +3354,7 @@ class ImmigrationController extends Controller
         $allowed = collect($this->intakeSectionSchema($type))->flatten()->filter()->all();
         $allowed = array_merge($allowed, \App\Support\VifSupplement::rootKeys($type), ['vif_answers']);
         $attrs = $intake->getAttributes();
+        $beforeVif = \App\Support\VifSupplement::values($intake, $type);
 
         $changed = false;
         foreach ((array) $data['fields'] as $key => $val) {
@@ -3368,10 +3369,11 @@ class ImmigrationController extends Controller
         }
 
         if ($changed) {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data, $beforeVif) {
                 $intake->save();
                 $additionalKeys = array_merge(['vif_answers'], \App\Support\VifSupplement::rootKeys($type));
-                if (array_intersect(array_keys($data['fields']), $additionalKeys)) {
+                if (array_intersect(array_keys($data['fields']), $additionalKeys)
+                    && $beforeVif != \App\Support\VifSupplement::values($intake, $type)) {
                     app(\App\Http\Controllers\LeadPortalController::class)->refreshStoredVifForIntake($type, $intake);
                 }
             });

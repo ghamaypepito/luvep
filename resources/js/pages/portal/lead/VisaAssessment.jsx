@@ -126,6 +126,7 @@ function AssessmentEditor({ assessment }) {
     const sections = ASSESSMENT_SECTIONS[assessment.type] || [];
     const [values, setValues] = useState(assessment.values || {});
     const [saving, setSaving] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
     const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
     const save = () => {
