@@ -2,7 +2,7 @@ import DtrHistory from "@/components/hr/DtrHistory";
 import AssignedCreativeWork from "@/components/creative/AssignedCreativeWork";
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm, usePage, router } from "@inertiajs/react";
-import { useState, useEffect } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, useEffect } from "react";
 export const duration = (seconds) =>
     `${Math.floor((seconds || 0) / 3600)}h ${Math.floor(((seconds || 0) % 3600) / 60)}m`;
 export function Errors({ errors }) {
@@ -90,8 +90,11 @@ export function RecordDetails({ entry }) {
         </>
     );
 }
-export function Editor({ entry, locked, reportChanges = false, sidebar }) {
+export const Editor = forwardRef(function Editor({ entry, locked, reportChanges = false, sidebar }, ref) {
     const [editing, setEditing] = useState(reportChanges);
+    const [addNotice, setAddNotice] = useState("");
+    const container = useRef(null);
+    const focusIndex = useRef(null);
     const form = useForm({
         work_date: entry.work_date,
         expected_version: entry.hr_version,
@@ -116,6 +119,35 @@ export function Editor({ entry, locked, reportChanges = false, sidebar }) {
         declaration: false,
     });
     const editable = !locked && (reportChanges ? entry.can_change_report : ["draft", "returned"].includes(entry.hr_status));
+    function focusTask(index) {
+        const field = container.current?.querySelectorAll(".hr-task-editor textarea")[index];
+        field?.focus();
+        field?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    useLayoutEffect(() => {
+        if (focusIndex.current !== null) {
+            focusTask(focusIndex.current);
+            focusIndex.current = null;
+        }
+    });
+    useImperativeHandle(ref, () => ({
+        addCreativeRequest(request) {
+            if (!editable) return;
+            if (form.processing || declaration.processing) {
+                setAddNotice("This daily record is being saved or submitted. Please wait, then add the request.");
+                return;
+            }
+            setAddNotice("");
+            const existing = form.data.tasks.findIndex(task => task.reference === request.request_ref);
+            if (existing >= 0 && editing) { focusTask(existing); return; }
+            focusIndex.current = existing >= 0 ? existing : form.data.tasks.length;
+            setEditing(true);
+            if (existing < 0) form.setData("tasks", [...form.data.tasks, {
+                task: request.title, reference: request.request_ref,
+                category: "other", status: "todo", start: "", end: "",
+            }]);
+        },
+    }));
     const updateTask = (index, key, value) =>
         form.setData(
             "tasks",
@@ -125,7 +157,8 @@ export function Editor({ entry, locked, reportChanges = false, sidebar }) {
         );
     if (!editable) return <RecordDetails entry={entry} />;
     return (
-        <div className={reportChanges ? "hr-dtr-edit-grid" : undefined}><div>
+        <div ref={container} className={reportChanges ? "hr-dtr-edit-grid" : undefined}><div>
+            {addNotice && <p className="hr-notice" role="status">{addNotice}</p>}
             {entry.review_comment && (
                 <p role="status">
                     <strong>Reviewer feedback:</strong> {entry.review_comment}
@@ -380,9 +413,10 @@ export function Editor({ entry, locked, reportChanges = false, sidebar }) {
             </form>}
         </div>{sidebar?.(form.data, form.isDirty, form.processing)}</div>
     );
-}
+});
 export default function Dtr({ entries, weeks, today, date_filter, creativeRequests = [] }) {
     const { hr } = usePage().props;
+    const editor = useRef(null);
     useEffect(() => {
         const changed = () => router.reload({ only: ["entries", "today"] });
         window.addEventListener("hr-clock-changed", changed);
@@ -399,7 +433,7 @@ export default function Dtr({ entries, weeks, today, date_filter, creativeReques
                 <h1>My time records</h1>
                 <p>Your attendance, work and review history in one place.</p>
             </div>
-            <AssignedCreativeWork requests={creativeRequests} preview={!!hr.preview} />
+            <AssignedCreativeWork requests={creativeRequests} preview={!!hr.preview} onAddToRecord={!hr.preview && entry?.can_edit && ["draft", "returned"].includes(entry.hr_status) ? request => editor.current?.addCreativeRequest(request) : undefined} />
             <section className="hr-panel">
                 <div className="hr-section-bar">
                     <h2>Daily record</h2>
@@ -440,6 +474,7 @@ export default function Dtr({ entries, weeks, today, date_filter, creativeReques
                         </div>
                         <p className="hr-notice">Report date: <strong>{entry.work_date}</strong>. Work-report edits are logged for your direct head. Clock changes use the reviewed correction process.</p>
                         <Editor
+                            ref={editor}
                             key={`${entry.id}:${entry.hr_version}`}
                             entry={entry}
                             locked={!!hr.preview || !entry.can_edit}
