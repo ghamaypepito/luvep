@@ -90,7 +90,7 @@ export function RecordDetails({ entry }) {
         </>
     );
 }
-export const Editor = forwardRef(function Editor({ entry, locked, reportChanges = false, sidebar }, ref) {
+export const Editor = forwardRef(function Editor({ entry, locked, reportChanges = false, sidebar, heading }, ref) {
     const [editing, setEditing] = useState(reportChanges);
     const [addNotice, setAddNotice] = useState("");
     const container = useRef(null);
@@ -155,9 +155,15 @@ export const Editor = forwardRef(function Editor({ entry, locked, reportChanges 
                 i === index ? { ...t, [key]: value } : t,
             ),
         );
-    if (!editable) return <RecordDetails entry={entry} />;
+    if (!editable) return heading ? (
+        <div className="hr-panel hr-report-editor">
+            {heading}
+            <RecordDetails entry={entry} />
+        </div>
+    ) : <RecordDetails entry={entry} />;
     return (
-        <div ref={container} className={reportChanges ? "hr-dtr-edit-grid" : undefined}><div>
+        <div ref={container} className={reportChanges ? "hr-dtr-edit-grid" : undefined}><div className={reportChanges ? "hr-panel hr-report-editor" : undefined}>
+            {heading}
             {addNotice && <p className="hr-notice" role="status">{addNotice}</p>}
             {entry.review_comment && (
                 <p role="status">

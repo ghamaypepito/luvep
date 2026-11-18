@@ -1,7 +1,6 @@
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
-import MyInfoTabs from "@/components/hr/MyInfoTabs";
 function Return({ item }) {
     const form = useForm({ version: item.version, condition: "" });
     return (
@@ -52,7 +51,6 @@ export default function Equipment({ items, history, employees, scope, canAddOwn 
     return (
         <>
             <Head title="Equipment · Luvep" />
-            {scope === "mine" && <MyInfoTabs />}
             <div className="hr-page-heading">
                 <h1>Equipment</h1>
                 <p>
