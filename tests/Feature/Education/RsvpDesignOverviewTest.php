@@ -36,13 +36,18 @@ class RsvpDesignOverviewTest extends TestCase
             ->assertViewHas('attendanceOverview', fn ($overview) => (int) $overview->total === 3 && (int) $overview->attended === 1)
             ->assertViewHas('rsvps', fn ($records) => $records->total() === 1)
             ->assertSee('Event workspace')
-            ->assertSee('/education-ui/education.css', false);
+            ->assertSee('/education-ui/education.css', false)
+            ->assertSee('/education-ui/theme.js', false)
+            ->assertSee('role="switch"', false);
     }
 
     public function test_both_public_forms_load_the_shared_design(): void
     {
         foreach (['register', 'rsvp'] as $page) {
-            $this->get('/education/'.$page)->assertOk()->assertSee('/education-ui/education.css', false);
+            $this->get('/education/'.$page)->assertOk()
+                ->assertSee('/education-ui/education.css', false)
+                ->assertSee('/education-ui/theme.js', false)
+                ->assertSee('role="switch"', false);
         }
     }
 }
