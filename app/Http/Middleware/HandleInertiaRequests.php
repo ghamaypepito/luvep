@@ -35,6 +35,10 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if ($request->routeIs('affiliate.apply*', 'affiliate.application.*')) {
+            return parent::share($request);
+        }
+
         if (config('hr.enabled') && str_starts_with($request->route()?->getName() ?? '', 'hr.')) {
             $context = app(\App\Services\Hr\HrContext::class);
             $hr = $context->props($request);

@@ -549,6 +549,11 @@ class User extends Authenticatable
         return $this->belongsTo(Lead::class);
     }
 
+    public function affiliateApplication()
+    {
+        return $this->hasOne(AffiliateApplication::class);
+    }
+
     /** Leads this user recruited (role='agent'); drives the Agent portal. */
     public function agentLeads()
     {

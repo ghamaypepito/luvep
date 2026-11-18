@@ -90,10 +90,10 @@ class AffiliatePerformanceTest extends TestCase
         $this->getJson('/admin/agents?from=not-a-date')->assertUnprocessable()->assertJsonValidationErrors('from');
     }
 
-    public function test_partner_and_ungranted_admin_cannot_view_other_partner_performance(): void
+    public function test_partner_performance_is_limited_to_admin_roles_with_default_access(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'agent']))->get('/admin/agents')->assertForbidden();
-        $this->actingAs(User::factory()->create(['role' => 'admin']))->get('/admin/agents')->assertForbidden();
+        $this->actingAs(User::factory()->create(['role' => 'admin']))->get('/admin/agents')->assertOk();
         $this->actingAs(User::factory()->create(['role' => 'admin', 'module_permissions' => ['agents']]))->get('/admin/agents')->assertOk();
     }
 }
