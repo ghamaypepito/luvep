@@ -61,7 +61,7 @@ class AgentController extends Controller
         // one automatically.
         $agent = Auth::user();
         $code = $agent?->ensureReferralCode();
-        $referralUrl = $code ? url('/register?ref='.$code) : null;
+        $referralUrl = $code ? route('affiliate.registration', ['code' => $code]) : null;
 
         return inertia('portal/agent/Dashboard', [
             'stats' => [
@@ -177,7 +177,7 @@ class AgentController extends Controller
             'user' => $me?->only(['id', 'name', 'email', 'role', 'phone']),
             'referral' => $code ? [
                 'code' => $code,
-                'url' => url('/register?ref='.$code),
+                'url' => route('affiliate.registration', ['code' => $code]),
             ] : null,
         ]);
     }

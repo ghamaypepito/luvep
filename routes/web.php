@@ -435,6 +435,10 @@ Route::middleware(['throttle:tracker'])->group(function () {
     Route::get('/application/{preScreening}/uploads/{doc}', [$clientApp, 'streamUpload'])->name('application.upload.stream');
 });
 
+// Affiliate referrals use their own form and never enter the event funnel.
+Route::get('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'show'])->middleware('throttle:60,1')->name('affiliate.registration');
+Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'store'])->middleware('throttle:10,1')->name('affiliate.registration.store');
+
 // Public Registration & Assessment Routes
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the

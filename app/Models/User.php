@@ -563,32 +563,37 @@ class User extends Authenticatable
 
     /**
      * Ensure this agent has a public referral code + return it. Idempotent —
-     * generates a unique "AGT-XXXXXX" on first call, then returns the stored
+     * generates a unique "AGT-..." on first call, then returns the stored
      * value on every call after. No-op for non-agent roles (returns null).
      *
-     * Used by the Agent portal to build the /register?ref=CODE link the
+     * Used by the Affiliate Partner portal to build the referral link the
      * agent shares with prospective leads. When a lead submits through that
      * link the storeRegistration handler resolves the code back to this
      * user id and stamps it on Lead.agent_id.
      */
     public function ensureReferralCode(): ?string
     {
-        if ($this->role !== 'agent') {
+        if ($this->role !== 'agent' || ! $this->exists) {
             return null;
         }
-        if ($this->referral_code) {
-            return $this->referral_code;
-        }
 
-        for ($i = 0; $i < 5; $i++) {
-            $candidate = 'AGT-'.strtoupper(\Illuminate\Support\Str::random(6));
-            if (! self::where('referral_code', $candidate)->exists()) {
-                $this->forceFill(['referral_code' => $candidate])->save();
-
-                return $candidate;
+        $code = \Illuminate\Support\Facades\DB::transaction(function () {
+            $partner = self::whereKey($this->id)->where('role', 'agent')->where('is_active', true)->lockForUpdate()->first();
+            if (! $partner) {
+                return null;
             }
-        }
+            if ($partner->referral_code) {
+                return $partner->referral_code;
+            }
+            do {
+                $candidate = 'AGT-'.strtoupper(\Illuminate\Support\Str::random(16));
+            } while (self::withTrashed()->where('referral_code', $candidate)->exists());
+            $partner->forceFill(['referral_code' => $candidate])->save();
 
-        return null;
+            return $candidate;
+        });
+        $this->referral_code = $code;
+
+        return $code;
     }
 }
