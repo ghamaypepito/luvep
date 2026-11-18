@@ -13,10 +13,14 @@ const fill=(value,context,html=false)=>String(value||'').replace(/\{\{[ \t\r\n\f
 export default function SchoolMail(props) {
     return <SchoolMailForm key={JSON.stringify(props.filters)} {...props} />;
 }
-function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[]}) {
+function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[],audienceLists=[],audienceGroups=[]}) {
     const [visitIds,setVisits]=useState(filters.visit_ids.map(String));
     const [audience,setAudience]=useState(filters.audience);
     const [purpose,setPurpose]=useState(filters.purpose);
+    const [listId,setListId]=useState(String(filters.list_id||''));
+    const [folderId,setFolderId]=useState(String(filters.folder_id||''));
+    const [registeredFrom,setRegisteredFrom]=useState(filters.registered_from||'');
+    const [registeredTo,setRegisteredTo]=useState(filters.registered_to||'');
     const [selected,setSelected]=useState(new Set());
     const [search,setSearch]=useState('');
     const [name,setName]=useState('');
@@ -25,7 +29,8 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const [sending,setSending]=useState(false);
     const [errors,setErrors]=useState({});
     const [submissionId]=useState(()=>crypto.randomUUID());
-    const dirty=JSON.stringify(visitIds)!==JSON.stringify(filters.visit_ids.map(String)) || audience!==filters.audience || purpose!==filters.purpose;
+    const dirty=JSON.stringify(visitIds)!==JSON.stringify(filters.visit_ids.map(String)) || audience!==filters.audience || purpose!==filters.purpose
+        || listId!==String(filters.list_id||'') || folderId!==String(filters.folder_id||'') || registeredFrom!==(filters.registered_from||'') || registeredTo!==(filters.registered_to||'');
     const rows=useMemo(()=>recipients.filter(r=>`${r.name} ${r.email}`.toLowerCase().includes(search.toLowerCase())),[recipients,search]);
     const chosen=recipients.filter(r=>r.eligible && selected.has(r.id));
     const template=templates.find(t=>String(t.id)===templateId);
@@ -37,7 +42,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const resetReview=()=>{setConfirmed(null);setSelected(new Set());};
     const toggleVisit=id=>{resetReview();setVisits(ids=>ids.includes(id)?ids.filter(v=>v!==id):[...ids,id]);};
     const toggle=id=>{setConfirmed(null);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
-    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose},{preserveState:false});
+    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose,list_id:listId,folder_id:folderId,registered_from:registeredFrom,registered_to:registeredTo},{preserveState:false});
     const send=()=>{
         if (!confirmed||dirty||sending||!chosen.length||!template||!name.trim()) return;
         setSending(true);setErrors({});
@@ -53,10 +58,24 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
         </header>
         <section className="space-y-4 rounded-xl border bg-white p-5">
             <h2 className="font-semibold">School visits</h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-sm">Saved RSVP smart list<select aria-label="Saved RSVP smart list" value={listId} className={`${input} mt-1 w-full`} onChange={event=>{
+                    resetReview();setListId(event.target.value);setFolderId('');
+                    const saved=audienceLists.find(list=>String(list.id)===event.target.value);
+                    if(saved?.filters?.visit_id) setVisits([String(saved.filters.visit_id)]);
+                }}><option value="">All matching registrations</option>{audienceLists.map(list=><option key={list.id} value={list.id}>{list.folder?.name} / {list.name}</option>)}</select></label>
+                <label className="text-sm">Custom attendee group<select aria-label="Custom attendee group" value={folderId} className={`${input} mt-1 w-full`} onChange={event=>{resetReview();setFolderId(event.target.value);setListId('');}}>
+                    <option value="">All attendees</option>{audienceGroups.map(group=><option key={group.id} value={group.id}>{group.name}</option>)}
+                </select></label>
+                <label className="text-sm">Registered from<input aria-label="School registered from" type="date" value={registeredFrom} className={`${input} mt-1 w-full`} onChange={event=>{resetReview();setRegisteredFrom(event.target.value);}} /></label>
+                <label className="text-sm">Registered through<input aria-label="School registered through" type="date" min={registeredFrom} value={registeredTo} className={`${input} mt-1 w-full`} onChange={event=>{resetReview();setRegisteredTo(event.target.value);}} /></label>
+            </div>
+            <p className="text-sm text-gray-600">Registration dates use Asia/Manila. Saved RSVP lists and groups select matching RSVP addresses within the chosen visits.</p>
+            <a href="/portal/education/rsvps#attendance" className="inline-block text-sm text-teal-700 underline">Create or edit event smart lists and custom attendee groups</a>
             <p className="text-sm text-gray-600">Select the exact visit or visits for Jose Maria College, Tagum, or another school. Different activities at the same school remain separate.</p>
             <div className="max-h-64 overflow-y-auto space-y-2">{visits.map(v=><label key={v.id} className="flex items-start gap-3">
                 <input type="checkbox" checked={visitIds.includes(String(v.id))} onChange={()=>toggleVisit(String(v.id))} />
-                <span>{v.school}<small className="block text-gray-500">{v.activity} ∑ {v.summary}</small></span>
+                <span>{v.school}<small className="block text-gray-500">{v.activity} ¬∑ {v.summary}</small></span>
             </label>)}</div>
             <div className="flex flex-wrap gap-3">
                 <label>Audience <select aria-label="Audience" className={input} value={audience} onChange={e=>{resetReview();setAudience(e.target.value);}}>
@@ -67,12 +86,12 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 </select></label>
                 <button className="rounded-lg bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!visitIds.length||visitIds.length>20} onClick={load}>Load recipients</button>
             </div>
-            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. ìRecorded attendedî does not independently verify physical attendance. RSVP email addresses must be verified. Programme registrations need a confirmed email choice or a matching verified RSVP. Missing or conflicting permissions remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
+            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. ‚ÄúRecorded attended‚Äù does not independently verify physical attendance. RSVP email addresses must be verified. Programme registrations need a confirmed email choice or a matching verified RSVP. Missing or conflicting permissions remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
         </section>
         {dirty&&<p role="alert" className="text-amber-800">Filters changed. Load recipients again before reviewing or sending.</p>}
         {!dirty&&<>
             <section className="space-y-3 rounded-xl border bg-white p-5">
-                <h2 className="font-semibold">Recipients: {chosen.length} selected ∑ {recipients.filter(r=>r.eligible).length} eligible ∑ {recipients.length} unique addresses</h2>
+                <h2 className="font-semibold">Recipients: {chosen.length} selected ¬∑ {recipients.filter(r=>r.eligible).length} eligible ¬∑ {recipients.length} unique addresses</h2>
                 <input aria-label="Search recipients" placeholder="Search name or email" className={input} value={search} onChange={e=>setSearch(e.target.value)} />
                 <button className="ml-3 underline" onClick={()=>{setConfirmed(null);setSelected(new Set(rows.filter(r=>r.eligible).map(r=>r.id)));}}>Select eligible matches</button>
                 <button className="ml-3 underline" onClick={resetReview}>Clear selection</button>
@@ -80,7 +99,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 {chosen.length>0&&<p className="text-sm">Selected: {chosen.map(r=>`${r.name} (${r.email})`).join(', ')}</p>}
                 <ul className="max-h-80 overflow-y-auto divide-y">{rows.map(r=><li key={r.id} className="py-3"><label className="flex gap-3">
                     <input type="checkbox" disabled={!r.eligible} checked={selected.has(r.id)} onChange={()=>toggle(r.id)} />
-                    <span>{r.name} ∑ {r.email}<small className="block text-gray-600">{r.schools.join(', ')} ∑ {r.attendance}</small>
+                    <span>{r.name} ¬∑ {r.email}<small className="block text-gray-600">{r.schools.join(', ')} ¬∑ {r.attendance}</small>
                         {!r.eligible&&<small className="block text-amber-800">{r.reason}</small>}</span>
                 </label></li>)}</ul>
                 {!rows.length&&<p>No registrations match these visits and filters. Do not select a general event as a substitute.</p>}
@@ -100,14 +119,14 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 <label className="flex gap-3"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked?template?.review:null)} />
                     <span>I reviewed the selected visits, email purpose, recipients and message.</span></label>
                 {Object.keys(errors).length>0&&<div role="alert" className="text-red-700">{Object.values(errors).join(' ')}</div>}
-                <button disabled={!confirmed||!chosen.length||chosen.length>1000||!template||!name.trim()||sending} onClick={send} className="rounded-lg bg-teal-800 px-5 py-3 text-white disabled:opacity-50">{sending?'QueueingÖ':`Queue ${chosen.length} emails`}</button>
+                <button disabled={!confirmed||!chosen.length||chosen.length>1000||!template||!name.trim()||sending} onClick={send} className="rounded-lg bg-teal-800 px-5 py-3 text-white disabled:opacity-50">{sending?'Queueing‚Ä¶':`Queue ${chosen.length} emails`}</button>
                 {chosen.length>1000&&<p role="alert">Select at most 1,000 addresses per mailing.</p>}
             </section>
         </>}
         <section className="space-y-4"><h2 className="text-xl font-semibold">School mailing history</h2>
-            <p className="text-sm text-gray-600">Refresh to see worker results. ìSentî means the configured mail transport accepted the message. Inbox delivery is not guaranteed. Failed or uncertain deliveries need review before resending.</p>
-            {mailings.map(m=><details key={m.id} className="rounded-xl border bg-white p-4"><summary>{m.name} ∑ {new Date(m.created_at).toLocaleString()} ∑ {Object.entries(m.counts).map(([key,value])=>`${key}: ${value}`).join(', ')}</summary>
-                <ul className="mt-3 space-y-2">{m.recipients.map((r,i)=><li key={i}>{r.name} ∑ {r.email} ∑ {r.status}{r.detail&&<small className="block text-gray-600">{r.detail}</small>}</li>)}</ul>
+            <p className="text-sm text-gray-600">Refresh to see worker results. ‚ÄúSent‚Äù means the configured mail transport accepted the message. Inbox delivery is not guaranteed. Failed or uncertain deliveries need review before resending.</p>
+            {mailings.map(m=><details key={m.id} className="rounded-xl border bg-white p-4"><summary>{m.name} ¬∑ {new Date(m.created_at).toLocaleString()} ¬∑ {Object.entries(m.counts).map(([key,value])=>`${key}: ${value}`).join(', ')}</summary>
+                <ul className="mt-3 space-y-2">{m.recipients.map((r,i)=><li key={i}>{r.name} ¬∑ {r.email} ¬∑ {r.status}{r.detail&&<small className="block text-gray-600">{r.detail}</small>}</li>)}</ul>
             </details>)}
         </section>
     </main>;

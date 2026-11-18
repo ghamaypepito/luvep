@@ -16,6 +16,15 @@ function recipientStage(recipient, filterNewLeads) {
     return recipient.status;
 }
 
+function matchesRecipient(recipient, filters, isSms, filterNewLeads) {
+    const search = (filters.search || "").trim().toLowerCase();
+    if (filters.event_id && String(recipient.event_id) !== String(filters.event_id)) return false;
+    if (filters.stage && recipientStage(recipient, filterNewLeads) !== filters.stage) return false;
+    if (filters.registered_from && (!recipient.registered_on || recipient.registered_on < filters.registered_from)) return false;
+    if (filters.registered_to && (!recipient.registered_on || recipient.registered_on > filters.registered_to)) return false;
+    return !search || `${recipient.name} ${(isSms ? recipient.phone : recipient.email) || ""}`.toLowerCase().includes(search);
+}
+
 const STATUS_CHIP = {
     scheduled: "bg-amber-50 text-amber-700",
     sending: "bg-blue-50 text-blue-700",
@@ -59,7 +68,7 @@ function fillPreview(text, lead, selectedEvent, escapeValues = false) {
     });
 }
 
-export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [], filterNewLeads = false }) {
+export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [], filterNewLeads = false, recipientLists = [] }) {
     const [tab, setTab] = useState("compose");
     const isSms = channel === "sms";
 
@@ -99,20 +108,27 @@ export default function SalesBulkEmail({ templates = [], recipients = [], campai
                 ))}
             </div>
 
-            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} filterNewLeads={filterNewLeads} />}
+            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} filterNewLeads={filterNewLeads} recipientLists={recipientLists} />}
             {tab === "scheduled" && <CampaignTable rows={scheduled} empty="No scheduled campaigns." showCancel basePath={basePath} />}
             {tab === "history" && <CampaignTable rows={history} empty="No campaigns sent yet." basePath={basePath} />}
         </div>
     );
 }
 
-function Compose({ templates, recipients, basePath, isSms = false, events = [], filterNewLeads }) {
+function Compose({ templates, recipients, basePath, isSms = false, events = [], filterNewLeads, recipientLists }) {
     const [name, setName] = useState("");
     const [templateId, setTemplateId] = useState(templates[0]?.id ? String(templates[0].id) : "");
     const [selected, setSelected] = useState(() => new Set());
     const [search, setSearch] = useState("");
     const [stage, setStage] = useState("");
     const [eventId, setEventId] = useState("");
+    const [registeredFrom, setRegisteredFrom] = useState("");
+    const [registeredTo, setRegisteredTo] = useState("");
+    const [listId, setListId] = useState("");
+    const [listName, setListName] = useState("");
+    const [listMode, setListMode] = useState("smart");
+    const [savingList, setSavingList] = useState(false);
+    const [listErrors, setListErrors] = useState({});
     const [action, setAction] = useState("send_now");
     const [scheduledAt, setScheduledAt] = useState("");
     const [sending, setSending] = useState(false);
@@ -142,14 +158,10 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
     const contactOf = (r) => (isSms ? r.phone : r.email) || "";
 
     const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        return recipients.filter((r) => {
-            if (eventId && String(r.event_id) !== String(eventId)) return false;
-            if (stage && recipientStage(r, filterNewLeads) !== stage) return false;
-            if (q && !(`${r.name} ${contactOf(r)}`.toLowerCase().includes(q))) return false;
-            return true;
-        });
-    }, [recipients, search, stage, eventId, isSms, filterNewLeads]);
+        return recipients.filter(recipient => matchesRecipient(recipient, {
+            search, stage, event_id: eventId, registered_from: registeredFrom, registered_to: registeredTo,
+        }, isSms, filterNewLeads));
+    }, [recipients, search, stage, eventId, registeredFrom, registeredTo, isSms, filterNewLeads]);
 
     const visibleSelection = newLeadsOnly ? new Set(filtered.filter((r) => selected.has(r.id)).map((r) => r.id)) : selected;
     const previewLead = recipients.find((r) => visibleSelection.has(r.id)) || filtered[0] || null;
@@ -161,6 +173,33 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
     });
     const selectAllMatching = () => setSelected((prev) => new Set([...prev, ...filtered.map((r) => r.id)]));
     const clearAll = () => setSelected(new Set());
+
+    const applyList = (id) => {
+        const list = recipientLists.find(item => String(item.id) === id);
+        const filters = list?.filters || {};
+        setListId(id); setListName(list?.name || ""); setListMode(list?.mode || "smart"); setListErrors({});
+        setSearch(filters.search || ""); setStage(filters.stage || ""); setEventId(String(filters.event_id || ""));
+        setRegisteredFrom(filters.registered_from || ""); setRegisteredTo(filters.registered_to || "");
+        const ids = list?.mode === "smart"
+            ? recipients.filter(recipient => matchesRecipient(recipient, filters, isSms, filterNewLeads)).map(recipient => recipient.id)
+            : (list?.lead_ids || []).filter(id => recipients.some(recipient => recipient.id === id));
+        setSelected(new Set(ids));
+    };
+
+    const saveList = () => {
+        if (savingList || !listName.trim()) return;
+        setSavingList(true); setListErrors({});
+        router.post(`${basePath}/recipient-lists`, {
+            list_id: listId || null, name: listName, mode: listMode,
+            filters: { search, stage, event_id: eventId, registered_from: registeredFrom, registered_to: registeredTo },
+            lead_ids: [...visibleSelection],
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setListId(""); setListName(""); },
+            onError: setListErrors,
+            onFinish: () => setSavingList(false),
+        });
+    };
 
     const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || scheduledAt) && !sending;
 
@@ -224,20 +263,51 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                         <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5"><Users size={15} /> Recipients</h3>
                         <span className="text-xs text-gray-500">{visibleSelection.size} selected · {filtered.length} shown</span>
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                        <div className="relative flex-1">
+                    {filterNewLeads && <label className="block text-xs font-semibold text-gray-600">Saved recipient list
+                        <select aria-label="Saved recipient list" value={listId} onChange={event => applyList(event.target.value)} className={`${inp} mt-1`}>
+                            <option value="">Choose a list</option>
+                            {recipientLists.map(list => <option key={list.id} value={list.id}>{list.name} · {list.mode === "smart" ? "Smart" : "Custom"}</option>)}
+                        </select>
+                    </label>}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="relative min-w-0 sm:col-span-2">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={isSms ? "Search name or phone" : "Search name or email"} className={`${inp} pl-8`} />
+                            <input aria-label="Search recipients" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={isSms ? "Search name or phone" : "Search name or email"} className={`${inp} pl-8`} />
                         </div>
-                        <select value={stage} onChange={(e) => setStage(e.target.value)} className={`${inp} sm:w-36`}>
+                        <select aria-label="Filter recipients by stage" value={stage} onChange={(e) => setStage(e.target.value)} className={`${inp} min-w-0`}>
                             <option value="">All stages</option>
                             {stages.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <select value={eventId} onChange={(e) => setEventId(e.target.value)} className={`${inp} sm:w-44`}>
+                        <select aria-label="Filter recipients by event" value={eventId} onChange={(e) => setEventId(e.target.value)} className={`${inp} min-w-0`}>
                             <option value="">All events</option>
                             {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
                         </select>
                     </div>
+                    {filterNewLeads && <>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <label className="text-xs text-gray-600">Lead registered from
+                                <input aria-label="Lead registered from" type="date" value={registeredFrom} onChange={event => setRegisteredFrom(event.target.value)} className={`${inp} mt-1 min-w-0`} />
+                            </label>
+                            <label className="text-xs text-gray-600">Lead registered through
+                                <input aria-label="Lead registered through" type="date" min={registeredFrom} value={registeredTo} onChange={event => setRegisteredTo(event.target.value)} className={`${inp} mt-1 min-w-0`} />
+                            </label>
+                        </div>
+                        <p className="text-xs text-gray-500">Dates use when the lead was added, in Asia/Manila. School RSVP dates are available in School visit bulk email.</p>
+                        <details className="rounded-lg border border-gray-200 p-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-gray-700">{listId ? "Edit recipient list" : "Save recipient list"}</summary>
+                            <div className="mt-3 space-y-3">
+                                <label className="block text-xs text-gray-600">List name<input aria-label="Recipient list name" value={listName} maxLength={100} onChange={event => setListName(event.target.value)} className={`${inp} mt-1`} /></label>
+                                <label className="block text-xs text-gray-600">List type<select aria-label="Recipient list type" value={listMode} onChange={event => setListMode(event.target.value)} className={`${inp} mt-1`}>
+                                    <option value="smart">Smart list — matches these filters</option><option value="custom">Custom list — selected leads</option>
+                                </select></label>
+                                <p className="text-xs text-gray-500">Smart lists include new matching leads when opened. Custom lists keep the selected leads. Your lists are private to your account.</p>
+                                {Object.keys(listErrors).length > 0 && <p role="alert" className="text-xs text-rose-700">{Object.values(listErrors).join(" ")}</p>}
+                                <div className="flex gap-3"><button type="button" onClick={saveList} disabled={!listName.trim() || savingList || (listMode === "custom" && !visibleSelection.size)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{savingList ? "Saving…" : "Save list"}</button>
+                                    {listId && <button type="button" onClick={() => { setListId(""); setListName(""); }} className="text-xs text-gray-600">Save as a new list</button>}
+                                </div>
+                            </div>
+                        </details>
+                    </>}
                     <div className="flex gap-2 text-xs">
                         <button onClick={selectAllMatching} className="px-2.5 py-1 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium">Select all matching ({filtered.length})</button>
                         <button onClick={clearAll} className="px-2.5 py-1 rounded-md text-gray-500 hover:bg-gray-50 font-medium">Clear</button>

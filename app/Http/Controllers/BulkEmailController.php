@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SendCampaign;
+use App\Models\EducationRecipientList;
 use App\Models\EmailCampaign;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
@@ -34,6 +35,8 @@ class BulkEmailController extends Controller
             'templates' => $this->availableTemplates($department, $channel),
             'recipients' => $this->recipientPool($channel, $filterNewLeads),
             'filterNewLeads' => $filterNewLeads,
+            'recipientLists' => $filterNewLeads ? EducationRecipientList::where('created_by', $request->user()->id)
+                ->orderBy('name')->get(['id', 'name', 'mode', 'filters', 'lead_ids']) : [],
             'events' => \App\Models\Event::orderBy('name')
                 ->get()
                 ->map(fn (\App\Models\Event $e) => array_merge(
@@ -46,6 +49,40 @@ class BulkEmailController extends Controller
                 ->with('creator:id,name')
                 ->latest()->get()->map(fn (EmailCampaign $c) => $this->campaignRow($c)),
         ]);
+    }
+
+    public function saveRecipientList(Request $request)
+    {
+        abort_unless($this->department($request) === 'education' && $this->channel($request) === EmailCampaign::CHANNEL_EMAIL, 403);
+        $request->validate(['list_id' => ['nullable', 'integer']]);
+        $list = $request->filled('list_id')
+            ? EducationRecipientList::where('created_by', $request->user()->id)->findOrFail($request->input('list_id'))
+            : new EducationRecipientList(['created_by' => $request->user()->id]);
+        $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('education_recipient_lists')->where('created_by', $request->user()->id)->ignore($list->id)],
+            'mode' => ['required', Rule::in(['smart', 'custom'])],
+            'filters' => ['present', 'array:search,stage,event_id,registered_from,registered_to'],
+            'filters.search' => ['nullable', 'string', 'max:160'],
+            'filters.stage' => ['nullable', 'string', 'max:100'],
+            'filters.event_id' => ['nullable', 'integer', 'exists:events,id'],
+            'filters.registered_from' => ['nullable', 'date_format:Y-m-d'],
+            'filters.registered_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('filters.registered_from'), 'after_or_equal:filters.registered_from')],
+            'lead_ids' => ['required_if:mode,custom', 'array', 'max:10000'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
+        ]);
+        try {
+            $list->fill([
+                'name' => $data['name'], 'mode' => $data['mode'],
+                'filters' => $data['mode'] === 'smart' ? $data['filters'] : [],
+                'lead_ids' => $data['mode'] === 'custom' ? array_values($data['lead_ids']) : [],
+            ])->save();
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages(['name' => 'You already have a recipient list with this name.']);
+        }
+        \App\Models\ActivityLog::record('education.recipient_list.saved', ['portal' => 'education', 'properties' => ['list_id' => $list->id, 'mode' => $list->mode]]);
+
+        return back()->with('success', 'Recipient list saved.');
     }
 
     public function store(Request $request)
@@ -268,7 +305,7 @@ class BulkEmailController extends Controller
             ? Lead::inNewLeads()->select('id')
             : null;
 
-        return $query->select(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id'])
+        return $query->select(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id', 'created_at'])
             ->when($newLeadIds, fn ($q) => $q->selectRaw('id in ('.$newLeadIds->toSql().') as is_new_lead', $newLeadIds->getBindings()))
             ->orderBy('first_name')->get()
             ->filter(function (Lead $l) use ($channel, $comms) {
@@ -287,6 +324,7 @@ class BulkEmailController extends Controller
                 'status' => $l->status,
                 'event_id' => $l->event_id,
                 'is_new_lead' => (bool) $l->is_new_lead,
+                'registered_on' => $l->created_at?->timezone('Asia/Manila')->toDateString(),
             ])->values();
     }
 

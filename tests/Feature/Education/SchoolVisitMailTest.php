@@ -27,6 +27,41 @@ class SchoolVisitMailTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_saved_rsvp_lists_and_manual_groups_keep_conflicting_permission_checks(): void
+    {
+        $staff = $this->staff();
+        $visit = $this->visit();
+        $member = $this->rsvp($visit, ['created_at' => '2026-11-16 16:00:00']);
+        $this->rsvp($visit, ['email' => 'outside@example.test', 'created_at' => '2026-11-16 16:00:00']);
+        $otherVisit = $this->visit(['school' => 'Other visit']);
+        $this->rsvp($otherVisit, ['created_at' => '2026-11-15 08:00:00', 'email_follow_up' => false]);
+        $group = \App\Models\EducationRsvpFolder::create(['name' => 'Chosen attendees', 'created_by' => $staff->id]);
+        $member->folders()->attach($group->id, ['added_by' => $staff->id]);
+        $list = \App\Models\EducationRsvpSavedList::create(['folder_id' => $group->id, 'name' => 'November 17', 'created_by' => $staff->id,
+            'filters' => ['folder_id' => $group->id, 'registered_from' => '2026-11-17', 'registered_to' => '2026-11-17']]);
+        foreach (['list_id' => $list->id, 'folder_id' => $group->id] as $key => $id) {
+            $this->actingAs($staff)->get('/portal/education/school-mail?'.http_build_query($this->filters($visit, [$key => $id, 'visit_ids' => [$visit->id, $otherVisit->id], 'registered_from' => '2026-11-17', 'registered_to' => '2026-11-17'])))
+                ->assertOk()->assertInertia(fn ($page) => $page->has('recipients', 1)
+                ->where('recipients.0.email', 'alex@example.test')->where('recipients.0.eligible', false)
+                ->where('filters.rsvp_filters.folder_id', $group->id));
+        }
+    }
+
+    public function test_registration_date_filters_use_inclusive_manila_days_and_programme_dates(): void
+    {
+        $visit = $this->visit();
+        $this->rsvp($visit, ['email' => 'in-range@example.test', 'created_at' => '2026-11-16 16:00:00']);
+        $this->rsvp($visit, ['email' => 'next-day@example.test', 'created_at' => '2026-11-17 16:00:00']);
+        $registration = $this->registration($visit, ['created_at' => '2026-11-17 15:59:59']);
+        $this->confirmFollowUp($registration);
+        $filters = $this->filters($visit, ['registered_from' => '2026-11-17', 'registered_to' => '2026-11-17']);
+        $this->assertEqualsCanonicalizing(['in-range@example.test', 'alex@example.test'], $this->rows($filters)->pluck('email')->all());
+        $attendance = app(\App\Services\EducationAttendance::class);
+        $this->assertSame(['in-range@example.test'], $attendance->query($attendance->filters($filters))->pluck('email')->all());
+        $this->actingAs($this->staff())->get('/portal/education/school-mail?'.http_build_query($this->filters($visit, ['registered_from' => '2026-11-18', 'registered_to' => '2026-11-17'])))
+            ->assertSessionHasErrors('registered_to');
+    }
+
     private function visit(array $a = []): EducationVisit
     {
         return EducationVisit::create($a + ['slug' => (string) Str::uuid(), 'school' => 'Jose Maria College Foundation, Inc.', 'kind' => 'school', 'activity' => 'School visit', 'status' => 'open']);

@@ -23,23 +23,36 @@ class EducationSchoolMailController extends Controller
 
     private function filters(Request $request, bool $required = false): array
     {
-        return $request->validate([
+        $filters = $request->validate([
             'visit_ids' => [$required ? 'required' : 'sometimes', 'array', 'min:1', 'max:20'],
             'visit_ids.*' => ['required', 'integer', 'distinct', 'exists:education_visits,id'],
             'audience' => ['required', Rule::in(['registered', 'attended'])],
             'purpose' => ['required', Rule::in(['email_follow_up', 'email_newsletter'])],
+            'list_id' => ['nullable', 'integer', 'exists:education_rsvp_saved_lists,id'],
+            'folder_id' => ['nullable', 'integer', Rule::prohibitedIf($request->filled('list_id')), 'exists:education_rsvp_folders,id'],
+            'registered_from' => ['nullable', 'date_format:Y-m-d'],
+            'registered_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('registered_from'), 'after_or_equal:registered_from')],
         ]);
+        $rsvpFilters = empty($filters['list_id']) ? [] : \App\Models\EducationRsvpSavedList::findOrFail($filters['list_id'])->filters;
+        if (! empty($filters['folder_id'])) {
+            $rsvpFilters['folder_id'] = $filters['folder_id'];
+        }
+        $filters['rsvp_filters'] = app(\App\Services\EducationAttendance::class)->filters($rsvpFilters);
+
+        return $filters;
     }
 
     public function index(Request $request, EducationSchoolMailAudience $audience)
     {
         $this->authorizeStaff($request);
-        $filters = $request->has('audience') ? $this->filters($request) : ['visit_ids' => [], 'audience' => 'registered', 'purpose' => 'email_follow_up'];
+        $filters = $request->has('audience') ? $this->filters($request) + ['visit_ids' => []] : ['visit_ids' => [], 'audience' => 'registered', 'purpose' => 'email_follow_up'];
         $rows = empty($filters['visit_ids']) ? collect() : $audience->rows($filters);
 
         return inertia('portal/education/SchoolMail', [
             'visits' => EducationVisit::where('status', '!=', 'cancelled')->orderBy('school')->get()->map(fn ($v) => ['id' => $v->id, 'school' => $v->school, 'activity' => $v->activity, 'summary' => $v->summary()]),
             'filters' => $filters, 'recipients' => $rows->map(fn ($r) => collect($r)->except(['source_refs', 'context'])->all()),
+            'audienceLists' => \App\Models\EducationRsvpSavedList::with('folder:id,name')->orderBy('name')->get(['id', 'name', 'folder_id', 'filters']),
+            'audienceGroups' => \App\Models\EducationRsvpFolder::orderBy('name')->get(['id', 'name']),
             'templates' => $audience->templates()->map(function ($t) use ($audience) {
                 $snapshot = $audience->templateSnapshot($t);
 
