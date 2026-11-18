@@ -38,7 +38,7 @@ This document lists every user role in the system, what each can access, and the
 | `super_admin` | 100 | Top of house | `/admin/super-dashboard` | — (is admin) |
 | `admin` | 80 | Full access | `/admin/dashboard` | — (is admin) |
 | `immigration_manager` | 50 | Dept head | `/portal/immigration/dashboard` | Immigration |
-| `immigration_adviser` | 20 | Read-only adviser | `/portal/immigration/dashboard` | Immigration |
+| `immigration_adviser` | 20 | Immigration adviser | `/portal/immigration/dashboard` | Immigration |
 | `sales` | — | Department | `/portal/sales/dashboard` | Sales |
 | `education` | — | Department | `/portal/education/dashboard` | Education |
 | `english` | — | Department | `/portal/english/dashboard` | English |
@@ -79,7 +79,7 @@ Full run of the business. Sidebar features:
 ### 🧭 Immigration (`immigration`, `immigration_manager`, `immigration_adviser`)
 All three resolve to the **Immigration portal**. Difference is edit rights:
 - **`immigration_manager`** — department head; can edit visa types **including price**.
-- **`immigration_adviser`** — **read-only** on visa types + cases (enforced server-side by policy).
+- **`immigration_adviser`** — full case write and visa catalogue CRUD, including fees. Advice-bearing approval requires a current IAA licence, independently of role. Catalogue access was expanded on 2026-08-22 (`fba4a056`); see [`immigration-architecture.md`](immigration-architecture.md#2-roles--access-control).
 - **`immigration`** — standard department staff.
 
 Portal features:
@@ -152,7 +152,7 @@ Client-facing self-service portal:
 
 - **One role per account.** To give someone broader access, use `admin` (all departments) rather than stacking roles.
 - **Admins see everything**, so a bug or destructive action reachable in one department is reachable by every admin — worth remembering when auditing.
-- **`immigration_adviser` is read-only by design** but sits in a role group that reaches some destructive routes; the actual block is server-side policy. (Flagged separately in the route/bug audits.)
+- **Immigration advice-bearing approval is licence-gated**, including for admins and advisers; ordinary case and catalogue writes follow their role policies. Do not restore the superseded adviser-wide read-only rule.
 - **Some `/admin/immigration/...` screens are shared** between admins and immigration staff (`portal:admin,immigration`); the immigration portal deep-links into them.
 - **Agents and Leads are external** — they only ever see their own data.
 

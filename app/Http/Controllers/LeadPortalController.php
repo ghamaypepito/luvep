@@ -592,7 +592,7 @@ class LeadPortalController extends Controller
         $dep = \App\Models\CaseDependent::where('id', $id)->where('lead_id', $lead->id)->firstOrFail();
         foreach ($dep->documents as $doc) {
             if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
-                \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
+                \App\Support\DocumentFiles::delete($doc->file_path, 'local');
             }
         }
         $dep->documents()->delete();
@@ -665,8 +665,9 @@ class LeadPortalController extends Controller
                     $q->orWhere(fn ($w) => $w->where('lead_id', $dep->linked_lead_id)->whereNotIn('source', ['generated', 'engagement']));
                 }
             })->firstOrFail();
+        \App\Services\PaymentProofService::assertEvidenceCanBeDeleted($doc);
         if ($doc->file_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($doc->file_path)) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($doc->file_path);
+            \App\Support\DocumentFiles::delete($doc->file_path, 'local');
         }
         $doc->delete();
 
@@ -705,7 +706,7 @@ class LeadPortalController extends Controller
      */
     private function sharedDocumentsFor(Lead $lead): array
     {
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
         return $lead->documents()
             ->where('status', LeadDocument::STATUS_STAFF_SHARED)
@@ -1025,6 +1026,7 @@ class LeadPortalController extends Controller
             return $preview;
         }
 
+        abort_if(request()->attributes->has('user_view_actor'), 403, 'This user is not linked to a client record. Return to Super Admin to repair their account.');
         Auth::logout();
 
         return redirect('/login')->withErrors([
@@ -1137,7 +1139,7 @@ class LeadPortalController extends Controller
     /** Full chronological history of the lead's interactions. */
     private function submissionsTimeline(Lead $lead): array
     {
-        $items = collect();
+        $items = collect(app(\App\Services\EducationRsvpWorkflow::class)->history($lead));
 
         // Free Assessment — implied by lead_id prefix or source tag.
         if (str_starts_with((string) $lead->lead_id, 'FA-') || $lead->source === 'free-assessment') {

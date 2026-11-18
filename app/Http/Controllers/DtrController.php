@@ -21,6 +21,9 @@ class DtrController extends Controller
     public function show()
     {
         $user = auth()->user();
+        if (config('hr.enabled') && app(\App\Services\Hr\HrAccess::class)->employee($user)) {
+            return \Inertia\Inertia::location(app(\App\Services\Hr\HrContext::class)->url('dtr'));
+        }
         $setting = DtrSetting::where('user_id', $user->id)->first();
         $today = now($setting?->timezone ?: config('app.timezone', 'UTC'))->toDateString();
 
@@ -84,7 +87,12 @@ class DtrController extends Controller
         $adminLeaves = collect();
         $pendingLeaves = collect();
         if ($isAdmin) {
-            $all = DtrLeave::with('user:id,name')->orderByDesc('start_date')->limit(300)->get();
+            $all = DtrLeave::with('user:id,name')->orderByDesc('start_date')->limit(300)->get()->filter(function ($leave) use ($user) {
+                $employee = config('hr.enabled') ? \App\Models\HrEmployee::where('user_id', $leave->user_id)->first() : null;
+                $access = app(\App\Services\Hr\HrAccess::class);
+
+                return ! $employee || $access->allows($user, 'leave.review', $employee) || $access->allows($user, 'leave.fallback', $employee);
+            });
             $adminLeaves = $all->map(fn (DtrLeave $l) => $this->leaveRow($l))->values();
             $pendingLeaves = $all->where('status', 'pending')
                 ->map(fn (DtrLeave $l) => $this->leaveRow($l))->values();
@@ -187,6 +195,9 @@ class DtrController extends Controller
      */
     public function fileLeave(Request $request)
     {
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', $request->user()->id)->exists()) {
+            return app(\App\Http\Controllers\Hr\LeaveController::class)->store($request);
+        }
         $setting = $this->requireSetting();
 
         $data = $request->validate([
@@ -226,6 +237,10 @@ class DtrController extends Controller
      */
     public function reviewLeave(Request $request, $id)
     {
+        $hrLeave = DtrLeave::findOrFail($id);
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', $hrLeave->user_id)->exists()) {
+            return app(\App\Http\Controllers\Hr\LeaveController::class)->decide($request, $hrLeave);
+        }
         abort_unless(in_array(auth()->user()->role, ['admin', 'super_admin'], true), 403);
 
         // Legacy shorthand from older quick-approve buttons.
@@ -272,6 +287,17 @@ class DtrController extends Controller
     public function showLeave($id)
     {
         $leave = DtrLeave::with('user:id,name')->findOrFail($id);
+        if (config('hr.enabled') && ($employee = \App\Models\HrEmployee::where('user_id', $leave->user_id)->first())) {
+            $actor = auth()->user();
+            $access = app(\App\Services\Hr\HrAccess::class);
+            abort_unless(($actor->id === $leave->user_id && $access->employee($actor)) || $access->allows($actor, 'leave.review', $employee) || $access->allows($actor, 'leave.fallback', $employee), 404);
+            $context = app(\App\Services\Hr\HrContext::class);
+            if ($context->isPreview(request())) {
+                abort_unless($context->subject(request())->user_id === $leave->user_id, 404);
+            }
+
+            return response()->json(app(\App\Http\Controllers\Hr\LeaveController::class)->row($leave));
+        }
         $isAdmin = in_array(auth()->user()->role, ['admin', 'super_admin'], true);
         abort_unless($isAdmin || $leave->user_id === auth()->id(), 403);
 
@@ -1230,6 +1256,14 @@ class DtrController extends Controller
     /** One-tap clock in — stamps the current time (in the user's DTR timezone). */
     public function timeIn()
     {
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
+        }
+        if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
+            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_in', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
+
+            return back()->with('success', 'Attendance updated.');
+        }
         $setting = $this->requireSetting();
         $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
@@ -1245,6 +1279,14 @@ class DtrController extends Controller
     /** One-tap clock out — closes the latest open shift (handles cross-midnight). */
     public function timeOut()
     {
+        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
+        }
+        if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
+            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_out', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
+
+            return back()->with('success', 'Attendance updated.');
+        }
         $setting = $this->requireSetting();
         $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
@@ -1281,6 +1323,12 @@ class DtrController extends Controller
             }
             $worked = ($outMin - $inMin) / 60.0;
             $net = round($worked >= $breakAfter ? $worked - $breakHours : $worked, 2);
+            $variance = round($net - $stdHours, 2);
+        }
+
+        if ($e->time_source === 'live') {
+            $live = app(\App\Services\Hr\DtrService::class)->row($e);
+            $net = round($live['working_seconds'] / 3600, 2);
             $variance = round($net - $stdHours, 2);
         }
 

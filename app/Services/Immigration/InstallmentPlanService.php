@@ -8,6 +8,7 @@ use App\Models\InstallmentPlan;
 use App\Models\Lead;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Builds + maintains a case's "pay later" installment plan: a staff-set deposit
@@ -190,32 +191,62 @@ class InstallmentPlanService
     /** Record a single installment as paid, writing a receipt to the ledger. */
     public function recordPayment(Installment $installment, array $data = [], ?User $by = null): CaseFinancePayment
     {
-        $plan = $installment->plan;
+        return DB::transaction(function () use ($installment, $data, $by) {
+            $leadId = InstallmentPlan::whereKey($installment->installment_plan_id)->value('lead_id');
+            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            $plan = InstallmentPlan::whereKey($installment->installment_plan_id)->lockForUpdate()->firstOrFail();
+            $installment = Installment::whereKey($installment->id)->lockForUpdate()->firstOrFail();
+            if ($installment->isPaid()) {
+                return $installment->financePayment()->firstOrFail();
+            }
+            abort_unless($plan->status === InstallmentPlan::STATUS_ACTIVE, 422, 'Only an active installment plan can receive payments.');
 
-        $reference = $installment->kind === Installment::KIND_DEPOSIT
-            ? 'Deposit'
-            : 'Instalment '.$installment->sequence;
+            $reference = $installment->kind === Installment::KIND_DEPOSIT
+                ? 'Deposit'
+                : 'Instalment '.$installment->sequence;
 
-        $payment = CaseFinancePayment::create([
-            'lead_id' => $plan->lead_id,
-            'paid_at' => $data['paid_at'] ?? Carbon::now(),
-            'amount' => $installment->amount,
-            'method' => $data['method'] ?? null,
-            'reference' => $data['reference'] ?? $reference,
-            'recorded_by' => $by?->id,
-        ]);
+            if (filled($data['reference'] ?? null)) {
+                \App\Services\PaymentProofService::assertReferenceAvailable($plan->lead_id, $data['reference']);
+            }
+            $payment = CaseFinancePayment::create([
+                'lead_id' => $plan->lead_id,
+                'currency' => $plan->currency ?: 'NZD',
+                'paid_at' => $data['paid_at'] ?? Carbon::now(),
+                'amount' => $installment->amount,
+                'method' => $data['method'] ?? null,
+                'reference' => $data['reference'] ?? $reference,
+                'recorded_by' => $by?->id,
+            ]);
 
-        $installment->status = Installment::STATUS_PAID;
-        $installment->paid_at = $payment->paid_at;
-        $installment->finance_payment_id = $payment->id;
-        $installment->save();
+            $installment->status = Installment::STATUS_PAID;
+            $installment->paid_at = $payment->paid_at;
+            $installment->finance_payment_id = $payment->id;
+            $installment->save();
 
-        if ($plan->fresh()->isSettled()) {
-            $plan->status = InstallmentPlan::STATUS_COMPLETED;
-            $plan->save();
-        }
+            if ($plan->fresh()->isSettled()) {
+                $plan->status = InstallmentPlan::STATUS_COMPLETED;
+                $plan->save();
+            }
 
-        return $payment;
+            return $payment;
+        });
+    }
+
+    /** Undo schedule settlement when staff delete its underlying receipt. */
+    public function forgetPayment(CaseFinancePayment $payment): void
+    {
+        DB::transaction(function () use ($payment) {
+            $planIds = Installment::where('finance_payment_id', $payment->id)->pluck('installment_plan_id')->unique();
+            foreach ($planIds as $id) {
+                $plan = InstallmentPlan::whereKey($id)->lockForUpdate()->firstOrFail();
+                $plan->installments()->where('finance_payment_id', $payment->id)->update([
+                    'status' => Installment::STATUS_DUE, 'paid_at' => null, 'finance_payment_id' => null,
+                ]);
+                if ($plan->status === InstallmentPlan::STATUS_COMPLETED && ! $plan->fresh()->isSettled()) {
+                    $plan->update(['status' => InstallmentPlan::STATUS_ACTIVE]);
+                }
+            }
+        });
     }
 
     /** The live (draft or active) plan for a case, if any. */

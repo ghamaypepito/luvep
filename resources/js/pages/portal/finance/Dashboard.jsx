@@ -22,7 +22,7 @@ export default function FinanceDashboard({ currency = "NZD", metrics = {}, aging
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Finance Dashboard</h1>
-                    <p className="text-sm text-gray-500 mt-1">Overview of fees, payments, and outstanding balances.</p>
+                    <p className="text-sm text-gray-500 mt-1">Overview of fees, payments, and outstanding balances in {currency}.</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <Link href="/portal/finance/receivables" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50">Receivables</Link>

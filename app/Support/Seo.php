@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\EditorialArticle;
 use App\Models\Program;
 use Illuminate\Support\Str;
 
@@ -145,6 +146,70 @@ class Seo
             'og_type' => 'article',
             'image' => $image,
         ], [$breadcrumb]);
+    }
+
+    public function forArticleIndex(int $page): array
+    {
+        $seo = $this->forPath('articles');
+
+        if ($page > 1) {
+            $seo['canonical'] .= '?page='.$page;
+            $seo['og']['url'] = $seo['canonical'];
+            $seo['title'] = 'Articles, page '.$page.' | '.config('seo.brand');
+            $seo['og']['title'] = $seo['twitter']['title'] = $seo['title'];
+        }
+
+        return $seo;
+    }
+
+    public function forArticle(EditorialArticle $article): array
+    {
+        $content = $article->published;
+        $brand = config('seo.brand');
+        $canonical = $this->canonicalFor(route('articles.show', $article->published_slug, absolute: false));
+        $title = ($content['meta_title'] ?? '') ?: $content['title'].' | '.$brand;
+        $description = ($content['meta_description'] ?? '') ?: $this->plainSummary($content['summary']);
+        $image = $this->absoluteUrl($content['image_url'] ?? null);
+        $publishedTime = $article->published_at->toAtomString();
+        $modifiedTime = ($article->published_updated_at ?? $article->published_at)->toAtomString();
+
+        $schema = [
+            '@context' => 'https://schema.org',
+            '@type' => 'Article',
+            'headline' => $content['title'],
+            'description' => $description,
+            'mainEntityOfPage' => $canonical,
+            'datePublished' => $publishedTime,
+            'dateModified' => $modifiedTime,
+            'author' => ! empty($content['author'])
+                ? ['@type' => 'Person', 'name' => $content['author']]
+                : ['@type' => 'Organization', 'name' => $brand],
+            'publisher' => ['@type' => 'Organization', 'name' => $brand, 'url' => $this->canonicalFor('/')],
+        ];
+        if ($image) {
+            $schema['image'] = $image;
+        }
+
+        $seo = $this->assemble([
+            'title' => $title,
+            'description' => $description,
+            'canonical' => $canonical,
+            'robots' => 'index,follow',
+            'og_title' => $title,
+            'og_description' => $description,
+            'og_url' => $canonical,
+            'og_type' => 'article',
+            'image' => $image ?? $this->absoluteUrl(config('seo.og_image')),
+        ], [$schema, $this->breadcrumbSchema([
+            ['name' => 'Home', 'url' => $this->canonicalFor('/')],
+            ['name' => 'Articles', 'url' => $this->canonicalFor('articles')],
+            ['name' => $content['title'], 'url' => $canonical],
+        ])]);
+
+        $seo['og']['image_alt'] = $image ? ($content['image_alt'] ?? null) : null;
+        $seo['article'] = ['published_time' => $publishedTime, 'modified_time' => $modifiedTime];
+
+        return $seo;
     }
 
     /** Compose the final structured array the blade template renders. */

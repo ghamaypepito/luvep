@@ -93,10 +93,8 @@ class TrackerAccessTest extends TestCase
                 ->where('visa.name', 'Tourist Visa')
                 // … but the requirement sections are the general 4, in order.
                 ->where('visa.section_order', [
-                    'Personal Documents',
-                    'Information Form',
-                    'Offer and Academic Documents',
-                    'Agreements',
+                    'Education Documents',
+                    'Other Documents',
                 ])
             );
     }

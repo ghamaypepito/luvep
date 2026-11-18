@@ -482,7 +482,7 @@ class EventController extends Controller
     /**
      * Publicly show the registration form for a specific event.
      */
-    public function showRegistrationForm($event_code)
+    public function showRegistrationForm(Request $request, $event_code)
     {
         $event = Event::with(['sessions' => function ($query) {
             $query->where('status', 'upcoming');
@@ -500,6 +500,7 @@ class EventController extends Controller
 
         return inertia('registration/RegistrationPage', [
             'event' => $event,
+            'registered' => $request->session()->get('registered_event_id') === $event->id,
         ]);
     }
 
@@ -663,7 +664,8 @@ class EventController extends Controller
             }
 
             if ($request->header('X-Inertia') || ! $request->wantsJson()) {
-                return redirect()->back()->with('success', 'Registration successful! We will contact you soon.');
+                return to_route('events.registration', ['event_code' => $event->event_code])
+                    ->with('registered_event_id', $event->id);
             }
 
             return response()->json([

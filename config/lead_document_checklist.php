@@ -15,6 +15,20 @@
  */
 
 return [
+    // Client education intake requirements. Staff retain the wider checklist;
+    // immigration cases continue using their visa-specific requirements.
+    'education_sections' => [
+        ['section' => 'Education Documents', 'items' => [
+            ['id' => 'pers.passport', 'name' => 'Passport'],
+            ['id' => 'acad.cv', 'name' => 'Curriculum Vitae'],
+            ['id' => 'acad.degree_diploma', 'name' => 'Academic Certificates'],
+            ['id' => 'acad.transcript', 'name' => 'Academic Transcripts'],
+        ]],
+        ['section' => 'Other Documents', 'items' => [
+            ['id' => 'pers.certificate_employment', 'name' => 'Employment Certificate',
+                'required' => false, 'hint' => 'May be required by the institution.'],
+        ]],
+    ],
     // Section order matters — it drives the visual order of the checklist
     // on both the staff Documents tab and the public tracker. Offer &
     // Academic leads because that's the first tranche of documents sales

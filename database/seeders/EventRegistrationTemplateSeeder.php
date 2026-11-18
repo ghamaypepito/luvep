@@ -38,7 +38,7 @@ HTML;
                 'email_subject' => "You're registered — {{event_name}}",
                 'email_body' => $body,
                 'from_email' => 'hello@epathways.ph',
-                'from_name' => 'Fhilip Bryll - ePathways Philippines',
+                'from_name' => 'Eireen Serrano - EP',
                 'is_active' => true,
             ]
         );

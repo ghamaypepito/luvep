@@ -11,11 +11,37 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class CaseFinancePayment extends Model
 {
-    protected $fillable = ['lead_id', 'paid_at', 'amount', 'method', 'reference', 'recorded_by'];
+    protected $fillable = ['lead_id', 'paid_at', 'amount', 'method', 'reference', 'recorded_by', 'invoice_document_id', 'currency', 'finance_verified'];
+
+    public function proofReviews()
+    {
+        return $this->hasMany(PaymentProofReview::class, 'finance_payment_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (self $payment) {
+            if ($payment->finance_verified) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['payment' => 'Retain this verified receipt for reconciliation. Ask Finance to review a correction.']);
+            }
+            if ($payment->proofReviews()->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['payment' => 'This receipt has verified payment evidence. Ask Finance to review a correction instead of deleting it.']);
+            }
+        });
+        static::updating(function (self $payment) {
+            if ($payment->getOriginal('finance_verified') && $payment->isDirty()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['payment' => 'Retain this verified receipt for reconciliation. Ask Finance to review a correction.']);
+            }
+            if ($payment->isDirty(['amount', 'currency', 'invoice_document_id', 'reference', 'paid_at']) && $payment->proofReviews()->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['payment' => 'A receipt linked to verified proof cannot be changed through this action.']);
+            }
+        });
+    }
 
     protected $casts = [
         'paid_at' => 'date',
         'amount' => 'decimal:2',
+        'finance_verified' => 'boolean',
     ];
 
     public function lead(): BelongsTo

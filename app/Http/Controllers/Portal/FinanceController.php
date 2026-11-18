@@ -26,15 +26,16 @@ class FinanceController extends Controller
      */
     public function dashboard()
     {
-        $ar = FinanceReceivable::with('payments')->get();
-        $ap = FinancePayable::with('payments')->get();
+        $currency = strtoupper(config('services.booking.currency', 'nzd'));
+        $ar = FinanceReceivable::where('currency', $currency)->with('payments')->get();
+        $ap = FinancePayable::where('currency', $currency)->with('payments')->get();
 
         $arOutstanding = 0;
         $arOverdue = 0;
         $inProgress = 0;
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
         foreach ($ar as $r) {
-            if (in_array($r->payment_status, ['sent', 'partial', 'overdue'], true)) {
+            if (in_array($r->payment_status, ['open', 'partial', 'overdue'], true)) {
                 $inProgress++;
             }
             if (in_array($r->payment_status, ['paid', 'void'], true) || $r->balance <= 0.005) {
@@ -56,22 +57,22 @@ class FinanceController extends Controller
         }
 
         $monthStart = now()->startOfMonth();
-        $collectedThisMonth = FinancePayment::where('paymentable_type', FinanceReceivable::class)
+        $collectedThisMonth = FinancePayment::forLedger(FinanceReceivable::class, $currency)
             ->where('paid_on', '>=', $monthStart)->sum('amount');
-        $collectedAllTime = FinancePayment::where('paymentable_type', FinanceReceivable::class)->sum('amount');
+        $collectedAllTime = FinancePayment::forLedger(FinanceReceivable::class, $currency)->sum('amount');
 
         // Six-month collection trend for the revenue chart.
         $trend = [];
         for ($i = 5; $i >= 0; $i--) {
             $m = now()->startOfMonth()->subMonths($i);
-            $sum = FinancePayment::where('paymentable_type', FinanceReceivable::class)
+            $sum = FinancePayment::forLedger(FinanceReceivable::class, $currency)
                 ->whereBetween('paid_on', [$m->copy()->startOfMonth(), $m->copy()->endOfMonth()])
                 ->sum('amount');
             $trend[] = ['label' => $m->format('M'), 'value' => round((float) $sum, 2)];
         }
 
         return inertia('portal/finance/Dashboard', [
-            'currency' => strtoupper(config('services.booking.currency', 'nzd')),
+            'currency' => $currency,
             'metrics' => [
                 'revenue_collected' => round((float) $collectedThisMonth, 2),
                 'revenue_all_time' => round((float) $collectedAllTime, 2),
@@ -107,14 +108,15 @@ class FinanceController extends Controller
     {
         try {
             $userId = $request->user()->id;
-            $scope = $request->input('scope', 'mine');
+            $scope = in_array($request->input('scope'), ['mine', 'department'], true)
+                ? $request->input('scope') : 'mine';
             $now = now();
             $todayEnd = $now->copy()->endOfDay();
             $weekEnd = $now->copy()->endOfWeek();
 
             $base = \App\Models\LeadTask::with(['lead:id,lead_id,first_name,last_name,email,status', 'assignee:id,name,avatar_path', 'creator:id,name,avatar_path', 'attachments'])
                 ->withCount('comments')
-                ->when($scope === 'mine', fn ($q) => $q->where('assignee_id', $userId))
+                ->when($scope === 'mine', fn ($q) => $q->assignedTo($userId))
                 ->when($scope === 'department', fn ($q) => $q->where('department', 'finance'));
 
             $serialize = fn ($t) => [

@@ -19,11 +19,12 @@ class LeadNote extends Model
     protected $fillable = [
         'lead_id', 'parent_id', 'user_id', 'author_name', 'author_role', 'body', 'attachments', 'pinned',
         'kind', 'pre_screened_by', 'pre_screen_mode', 'pre_screen_date',
-        'goal_setting_status', 'goal_setting_by',
+        'goal_setting_status', 'goal_setting_by', 'programs',
     ];
 
     protected $casts = [
         'pinned'          => 'boolean',
+        'programs'        => 'array',
         'pre_screen_date' => 'date',
         'attachments'     => 'array',
     ];

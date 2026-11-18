@@ -8,7 +8,7 @@ import PdfPreviewModal from "@/components/ui/PdfPreviewModal";
 // auto-filled editable fields and a live preview then use the full width.
 // Generating renders the chosen Exalt agreement to a stored PDF (and links it to
 // the onboarding record when the client has one).
-export default function Agreements({ clients = [], agreements = [], types = {}, properties = [] }) {
+export default function Agreements({ clients = [], agreements = [], types = {}, properties = [], visaTypes = [] }) {
     const typeKeys = Object.keys(types);
     const [search, setSearch] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -190,8 +190,8 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                         <Loader2 size={16} className="animate-spin" /> Loading client details…
                     </div>
                 ) : (
-                    <div className="grid gap-0 xl:grid-cols-2">
-                        {/* Fields editor */}
+                    <div className="grid gap-0 xl:grid-cols-[26rem_1fr]">
+                        {/* Fields editor — fixed slim width so the preview gets the rest. */}
                         <div className="max-h-[44rem] space-y-5 overflow-y-auto border-r border-gray-100 p-4">
                             <label className="block">
                                 <span className="mb-1 block text-xs font-medium text-gray-500">Property address</span>
@@ -226,6 +226,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                             <Mini label="Mobile" type="tel" value={s.mobile} onChange={(v) => setSub(i, "mobile", v)} />
                                             <Mini label="Email" type="email" value={s.email} onChange={(v) => setSub(i, "email", v)} full />
                                             <Mini label="Current address" value={s.current_address} onChange={(v) => setSub(i, "current_address", v)} full />
+                                            <Mini label="Visa type" options={visaTypes} value={s.visa_type} onChange={(v) => setSub(i, "visa_type", v)} full />
                                             {i > 0 && <Mini label="Relationship to Sub-Tenant 1" value={s.relationship} onChange={(v) => setSub(i, "relationship", v)} full />}
                                         </div>
                                     </div>
@@ -245,6 +246,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
                                     <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
+                                    {fields.tenancy?.utility_option ? (
+                                        <Mini label="Utility amount / week" type="number" step="0.01" prefix="NZ$" value={fields.tenancy?.utility_amount} onChange={(v) => setF(["tenancy", "utility_amount"], v)} />
+                                    ) : null}
                                 </div>
                             </div>
 
@@ -376,7 +380,7 @@ function StatusBadge({ status }) {
 }
 
 function emptySub() {
-    return { first_name: "", last_name: "", passport_id: "", expiry_date: "", dob: "", current_address: "", email: "", mobile: "", relationship: "" };
+    return { first_name: "", last_name: "", passport_id: "", expiry_date: "", dob: "", current_address: "", email: "", mobile: "", visa_type: "", relationship: "" };
 }
 function emptyFields() {
     return { property_address: "", subtenants: [emptySub()], tenancy: {}, costs: {}, bank: {} };

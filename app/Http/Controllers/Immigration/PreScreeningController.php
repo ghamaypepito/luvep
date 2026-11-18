@@ -70,6 +70,15 @@ class PreScreeningController extends Controller
         return back()->with('success', 'Marked as an eligible potential client.');
     }
 
+    public function endorseAewv(PreScreening $preScreening)
+    {
+        $user = $this->guard();
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration_manager'), 403);
+        $this->service->endorseAewv($preScreening, $user);
+
+        return back()->with('success', 'Endorsed to Hendry for assessment.');
+    }
+
     public function decline(Request $request, PreScreening $preScreening)
     {
         $user = $this->guard();

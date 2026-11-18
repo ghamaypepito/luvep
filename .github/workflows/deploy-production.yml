@@ -1,12 +1,21 @@
 name: Deploy to Production
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: luvep-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: github.repository == 'ghamaypepito/luvep' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +44,9 @@ jobs:
       - name: Build frontend assets
         run: npm run build
 
+      - name: Install browser for deployment verification
+        run: npx playwright install --with-deps chromium
+
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -49,9 +61,13 @@ jobs:
         run: |
           sync_to_vps() {
             rsync -rlptvz -e "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4" --delete --no-owner --no-group \
+              --filter='P /public/build/assets/***' \
+              --filter='P /.deployment-*.json' \
               --exclude='.git' \
               --exclude='.github' \
+              --exclude='.claude' \
               --exclude='.env' \
+              --exclude='.env.*' \
               --exclude='node_modules' \
               --exclude='storage/logs/*' \
               --exclude='storage/backups' \
@@ -60,6 +76,7 @@ jobs:
               --exclude='storage/framework/views/*' \
               --exclude='storage/app/public/*' \
               --exclude='storage/app/private/*' \
+              --exclude='storage/app/hr-private' \
               --exclude='storage/app/google' \
               --exclude='storage/app/inz-forms' \
               --exclude='storage/app/inz-generated' \
@@ -77,6 +94,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=accept-new ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
             cd /var/www/epathways-production &&
+            bash scripts/install-social-workspace.sh &&
             sudo chown -R deploy:www-data storage bootstrap/cache &&
             sudo find storage bootstrap/cache -type d -exec chmod 2775 {} \; &&
             sudo find storage bootstrap/cache -type f -exec chmod 664 {} \; &&
@@ -85,5 +103,16 @@ jobs:
             php artisan db:seed --class=OfficialInzFormsSeeder --force &&
             php artisan config:cache &&
             php artisan view:cache &&
-            php artisan queue:restart
+            bash scripts/install-media-drive-maintenance.sh &&
+            php artisan queue:restart &&
+            printf "%s\n" "{\"repository\":\"ghamaypepito/luvep\",\"commit\":\"${{ github.sha }}\",\"run_id\":\"${{ github.run_id }}\"}" > .deployment-source.json
           '
+
+      - name: Verify live website
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --output /dev/null https://luvep.com/activities
+
+      - name: Verify frontend renders in browser
+        timeout-minutes: 4
+        run: node scripts/verify-live-frontend.mjs

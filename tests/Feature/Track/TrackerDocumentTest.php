@@ -21,6 +21,7 @@ class TrackerDocumentTest extends TestCase
     {
         parent::setUp();
         Storage::fake('public');
+        Storage::fake('local');
     }
 
     private function lead(array $attrs = []): Lead
@@ -28,7 +29,7 @@ class TrackerDocumentTest extends TestCase
         return Lead::create(array_merge(['first_name' => 'Track', 'last_name' => 'Lead'], $attrs));
     }
 
-    private function upload(Lead $lead, UploadedFile $file = null, array $extra = [])
+    private function upload(Lead $lead, ?UploadedFile $file = null, array $extra = [])
     {
         return $this->post("/track/{$lead->tracking_code}/document", array_merge([
             'file' => $file ?? UploadedFile::fake()->create('passport.pdf', 100, 'application/pdf'),
@@ -62,7 +63,7 @@ class TrackerDocumentTest extends TestCase
         $lead = $this->lead();
 
         $this->upload($lead, UploadedFile::fake()->create('malware.exe', 100, 'application/x-msdownload'))
-            ->assertSessionHasErrors('file');
+            ->assertSessionHasErrors('files.0');
 
         $this->assertSame(0, $lead->documents()->count());
     }
@@ -76,7 +77,8 @@ class TrackerDocumentTest extends TestCase
         $this->upload($lead);
         $doc = $lead->documents()->first();
         $oldPath = $doc->file_path;
-        Storage::disk('public')->assertExists($oldPath);
+        Storage::disk('local')->assertExists($oldPath);
+        Storage::disk('public')->assertMissing($oldPath);
 
         $this->post("/track/{$lead->tracking_code}/document/{$doc->id}", [
             'file' => UploadedFile::fake()->create('passport-v2.pdf', 120, 'application/pdf'),
@@ -84,8 +86,9 @@ class TrackerDocumentTest extends TestCase
 
         $doc->refresh();
         $this->assertNotSame($oldPath, $doc->file_path);
-        Storage::disk('public')->assertMissing($oldPath);
-        Storage::disk('public')->assertExists($doc->file_path);
+        Storage::disk('local')->assertMissing($oldPath);
+        Storage::disk('local')->assertExists($doc->file_path);
+        Storage::disk('public')->assertMissing($doc->file_path);
         Notification::assertSentTo($admin, DocumentSubmittedForReview::class, fn ($n) => $n->context === 'replaced');
     }
 

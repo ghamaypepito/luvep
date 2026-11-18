@@ -1,0 +1,124 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const { JSDOM } = require('jsdom');
+const Module = require('node:module');
+const path = require('node:path');
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/tickets' });
+for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent', 'File', 'FormData']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+global.IS_REACT_ACT_ENVIRONMENT = true;
+let blobs = 0;
+const revoked = [];
+URL.createObjectURL = () => `blob:preview-${++blobs}`;
+URL.revokeObjectURL = url => revoked.push(url);
+const React = require('react');
+const { act } = React;
+const { createRoot } = require('react-dom/client');
+let createRequest;
+let creationData;
+let createCount = 0;
+const inertia = {
+    Head: () => null, router: {},
+    useForm(initial) {
+        const [data, set] = React.useState(initial);
+        const [processing, busy] = React.useState(false);
+        const [errors, setErrors] = React.useState({});
+        const [progress, setProgress] = React.useState(null);
+        const transform = React.useRef(value => value);
+        return { transform: callback => { transform.current = callback; }, data, processing, errors, progress, setData: (key, value) => set(old => ({ ...old, [key]: value })), reset: () => set(initial),
+            post(url, options) { createCount++; creationData = transform.current(data); busy(true); createRequest = { url, options, fail: async () => { setErrors({ 'attachments.0': 'Upload failed. Try again.' }); busy(false); options.onFinish?.(); }, succeed: async () => { options.onSuccess(); busy(false); options.onFinish?.(); }, progress: value => { setProgress({ percentage: value }); options.onProgress?.({ percentage: value }); } }; },
+        };
+    },
+};
+const axios = require('axios');
+let replyRequest;
+let replyMode = 'pending';
+let replyCount = 0;
+let conversationMessages = [];
+axios.defaults.adapter = async config => {
+    if (config.method === 'get') return { data: { messages: { data: conversationMessages, next_page_url: null } }, status: 200, statusText: 'OK', headers: {}, config };
+    replyCount++;
+    replyRequest = config;
+    config.onUploadProgress?.({ loaded: 1, total: 2 });
+    if (replyMode === 'reject') throw { response: { data: { errors: { 'attachments.0': ['The file could not be uploaded.'] } } } };
+    if (replyMode === 'pending') return new Promise(resolve => { replyRequest.finish = () => resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config }); });
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+};
+const output = buildSync({ stdin: { contents: `export { default as Request } from './resources/js/components/RequestTicketButton.jsx'; export { default as Conversation } from './resources/js/components/TicketConversation.jsx'; export { default as Mine } from './resources/js/pages/tickets/MyTickets.jsx'; export { default as Admin } from './resources/js/pages/admin/SystemTickets.jsx';`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') }, external: ['react', 'react/jsx-runtime', '@inertiajs/react', 'axios'] }).outputFiles[0].text;
+const loaded = new Module(path.resolve('ticket-attachments.cjs'), module);
+loaded.filename = path.resolve('ticket-attachments.cjs'); loaded.paths = module.paths;
+loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
+loaded._compile(output, loaded.filename);
+const { Request, Conversation, Mine, Admin } = loaded.exports;
+const root = createRoot(document.getElementById('root'));
+let renderId = 0;
+const render = async (Component, props = {}) => act(async () => root.render(React.createElement(Component, { ...props, key: ++renderId })));
+const click = async node => { assert.ok(node, 'Control exists'); await act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true }))); };
+const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
+const select = async files => { const input = document.querySelector('input[type=file]'); assert.ok(input, 'An attachment input is available'); Object.defineProperty(input, 'files', { value: files, configurable: true }); await act(async () => input.dispatchEvent(new Event('change', { bubbles: true }))); };
+const submit = async () => act(async () => document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+const file = (name, type = 'image/png') => new File(['synthetic'], name, { type });
+const attachment = (name, mime) => ({ name, mime, size: 1234, url: `/private/${name}?inline=1`, download_url: `/private/${name}` });
+(async () => {
+    // Catches missing incremental file selection, silent rejection/truncation, and lost draft on upload failure.
+    await render(Request); await click(button('Ticket'));
+    assert.match(document.querySelector('input[type=file]').accept, /\.mp4/, 'Creation accepts screen recordings');
+    const title = document.querySelector('input:not([type=file])');
+    await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(title, 'Recordings with screenshots'); title.dispatchEvent(new Event('input', { bubbles: true })); });
+    await select([file('screen.png'), file('recording.mp4', 'video/mp4')]);
+    await select([file('notes.pdf', 'application/pdf')]);
+    assert.match(document.body.textContent, /screen.png/); assert.match(document.body.textContent, /recording.mp4/); assert.match(document.body.textContent, /notes.pdf/);
+    assert.equal(document.querySelectorAll('video').length, 1, 'Selected video has a native preview');
+    await select([file('unsafe.svg', 'image/svg+xml')]);
+    assert.match(document.querySelector('[role=alert]').textContent, /unsupported|not supported/i);
+    const huge = file('huge.mp4', 'video/mp4'); Object.defineProperty(huge, 'size', { value: 50 * 1024 * 1024 + 1 });
+    await select([huge]); assert.match(document.querySelector('[role=alert]').textContent, /50/);
+    await select(Array.from({length: 8}, (_, i) => file(`extra${i}.png`))); assert.match(document.querySelector('[role=alert]').textContent, /10/);
+    await click(document.querySelector('[aria-label="Remove notes.pdf"]'));
+    await submit();
+    assert.equal(createRequest.url, '/tickets'); assert.equal(createRequest.options.forceFormData, true);
+    assert.deepEqual(creationData.getAll('attachments[]').map(f => f.name), ['screen.png', 'recording.mp4']);
+    assert.equal(creationData.get('title'), 'Recordings with screenshots');
+    assert.equal(button('Submitting…').disabled, true);
+    await submit(); assert.equal(createCount, 1, 'Creation is not repeated during upload');
+    await act(async () => createRequest.progress(50)); assert.match(document.body.textContent, /50%/);
+    await act(async () => createRequest.fail());
+    assert.equal(title.value, 'Recordings with screenshots');
+    assert.match(document.body.textContent, /Upload failed/); assert.match(document.body.textContent, /recording.mp4/);
+    await submit(); await act(async () => createRequest.succeed()); assert.equal(document.querySelector('input[type=file]'), null);
+    await click(button('Ticket')); assert.doesNotMatch(document.body.textContent, /recording.mp4/);
+    await select(['a.png', 'b.jpg', 'c.jpeg', 'd.webp', 'e.gif', 'f.pdf', 'g.docx', 'h.xlsx', 'i.txt', 'j.zip'].map(name => file(name, '')));
+    assert.equal(document.querySelector('[aria-label="Selected attachments"]').children.length, 10);
+    await select([file('eleventh.csv', 'text/csv')]);
+    assert.match(document.querySelector('[role=alert]').textContent, /10/);
+    assert.equal(document.querySelector('[aria-label="Selected attachments"]').children.length, 10, 'An over-limit batch does not silently replace or truncate files');
+    // Catches text-only reply payloads, missing attachment-only sends, and premature draft reset.
+    await render(Conversation, { ticket: { id: 7 } });
+    await select([file('reply.webm', 'video/webm'), file('data.csv', 'text/csv')]);
+    assert.equal(button('Send reply').disabled, false);
+    await submit();
+    assert.ok(replyRequest.data instanceof FormData);
+    assert.deepEqual(replyRequest.data.getAll('attachments[]').map(f => f.name), ['reply.webm', 'data.csv']);
+    assert.equal(button('Sending…').disabled, true); await submit(); assert.equal(replyCount, 1, 'Reply is not repeated during upload'); assert.match(document.body.textContent, /50%/);
+    await act(async () => replyRequest.finish()); assert.doesNotMatch(document.body.textContent, /reply.webm/);
+    replyMode = 'reject'; await select([file('retry.mov', 'video/quicktime')]);
+    const textarea = document.querySelector('textarea');
+    await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Keep this draft'); textarea.dispatchEvent(new Event('input', { bubbles: true })); });
+    await submit(); assert.match(document.body.textContent, /could not be uploaded/); assert.match(document.body.textContent, /retry.mov/); assert.equal(textarea.value, 'Keep this draft');
+    replyMode = 'success';
+    conversationMessages = [{ id: 1, user: { name: 'Synthetic support' }, body: '', created_at: null, attachments: [attachment('message.mp4', 'video/mp4'), attachment('summary.pdf', 'application/pdf')] }];
+    await render(Conversation, { ticket: { id: 8, archived_at: '2026-10-28' } });
+    assert.equal(document.querySelector('input[type=file]'), null, 'Archived conversations stay read-only');
+    const video = document.querySelector('video'); assert.ok(video.controls); assert.equal(video.autoplay, false); assert.equal(video.preload, 'metadata');
+    assert.equal(document.querySelector('a[download][href="/private/summary.pdf"]').textContent.includes('summary.pdf'), true);
+    // Catches gallery integration regressions and accidental removal of legacy screenshots.
+    const ticket = { id: 9, title: 'Synthetic ticket', status: 'open', category: 'bug', priority: 'normal', images: ['/legacy.png'], attachments: [attachment('ticket.mov', 'video/quicktime'), attachment('ticket.png', 'image/png'), attachment('recording.mp4', 'text/plain')], archived_at: '2026-10-28' };
+    await render(Mine, { tickets: { data: [ticket], links: [] } });
+    assert.ok(document.querySelector('img[src="/legacy.png"]')); assert.ok(document.querySelector('video')); assert.ok(document.querySelector('a[download][href="/private/ticket.mov"]'));
+    assert.ok(!document.querySelector('video[aria-label="recording.mp4"]'), 'Server text/plain MIME prevents a filename from turning a document into a video');
+    assert.ok(document.querySelector('a[download][href="/private/recording.mp4"]'), 'A document with a media extension remains downloadable');
+    await render(Admin, { tickets: { data: [ticket], links: [] } }); await click(button('Synthetic ticket'));
+    assert.ok(document.querySelector('img[src="/legacy.png"]')); assert.ok(document.querySelector('video')); assert.ok(document.querySelector('img[src="/private/ticket.png?inline=1"]'));
+    await act(async () => root.unmount()); assert.ok(revoked.length > 0, 'Selected previews are released');
+    console.log('Ticket attachments: incremental selection, limits, multipart creation/replies, progress, draft retention, previews, both boards, legacy images and archive verified.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

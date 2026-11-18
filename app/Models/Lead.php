@@ -46,6 +46,9 @@ class Lead extends Model
         'Completed',
         'For Relodgement',
         'Declined Visa',
+        'On Hold',
+        'Qualified but No Funds',
+        'Archive',
     ];
 
     /** Default stage a newly-converted education student starts on. */
@@ -102,6 +105,7 @@ class Lead extends Model
         // RFI/outcome — order matters, the list is used as a forward-only
         // rank by CaseStepService::deriveStage().
         'Interim Visa Issued',
+        'Request for Medical',
         'Request for Information',
         // The adviser has responded to INZ's RFI — case is back with INZ
         // awaiting a decision.
@@ -171,6 +175,11 @@ class Lead extends Model
             ->where('is_english_student', false);
     }
 
+    public function scopeInNewLeads($query)
+    {
+        return $query->inLeadPipeline()->where('status', 'New Leads');
+    }
+
     /**
      * The Students module universe — the exact set the Education "Students"
      * page lists across its Education / English / Immigration tabs. It is:
@@ -238,7 +247,7 @@ class Lead extends Model
         return $status === 'approved' || $status === null;
     }
 
-    public function pushStageHistory(string $department, ?string $stage, ?string $assignee = null): void
+    public function pushStageHistory(string $department, ?string $stage, ?string $assignee = null, bool $pathwayIntake = false): void
     {
         $history = $this->stage_history ?? [];
         $user = auth()->user();
@@ -250,7 +259,7 @@ class Lead extends Model
             'at' => now()->toIso8601String(),
             'by_id' => $user?->id,
             'by_name' => $user?->name,
-        ];
+        ] + ($pathwayIntake ? ['pathway_intake' => true] : []);
 
         $this->stage_history = $history;
     }
@@ -262,6 +271,17 @@ class Lead extends Model
      * table is already at InnoDB's row-size limit. Read-only; write it through
      * that action, which annotates the stage entry.
      */
+    public function getMedicalDeadlineAttribute(): ?\Illuminate\Support\Carbon
+    {
+        foreach (array_reverse($this->stage_history ?? []) as $entry) {
+            if (($entry['stage'] ?? null) === 'Request for Medical' && ! empty($entry['medical_deadline'])) {
+                return \Illuminate\Support\Carbon::parse($entry['medical_deadline']);
+            }
+        }
+
+        return null;
+    }
+
     public function getRfiDeadlineAttribute(): ?\Illuminate\Support\Carbon
     {
         foreach (array_reverse($this->stage_history ?? []) as $entry) {
@@ -280,7 +300,7 @@ class Lead extends Model
      * a signed/lodged one. Stamps the stage-tracking columns + history and saves.
      * Returns true when the stage actually moved.
      */
-    public function advanceImmigrationStage(string $to, array $from, ?int $byUserId = null): bool
+    public function advanceImmigrationStage(string $to, array $from, ?int $byUserId = null, bool $notify = true): bool
     {
         $current = $this->immigration_stage;
         if ($current === $to) {
@@ -294,11 +314,11 @@ class Lead extends Model
         $this->stage_updated_at = now();
         $this->stage_updated_by = $byUserId;
         $this->pushStageHistory('immigration', $to, $this->immigration_assignee);
-        $this->save();
+        $notify ? $this->save() : $this->saveQuietly();
 
         // Email automation — fire the per-stage event so any configured
         // messages go out (no-op unless an admin enabled one).
-        app(\App\Services\EmailAutomationService::class)->fire(
+        if ($notify) app(\App\Services\EmailAutomationService::class)->fire(
             'immigration.stage.'.\Illuminate\Support\Str::slug($to, '_'),
             $this,
             ['stage' => $to],
@@ -818,6 +838,18 @@ class Lead extends Model
         // is written — this is what the portals' Updated column reports.
         static::updating(fn (Lead $lead) => $lead->stampLastActivity());
 
+        // Older handoffs can qualify for Cases by education_stage alone.
+        // Retain that existing membership when selecting an Education disposition;
+        // do not invent a conversion date or change the Immigration stage.
+        static::updating(function (Lead $lead) {
+            if ($lead->isDirty('education_stage')
+                && in_array($lead->education_stage, ['Qualified but No Funds', 'Archive'], true)
+                && in_array($lead->getOriginal('education_stage'), self::EDUCATION_STAGES_IMMIGRATION, true)
+                && ! $lead->is_immigration_case) {
+                $lead->is_immigration_case = true;
+            }
+        });
+
         // Stage-triggered client emails — fire whenever the pipeline stage
         // transitions (from any of the several stage-change endpoints).
         // Guarded by wasChanged so each fires once per transition.
@@ -1116,5 +1148,10 @@ class Lead extends Model
     public function eventSession()
     {
         return $this->belongsTo(EventSession::class);
+    }
+
+    public function educationEventRegistrations()
+    {
+        return $this->hasMany(\App\Models\EducationEventRegistration::class);
     }
 }

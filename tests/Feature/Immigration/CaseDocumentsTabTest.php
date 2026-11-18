@@ -60,15 +60,21 @@ class CaseDocumentsTabTest extends TestCase
             ->assertInertia(fn (Assert $p) => $p
                 ->where('checklist.source', 'visa_type')
                 ->where('checklist.visa', 'Student Visa')
-                ->has('checklist.items', 3)
+                ->has('checklist.items', 4)
+                ->where('checklist.items.0.key', 'svf')
+                ->where('checklist.items.0.label', 'Student Visa Information Form')
+                ->where('checklist.items.0.required', true)
+                ->where('checklist.items.0.status', 'not_submitted')
+                ->has('checklistGrouped.Information Form', 1)
+                ->where('checklistGrouped.Information Form.0.key', 'svf')
                 ->has('checklistGrouped.Required Documents', 3)
             );
     }
 
-    public function test_documents_tab_shows_fallback_when_visa_type_unknown(): void
+    public function test_documents_tab_keeps_universal_form_when_visa_type_unknown(): void
     {
-        // No VisaType row matching inz_visa_type → checklist empty,
-        // unstructuredDocuments still populated, page does NOT crash.
+        // Missing catalogue data still requires the universal form and keeps
+        // unrelated uploads available to staff.
         $case = $this->makeCase(['inz_visa_type' => 'Made-up Visa']);
         LeadDocument::create([
             'lead_id'       => $case->id,
@@ -86,9 +92,16 @@ class CaseDocumentsTabTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('checklist.source', 'none')
-                ->has('checklist.items', 0)
-                ->has('checklistGrouped', 0)
+                ->has('checklist.items', 1)
+                ->where('checklist.items.0.key', 'svf')
+                ->where('checklist.items.0.label', 'Visa Information Form')
+                ->where('checklist.items.0.required', true)
+                ->has('checklistGrouped', 1)
+                ->has('checklistGrouped.Information Form', 1)
+                ->where('checklistProgress.required_total', 1)
+                ->where('checklistProgress.required_approved', 0)
                 ->has('unstructuredDocuments', 1)
+                ->where('unstructuredDocuments.0.original_name', 'orphan.pdf')
             );
     }
 
@@ -119,9 +132,9 @@ class CaseDocumentsTabTest extends TestCase
             ->get("/portal/immigration/cases/{$case->id}/profile")
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
-                ->where('checklistProgress.required_total', 2)
+                ->where('checklistProgress.required_total', 3)
                 ->where('checklistProgress.required_approved', 1)
-                ->where('checklistProgress.total', 3)
+                ->where('checklistProgress.total', 4)
                 ->where('checklistProgress.approved', 2)
             );
     }

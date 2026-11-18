@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\SystemTicket;
+use App\Models\SystemTicketEvent;
 use App\Models\User;
 use App\Notifications\TicketSubmitted;
 use App\Notifications\TicketUpdated;
+use App\Services\Tickets\TicketArchiver;
+use App\Support\TicketAttachments;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -20,7 +24,7 @@ class SystemTicketController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403, 'Only staff can submit tickets.');
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403, 'Only staff can submit tickets.');
 
         $data = $request->validate([
             'title' => ['required', 'string', 'max:160'],
@@ -30,29 +34,42 @@ class SystemTicketController extends Controller
             // Up to 5 screenshots so the admin can see the exact screen.
             'images' => ['nullable', 'array', 'max:5'],
             'images.*' => ['image', 'mimes:jpeg,jpg,png,webp,gif', 'max:5120'],
-        ]);
-
-        $ticket = SystemTicket::create([
-            'title' => $data['title'],
-            'description' => $data['description'],
-            'category' => $data['category'],
-            'priority' => $data['priority'] ?? 'normal',
-            'status' => 'open',
-            'submitted_by' => $user->id,
-            'department' => $user->role,
-        ]);
-
-        // Store screenshots on the private disk (they can contain client data);
-        // they're served back through the auth-gated image() stream below.
-        if ($request->hasFile('images')) {
-            $paths = [];
-            foreach ($request->file('images') as $img) {
-                $paths[] = $img->store("system-tickets/{$ticket->id}", 'local');
-            }
-            $ticket->update(['images' => $paths]);
+        ] + TicketAttachments::rules());
+        if (count($request->file('images', [])) + count($request->file('attachments', [])) > TicketAttachments::MAX_FILES) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'Attach up to 10 files per ticket.']);
         }
 
-        $recipients = User::whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->get();
+        $stored = [];
+        $legacyPaths = [];
+        try {
+            $ticket = DB::transaction(function () use ($request, $user, $data, &$stored, &$legacyPaths) {
+                $ticket = SystemTicket::create([
+                    'title' => $data['title'], 'description' => $data['description'],
+                    'category' => $data['category'], 'priority' => $data['priority'] ?? 'normal',
+                    'status' => 'open', 'tracking_started_at' => now(), 'waiting_on' => 'support',
+                    'submitted_by' => $user->id, 'department' => $user->role,
+                ]);
+                foreach ($request->file('images', []) as $image) {
+                    $path = $image->store("system-tickets/{$ticket->id}", 'local');
+                    if (! $path) {
+                        throw new \RuntimeException('Could not store screenshot.');
+                    }
+                    $legacyPaths[] = $path;
+                }
+                $stored = TicketAttachments::store($request->file('attachments', []), "system-tickets/{$ticket->id}/attachments");
+                $ticket->update(['images' => $legacyPaths ?: null, 'attachments' => $stored ?: null]);
+                SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $user->id, 'kind' => 'created', 'to_status' => 'open', 'created_at' => now()]);
+
+                return $ticket;
+            });
+        } catch (\Throwable $e) {
+            TicketAttachments::delete($stored);
+            Storage::disk('local')->delete($legacyPaths);
+            throw $e;
+        }
+        Notification::route('mail', 'support@luvep.com')->notify(new \App\Notifications\SupportTicketCreated($ticket));
+
+        $recipients = User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->get();
         if ($recipients->isNotEmpty()) {
             Notification::send($recipients, new TicketSubmitted($ticket, $user->name));
         }
@@ -69,7 +86,7 @@ class SystemTicketController extends Controller
     public function myTickets(Request $request)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403, 'Only staff can view tickets.');
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403, 'Only staff can view tickets.');
 
         if (in_array($user->role, [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN], true)) {
             return redirect('/admin/system-tickets');
@@ -78,14 +95,18 @@ class SystemTicketController extends Controller
         $mine = SystemTicket::where('submitted_by', $user->id);
 
         $tickets = (clone $mine)
-            ->with('resolver:id,name')
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
+            ->when($request->query('tab') === 'archived', fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->with(['resolver:id,name', 'assignee:id,name'])
             ->orderByRaw("CASE WHEN status IN ('done','declined') THEN 1 ELSE 0 END")
             ->orderByDesc('created_at')
-            ->paginate(15)
+            ->paginate(15)->withQueryString()
             ->through(fn (SystemTicket $t) => $this->serialize($t));
 
         return inertia($this->myTicketsPage($user), [
             'tickets' => $tickets,
+            'updated_request' => $this->updatedRequestFor($request),
+            'filters' => ['tab' => $request->query('tab', 'active')],
             'counts' => [
                 'open' => (clone $mine)->open()->count(),
                 'total' => (clone $mine)->count(),
@@ -113,13 +134,25 @@ class SystemTicketController extends Controller
     /** Admin / super-admin triage board of every ticket. */
     public function adminIndex(Request $request)
     {
-        $status = $request->query('status');
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
+        $request->validate([
+            'tab' => ['nullable', Rule::in(['active', 'archived'])],
+            'status' => ['nullable', Rule::in([...SystemTicket::STATUSES, 'all'])],
+            'department' => ['nullable', 'string', 'max:80'],
+            'search' => ['nullable', 'string', 'max:500'],
+        ]);
+        $archived = $request->query('tab') === 'archived';
+        $status = $archived ? 'all' : ($request->query('status') ?: 'open');
         $dept = $request->query('department');
         $search = trim((string) $request->query('search', ''));
 
         $base = SystemTicket::query()
-            ->with(['submitter:id,name,role', 'resolver:id,name'])
-            ->when($status && in_array($status, SystemTicket::STATUSES, true), fn ($q) => $q->where('status', $status))
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
+            ->with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
+            ->when($archived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->when(! $archived, fn ($q) => $status === 'all'
+                ? $q->where('status', '!=', 'done')
+                : $q->where('status', $status))
             ->when($dept, fn ($q) => $q->where('department', $dept))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('title', 'like', "%{$search}%")
@@ -135,32 +168,73 @@ class SystemTicketController extends Controller
 
         return inertia('admin/SystemTickets', [
             'tickets' => $tickets,
-            'filters' => ['status' => $status, 'department' => $dept, 'search' => $search],
+            'updated_request' => $this->updatedRequestFor($request),
+            'can_manage' => true,
+            'assignees' => User::where('is_active', true)->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN])->orderBy('name')->get(['id', 'name']),
+            'filters' => ['tab' => $request->query('tab', 'active'), 'status' => $status, 'department' => $dept, 'search' => $search],
             'meta' => [
                 'categories' => SystemTicket::CATEGORIES,
                 'priorities' => SystemTicket::PRIORITIES,
                 'statuses' => SystemTicket::STATUSES,
             ],
-            'counts' => ['open' => SystemTicket::open()->count()],
+            'counts' => ['open' => SystemTicket::whereNull('archived_at')->where('status', 'open')->count()],
         ]);
     }
 
     public function adminUpdate(Request $request, $id)
     {
-        $ticket = SystemTicket::findOrFail($id);
-
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
         $data = $request->validate([
             'status' => ['required', Rule::in(SystemTicket::STATUSES)],
+            'expected_status' => ['sometimes', 'required', Rule::in(SystemTicket::STATUSES)],
             'admin_response' => ['nullable', 'string', 'max:5000'],
+            'assigned_to' => ['nullable', Rule::exists('users', 'id')->where(fn ($q) => $q->where('is_active', true)->whereNull('deleted_at')->whereIn('role', [User::ROLE_ADMIN, User::ROLE_SUPER_ADMIN]))],
+            'waiting_on' => ['nullable', Rule::in(['support', 'requester', 'external'])],
+            'category' => ['sometimes', 'required', Rule::in(SystemTicket::CATEGORIES)],
+            'topic' => ['nullable', 'string', 'max:100'],
+            'response_target_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
         ]);
+        $ticket = DB::transaction(function () use ($id, $request, $data) {
+            $ticket = SystemTicket::whereKey($id)->lockForUpdate()->firstOrFail();
+            abort_if($ticket->archived_at, 422, 'Archived tickets are read-only.');
+            if (isset($data['expected_status']) && $data['expected_status'] !== $ticket->status) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'This ticket changed. Refresh the list before trying again.']);
+            }
+            unset($data['expected_status']);
+            $oldStatus = $ticket->status;
+            if ($data['status'] === 'done' && $oldStatus !== 'done') {
+                foreach (['issue_summary', 'root_cause', 'resolution', 'verification', 'documentation_summary'] as $field) {
+                    if (! trim($ticket->resolution_report[$field] ?? '')) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['status' => 'Complete and save the resolution report before marking Done.']);
+                    }
+                }
+            }
+            $event = fn ($kind, $metadata = []) => SystemTicketEvent::create(['ticket_id' => $ticket->id, 'actor_id' => $request->user()->id, 'kind' => $kind, 'from_status' => $oldStatus, 'to_status' => $data['status'], 'metadata' => $metadata, 'created_at' => now()]);
+            if ($oldStatus !== $data['status']) {
+                $event('status_changed');
+                $data['resolved_at'] = in_array($data['status'], ['done', 'declined']) ? now() : null;
+                $data['resolved_by'] = in_array($data['status'], ['done', 'declined']) ? $request->user()->id : null;
+                if ($data['status'] !== 'done') {
+                    $data['archived_at'] = null;
+                }
+            }
+            if (array_key_exists('assigned_to', $data) && (string) $data['assigned_to'] !== (string) $ticket->assigned_to) {
+                $event('assigned', ['from' => $ticket->assigned_to, 'to' => $data['assigned_to']]);
+                $data['assigned_at'] = $ticket->assigned_at ?: ($data['assigned_to'] ? now() : null);
+            }
+            if (array_key_exists('waiting_on', $data) && $data['waiting_on'] !== $ticket->waiting_on) {
+                $event('waiting_changed', ['from' => $ticket->waiting_on, 'to' => $data['waiting_on']]);
+            }
+            if (isset($data['category']) && $data['category'] !== $ticket->category) {
+                $event('category_changed', ['from' => $ticket->category, 'to' => $data['category']]);
+            }
+            if (isset($data['admin_response']) && trim($data['admin_response']) !== '' && $data['admin_response'] !== $ticket->admin_response) {
+                \App\Models\SystemTicketMessage::create(['ticket_id' => $ticket->id, 'user_id' => $request->user()->id, 'body' => $data['admin_response'], 'is_support' => true]);
+            }
+            $ticket->fill($data)->save();
 
-        $resolved = in_array($data['status'], ['done', 'declined'], true);
-        $ticket->update([
-            'status' => $data['status'],
-            'admin_response' => $data['admin_response'] ?? $ticket->admin_response,
-            'resolved_by' => $resolved ? $request->user()->id : null,
-            'resolved_at' => $resolved ? now() : null,
-        ]);
+            return $ticket;
+        });
 
         // Tell the department who raised it.
         if ($ticket->submitter) {
@@ -168,6 +242,15 @@ class SystemTicketController extends Controller
         }
 
         return back()->with('success', "Ticket {$ticket->ticket_ref} updated.");
+    }
+
+    public function archive(Request $request, int $ticket, TicketArchiver $archiver)
+    {
+        abort_unless($request->user()->is_active && $request->user()->isAdmin(), 403);
+        $data = $request->validate(['expected_status' => ['required', Rule::in(SystemTicket::STATUSES)]]);
+        $archiver->manually($ticket, $request->user(), $data['expected_status']);
+
+        return back()->with('success', 'Ticket moved to Archive.');
     }
 
     /**
@@ -178,7 +261,7 @@ class SystemTicketController extends Controller
     public function image(Request $request, int $id, int $index)
     {
         $user = $request->user();
-        abort_if($user->isLead(), 403);
+        abort_if(! $user->is_active || in_array($user->role, ['lead', 'revoked_lead']), 403);
 
         $ticket = SystemTicket::findOrFail($id);
         abort_unless(
@@ -189,12 +272,134 @@ class SystemTicketController extends Controller
         $images = $ticket->images ?? [];
         abort_unless(isset($images[$index]) && Storage::disk('local')->exists($images[$index]), 404);
 
-        return response()->file(Storage::disk('local')->path($images[$index]));
+        return response()->file(Storage::disk('local')->path($images[$index]), [
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ])->setPrivate();
+    }
+
+    public function attachment(Request $request, SystemTicket $ticket, int $index)
+    {
+        TicketAttachments::authorize($request, $ticket);
+
+        return TicketAttachments::stream($request, $ticket->attachments ?? [], $index);
+    }
+
+    /** Original senders may update their request, including completed tickets. */
+    public function requesterUpdate(Request $request, SystemTicket $ticket)
+    {
+        $user = $request->user();
+        abort_unless($user && $user->is_active && ! in_array($user->role, ['lead', 'revoked_lead'], true)
+            && (int) $ticket->submitted_by === (int) $user->id, 403);
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:160'],
+            'description' => ['required', 'string', 'max:5000'],
+            'category' => ['required', Rule::in(SystemTicket::CATEGORIES)],
+            'priority' => ['required', Rule::in(SystemTicket::PRIORITIES)],
+            'request_version' => ['required', 'string', 'size:64'],
+            'remove_attachments' => ['sometimes', 'array', 'max:10'],
+            'remove_attachments.*' => ['required', 'integer', 'min:0', 'distinct'],
+            'remove_images' => ['sometimes', 'array', 'max:10'],
+            'remove_images.*' => ['required', 'integer', 'min:0', 'distinct'],
+        ] + TicketAttachments::rules());
+        $stored = [];
+        try {
+            DB::transaction(function () use ($ticket, $user, $request, $data, &$stored) {
+                $locked = SystemTicket::whereKey($ticket->id)->lockForUpdate()->firstOrFail();
+                abort_unless((int) $locked->submitted_by === (int) $user->id, 403);
+                abort_if($locked->archived_at, 422, 'Archived tickets are read-only.');
+                if (! hash_equals($locked->requestVersion(), $data['request_version'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'request_version' => 'This request changed since you opened the editor. Keep a copy of your draft, reload the ticket and try again.',
+                    ]);
+                }
+                $files = $request->file('attachments', []);
+                $removed = [];
+                $evidence = ['images' => $locked->images ?? [], 'attachments' => $locked->attachments ?? []];
+                foreach ($evidence as $type => &$slots) {
+                    foreach ($data['remove_'.$type] ?? [] as $index) {
+                        if (! isset($slots[$index])) {
+                            throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'One of the selected files is no longer on this ticket. Reload the request and try again.']);
+                        }
+                        $removed[] = $type === 'images' ? $slots[$index] : $slots[$index]['path'];
+                        // Keep the slot so an old attachment URL cannot open a different file.
+                        $slots[$index] = null;
+                    }
+                }
+                unset($slots);
+                if (count(array_filter($evidence['images'])) + count(array_filter($evidence['attachments'])) + count($files) > TicketAttachments::MAX_FILES) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'This ticket can hold up to 10 files, including existing screenshots and attachments.']);
+                }
+                $changes = [];
+                foreach (['title', 'description', 'category', 'priority'] as $field) {
+                    if ($locked->{$field} !== $data[$field]) {
+                        $changes[$field] = ['from' => $locked->{$field}, 'to' => $data[$field]];
+                        $locked->{$field} = $data[$field];
+                    }
+                }
+                if (! $changes && ! $files && ! $removed) {
+                    return;
+                }
+                $stored = TicketAttachments::store($files, "system-tickets/{$locked->id}/attachments");
+                if (! empty($data['remove_images'])) {
+                    $locked->images = $evidence['images'];
+                }
+                if ($stored || ! empty($data['remove_attachments'])) {
+                    $locked->attachments = [...$evidence['attachments'], ...$stored];
+                }
+                $locked->save();
+                $locked->events()->create(['actor_id' => $user->id, 'kind' => 'request_updated',
+                    'from_status' => $locked->status, 'to_status' => $locked->status,
+                    'metadata' => ['changes' => $changes, 'attachments_added' => count($stored), 'attachments_removed' => count($removed)]]);
+                if ($removed) {
+                    DB::afterCommit(function () use ($removed) {
+                        try {
+                            if (! Storage::disk('local')->delete($removed)) {
+                                report(new \RuntimeException('Unable to clean up removed ticket files.'));
+                            }
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    });
+                }
+            });
+        } catch (\Throwable $e) {
+            TicketAttachments::delete($stored);
+            throw $e;
+        }
+
+        return back()->with('success', "Ticket {$ticket->ticket_ref} updated.")
+            ->with('ticket_request_update', ['actor_id' => $user->id, 'ticket_id' => $ticket->id]);
+    }
+
+    /** Keep an edited drawer current even when its new title leaves the search results. */
+    private function updatedRequestFor(Request $request): ?array
+    {
+        $updated = $request->session()->get('ticket_request_update');
+        if (! is_array($updated) || (int) ($updated['actor_id'] ?? 0) !== (int) $request->user()->id) {
+            return null;
+        }
+        $ticket = SystemTicket::with(['submitter:id,name,role', 'resolver:id,name', 'assignee:id,name'])
+            ->withMax(['events as request_edited_at' => fn ($q) => $q->where('kind', 'request_updated')], 'created_at')
+            ->find($updated['ticket_id'] ?? null);
+
+        return $ticket && $ticket->canEditRequest($request->user()) ? $this->serialize($ticket) : null;
     }
 
     private function serialize(SystemTicket $t): array
     {
         return [
+            'can_edit_request' => auth()->user() && $t->canEditRequest(auth()->user()),
+            'request_version' => auth()->user() && $t->canEditRequest(auth()->user()) ? $t->requestVersion() : null,
+            'request_edited_at' => $t->request_edited_at ? \Illuminate\Support\Carbon::parse($t->request_edited_at)->toIso8601String() : null,
+            'assigned_to' => $t->assigned_to,
+            'assignee' => $t->assignee?->name,
+            'waiting_on' => $t->waiting_on,
+            'topic' => $t->topic,
+            'archived_at' => $t->archived_at?->toIso8601String(),
+            'tracking_started_at' => $t->tracking_started_at?->toIso8601String(),
+            'resolution_report' => $t->resolution_report,
+            'response_target_hours' => $t->response_target_hours,
             'id' => $t->id,
             'ticket_ref' => $t->ticket_ref,
             'title' => $t->title,
@@ -207,10 +412,11 @@ class SystemTicketController extends Controller
             'admin_response' => $t->admin_response,
             'resolver' => optional($t->resolver)->name,
             // Auth-gated stream URLs for each screenshot (never the raw path).
-            'images' => collect($t->images ?? [])
+            'images' => collect(array_filter($t->images ?? []))
                 ->keys()
                 ->map(fn ($i) => url("/system-tickets/{$t->id}/images/{$i}"))
                 ->all(),
+            'attachments' => TicketAttachments::serialize($t->attachments ?? [], "/system-tickets/{$t->id}/attachments"),
             'created_at' => optional($t->created_at)?->toIso8601String(),
             'resolved_at' => optional($t->resolved_at)?->toIso8601String(),
         ];

@@ -141,7 +141,10 @@ class EmailReplyController extends Controller
         $from = config('services.contact.reply_to') ?: config('mail.from.address');
         $fromName = config('services.contact.event_from_name') ?: config('mail.from.name');
 
-        $comms->sendRaw('email', $lead, $subject, nl2br(e($data['body'])), null, null, $from, $fromName);
+        $log = $comms->sendRaw('email', $lead, $subject, nl2br(e($data['body'])), null, null, $from, $fromName);
+        if ($log->status === \App\Models\MessageLog::STATUS_FAILED) {
+            return back()->withErrors(['body' => 'Could not send the reply. Your draft has been kept; please try again.']);
+        }
 
         // Record the outbound message in the thread.
         EmailReply::create([

@@ -66,8 +66,9 @@ class StudentMultiSchoolTest extends TestCase
 
         $this->actingAs($edu)->post("/portal/education/students/{$lead->id}/update", $this->base([
             'school_text' => 'New School A · New School B',
-        ]))->assertRedirect();
+        ]))->assertRedirect()->assertSessionMissing('error');
 
         $this->assertSame('New School A · New School B', $lead->fresh()->student_school);
+        $this->assertFalse($lead->studyPlans()->exists());
     }
 }

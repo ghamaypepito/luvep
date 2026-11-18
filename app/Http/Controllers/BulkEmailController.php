@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SendCampaign;
+use App\Models\EducationRecipientList;
 use App\Models\EmailCampaign;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Bulk campaigns — one feature, two channels (email + SMS). Compose from a
@@ -24,13 +26,19 @@ class BulkEmailController extends Controller
     {
         $department = $this->department($request);
         $channel = $this->channel($request);
+        $filterNewLeads = $department === 'education' && $channel === EmailCampaign::CHANNEL_EMAIL;
         $eventSender = app(\App\Services\EventEmailSender::class);
 
         return inertia($this->page($request, 'index'), [
             'basePath' => $this->basePath($request),
             'channel' => $channel,
             'templates' => $this->availableTemplates($department, $channel),
-            'recipients' => $this->recipientPool($channel),
+            'recipients' => $this->recipientPool($channel, $filterNewLeads),
+            'filterNewLeads' => $filterNewLeads,
+            'educationVisits' => $filterNewLeads ? \App\Models\EducationVisit::where('status', '!=', 'cancelled')->latest('id')->get()
+                ->map(fn ($visit) => ['id' => $visit->id, 'name' => $visit->school.' · '.$visit->activity.' · '.$visit->summary()])->values() : [],
+            'recipientLists' => $filterNewLeads ? EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'leads')
+                ->orderBy('name')->get(['id', 'name', 'mode', 'filters', 'lead_ids']) : [],
             'events' => \App\Models\Event::orderBy('name')
                 ->get()
                 ->map(fn (\App\Models\Event $e) => array_merge(
@@ -45,6 +53,40 @@ class BulkEmailController extends Controller
         ]);
     }
 
+    public function saveRecipientList(Request $request)
+    {
+        abort_unless($this->department($request) === 'education' && $this->channel($request) === EmailCampaign::CHANNEL_EMAIL, 403);
+        $request->validate(['list_id' => ['nullable', 'integer']]);
+        $list = $request->filled('list_id')
+            ? EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'leads')->findOrFail($request->input('list_id'))
+            : new EducationRecipientList(['created_by' => $request->user()->id, 'source' => 'leads']);
+        $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('education_recipient_lists')->where('created_by', $request->user()->id)->ignore($list->id)],
+            'mode' => ['required', Rule::in(['smart', 'custom'])],
+            'filters' => ['present', 'array:search,stage,event_id,registered_from,registered_to'],
+            'filters.search' => ['nullable', 'string', 'max:160'],
+            'filters.stage' => ['nullable', 'string', 'max:100'],
+            'filters.event_id' => ['nullable', 'integer', 'exists:events,id'],
+            'filters.registered_from' => ['nullable', 'date_format:Y-m-d'],
+            'filters.registered_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('filters.registered_from'), 'after_or_equal:filters.registered_from')],
+            'lead_ids' => ['exclude_unless:mode,custom', 'required', 'array', 'min:1', 'max:10000', Rule::exists('leads', 'id')],
+            'lead_ids.*' => ['integer', 'distinct'],
+        ]);
+        try {
+            $list->fill([
+                'name' => $data['name'], 'mode' => $data['mode'],
+                'filters' => $data['mode'] === 'smart' ? $data['filters'] : [],
+                'lead_ids' => $data['mode'] === 'custom' ? array_map('intval', array_values($data['lead_ids'])) : [],
+            ])->save();
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages(['name' => 'You already have a recipient list with this name.']);
+        }
+        \App\Models\ActivityLog::record('education.recipient_list.saved', ['portal' => 'education', 'properties' => ['list_id' => $list->id, 'mode' => $list->mode]]);
+
+        return back()->with('success', 'Recipient list saved.');
+    }
+
     public function store(Request $request)
     {
         $department = $this->department($request);
@@ -55,6 +97,7 @@ class BulkEmailController extends Controller
             'template_id' => ['required', 'integer', 'exists:message_templates,id'],
             'recipient_lead_ids' => ['required', 'array', 'min:1'],
             'recipient_lead_ids.*' => ['integer'],
+            'new_leads_only' => ['sometimes', 'boolean'],
             'action' => ['required', Rule::in(['send_now', 'schedule'])],
             'scheduled_at' => ['nullable', 'required_if:action,schedule', 'date', 'after:now'],
         ]);
@@ -66,7 +109,15 @@ class BulkEmailController extends Controller
         }
 
         // Keep only recipients reachable on this channel (snapshot for history).
-        $leads = Lead::whereIn('id', $data['recipient_lead_ids'])->get();
+        $leadIds = array_unique($data['recipient_lead_ids']);
+        $newLeadsOnly = $department === 'education' && $channel === EmailCampaign::CHANNEL_EMAIL && $request->boolean('new_leads_only');
+        $leads = Lead::query()->when($newLeadsOnly, fn ($query) => $query->inNewLeads())->whereIn('id', $leadIds)->get();
+        if ($newLeadsOnly && $leads->count() !== count($leadIds)) {
+            throw ValidationException::withMessages([
+                'recipient_lead_ids' => 'Some selected recipients are no longer in New Leads. Refresh the list and select the recipients again.',
+            ]);
+        }
+
         $comms = app(\App\Services\CommunicationService::class);
         $recipientIds = [];
 
@@ -103,6 +154,7 @@ class BulkEmailController extends Controller
             'scheduled_at' => $scheduling ? $data['scheduled_at'] : null,
             'total_recipients' => count($recipientIds),
             'recipient_lead_ids' => $recipientIds,
+            'new_leads_only' => $newLeadsOnly,
         ]);
 
         $noun = $isSms ? 'SMS campaign' : 'Campaign';
@@ -241,7 +293,7 @@ class BulkEmailController extends Controller
     }
 
     /** Selectable recipients: every lead reachable on the channel. */
-    private function recipientPool(string $channel): \Illuminate\Support\Collection
+    private function recipientPool(string $channel, bool $filterNewLeads): \Illuminate\Support\Collection
     {
         $query = Lead::query();
         if ($channel === EmailCampaign::CHANNEL_SMS) {
@@ -251,9 +303,13 @@ class BulkEmailController extends Controller
         }
 
         $comms = app(\App\Services\CommunicationService::class);
+        $newLeadIds = $filterNewLeads
+            ? Lead::inNewLeads()->select('id')
+            : null;
 
-        return $query->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id'])
+        return $query->select(['id', 'first_name', 'last_name', 'email', 'phone', 'stage', 'status', 'event_id', 'created_at'])
+            ->when($newLeadIds, fn ($q) => $q->selectRaw('id in ('.$newLeadIds->toSql().') as is_new_lead', $newLeadIds->getBindings()))
+            ->orderBy('first_name')->get()
             ->filter(function (Lead $l) use ($channel, $comms) {
                 if ($channel === EmailCampaign::CHANNEL_SMS) {
                     return $l->phone && $comms->normalizePhone($l->phone);
@@ -269,6 +325,8 @@ class BulkEmailController extends Controller
                 'stage' => $l->stage,
                 'status' => $l->status,
                 'event_id' => $l->event_id,
+                'is_new_lead' => (bool) $l->is_new_lead,
+                'registered_on' => $l->created_at?->timezone('Asia/Manila')->toDateString(),
             ])->values();
     }
 
@@ -281,6 +339,7 @@ class BulkEmailController extends Controller
             'total' => $c->total_recipients,
             'sent' => $c->sent_count,
             'failed' => $c->failed_count,
+            'skipped' => $c->skipped_count,
             'scheduled_at' => optional($c->scheduled_at)?->toIso8601String(),
             'completed_at' => optional($c->completed_at)?->toIso8601String(),
             'created_at' => optional($c->created_at)?->toIso8601String(),

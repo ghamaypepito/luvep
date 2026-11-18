@@ -54,9 +54,9 @@ trait CreatesDashboardLead
      * Staff who can pre-screen / run goal-setting — sales, education and
      * admin users, for the "by" dropdowns on the Add Lead form.
      */
-    protected function dashboardStaff()
+    protected function dashboardStaff(array $roles = ['sales', 'education', 'admin'])
     {
-        return \App\Models\User::whereIn('role', ['sales', 'education', 'admin'])
+        return \App\Models\User::whereIn('role', $roles)
             ->orderBy('name')
             ->get(['id', 'name', 'role', 'avatar_path']);
     }
@@ -136,7 +136,7 @@ trait CreatesDashboardLead
                 'author_role'     => $user?->role,
                 'kind'            => 'pre_screen',
                 'pre_screened_by' => $data['pre_screened_by'] ?? null,
-                'body'            => $data['pre_screening_notes'] ?: 'Pre-screening recorded.',
+                'body'            => ($data['pre_screening_notes'] ?? null) ?: 'Pre-screening recorded.',
             ]);
         }
 
@@ -150,7 +150,7 @@ trait CreatesDashboardLead
                 'kind'                => 'goal_setting',
                 'goal_setting_by'     => $data['goal_setting_by'] ?? null,
                 'goal_setting_status' => $data['goal_setting_status'] ?? null,
-                'body'                => $data['goal_setting_notes'] ?: 'Goal-setting recorded.',
+                'body'                => ($data['goal_setting_notes'] ?? null) ?: 'Goal-setting recorded.',
             ]);
         }
 

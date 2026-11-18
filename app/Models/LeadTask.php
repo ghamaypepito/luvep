@@ -122,6 +122,15 @@ class LeadTask extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** Primary and secondary assignments share the same personal task queue. */
+    public function scopeAssignedTo(Builder $query, int $userId): Builder
+    {
+        return $query->where(fn ($assigned) => $assigned
+            ->where('assignee_id', $userId)
+            ->orWhereJsonContains('additional_assignee_ids', $userId)
+            ->orWhereJsonContains('additional_assignee_ids', (string) $userId));
+    }
+
     /** Open + overdue. Powers the sales "Due today" widget. */
     public function scopeDueToday(Builder $q): Builder
     {

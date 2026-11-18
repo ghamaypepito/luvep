@@ -48,7 +48,7 @@ class CaseChecklistService
 
     public function forCase(Lead $lead): array
     {
-        $base = $this->baseChecklist($lead);
+        $base = $this->consolidateAliases($lead, $this->baseChecklist($lead));
 
         // Prepend the universal items (deduping any the visa list already has)
         // so they show — and can be hidden/shown — on every case.
@@ -59,6 +59,42 @@ class CaseChecklistService
         ));
 
         return array_merge($this->normaliseItems($this->universalItemsFor($lead)), $base);
+    }
+
+    /** Historical PRSWV sponsor visa keys describe one requirement; retain both upload keys. */
+    public function consolidateAliases(Lead $lead, array $items): array
+    {
+        $keys = array_column($items, 'key');
+        if ($this->resolveVisaType($lead)?->code !== 'PRSWV'
+            || ! in_array('sponsor_nz_visa', $keys, true)) {
+            return $items;
+        }
+
+        return collect($items)->reject(fn ($item) => ($item['key'] ?? null) === 'nz_visa')
+            ->map(function ($item) {
+                if (($item['key'] ?? null) === 'sponsor_nz_visa') {
+                    $item['aliases'] = ['nz_visa'];
+                }
+                return $item;
+            })->values()->all();
+    }
+
+    public function itemKeys(array $item): array
+    {
+        return array_merge([$item['key']], $item['aliases'] ?? []);
+    }
+
+    /** Hiding either historical key must also hide its equivalent uploads. */
+    public function hiddenKeysFor(Lead $lead): array
+    {
+        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        foreach ($this->forCase($lead) as $item) {
+            $keys = $this->itemKeys($item);
+            if (array_intersect($keys, $hidden)) {
+                $hidden = array_merge($hidden, $keys);
+            }
+        }
+        return array_values(array_unique($hidden));
     }
 
     /**
@@ -158,13 +194,14 @@ class CaseChecklistService
         }
 
         $docsByKey = $this->latestDocumentsByKey($lead);
-        $hidden = is_array($lead->hidden_track_documents) ? $lead->hidden_track_documents : [];
+        $hidden = $this->hiddenKeysFor($lead);
 
         return collect($items)->map(function (array $item) use ($docsByKey, $hidden) {
-            $doc = $docsByKey->get($item['key']) ?? null;
+            $doc = collect($this->itemKeys($item))->map(fn ($key) => $docsByKey->get($key))->filter()->sortByDesc('created_at')->first();
 
             return [
                 'key' => $item['key'],
+                'aliases' => $item['aliases'] ?? [],
                 'label' => $item['label'],
                 'hint' => $item['hint'] ?? null,
                 'required' => (bool) ($item['required'] ?? false),
@@ -216,7 +253,7 @@ class CaseChecklistService
      */
     public function unstructuredDocuments(Lead $lead): array
     {
-        $knownKeys = collect($this->forCase($lead))->pluck('key')->filter()->all();
+        $knownKeys = collect($this->forCase($lead))->flatMap(fn ($item) => $this->itemKeys($item))->filter()->all();
         $known = array_flip($knownKeys);
 
         return $lead->documents()

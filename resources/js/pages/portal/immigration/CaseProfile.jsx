@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
+import { immBase } from "@/lib/caseRoutes";
 import CaseProfileHeader from "@/components/immigration/case-profile/CaseProfileHeader";
 import OverviewTab from "@/components/immigration/case-profile/tabs/OverviewTab";
 import PersonalTab from "@/components/immigration/case-profile/tabs/PersonalTab";
@@ -31,7 +32,7 @@ function VisaChainBar({ visaChain, leadId, visaTypes }) {
     const start = () => {
         if (!vt) return;
         setSaving(true);
-        router.post(`/portal/immigration/cases/${leadId}/next-visa`, { visa_type_id: vt }, { onFinish: () => setSaving(false) });
+        router.post(`${immBase()}/cases/${leadId}/next-visa`, { visa_type_id: vt }, { onFinish: () => setSaving(false) });
     };
 
     return (
@@ -49,7 +50,7 @@ function VisaChainBar({ visaChain, leadId, visaTypes }) {
                         <div className="flex items-center gap-1 ml-1">
                             {chain.map((c) => (
                                 <button key={c.lead_id} type="button" disabled={c.is_current}
-                                    onClick={() => router.visit(`/portal/immigration/cases/${c.lead_id}/profile`)}
+                                    onClick={() => router.visit(`${immBase()}/cases/${c.lead_id}/profile`)}
                                     title={c.visa_type || `Visa ${c.sequence}`}
                                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
                                         c.is_current ? "bg-gray-900 text-white border-gray-900 cursor-default"
@@ -119,8 +120,8 @@ export default function CaseProfile() {
         process = { started: false, steps: [], payment: null, partner: null },
         threads = [], caseStaff = [], attention = null,
         financials = { record: null, payments: [], totals: {}, referred_by: null },
-        inzForms = [], dependents = [], vif = null, caseOptions = [], tiedTo = null, visaTypes = [],
-        assessmentCompleteness = null, engagement = {}, tasks = { items: [] },
+        inzForms = [], dependents = [], vif = null, caseOptions = [], tiedTo = null, visaTypes = [], canCorrectCaseNames = false,
+        assessmentCompleteness = null, engagement = {}, tasks = { items: [] }, passportPrefillAvailable = false,
         visaProgress = { tracked: false, activities: [] }, stageTimeline = [],
         visaChain = { sequence: 1, total: 1, closed: false, can_start_next: false, chain: [] },
     } = props;
@@ -155,7 +156,7 @@ export default function CaseProfile() {
     const tabProps = {
         lead, intake, documents, documentRequests, checklist, checklistGrouped, unstructuredDocuments, checklistProgress,
         communications, clientReplies, agreements, notes, activity, findings, process, threads, caseStaff, financials, inzForms, dependents, vif, caseOptions, visaTypes,
-        assessmentCompleteness, engagement, attention, tasks,
+        assessmentCompleteness, engagement, attention, tasks, canCorrectCaseNames, passportPrefillAvailable,
         visaProgress, stageTimeline,
         onNavigate: setActiveTab,
     };

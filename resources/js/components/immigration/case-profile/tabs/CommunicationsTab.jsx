@@ -5,7 +5,8 @@ import {
     Mail, MessageSquare, Inbox, Send, Loader2,
     CheckCircle2, Clock, XCircle, CornerUpLeft, MailOpen,
 } from "lucide-react";
-import { leadBase } from "@/lib/caseRoutes";
+import { leadBase, isAgentCasePortal } from "@/lib/caseRoutes";
+import CommunicationsPanel from "@/components/sales/CommunicationsPanel";
 
 // Case-profile Communications tab — a two-pane message centre: the full thread
 // (outbound sends + inbound client replies) on the left, the selected message on
@@ -60,7 +61,15 @@ function dayHeading(iso) {
     return label;
 }
 
-export default function CommunicationsTab({ communications = [], clientReplies = [], lead = {} }) {
+export default function CommunicationsTab(props) {
+    // Staff use the same authorized conversation workflow as Education.
+    // Recruiting agents retain their existing read-only case conversation.
+    return isAgentCasePortal()
+        ? <CaseConversationHistory {...props} />
+        : <CommunicationsPanel leadId={props.lead?.id} leadEmail={props.lead?.email || ""} />;
+}
+
+function CaseConversationHistory({ communications = [], clientReplies = [], lead = {} }) {
     const [filter, setFilter] = useState("all");
     const [dismissed, setDismissed] = useState(false);
     const [selectedKey, setSelectedKey] = useState(null);

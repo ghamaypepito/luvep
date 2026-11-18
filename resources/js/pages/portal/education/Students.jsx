@@ -1,4 +1,5 @@
 import { Head, Link, router } from "@inertiajs/react";
+import { EDUCATION_DISPOSITIONS } from "../../../lib/educationDispositions";
 import { createPortal } from "react-dom";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import AddEditStudentModal from "./AddEditStudentModal";
+import { studentReferralLabel } from "../../../lib/studentReferral";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing } from "@/utils/priority";
 
@@ -60,7 +62,15 @@ function RowMenu({ items = [] }) {
         if (!open || !triggerRef.current) return;
         const place = () => {
             const r = triggerRef.current.getBoundingClientRect();
-            setCoords({ top: r.bottom + 6, left: r.right - 220 });
+            const menu = menuRef.current;
+            const height = menu?.getBoundingClientRect().height ?? 0;
+            const width = menu?.getBoundingClientRect().width ?? 220;
+            const below = r.bottom + 6;
+            const top = below + height <= window.innerHeight - 8 ? below : r.top - height - 6;
+            setCoords({
+                top: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
+                left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)),
+            });
         };
         place();
         const onScroll = () => place();
@@ -113,6 +123,9 @@ function RowMenu({ items = [] }) {
                         top: coords.top,
                         left: Math.max(8, coords.left),
                         width: 220,
+                        maxWidth: "calc(100vw - 16px)",
+                        maxHeight: "calc(100vh - 16px)",
+                        overflowY: "auto",
                     }}
                     className="z-[60] bg-white rounded-xl shadow-2xl border border-gray-100 py-1.5"
                 >
@@ -228,6 +241,9 @@ const EDUCATION_STAGES = [
     "Completed",
     "For Relodgement",
     "Declined Visa",
+    "On Hold",
+    "Qualified but No Funds",
+    "Archive",
 ];
 
 // Subset of EDUCATION_STAGES that hand the lead off to Immigration.
@@ -261,11 +277,19 @@ const englishStageClass = (s) => ENGLISH_STAGE_STYLES[s] || "bg-gray-100 text-gr
 const IMMIGRATION_STAGES = [
     "For Assessment",
     "Endorsed",
+    "Agreement Sent",
+    "Agreement Signed",
+    "For Agreement & Invoice",
+    "Invoice Paid",
+    "Request to Lodge",
     "Visa Lodged",
+    "Interim Visa Issued",
     "Request for Information",
+    "RFI Responded",
     "Approved in Principle",
     "Approved Visa",
     "Decline Visa",
+    "Withdrawn",
 ];
 
 // Named people who can own a lead at an English / Immigration stage
@@ -324,6 +348,9 @@ const EDUCATION_STAGE_STYLES = {
     "Started Course":           "bg-teal-100 text-teal-800 border-teal-200",
     "Course Ongoing":           "bg-blue-100 text-blue-800 border-blue-200",
     "Completed":                "bg-lime-100 text-lime-800 border-lime-200",
+    "On Hold":                  "bg-amber-100 text-amber-800 border-amber-200",
+    "Qualified but No Funds":   "bg-amber-100 text-amber-800 border-amber-200",
+    "Archive":                  "bg-gray-100 text-gray-700 border-gray-200",
 };
 const educationStageClass = (s) => EDUCATION_STAGE_STYLES[s] || stageClass(s);
 
@@ -614,24 +641,25 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
         // at right now. Builds one row per canonical stage even if zero
         // so the bar layout stays the same shape across renders. Also
         // computes a "Not started" bucket for students with no stage yet.
-        const tally = (stages, field) => {
+        const tally = (stages, field, department) => {
             const counts = Object.fromEntries(stages.map((s) => [s, 0]));
             let notStarted = 0;
-            for (const s of students) {
+            const members = students.filter((s) => departmentsOf(s).has(department));
+            for (const s of members) {
                 const v = s[field];
                 if (v && counts[v] !== undefined) counts[v]++;
                 else if (! v) notStarted++;
             }
-            return { counts, notStarted };
+            return { counts, notStarted, total: members.length };
         };
 
         return {
             total,
             withPlan,
             pendingDocs,
-            education:   tally(EDUCATION_STAGES,   "education_stage"),
-            english:     tally(ENGLISH_STAGES,     "english_stage"),
-            immigration: tally(IMMIGRATION_STAGES, "immigration_stage"),
+            education:   tally(EDUCATION_STAGES,   "education_stage", "education"),
+            english:     tally(ENGLISH_STAGES,     "english_stage", "english"),
+            immigration: tally(IMMIGRATION_STAGES, "immigration_stage", "immigration"),
         };
     }, [students]);
 
@@ -651,7 +679,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
             </div>
 
             {/* Stage distribution — small line graph for Education only. */}
-            <StageDistribution stats={stats} students={students} />
+            <StageDistribution stats={stats} students={students} department={view} />
 
             {/* Toolbar — tabs + filter pills + sort + search, mirroring the
                 sales-portal Leads toolbar so the two surfaces feel paired. */}
@@ -864,8 +892,8 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                             <div className="text-[10px] text-gray-400 font-mono truncate">{s.lead_id}</div>
                                                         ) : null}
                                                         {(s.agent_name || s.referral) && (
-                                                            <div className="flex items-center gap-1 text-[10px] text-indigo-500 truncate" title="Referring agent">
-                                                                <Users size={10} className="text-indigo-300 flex-shrink-0" /> {s.agent_name || s.referral}
+                                                            <div className="flex items-center gap-1 text-[10px] text-indigo-500 truncate" title={studentReferralLabel(s)}>
+                                                                <Users size={10} className="text-indigo-300 flex-shrink-0" /> {studentReferralLabel(s)}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1157,7 +1185,7 @@ function StudentDashboardPanel({ student: s }) {
                         stage. Lives in the expander so the row column
                         stays compact. */}
                     <ReadOnlyField icon={UserPlus}  label="Endorsed by"    value={s.endorsed_by} />
-                    <ReadOnlyField icon={Users}     label="Referring agent" value={s.agent_name || s.referral} />
+                    <ReadOnlyField icon={Users}     label="Agent / referee" value={studentReferralLabel(s)} />
                     <ReadOnlyField icon={UserPlus}  label="Assigned person" value={s.immigration_assignee || s.english_assignee} />
                 </div>
             </section>
@@ -1198,8 +1226,9 @@ function StudentDashboardPanel({ student: s }) {
                     {/* Row 1 — academic */}
                     <ReadOnlyField icon={BookOpen}  label="Program"     value={s.program ? `${s.program}${s.level ? ` · ${s.level}` : ""}` : null} />
                     <ReadOnlyField icon={School}    label="School"      value={schoolDisplay} />
-                    <ReadOnlyField icon={Calendar}  label="Intake"      value={fmtIntake(s.intake)} />
+                    <ReadOnlyField icon={Calendar}  label="Planned intake" value={fmtIntake(s.intake)} />
                     <ReadOnlyField icon={Languages} label="PTE / IELTS" value={englishTest} />
+                    <ReadOnlyField icon={Calendar} label="Actual course start" value={fmtIntake(s.actual_course_started_on)} />
 
                     {/* Row 2 — operations */}
                     <EditableField leadId={s.id} fieldKey="payment" icon={CreditCard} label="Payment" value={s.payment} placeholder="e.g. PhP 150,000" />
@@ -1350,14 +1379,15 @@ const TEAM_COLOURS = {
 // stage gets a larger filled dot + bold label; everything before is
 // shown as completed (filled), everything after as muted gray.
 function UnifiedJourney({ student }) {
+    const disposition = EDUCATION_DISPOSITIONS.has(student.education_stage) ? student.education_stage : null;
     const position = resolveJourneyPosition(student);
     const currentIdx = position?.index ?? -1;
     const declined = !! position?.declined;
     const currentNode = currentIdx > -1 ? UNIFIED_JOURNEY[currentIdx] : null;
     const currentTeam = declined ? null : (currentNode?.team || "education");
-    const currentLabel = declined
+    const currentLabel = disposition || (declined
         ? "Visa Declined"
-        : currentNode?.stage || "Not started yet";
+        : currentNode?.stage || "Not started yet");
 
     return (
         <div className="bg-white rounded-lg border border-gray-200 px-3 py-3">
@@ -1371,7 +1401,7 @@ function UnifiedJourney({ student }) {
                 </span>
                 <span
                     className={`text-[10px] font-bold ${
-                        declined
+                        disposition ? "text-amber-800" : declined
                             ? "text-red-700"
                             : currentTeam
                                 ? TEAM_COLOURS[currentTeam].text
@@ -1543,21 +1573,24 @@ const EDUCATION_STAGE_HEX = {
     "Request for Information": "#f97316", // orange
     "Approved Visa":           "#22c55e", // green
     "Started Course":          "#14b8a6", // teal
+    "On Hold":                 "#d97706", // amber
+    "Qualified but No Funds":  "#d97706",
+    "Archive":                 "#6b7280",
 };
 const educationStageHex = (s) => EDUCATION_STAGE_HEX[s] || "#9ca3af";
 
 // Small line graph showing how many students sit at each Education
-// stage. Single track only — English / Immigration counts surface via
-// the per-row chips and the Journey panel instead.
-function StageDistribution({ stats, students }) {
+// stage for the selected department, using the same membership as its tab.
+function StageDistribution({ stats, students, department }) {
     if (students.length === 0) return null;
 
-    const stages    = EDUCATION_STAGES;
-    const counts    = stats.education.counts;
+    const label = { education: "Education", english: "English", immigration: "Immigration" }[department];
+    const stages = { education: EDUCATION_STAGES, english: ENGLISH_STAGES, immigration: IMMIGRATION_STAGES }[department];
+    const counts = stats[department].counts;
     const data      = stages.map((s) => counts[s] || 0);
     const peak      = Math.max(1, ...data);
     const placed    = data.reduce((sum, n) => sum + n, 0);
-    const unstaged  = stats.education.notStarted;
+    const unstaged  = stats[department].notStarted;
 
     // SVG dimensions — viewBox units. Compact sparkline-style chart;
     // the rotated stage labels eat the bottom band. Extra horizontal
@@ -1590,10 +1623,10 @@ function StageDistribution({ stats, students }) {
                     </div>
                     <div>
                         <h2 className="text-[12px] font-bold uppercase tracking-wider text-gray-800">
-                            Education stage distribution
+                            {label} stage distribution
                         </h2>
                         <p className="text-[10.5px] text-gray-500 mt-0.5">
-                            {placed} placed · {unstaged} unstaged · {students.length} total
+                            {placed} placed · {unstaged} unstaged · {stats[department].total} total
                         </p>
                     </div>
                 </div>
@@ -1609,7 +1642,7 @@ function StageDistribution({ stats, students }) {
                     className="w-full"
                     style={{ maxHeight: 160 }}
                     role="img"
-                    aria-label="Line graph of student count per Education stage"
+                    aria-label={`Line graph of student count per ${label} stage`}
                 >
                     {/* Soft horizontal gridlines (4 evenly-spaced bands). */}
                     {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (

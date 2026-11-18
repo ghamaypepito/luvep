@@ -1,3 +1,4 @@
+import { hasProgramCost } from '@/utils/programCosts.mjs';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ChevronDown, ChevronUp } from 'react-feather';
@@ -133,8 +134,8 @@ export default function FeeGuide({ programs = [] }) {
                                         <div className="hidden sm:block">
                                             <p className="text-[10px] text-gray-600 font-medium leading-none mb-1">Start from</p>
                                             <p className="text-sm font-bold text-gray-800 tabular-nums">
-                                                {program.tuition_fee ? fmt(program.tuition_fee) : 'TBA'}
-                                                {program.tuition_fee && program.tuition_fee_notes && (
+                                                {hasProgramCost(program.tuition_fee) ? fmt(program.tuition_fee) : 'TBA'}
+                                                {hasProgramCost(program.tuition_fee) && program.tuition_fee_notes && (
                                                     <span className="ml-1 text-[10px] font-normal text-gray-600">
                                                         ({program.tuition_fee_notes})
                                                     </span>
@@ -166,20 +167,20 @@ export default function FeeGuide({ programs = [] }) {
                                                         </div>
 
                                                         <div className="space-y-3">
-                                                            <div className="flex justify-between items-baseline gap-3">
+                                                            {hasProgramCost(program.tuition_fee) && (<div className="flex justify-between items-baseline gap-3">
                                                                 <span className="text-gray-600 text-sm flex-shrink-0">Tuition</span>
                                                                 <span className="font-bold text-[#282728] text-right">
                                                                     <span className="text-xl tabular-nums">
-                                                                        {program.tuition_fee ? fmt(program.tuition_fee) : '—'}
+                                                                        {hasProgramCost(program.tuition_fee) ? fmt(program.tuition_fee) : '—'}
                                                                     </span>
-                                                                    {program.tuition_fee && program.tuition_fee_notes && (
+                                                                    {hasProgramCost(program.tuition_fee) && program.tuition_fee_notes && (
                                                                         <span className="text-xs font-normal text-gray-600 ml-2">
                                                                             ({program.tuition_fee_notes})
                                                                         </span>
                                                                     )}
                                                                 </span>
-                                                            </div>
-                                                            {!program.tuition_fee && (
+                                                            </div>)}
+                                                            {!hasProgramCost(program.tuition_fee) && (
                                                                 <p className="text-xs text-gray-500">No tuition fee specified.</p>
                                                             )}
                                                         </div>
@@ -187,31 +188,31 @@ export default function FeeGuide({ programs = [] }) {
 
                                                     {/* Additional Costs */}
                                                     <div className="lg:col-span-7 grid grid-cols-2 gap-y-10 gap-x-8 py-4">
-                                                        <div>
+                                                        {hasProgramCost(program.insurance_fee) && (<div>
                                                             <div className="flex items-baseline gap-2 mb-1">
                                                                 <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                                                 <div className="text-xl font-bold text-[#282728] tabular-nums">{fmt(program.insurance_fee)}</div>
                                                             </div>
                                                             <p className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Insurance (indicative)</p>
-                                                        </div>
-                                                        <div>
+                                                        </div>)}
+                                                        {hasProgramCost(program.visa_processing_fee) && (<div>
                                                             <div className="flex items-baseline gap-2 mb-1">
                                                                 <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                                                 <div className="text-xl font-bold text-[#282728] tabular-nums">{fmt(program.visa_processing_fee)}</div>
                                                             </div>
                                                             <p className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Visa Processing Fee</p>
-                                                        </div>
-                                                        <div>
+                                                        </div>)}
+                                                        {hasProgramCost(program.living_expense) && (<div>
                                                             <div className="flex items-baseline gap-2 mb-1">
                                                                 <span className="text-[10px] text-gray-500 font-medium tracking-wider">NZD</span>
                                                                 <div className="text-xl font-bold text-[#282728] tabular-nums">{fmt(program.living_expense)}</div>
                                                             </div>
                                                             <p className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Living Expense (one year)</p>
-                                                        </div>
-                                                        <div>
+                                                        </div>)}
+                                                        {hasProgramCost(program.accommodation) && (<div>
                                                             <div className="text-xl font-bold text-[#282728] mb-1">{program.accommodation || '—'}</div>
                                                             <p className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Accommodation (single occupancy)</p>
-                                                        </div>
+                                                        </div>)}
                                                     </div>
                                                 </div>
 

@@ -4,6 +4,7 @@ namespace App\Services\Immigration;
 
 use App\Models\Lead;
 use App\Models\LeadDocument;
+use App\Services\Finance\PortalInvoiceReceivables;
 use App\Models\VisaType;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -53,9 +54,9 @@ class InvoiceGenerator
      */
     public function nextInvoiceNumber(): string
     {
-        $highest = LeadDocument::whereNotNull('invoice_number')
-            ->get(['invoice_number'])
-            ->map(fn ($d) => (int) preg_replace('/\D/', '', (string) $d->invoice_number))
+        $highest = LeadDocument::whereNotNull('invoice_number')->pluck('invoice_number')
+            ->concat(\App\Models\InvoiceReplacement::pluck('previous_number'))
+            ->map(fn ($number) => (int) preg_replace('/\D/', '', (string) $number))
             ->max();
 
         $next = max((int) $highest + 1, self::FIRST_NUMBER);
@@ -272,6 +273,7 @@ class InvoiceGenerator
             // applicant (the blade then renders the flat items table).
             'groups' => $groups,
             'total' => $total,
+            'currency' => in_array($o['currency'] ?? 'NZD', ['NZD', 'USD'], true) ? ($o['currency'] ?? 'NZD') : 'NZD',
         ];
     }
 
@@ -294,9 +296,10 @@ class InvoiceGenerator
     public function generate(Lead $lead, array $o = []): LeadDocument
     {
         $payload = $this->payload($lead, $o);
+        $number = $payload['invoice']['number'];
+        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($number);
         $binary = Pdf::loadView(self::VIEW, $payload)->setPaper('a4')->output();
 
-        $number = $payload['invoice']['number'];
         $safeName = preg_replace('/[^A-Za-z0-9]/', '', trim("{$lead->first_name} {$lead->last_name}")) ?: 'Client';
         $filename = "Invoice-{$number}-{$safeName}.pdf";
         $path = "lead-documents/{$lead->id}/".Str::random(12)."-{$filename}";
@@ -316,14 +319,21 @@ class InvoiceGenerator
             'source_variant' => 'invoice',
             'invoice_number' => $number,
             'invoice_total' => $payload['total'] ?? null,
+            'notes' => [
+                'engagement_currency' => $payload['currency'],
+                'invoice_finance' => PortalInvoiceReceivables::snapshot($payload['invoice'], (bool) ($o['silent'] ?? false)),
+            ],
             'uploaded_by' => Auth::id(),
         ]);
 
         // Email automation — invoice sent.
-        app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
-            'invoice_number' => $number,
-            'invoice_total' => $payload['total'] ?? null,
-        ]);
+        if (! ($o['silent'] ?? false)) {
+            app(PortalInvoiceReceivables::class)->post($doc);
+            app(\App\Services\EmailAutomationService::class)->fire('immigration.invoice.sent', $lead, [
+                'invoice_number' => $number,
+                'invoice_total' => $payload['total'] ?? null,
+            ]);
+        }
 
         return $doc;
     }

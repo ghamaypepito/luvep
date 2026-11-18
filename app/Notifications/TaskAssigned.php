@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\LeadTask;
+use App\Support\TaskDestination;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
@@ -27,16 +28,14 @@ class TaskAssigned extends Notification
     public function toArray(object $notifiable): array
     {
         $actor = $this->assignedByName ?? 'A staff member';
-        $due = $this->task->due_at ? ' (due ' . $this->task->due_at->format('d M') . ')' : '';
+        $due = $this->task->due_at ? ' (due '.$this->task->due_at->format('d M').')' : '';
 
         return [
-            'title'      => 'New task assigned to you',
-            'body'       => "{$actor} assigned you: \"{$this->task->title}\"{$due}.",
-            'task_id'    => $this->task->id,
-            'lead_id'    => $this->task->lead_id,
-            'link'       => $this->task->lead_id
-                ? "/admin/leads/{$this->task->lead_id}"
-                : '/admin/tasks',
+            'title' => 'New task assigned to you',
+            'body' => "{$actor} assigned you: \"{$this->task->title}\"{$due}.",
+            'task_id' => $this->task->id,
+            'lead_id' => $this->task->lead_id,
+            'link' => TaskDestination::forUser($notifiable, $this->task->id),
         ];
     }
 }

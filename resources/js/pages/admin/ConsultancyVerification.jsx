@@ -10,13 +10,14 @@ import {
 // The consultancy counterpart of Program Verification. A generated consultancy
 // agreement enters as PENDING; a reviewer confirms/edits each fee line-item,
 // leaves internal notes, then Verify → Approve (which emails the client).
-export default function ConsultancyVerification({ proposals = [], counts = {}, leadBase = "/admin" }) {
-    const [activeId, setActiveId] = useState(proposals[0]?.id ?? null);
+export default function ConsultancyVerification({ selectedLeadId = null, proposals = [], counts = {}, leadBase = "/admin" }) {
+    const [activeId, setActiveId] = useState(selectedLeadId ?? proposals[0]?.id ?? null);
     const active = useMemo(() => proposals.find((p) => p.id === activeId) || proposals[0] || null, [proposals, activeId]);
 
     return (
         <>
             <Head title="Consultancy Agreement Verification" />
+            {selectedLeadId && <Link href="/consultancy-verification" className="inline-block mb-3 text-sm font-semibold text-emerald-800 hover:underline">← All reviews</Link>}
             <div className="p-6 max-w-[1400px] mx-auto">
                 <div className="flex items-center gap-2 mb-1">
                     <BadgeCheck size={22} className="text-gray-900" />
@@ -105,6 +106,8 @@ function Panel({ p, leadBase }) {
                             {p.email && <span>{p.email}</span>}
                             <span className="font-semibold text-gray-700">{p.scenario_label}</span>
                             <span className="uppercase text-[10px] tracking-wider">{p.applicant_mode}</span>
+                            {p.approved_by ? <span>Approved by {p.approved_by}</span>
+                                : p.default_approver && <span>Default approver: {p.default_approver}</span>}
                         </div>
                         <Link href={`${leadBase}/leads/${p.id}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 mt-1">
                             View lead profile <ExternalLink size={11} />
@@ -122,7 +125,7 @@ function Panel({ p, leadBase }) {
                         Request changes
                     </button>
                     <button type="button" onClick={() => approve({ verify_all: true, send_email: true })}
-                        disabled={busy === "verify-all" || p.status === "approved"}
+                        disabled={!p.can_approve || busy === "verify-all" || p.status === "approved"}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40">
                         {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Approve
                     </button>
@@ -309,7 +312,7 @@ function AgreementReviewModal({ p, onClose, metaUpdate, approve, busy, onRequest
                             Request changes
                         </button>
                         <button type="button" onClick={() => approve({ verify_all: true, send_email: true })}
-                            disabled={busy === "verify-all" || p.status === "approved"}
+                            disabled={!p.can_approve || busy === "verify-all" || p.status === "approved"}
                             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40">
                             {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Approve
                         </button>

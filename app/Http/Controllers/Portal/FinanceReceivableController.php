@@ -3,9 +3,18 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
+use App\Models\CaseFinancePayment;
 use App\Models\FinancePayment;
 use App\Models\FinanceReceivable;
+use App\Models\Lead;
+use App\Services\Finance\PortalInvoiceReceivables;
+use App\Services\Finance\ReplaceIssuedInvoice;
+use App\Services\PaymentProofService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Accounts Receivable — invoices ePathways issues to clients, their payment
@@ -17,11 +26,16 @@ class FinanceReceivableController extends Controller
     {
         $status = $request->query('status');
         $q = trim((string) $request->query('q', ''));
+        $canReview = app(PaymentProofService::class)->canReview($request->user());
 
-        $rows = FinanceReceivable::with('payments')
+        $rows = FinanceReceivable::with(['payments', 'lead:id,inz_visa_type,is_immigration_case'])
+            ->when($canReview, fn ($query) => $query->with(['invoiceReplacements:id,finance_receivable_id,previous_number,replacement_number,reason,created_at']))
+            ->withSum(['invoicePayments as case_receipt_total' => fn ($query) => $query
+                ->whereColumn('case_finance_payments.currency', 'finance_receivables.currency')], 'amount')
             ->when($q !== '', fn ($query) => $query->where(fn ($w) => $w
                 ->where('client_name', 'like', "%{$q}%")
                 ->orWhere('invoice_no', 'like', "%{$q}%")
+                ->when($canReview, fn ($filters) => $filters->orWhereHas('invoiceReplacements', fn ($versions) => $versions->where('previous_number', 'like', "%{$q}%")))
                 ->orWhere('description', 'like', "%{$q}%")))
             ->orderByDesc('issue_date')->orderByDesc('id')
             ->get();
@@ -44,6 +58,16 @@ class FinanceReceivableController extends Controller
             'due_date' => optional($r->due_date)->toDateString(),
             'status' => $r->status,
             'payment_status' => $r->payment_status,
+            'portal_issued' => $r->invoice_document_id !== null,
+            'can_replace_invoice' => $canReview && $r->invoice_document_id && in_array($r->status, ['sent', 'issued', 'paid'], true),
+            'invoice_history' => $canReview ? $r->invoiceReplacements->sortByDesc('id')->map(fn ($version) => [
+                'id' => $version->id, 'previous_number' => $version->previous_number, 'replacement_number' => $version->replacement_number,
+                'reason' => $version->reason, 'date' => $version->created_at?->setTimezone('Pacific/Auckland')->toDateString(),
+            ])->values() : [],
+            'student_visa_invoice' => $r->isStudentVisaInvoice(),
+            'can_manage_student_visa_invoice' => $canReview && $r->isStudentVisaInvoice(),
+            'can_flag_internal_settlement' => $r->canFlagInternalSettlement((float) $r->case_receipt_total),
+            'internal_settlement_pending' => $canReview && $r->internal_settlement_pending,
             'days_past_due' => $r->days_past_due,
             'aging_bucket' => $r->aging_bucket,
             'notes' => $r->notes,
@@ -54,12 +78,15 @@ class FinanceReceivableController extends Controller
                 'method' => $p->method,
                 'reference' => $p->reference,
                 'notes' => $p->notes,
+                'case_receipt' => preg_match('/\(CFP-\d+\)$/D', (string) $p->reference) === 1,
             ])->values(),
         ])->values();
 
+        $unposted = app(PortalInvoiceReceivables::class)->unposted($q, $status ?: 'all');
+
         return inertia('portal/finance/Receivables', [
-            'rows' => $data,
-            'summary' => $this->summary($rows),
+            'rows' => $data->concat($unposted)->sortByDesc('issue_date')->values(),
+            'summary' => array_replace($this->summary($rows), ['count' => $data->count() + $unposted->count()]),
             'filters' => ['status' => $status ?: 'all', 'q' => $q],
             'currencyDefault' => strtoupper(config('services.booking.currency', 'nzd')),
         ]);
@@ -71,8 +98,9 @@ class FinanceReceivableController extends Controller
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
         $outstanding = 0;
         $overdue = 0;
+        $currency = strtoupper(config('services.booking.currency', 'nzd'));
 
-        foreach ($rows as $r) {
+        foreach ($rows->where('currency', $currency) as $r) {
             if (in_array($r->payment_status, ['paid', 'void'], true) || $r->balance <= 0.005) {
                 continue;
             }
@@ -86,7 +114,7 @@ class FinanceReceivableController extends Controller
         return [
             'outstanding' => round($outstanding, 2),
             'overdue' => round($overdue, 2),
-            'collected' => round((float) FinancePayment::where('paymentable_type', FinanceReceivable::class)->sum('amount'), 2),
+            'collected' => round((float) FinancePayment::forLedger(FinanceReceivable::class, $currency)->sum('amount'), 2),
             'buckets' => array_map(fn ($v) => round($v, 2), $buckets),
             'count' => $rows->count(),
         ];
@@ -107,9 +135,11 @@ class FinanceReceivableController extends Controller
         ]);
 
         $next = (FinanceReceivable::max('id') ?? 0) + 1;
+        $number = ($data['invoice_no'] ?? null) ?: 'AR-'.str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+        \App\Models\InvoiceReplacement::assertNumberIsNotSuperseded($number);
 
         $r = FinanceReceivable::create([
-            'invoice_no' => $data['invoice_no'] ?: 'AR-'.str_pad((string) $next, 5, '0', STR_PAD_LEFT),
+            'invoice_no' => $number,
             'client_name' => $data['client_name'],
             'description' => $data['description'] ?? null,
             'currency' => strtoupper($data['currency'] ?? config('services.booking.currency', 'nzd')),
@@ -140,8 +170,8 @@ class FinanceReceivableController extends Controller
         $receivable->update([
             'client_name' => $data['client_name'],
             'description' => $data['description'] ?? null,
-            'currency' => strtoupper($data['currency'] ?? $receivable->currency),
-            'amount' => $data['amount'],
+            'currency' => $receivable->invoice_document_id ? $receivable->currency : strtoupper($data['currency'] ?? $receivable->currency),
+            'amount' => $receivable->invoice_document_id ? $receivable->amount : $data['amount'],
             'issue_date' => $data['issue_date'],
             'due_date' => $data['due_date'],
             'status' => $data['status'] ?? $receivable->status,
@@ -153,6 +183,8 @@ class FinanceReceivableController extends Controller
 
     public function destroy(FinanceReceivable $receivable)
     {
+        abort_if($receivable->invoice_document_id, 422, 'Void the issued portal invoice to retain its Finance history.');
+
         $receivable->payments()->delete();
         $receivable->delete();
 
@@ -161,32 +193,139 @@ class FinanceReceivableController extends Controller
 
     public function recordPayment(Request $request, FinanceReceivable $receivable)
     {
-        $data = $request->validate([
-            'amount' => 'required|numeric|min:0.01|max:99999999',
-            'paid_on' => 'required|date',
-            'method' => 'nullable|string|max:60',
-            'reference' => 'nullable|string|max:120',
-            'notes' => 'nullable|string|max:500',
-        ]);
+        DB::transaction(function () use ($receivable, $request) {
+            if ($receivable->invoice_document_id) {
+                $lead = Lead::whereKey($receivable->lead_id)->lockForUpdate()->first();
+                $receivable = FinanceReceivable::whereKey($receivable->id)->lockForUpdate()->firstOrFail();
+                $receivable->setRelation('lead', $lead);
+            }
+            $studentVisa = $receivable->isStudentVisaInvoice();
+            if ($studentVisa) {
+                abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+            }
+            $data = $request->validate([
+                'amount' => $studentVisa ? 'required|numeric|decimal:0,2|min:0.01|max:99999999' : 'required|numeric|min:0.01|max:99999999',
+                'paid_on' => $studentVisa ? 'required|date|before_or_equal:today' : 'required|date',
+                'method' => $studentVisa ? 'nullable|string|max:40' : 'nullable|string|max:60',
+                'reference' => $studentVisa ? ['required', 'string', 'max:120', 'not_regex:/\(CFP-\d+\)/i'] : 'nullable|string|max:120',
+                'notes' => 'nullable|string|max:500',
+            ]);
+            if ($receivable->invoice_document_id && filled($data['reference'] ?? null) && $receivable->payments()
+                ->whereDate('paid_on', $data['paid_on'])->where('amount', $data['amount'])
+                ->get(['reference'])->contains(fn ($payment) =>
+                    strcasecmp(trim((string) preg_replace('/\s*\(CFP-\d+\)$/D', '', $payment->reference ?? '')), trim($data['reference'])) === 0)) {
+                throw ValidationException::withMessages(['reference' => 'This dated payment is already in the ledger.']);
+            }
+            if ($studentVisa) {
+                $this->recordStudentVisaReceipt($receivable, $data);
+            } else {
+                $receivable->payments()->create($data + ['recorded_by' => auth()->id()]);
+            }
 
-        $receivable->payments()->create([
-            'amount' => $data['amount'],
-            'paid_on' => $data['paid_on'],
-            'method' => $data['method'] ?? null,
-            'reference' => $data['reference'] ?? null,
-            'notes' => $data['notes'] ?? null,
-            'recorded_by' => auth()->id(),
-        ]);
-
-        // A payment implies the invoice was issued; settle it when fully paid.
-        $receivable->refresh();
-        if ($receivable->status !== 'void' && $receivable->balance <= 0.005) {
-            $receivable->update(['status' => 'paid']);
-        } elseif ($receivable->status === 'draft') {
-            $receivable->update(['status' => 'sent']);
-        }
+            // A payment implies the invoice was issued; settle it when fully paid.
+            $receivable->refresh();
+            if ($receivable->status !== 'void' && $receivable->balance <= 0.005) {
+                $receivable->update(['status' => 'paid']);
+            } elseif ($receivable->status === 'draft') {
+                $receivable->update(['status' => 'sent']);
+            }
+        });
 
         return back()->with('success', 'Payment recorded.');
+    }
+
+    public function replaceInvoice(Request $request, FinanceReceivable $receivable, ReplaceIssuedInvoice $replacement)
+    {
+        abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+        $data = $request->validate([
+            'expected_number' => 'required|string|max:60',
+            'invoice_number' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/D'],
+            'reason' => 'required|string|max:500',
+        ]);
+        $replacement->issue($request->user(), $receivable, $data['expected_number'], $data['invoice_number'], $data['reason']);
+
+        return back()->with('success', 'Replacement invoice issued. The previous PDF is in Invoice history.');
+    }
+
+    public function downloadInvoiceHistory(Request $request, FinanceReceivable $receivable, ?int $version = null)
+    {
+        abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+        $disk = Storage::disk('local');
+        if ($version === null) {
+            $current = \App\Models\LeadDocument::whereKey($receivable->invoice_document_id)
+                ->where('lead_id', $receivable->lead_id)->firstOrFail();
+            abort_unless(PaymentProofService::isInvoice($current) && $current->file_path
+                && $disk->exists($current->file_path), 404);
+
+            return $disk->download($current->file_path, $current->original_name);
+        }
+        $history = $receivable->invoiceReplacements()->findOrFail($version);
+        abort_unless($disk->exists($history->previous_path)
+            && hash_file('sha256', $disk->path($history->previous_path)) === $history->previous_hash, 404);
+
+        return $disk->download($history->previous_path, $history->previous_filename);
+    }
+
+    private function recordStudentVisaReceipt(FinanceReceivable $receivable, array $data): void
+    {
+        if ($receivable->status === 'void') {
+            throw ValidationException::withMessages(['amount' => 'Record payments against an active invoice.']);
+        }
+
+        PaymentProofService::assertReferenceAvailable($receivable->lead_id, $data['reference']);
+        $receipt = $receivable->invoicePayments()->create([
+            'lead_id' => $receivable->lead_id,
+            'currency' => $receivable->currency,
+            'amount' => $data['amount'],
+            'paid_at' => $data['paid_on'],
+            'method' => $data['method'] ?? null,
+            'reference' => trim($data['reference']),
+            'recorded_by' => auth()->id(),
+            'finance_verified' => true,
+        ]);
+        $mirror = $receivable->payments()->where('reference', 'like', '%(CFP-'.$receipt->id.')')->first();
+        if (! $mirror) {
+            throw ValidationException::withMessages(['amount' => 'Finance could not link this receipt to the invoice ledger. No payment was recorded.']);
+        }
+        $mirror->update(['notes' => $data['notes'] ?? null]);
+
+        ActivityLog::record('finance.invoice_payment_recorded', [
+            'portal' => 'finance', 'entity_type' => FinanceReceivable::class, 'entity_id' => $receivable->id,
+            'description' => 'Recorded a verified Student Visa invoice receipt',
+            'properties' => ['invoice_document_id' => $receivable->invoice_document_id, 'case_finance_payment_id' => $receipt->id],
+        ]);
+    }
+
+    public function updateInternalSettlement(Request $request, FinanceReceivable $receivable)
+    {
+        abort_unless(app(PaymentProofService::class)->canReview($request->user()), 403);
+        $request->validate(['pending' => 'required|boolean']);
+        $pending = $request->boolean('pending');
+
+        DB::transaction(function () use ($receivable, $pending) {
+            $lead = Lead::whereKey($receivable->lead_id)->lockForUpdate()->first();
+            $receivable = FinanceReceivable::whereKey($receivable->id)->lockForUpdate()->firstOrFail();
+            $receivable->setRelation('lead', $lead);
+            abort_unless($receivable->isStudentVisaInvoice(), 404);
+            if ($receivable->internal_settlement_pending === $pending) {
+                return;
+            }
+            if ($pending && ! $receivable->canFlagInternalSettlement((float) $receivable->invoicePayments()
+                ->where('currency', $receivable->currency)->sum('amount'))) {
+                throw ValidationException::withMessages(['pending' => 'Record the full client payment on the active invoice before flagging internal settlement.']);
+            }
+
+            $receivable->internal_settlement_pending = $pending;
+            $receivable->save();
+            ActivityLog::record('finance.invoice_internal_settlement_changed', [
+                'portal' => 'finance', 'entity_type' => FinanceReceivable::class, 'entity_id' => $receivable->id,
+                'description' => $pending ? 'Flagged invoice internal settlement as pending' : 'Cleared invoice internal settlement flag',
+                'properties' => ['invoice_document_id' => $receivable->invoice_document_id, 'pending' => $pending],
+                'changes' => ['internal_settlement_pending' => ['old' => ! $pending, 'new' => $pending]],
+            ]);
+        });
+
+        return back()->with('success', $pending ? 'Internal settlement flagged as pending.' : 'Internal settlement flag cleared.');
     }
 
     public function deletePayment(FinanceReceivable $receivable, FinancePayment $payment)
@@ -196,6 +335,12 @@ class FinanceReceivableController extends Controller
             404
         );
 
+        $matchedCaseReceipt = $receivable->invoice_document_id && filled($payment->reference)
+            && CaseFinancePayment::where('invoice_document_id', $receivable->invoice_document_id)
+                ->whereDate('paid_at', $payment->paid_on->toDateString())->where('amount', $payment->amount)
+                ->whereRaw('LOWER(TRIM(reference)) = ?', [mb_strtolower(trim($payment->reference))])->exists();
+        abort_if($matchedCaseReceipt || preg_match('/\(CFP-\d+\)$/D', (string) $payment->reference),
+            422, 'Manage this payment from its original case receipt.');
         $payment->delete();
 
         $receivable->refresh();

@@ -296,7 +296,7 @@ class AgentAgreementService
         // One current agreement per agent — drop the previous file + row.
         $existing = AgentAgreement::where('agent_id', $agent->id)->get();
         foreach ($existing as $old) {
-            Storage::disk(self::DISK)->delete($old->file_path);
+            \App\Support\DocumentFiles::delete($old->file_path, 'local');
             $old->delete();
         }
 

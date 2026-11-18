@@ -71,8 +71,9 @@ class FinancePayableController extends Controller
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
         $outstanding = 0;
         $overdue = 0;
+        $currency = strtoupper(config('services.booking.currency', 'nzd'));
 
-        foreach ($rows as $r) {
+        foreach ($rows->where('currency', $currency) as $r) {
             if (in_array($r->payment_status, ['paid', 'void'], true) || $r->balance <= 0.005) {
                 continue;
             }
@@ -86,7 +87,7 @@ class FinancePayableController extends Controller
         return [
             'outstanding' => round($outstanding, 2),
             'overdue' => round($overdue, 2),
-            'paid' => round((float) FinancePayment::where('paymentable_type', FinancePayable::class)->sum('amount'), 2),
+            'paid' => round((float) FinancePayment::forLedger(FinancePayable::class, $currency)->sum('amount'), 2),
             'buckets' => array_map(fn ($v) => round($v, 2), $buckets),
             'count' => $rows->count(),
         ];

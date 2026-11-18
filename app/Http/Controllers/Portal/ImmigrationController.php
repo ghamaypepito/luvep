@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Assessment;
 use App\Models\Booking;
 use App\Models\Event;
@@ -10,9 +11,14 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
+use App\Support\CaseRecordAccess;
 use App\Models\UserReview;
+use App\Services\Reports\ReportPeriod;
+use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
+use App\Services\Immigration\AssessmentCaseLink;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +27,7 @@ use Illuminate\Validation\Rule;
 
 class ImmigrationController extends Controller
 {
+    use \App\Traits\CreatesDashboardLead;
     use BuildsLeadRow;
 
     private const LEAD_STATUSES = Lead::STAGES;
@@ -190,6 +197,8 @@ class ImmigrationController extends Controller
             return inertia($page, [
                 'portal' => $portal,
                 'statuses' => self::LEAD_STATUSES,
+                'staffOptions' => $this->dashboardStaff(array_merge(['sales', 'education', 'admin', 'super_admin', 'immigration'], User::IMMIGRATION_ROLES)),
+                'programs' => \App\Models\Program::orderBy('title')->pluck('title')->filter()->values(),
                 // Pipeline only — converted leads (cases) move to the Cases page.
                 'leads' => Lead::inLeadPipeline()
                     ->with([
@@ -214,6 +223,25 @@ class ImmigrationController extends Controller
             return inertia($page, [
                 'portal' => $portal, 'statuses' => self::LEAD_STATUSES, 'leads' => collect(),
             ]);
+        }
+    }
+
+    /** Create a lead from the immigration dashboard's shared Add Lead form. */
+    public function storeLead(Request $request)
+    {
+        $validated = $request->validate(
+            $this->dashboardLeadRules(self::LEAD_STATUSES) + $this->dashboardDocumentRules()
+        );
+
+        try {
+            $lead = $this->createDashboardLead($validated);
+            $this->storeDashboardLeadDocuments($lead, $request);
+
+            return back()->with('success', "Lead {$lead->lead_id} added.");
+        } catch (\Throwable $e) {
+            Log::error('Immigration add-lead failed', ['error' => $e->getMessage()]);
+
+            return back()->with('error', 'Could not add that lead. Please try again.');
         }
     }
 
@@ -299,7 +327,9 @@ class ImmigrationController extends Controller
      */
     public function cases()
     {
-        return inertia('portal/immigration/Cases', $this->casesPayload());
+        return inertia('portal/immigration/Cases', $this->casesPayload() + [
+            'canManageCaseArchive' => CaseRecordAccess::canManage(request()),
+        ]);
     }
 
     /**
@@ -805,7 +835,6 @@ class ImmigrationController extends Controller
                 ->all();
 
             $cases = Lead::immigrationCase()
-                ->whereNotIn('id', $engagedLeadIds)
                 ->orderByDesc('updated_at')
                 ->limit(300)
                 ->get(['id', 'lead_id', 'first_name', 'last_name', 'email', 'phone', 'residence_country', 'inz_visa_type', 'immigration_stage'])
@@ -842,20 +871,26 @@ class ImmigrationController extends Controller
             ])
                 ->where('source_variant', 'like', 'engagement:%')
                 ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->limit(300)
                 ->get()
                 // One row per CASE — the case's generated documents are
                 // nested so the table renders a single line per applicant
                 // instead of one line per file.
-                ->groupBy('lead_id')
-                ->map(function ($docs) use ($invoicedIds) {
+                ->groupBy(fn ($doc) => $doc->lead_id.':'.($doc->notes['engagement_pack_id'] ?? 'legacy'))
+                ->map(function ($docs) {
                     $first = $docs->first(); // newest first (ordered desc)
                     $lead = $first->lead;
+                    $packId = $first->notes['engagement_pack_id'] ?? 'legacy';
+                    $settings = $first->notes['engagement_settings'] ?? [];
+                    $invoiceQuery = LeadDocument::where('lead_id', $first->lead_id)->where('source_variant', 'invoice');
+                    $packId === 'legacy' ? $invoiceQuery->whereNull('notes->engagement_pack_id') : $invoiceQuery->where('notes->engagement_pack_id', $packId);
+                    $packInvoice = $invoiceQuery->latest('id')->first();
 
                     // The scoped client link for this engagement pack. Ensure the
                     // token exists so staff can copy/open the link even before the
                     // notification email was sent.
-                    $token = $lead?->engagement_signing_token;
+                    $token = $first->notes['engagement_signing_token'] ?? $lead?->engagement_signing_token;
                     if ($lead && ! $token) {
                         $token = $lead->ensureEngagementSigningToken();
                     }
@@ -863,14 +898,22 @@ class ImmigrationController extends Controller
                     // Signed = the Written Agreement in this pack is signed. Prefer
                     // a signed copy if one exists so a stray unsigned duplicate
                     // (e.g. from a re-draft) never hides a completed signature.
-                    $waCandidates = $docs->filter(fn ($d) => $d->source_variant === 'engagement:written_agreement');
+                    $waCandidates = $docs->filter(fn ($d) => \App\Services\Immigration\EngagementDocumentGenerator::signable(str_replace('engagement:', '', $d->source_variant)));
                     $waDoc = $waCandidates->first(fn ($d) => $d->client_signed_at) ?: $waCandidates->first();
                     $signedAt = optional($waDoc)->client_signed_at;
                     // Draft until the pack's signing link has been emailed.
-                    $isDraft = $lead ? ! $lead->engagement_sent_at : true;
+                    $sentAt = $packId === 'legacy' ? $lead?->engagement_sent_at : ($first->notes['engagement_sent_at'] ?? null);
+                    $isDraft = ! $sentAt;
 
                     return [
                         'case_id' => $first->lead_id,
+                        'pack_id' => $packId,
+                        'engagement_type' => $first->notes['engagement_type'] ?? 'immigration_advice',
+                        'engagement_settings' => $settings,
+                        'currency' => $first->notes['engagement_currency'] ?? 'NZD',
+                        'engagement_type_label' => match ($first->notes['engagement_type'] ?? 'immigration_advice') {
+                            'initial_consultation' => 'Initial Consultation', 'oia' => 'OIA Engagement', default => 'Immigration Advice Services',
+                        },
                         'case_name' => $lead ? trim("{$lead->first_name} {$lead->last_name}") : '—',
                         'case_ref' => $lead?->lead_id,
                         // Drives the "Open application tracker" row action —
@@ -886,28 +929,28 @@ class ImmigrationController extends Controller
                         'is_draft' => $isDraft,
                         // Whether this case already has a generated invoice, so the
                         // draft modal reopens with the Invoice document ticked.
-                        'has_invoice' => $invoicedIds->contains($first->lead_id),
+                        'has_invoice' => (bool) $packInvoice,
                         // The (ex-GST) professional fee the pack was generated at.
-                        'fee_total' => $lead?->engagement_fee_total !== null ? (float) $lead->engagement_fee_total : null,
+                        'fee_total' => $first->notes['engagement_fee_excl'] ?? ($lead?->engagement_fee_total !== null ? (float) $lead->engagement_fee_total : null),
                         // The grand total — our fees (incl GST if quoted so) + INZ
                         // disbursements across the family. Drives the "Total amount"
                         // column; falls back to the ex-GST fee for older rows.
-                        'total_amount' => $lead?->engagement_total_amount !== null ? (float) $lead->engagement_total_amount : null,
+                        'total_amount' => $first->notes['engagement_total'] ?? ($lead?->engagement_total_amount !== null ? (float) $lead->engagement_total_amount : null),
                         // Consolidated summary the table shows instead of every
                         // file — include the bundled invoice so it matches the
                         // client link's document count.
-                        'doc_count' => $docs->count() + ($invoicedIds->contains($first->lead_id) ? 1 : 0),
+                        'doc_count' => $docs->count() + ($packInvoice ? 1 : 0),
                         // Link only once the pack has actually been sent to the client.
-                        'signing_url' => (! $isDraft && $token) ? '/engagement/'.$token : null,
+                        'signing_url' => (! $isDraft && $token) ? '/engagement/'.$token.($packId === 'legacy' ? '' : '?pack='.$packId) : null,
                         'signer_id' => optional($waDoc)->engagement_signer_id,
                         // Settings the pack was generated at — so the draft modal
                         // reopens with the same location / tier / GST / assisting adviser.
-                        'assist_signer_id' => $lead?->engagement_assist_signer_id,
-                        'fee_location' => $lead?->engagement_fee_location,
-                        'fee_tier' => $lead?->engagement_fee_tier,
-                        'include_gst' => (bool) $lead?->engagement_include_gst,
+                        'assist_signer_id' => $settings['assist_signer_id'] ?? $lead?->engagement_assist_signer_id,
+                        'fee_location' => $settings['fee_location'] ?? $lead?->engagement_fee_location,
+                        'fee_tier' => $settings['fee_tier'] ?? $lead?->engagement_fee_tier,
+                        'include_gst' => $settings['include_gst'] ?? (bool) $lead?->engagement_include_gst,
                         'country' => $lead?->residence_country,
-                        'sent_at' => optional($lead?->engagement_sent_at)?->toIso8601String(),
+                        'sent_at' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->toIso8601String() : null,
                         'signed' => (bool) $signedAt,
                         'signed_at' => optional($signedAt)?->toIso8601String(),
                         'signer_name' => optional($waDoc)->client_signer_name,
@@ -925,11 +968,11 @@ class ImmigrationController extends Controller
                             'signer_name' => optional($waDoc)->client_signer_name,
                             'signed_at' => optional($signedAt)?->toIso8601String(),
                         ],
-                        'documents' => $docs->map(fn ($d) => [
+                        'documents' => $docs->concat($packInvoice ? [$packInvoice] : [])->map(fn ($d) => [
                             'id' => $d->id,
                             'type_key' => str_replace('engagement:', '', (string) $d->source_variant),
                             'type_label' => \App\Services\Immigration\EngagementDocumentGenerator::DOCS[str_replace('engagement:', '', $d->source_variant)]['label']
-                                ?? 'Document',
+                                ?? ($d->source_variant === 'invoice' ? 'Invoice' : 'Document'),
                             'size' => $d->size,
                             'signed' => (bool) $d->client_signed_at,
                             'created_at' => optional($d->created_at)?->toIso8601String(),
@@ -1090,16 +1133,18 @@ class ImmigrationController extends Controller
                 'uploader:id,name',
             ])
                 ->where('source_variant', 'invoice')
-                ->orderByDesc('created_at')
+                ->orderByDesc('created_at')->orderByDesc('id')
                 ->limit(300)
                 ->get()
-                ->groupBy('lead_id')
+                ->groupBy(fn ($doc) => $doc->lead_id.':'.($doc->notes['engagement_currency'] ?? 'NZD'))
                 ->map(function ($docs) {
                     $first = $docs->first();
                     $lead = $first->lead;
+                    $settings = $first->notes['engagement_settings'] ?? [];
 
                     return [
                         'case_id' => $first->lead_id,
+                        'currency' => $first->notes['engagement_currency'] ?? 'NZD',
                         'case_name' => $lead ? trim("{$lead->first_name} {$lead->last_name}") : '—',
                         'case_ref' => $lead?->lead_id,
                         // Drives the "Open application tracker" row action —
@@ -1111,9 +1156,9 @@ class ImmigrationController extends Controller
                         'latest_created_at' => optional($first->created_at)?->toIso8601String(),
                         'latest_by' => $first->uploader?->name,
                         // Pricing context this invoice was generated under.
-                        'fee_location' => $lead?->engagement_fee_location,
-                        'fee_tier' => $lead?->engagement_fee_tier,
-                        'include_gst' => (bool) $lead?->engagement_include_gst,
+                        'fee_location' => $settings['fee_location'] ?? $lead?->engagement_fee_location,
+                        'fee_tier' => $settings['fee_tier'] ?? $lead?->engagement_fee_tier,
+                        'include_gst' => $settings['include_gst'] ?? (bool) $lead?->engagement_include_gst,
                         'country' => $lead?->residence_country,
                         // Total invoiced for this case (sum of its invoice totals);
                         // null when none were stored (pre-column invoices).
@@ -1123,6 +1168,7 @@ class ImmigrationController extends Controller
                         'invoices' => $docs->map(fn ($d) => [
                             'id' => $d->id,
                             'number' => $d->invoice_number,
+                            'currency' => $d->notes['engagement_currency'] ?? 'NZD',
                             'total' => $d->invoice_total !== null ? (float) $d->invoice_total : null,
                             'size' => $d->size,
                             'created_at' => optional($d->created_at)?->toIso8601String(),
@@ -1169,15 +1215,10 @@ class ImmigrationController extends Controller
 
             // Proof-of-payment uploads clients submitted from the engagement
             // page — staff verify (approve/reject) them here.
-            $proofs = LeadDocument::with(['lead:id,first_name,last_name,lead_id', 'lead.faceImage'])
+            $proofs = LeadDocument::with(['lead:id,first_name,last_name,lead_id', 'lead.faceImage', 'reviewer:id,name', 'proofReview.invoice.invoicePayments', 'proofReview.payment'])
                 ->where('source_variant', 'proof_of_payment')
                 ->orderByDesc('created_at')
-                ->limit(300)
-                ->get()
-                // One row per case — the client submits a single proof per
-                // invoice, and a re-upload replaces the prior file, so show the
-                // latest per case rather than every historical upload.
-                ->unique('lead_id')
+                ->orderByDesc('id')->get()
                 ->map(fn (LeadDocument $d) => [
                     'id' => $d->id,
                     'case_id' => $d->lead_id,
@@ -1187,6 +1228,10 @@ class ImmigrationController extends Controller
                     'original_name' => $d->original_name,
                     'size' => $d->size,
                     'status' => $d->status,
+                    'note' => $d->note,
+                    'proof_review' => app(\App\Services\PaymentProofService::class)->metadata($d),
+                    'reviewed_by' => $d->reviewer?->name,
+                    'reviewed_at' => $d->reviewed_at?->toIso8601String(),
                     'uploaded_at' => optional($d->created_at)?->toIso8601String(),
                     'view_url' => route('admin.documents.download', $d->id).'?inline=1',
                     'download_url' => route('admin.documents.download', $d->id),
@@ -1217,6 +1262,12 @@ class ImmigrationController extends Controller
      */
     public function storeCase(\Illuminate\Http\Request $request)
     {
+        if ($request->input('immigration_stage') === 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
+
         $data = $request->validate([
             'first_name' => 'required|string|max:80',
             'middle_name' => 'nullable|string|max:80',
@@ -1236,9 +1287,9 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
 
-        $lead = Lead::create([
+        $lead = new Lead([
             'lead_id' => 'IC-'.strtoupper(uniqid()),
             'first_name' => $data['first_name'],
             'middle_name' => $data['middle_name'] ?? null,
@@ -1265,6 +1316,8 @@ class ImmigrationController extends Controller
             'status' => 'New',
             'stage' => 'Visa Process',
         ]);
+        $lead->pushStageHistory('immigration', $lead->immigration_stage);
+        $lead->save();
 
         // Internal note → LeadNote so it surfaces in the same notes feed
         // the rest of the system writes to, rather than getting buried in
@@ -1288,6 +1341,12 @@ class ImmigrationController extends Controller
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
 
+        if ($request->input('immigration_stage') === 'Request for Medical' && $lead->immigration_stage !== 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
+
         $data = $request->validate([
             'first_name' => 'required|string|max:80',
             'middle_name' => 'nullable|string|max:80',
@@ -1304,13 +1363,14 @@ class ImmigrationController extends Controller
             'agent_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', ['agent', 'sub_agent'])],
         ]);
 
-        $visa = \App\Models\VisaType::find($data['visa_type_id']);
-
-        $lead->update([
+        $name = [
             'first_name' => $data['first_name'],
-            'middle_name' => $data['middle_name'] ?? null,
             'last_name' => $data['last_name'],
-            'suffix' => $data['suffix'] ?? null,
+        ] + array_intersect_key($data, array_flip(['middle_name', 'suffix']));
+        CaseRecordAccess::authorizeNameChanges($request, $lead, $name, ['first_name', 'middle_name', 'last_name', 'suffix']);
+        $visa = \App\Models\VisaType::find($data['visa_type_id'] ?? null);
+
+        $lead->fill($name + [
             'gender' => $data['gender'] ?? null,
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
@@ -1320,6 +1380,12 @@ class ImmigrationController extends Controller
             'student_payment' => $data['payment'] ?? null,
             'agent_id' => $data['agent_id'] ?? null,
         ]);
+        if ($lead->isDirty('immigration_stage')) {
+            $lead->stage_updated_at = now();
+            $lead->stage_updated_by = auth()->id();
+            $lead->pushStageHistory('immigration', $lead->immigration_stage, $lead->immigration_assignee);
+        }
+        $lead->save();
 
         // A note is optional on edit — only append when the staffer typed one.
         if (! empty($data['internal_note'])) {
@@ -1343,6 +1409,12 @@ class ImmigrationController extends Controller
     public function updateCaseStage(\Illuminate\Http\Request $request, $id)
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
+
+        if ($request->input('immigration_stage') === 'Request for Medical' && $lead->immigration_stage !== 'Request for Medical') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'immigration_stage' => 'Use the Request for Medical action to attach the INZ notice and set its deadline.',
+            ]);
+        }
 
         $data = $request->validate([
             'immigration_stage' => ['nullable', \Illuminate\Validation\Rule::in(Lead::IMMIGRATION_STAGES)],
@@ -1460,6 +1532,9 @@ class ImmigrationController extends Controller
     public function declineVisa(\Illuminate\Http\Request $request, $id)
     {
         $lead = Lead::immigrationCase()->findOrFail($id);
+        $user = auth()->user();
+        abort_unless(\App\Support\LeadAccess::canView($user, $lead)
+            || ($user->role === 'agent' && $lead->agent_id === $user->id), 403);
 
         $data = $request->validate([
             'note' => ['nullable', 'string', 'max:2000'],
@@ -1512,21 +1587,27 @@ class ImmigrationController extends Controller
         // any) is available securely in their portal, not attached.
         if (! empty($data['notify']) && $lead->email) {
             try {
-                $name = trim((string) $lead->first_name) ?: 'there';
-                $lines = ["Dear {$name},", '', 'We are writing with an update on your visa application. Immigration New Zealand has declined the application.'];
-                if (! empty($data['note'])) {
+                $sentConfiguredClient = app(\App\Services\EmailAutomationService::class)->fire(
+                    'immigration.stage.decline_visa', $lead,
+                    ['stage' => $stage, 'status_detail' => $data['note'] ?? ''],
+                );
+                if (! $sentConfiguredClient) {
+                    $name = trim((string) $lead->first_name) ?: 'there';
+                    $lines = ["Dear {$name},", '', 'We are writing with an update on your visa application. Immigration New Zealand has declined the application.'];
+                    if (! empty($data['note'])) {
+                        $lines[] = '';
+                        $lines[] = $data['note'];
+                    }
+                    if ($doc) {
+                        $lines[] = '';
+                        $lines[] = 'A related document has been shared to your client portal, where you can view it securely.';
+                    }
                     $lines[] = '';
-                    $lines[] = $data['note'];
+                    $lines[] = 'Please contact us if you would like to discuss the next steps.';
+                    $body = nl2br(e(implode("\n", $lines)));
+                    app(\App\Services\CommunicationService::class)
+                        ->sendRaw('email', $lead, 'An update on your visa application', $body);
                 }
-                if ($doc) {
-                    $lines[] = '';
-                    $lines[] = 'A related document has been shared to your client portal, where you can view it securely.';
-                }
-                $lines[] = '';
-                $lines[] = 'Please contact us if you would like to discuss the next steps.';
-                $body = nl2br(e(implode("\n", $lines)));
-                app(\App\Services\CommunicationService::class)
-                    ->sendRaw('email', $lead, 'An update on your visa application', $body);
             } catch (\Throwable $e) {
                 Log::warning('Decline email failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
             }
@@ -1670,144 +1751,214 @@ class ImmigrationController extends Controller
 
     public function requestForInformation(\Illuminate\Http\Request $request, $id)
     {
+        return $this->recordInzRequest($request, $id, false);
+    }
+
+    public function requestForMedical(\Illuminate\Http\Request $request, $id)
+    {
+        abort_unless(in_array(auth()->user()->role, ['admin', 'super_admin', 'immigration', 'immigration_manager', 'immigration_adviser'], true), 403);
+        if ($request->boolean('retry_notification')) {
+            $lead = Lead::immigrationCase()->findOrFail($id);
+            $entry = collect($lead->stage_history ?? [])->last(fn ($entry) => ($entry['stage'] ?? null) === 'Request for Medical');
+            abort_unless($entry && ! empty($entry['medical_document_ids']), 422, 'No saved medical notice to send.');
+            $attachments = $lead->documents()->whereIn('id', $entry['medical_document_ids'])
+                ->where('source_variant', 'medical')->get()->map(fn ($doc) => ['path' => $doc->file_path, 'name' => $doc->original_name])->all();
+            abort_unless(count($attachments) === count($entry['medical_document_ids']), 422, 'The saved medical notice is no longer available.');
+
+            return $this->notifyMedicalRequest($lead, $attachments)
+                ? back()->with('success', 'Medical request notification queued.')
+                : back()->withErrors(['notification' => 'The request is saved, but the email could not be queued. Check the client email and active Request for Medical template, then retry notification.']);
+        }
+
+        return $this->recordInzRequest($request, $id, true);
+    }
+
+    private function notifyMedicalRequest(Lead $lead, array $attachments): bool
+    {
+        $result = app(\App\Services\CommunicationService::class)->sendTemplated(
+            'request_for_medical', $lead,
+            ['medical_deadline' => $lead->medical_deadline?->format('j M Y')],
+            'immigration', null, $attachments,
+        );
+
+        return in_array($result['email']?->status, [\App\Models\MessageLog::STATUS_QUEUED, \App\Models\MessageLog::STATUS_SENT], true);
+    }
+
+    private function recordInzRequest(\Illuminate\Http\Request $request, $id, bool $medical)
+    {
         $lead = Lead::immigrationCase()->findOrFail($id);
+        $user = auth()->user();
+        abort_unless(\App\Support\LeadAccess::canView($user, $lead)
+            || ($user->role === 'agent' && $lead->agent_id === $user->id), 403);
 
         $data = $request->validate([
             'deadline' => ['required', 'date'],
             'note' => ['nullable', 'string', 'max:2000'],
-            'documents' => ['nullable', 'array', 'max:20'],
+            'documents' => [$medical ? 'required' : 'nullable', 'array', $medical ? 'min:1' : 'min:0', 'max:20'],
             'documents.*' => ['file', 'mimes:pdf', 'max:10240'],
             'notify' => ['nullable', 'boolean'],
             // The documents INZ asked for, confirmed by staff from the AI-extracted
             // list in the modal. Each becomes a LeadDocumentRequest the client
             // uploads against — origin 'rfi' groups them under "Request Information".
-            'requested_documents' => ['nullable', 'array', 'max:25'],
+            'requested_documents' => [$medical ? 'prohibited' : 'nullable', 'array', 'max:25'],
             'requested_documents.*.label' => ['required', 'string', 'max:120'],
             'requested_documents.*.description' => ['nullable', 'string', 'max:500'],
             'requested_documents.*.required' => ['nullable', 'boolean'],
         ]);
 
-        $stage = 'Request for Information';
+        $stage = $medical ? 'Request for Medical' : 'Request for Information';
+        $deadlineKey = $medical ? 'medical_deadline' : 'rfi_deadline';
         $note = trim((string) ($data['note'] ?? ''));
         $deadline = \Illuminate\Support\Carbon::parse($data['deadline'])->startOfDay();
 
-        // Set the stage (chain jump when on the process chain, else legacy write).
-        $steps = app(\App\Services\Immigration\CaseStepService::class);
-        $movedViaChain = $steps->hasChain($lead) && $steps->jumpToStage($lead, $stage, auth()->user());
-        if (! $movedViaChain && ($lead->immigration_stage ?? null) !== $stage) {
-            $lead->immigration_stage = $stage;
-            $lead->stage_updated_at = now();
-            $lead->stage_updated_by = auth()->id();
-            $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
-        }
-
-        // Store the deadline ON the RFI stage-history entry (both stage paths push
-        // one) rather than a new column — the leads god table is at its row-size
-        // limit. `$lead->rfi_deadline` reads it back. If the case was already on
-        // this stage (no fresh entry), push one so the deadline has a home.
-        $history = $lead->stage_history ?? [];
-        $idx = null;
-        for ($i = count($history) - 1; $i >= 0; $i--) {
-            if (($history[$i]['stage'] ?? null) === $stage) {
-                $idx = $i;
-                break;
+        $storedPaths = [];
+        $documentIds = [];
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            // Set the stage (chain jump when on the process chain, else legacy write).
+            $steps = app(\App\Services\Immigration\CaseStepService::class);
+            $movedViaChain = $steps->hasChain($lead) && $steps->jumpToStage($lead, $stage, auth()->user());
+            if (! $movedViaChain && ($lead->immigration_stage ?? null) !== $stage) {
+                $lead->immigration_stage = $stage;
+                $lead->stage_updated_at = now();
+                $lead->stage_updated_by = auth()->id();
+                $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
             }
-        }
-        if ($idx === null) {
-            $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
-            $history = $lead->stage_history;
-            $idx = count($history) - 1;
-        }
-        $history[$idx]['rfi_deadline'] = $deadline->toDateString();
-        $lead->stage_history = $history;
-        $lead->save();
 
-        // Store each RFI PDF (StaffShared so it shows on the Documents tab and the
-        // client portal), and collect them as email attachments.
-        $attachments = [];
-        foreach ((array) $request->file('documents', []) as $file) {
-            if (! $file instanceof \Illuminate\Http\UploadedFile) {
-                continue;
+            // Store the deadline ON the RFI stage-history entry (both stage paths push
+            // one) rather than a new column — the leads god table is at its row-size
+            // limit. `$lead->rfi_deadline` reads it back. If the case was already on
+            // this stage (no fresh entry), push one so the deadline has a home.
+            $history = $lead->stage_history ?? [];
+            $idx = null;
+            for ($i = count($history) - 1; $i >= 0; $i--) {
+                if (($history[$i]['stage'] ?? null) === $stage) {
+                    $idx = $i;
+                    break;
+                }
             }
-            $path = $file->store("lead-documents/{$lead->id}", 'local');
-            $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
-            \App\Models\LeadDocument::create([
+            if ($idx === null) {
+                $lead->pushStageHistory('immigration', $stage, $lead->immigration_assignee);
+                $history = $lead->stage_history;
+                $idx = count($history) - 1;
+            }
+            $history[$idx][$deadlineKey] = $deadline->toDateString();
+            $lead->stage_history = $history;
+            $lead->save();
+
+            // Store each RFI PDF (StaffShared so it shows on the Documents tab and the
+            // client portal), and collect them as email attachments.
+            $attachments = [];
+            foreach ((array) $request->file('documents', []) as $file) {
+                if (! $file instanceof \Illuminate\Http\UploadedFile) {
+                    continue;
+                }
+                $path = $file->store("lead-documents/{$lead->id}", 'local');
+                if (! $path) {
+                    throw new \RuntimeException('Could not store the INZ notice.');
+                }
+                $storedPaths[] = $path;
+                $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
+                $document = \App\Models\LeadDocument::create([
+                    'lead_id' => $lead->id,
+                    // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
+                    // kept as a shared doc (checklist_key null), NOT the client's
+                    // upload. The client responds via the "Request Information Form"
+                    // upload slot, whose files ARE keyed 'rfi'.
+                    'checklist_key' => null,
+                    'original_name' => $name,
+                    'file_path' => $path,
+                    'mime' => $file->getClientMimeType(),
+                    'size' => $file->getSize(),
+                    'source' => 'upload',
+                    'source_variant' => $medical ? 'medical' : 'rfi',
+                    'status' => \App\Models\LeadDocument::STATUS_STAFF_SHARED,
+                    'uploaded_by' => auth()->id(),
+                    'note' => $note ?: null,
+                ]);
+                $attachments[] = ['path' => $path, 'name' => $name];
+                $documentIds[] = $document->id;
+            }
+
+            // The documents INZ asked for — staff confirmed these from the AI-read
+            // list in the modal. Each becomes a request the client uploads against
+            // (origin 'rfi' groups them under "Request Information" on the Documents
+            // tab and the client portal). Deduped by label against existing RFI
+            // requests so re-opening the modal doesn't create duplicates.
+            $requestedLabels = [];
+            $existingRfi = $lead->documentRequests()->where('origin', 'rfi')
+                ->pluck('label')->map(fn ($l) => mb_strtolower(trim((string) $l)))->all();
+            foreach ((array) ($data['requested_documents'] ?? []) as $item) {
+                $label = trim((string) ($item['label'] ?? ''));
+                if ($label === '' || in_array(mb_strtolower($label), $existingRfi, true)) {
+                    continue;
+                }
+                $existingRfi[] = mb_strtolower($label);
+                \App\Models\LeadDocumentRequest::create([
+                    'lead_id' => $lead->id,
+                    'label' => $label,
+                    'description' => trim((string) ($item['description'] ?? '')) ?: null,
+                    'required' => array_key_exists('required', $item) ? (bool) $item['required'] : true,
+                    'origin' => 'rfi',
+                    'requested_by' => auth()->id(),
+                    'requested_at' => now(),
+                ]);
+                $requestedLabels[] = $label;
+            }
+
+            // Record the note (with the deadline) on the case timeline.
+            $user = auth()->user();
+            \App\Models\LeadNote::create([
                 'lead_id' => $lead->id,
-                // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
-                // kept as a shared doc (checklist_key null), NOT the client's
-                // upload. The client responds via the "Request Information Form"
-                // upload slot, whose files ARE keyed 'rfi'.
-                'checklist_key' => null,
-                'original_name' => $name,
-                'file_path' => $path,
-                'mime' => $file->getClientMimeType(),
-                'size' => $file->getSize(),
-                'source' => 'upload',
-                'source_variant' => 'rfi',
-                'status' => \App\Models\LeadDocument::STATUS_STAFF_SHARED,
-                'uploaded_by' => auth()->id(),
-                'note' => $note ?: null,
+                'user_id' => $user?->id,
+                'author_name' => $user?->name,
+                'author_role' => $user?->role,
+                'kind' => 'note',
+                'body' => "Stage → {$stage} (respond by {$deadline->format('j M Y')})".($note !== '' ? ": {$note}" : ''),
             ]);
-            $attachments[] = ['path' => $path, 'name' => $name];
-        }
 
-        // The documents INZ asked for — staff confirmed these from the AI-read
-        // list in the modal. Each becomes a request the client uploads against
-        // (origin 'rfi' groups them under "Request Information" on the Documents
-        // tab and the client portal). Deduped by label against existing RFI
-        // requests so re-opening the modal doesn't create duplicates.
-        $requestedLabels = [];
-        $existingRfi = $lead->documentRequests()->where('origin', 'rfi')
-            ->pluck('label')->map(fn ($l) => mb_strtolower(trim((string) $l)))->all();
-        foreach ((array) ($data['requested_documents'] ?? []) as $item) {
-            $label = trim((string) ($item['label'] ?? ''));
-            if ($label === '' || in_array(mb_strtolower($label), $existingRfi, true)) {
-                continue;
+            if ($medical) {
+                $history[$idx]['medical_document_ids'] = $documentIds;
+                $lead->stage_history = $history;
+                $lead->save();
             }
-            $existingRfi[] = mb_strtolower($label);
-            \App\Models\LeadDocumentRequest::create([
-                'lead_id' => $lead->id,
-                'label' => $label,
-                'description' => trim((string) ($item['description'] ?? '')) ?: null,
-                'required' => array_key_exists('required', $item) ? (bool) $item['required'] : true,
-                'origin' => 'rfi',
-                'requested_by' => auth()->id(),
-                'requested_at' => now(),
-            ]);
-            $requestedLabels[] = $label;
+            \Illuminate\Support\Facades\DB::commit();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            foreach ($storedPaths as $path) {
+                try {
+                    \Illuminate\Support\Facades\Storage::disk('local')->delete($path);
+                } catch (\Throwable $cleanupError) {
+                    \Illuminate\Support\Facades\Log::warning('INZ notice cleanup failed', ['lead_id' => $lead->id]);
+                }
+            }
+            throw $e;
         }
-
-        // Record the note (with the deadline) on the case timeline.
-        $user = auth()->user();
-        \App\Models\LeadNote::create([
-            'lead_id' => $lead->id,
-            'user_id' => $user?->id,
-            'author_name' => $user?->name,
-            'author_role' => $user?->role,
-            'kind' => 'note',
-            'body' => "Stage → {$stage} (respond by {$deadline->format('j M Y')})".($note !== '' ? ": {$note}" : ''),
-        ]);
 
         // Email via the configured RFI automation. {{rfi_deadline}} + the PDFs are
         // passed through; skipped when the "notify" toggle is off.
+        $notificationFailed = false;
         if (! empty($data['notify'])) {
-            app(\App\Services\EmailAutomationService::class)->fire(
-                'immigration.stage.'.\Illuminate\Support\Str::slug($stage, '_'),
-                $lead,
-                [
-                    'stage' => $stage,
-                    'status_detail' => $note,
-                    'rfi_deadline' => $deadline->format('j M Y'),
-                    // {{document_list}} lets the RFI template spell out exactly
-                    // what the client must upload; blank when none were extracted.
-                    'document_list' => implode(', ', $requestedLabels),
-                ],
-                $attachments,
-            );
+            if ($medical) {
+                $notificationFailed = ! $this->notifyMedicalRequest($lead, $attachments);
+            } else {
+                app(\App\Services\EmailAutomationService::class)->fire(
+                    'immigration.stage.'.\Illuminate\Support\Str::slug($stage, '_'),
+                    $lead,
+                    ['stage' => $stage, 'status_detail' => $note,
+                        'rfi_deadline' => $deadline->format('j M Y'),
+                        'document_list' => implode(', ', $requestedLabels)],
+                    $attachments,
+                );
+            }
         }
 
         $lead->recordStaffActivity("Moved to {$stage} (respond by {$deadline->format('j M Y')})".($attachments ? ' + '.count($attachments).' document(s)' : ''));
         \App\Jobs\EvaluateCaseFindings::dispatch($lead->id);
+
+        if ($notificationFailed) {
+            return back()->withErrors(['notification' => 'The request is saved, but the email could not be queued. Check the client email and active Request for Medical template, then retry notification.']);
+        }
 
         return back()->with('success', "Case moved to {$stage}.");
     }
@@ -2093,6 +2244,10 @@ class ImmigrationController extends Controller
             $lastName = $intake->last_name ?? $intake->family_name ?? null;
 
             return DB::transaction(function () use ($assessment, $intake, $visaName, $lastName) {
+                $link = (new AssessmentCaseLink)->resolve($intake, $assessment);
+                if ($link['conversion_blocked']) {
+                    return back()->with('error', $link['conversion_issue']);
+                }
                 // Find-or-create the Lead. Emails are NOT unique to a person
                 // (a parent often registers several people under one email),
                 // so a same-email lead is only the right target when the NAME
@@ -2106,7 +2261,7 @@ class ImmigrationController extends Controller
                 //    already holds this applicant's onboarding (payment plan,
                 //    bookings, uploaded documents). Converting onto it keeps all
                 //    of that attached instead of spawning a parallel case.
-                $lead = \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                $lead = $link['case_id'] ? Lead::findOrFail($link['case_id']) : \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
                     ->where('subject_id', $intake->getKey())
                     ->whereNotNull('lead_id')
                     ->first()?->lead;
@@ -2133,6 +2288,10 @@ class ImmigrationController extends Controller
                     if ($named->count() === 1) {
                         $lead = $named->first();
                     }
+                }
+
+                if ($lead && AssessmentCaseLink::hasApplicantConflict($intake, $lead)) {
+                    return back()->with('error', AssessmentCaseLink::APPLICANT_CONFLICT);
                 }
 
                 // 3. Nothing matched → create a fresh case for this applicant
@@ -2255,15 +2414,23 @@ class ImmigrationController extends Controller
     private function convertResidentIntakeWithoutAssessment(ResidentIntake $intake)
     {
         return DB::transaction(function () use ($intake) {
+            $link = (new AssessmentCaseLink)->resolve($intake, null);
+            if ($link['conversion_blocked']) {
+                return back()->with('error', $link['conversion_issue']);
+            }
             // Match a same-email lead only when the full name also matches —
             // families share an inbox, so email alone would hijack a relative.
             $wantFirst = strtolower(trim((string) $intake->first_name));
             $wantLast = strtolower(trim((string) $intake->last_name));
-            $lead = null;
-            if ($intake->email && $wantFirst !== '' && $wantLast !== '') {
+            $lead = $link['case_id'] ? Lead::findOrFail($link['case_id']) : \App\Models\PreScreening::where('subject_type', $intake->getMorphClass())
+                ->where('subject_id', $intake->getKey())->first()?->lead;
+            if (! $lead && $intake->email && $wantFirst !== '' && $wantLast !== '') {
                 $lead = Lead::where('email', $intake->email)->get()
                     ->first(fn ($l) => strtolower(trim((string) $l->first_name)) === $wantFirst
                         && strtolower(trim((string) $l->last_name)) === $wantLast);
+            }
+            if ($lead && AssessmentCaseLink::hasApplicantConflict($intake, $lead)) {
+                return back()->with('error', AssessmentCaseLink::APPLICANT_CONFLICT);
             }
             if (! $lead) {
                 $lead = Lead::create([
@@ -2425,6 +2592,10 @@ class ImmigrationController extends Controller
 
         return inertia('portal/immigration/AssessmentProfile', [
             'intake' => $row,
+            'can_endorse_aewv' => $row['visa_type'] === 'work' && ! $preScreening->isTerminal()
+                && ! $row['case_url'] && ! $row['conversion_issue']
+                && (auth()->user()->isAdmin() || auth()->user()->role === 'immigration_manager'),
+            'aewv_endorsement_failed' => $preScreening->aewvEndorsementFailed(),
             // The two pre-screening meetings (consultation, then consent).
             'bookings' => [
                 'consult' => $fmtBooking($preScreening->consultBooking),
@@ -2439,6 +2610,7 @@ class ImmigrationController extends Controller
             'engagement_pack' => $preScreening->lead ? [
                 'lead_id' => $preScreening->lead->id,
                 'lead_name' => trim("{$preScreening->lead->first_name} {$preScreening->lead->last_name}") ?: 'Client',
+                'email' => $preScreening->lead->email,
                 'documents' => \App\Services\Immigration\EngagementDocumentGenerator::catalogue(),
                 'signers' => $this->signingAdvisers(),
                 'default_signer_id' => $this->defaultSignerId(),
@@ -2565,30 +2737,10 @@ class ImmigrationController extends Controller
                     ->keyBy('intakeable_id');
             };
 
-            // Pre-compute which Assessment ids already map to a Lead flagged
-            // as an immigration case. Matching by the exact assessment_id
-            // (not email) means only the assessment actually converted shows
-            // as "Converted" — a second same-email applicant's assessment
-            // stays convertible on its own.
-            $convertedAssessmentIds = Lead::query()
-                ->where('is_immigration_case', true)
-                ->whereNotNull('assessment_id')
-                ->pluck('assessment_id')
-                ->flip();
+            // Use live case records, not workflow labels, as conversion proof.
+            $caseLinks = new AssessmentCaseLink;
 
-            // Identity keys (lower(email)|dob) of every immigration case, so a
-            // fresh submission from someone who is ALREADY a case shows as
-            // belonging to that case instead of a convertible duplicate — the
-            // public funnels sync it in (see SyncsIntakeToCase). Email+DOB (not
-            // email alone) keeps family members who share an email distinct.
-            $caseIdentities = Lead::query()
-                ->where('is_immigration_case', true)
-                ->get(['email', 'dob'])
-                ->map(fn ($c) => \App\Http\Controllers\Concerns\SyncsIntakeToCase::caseSyncIdentityKey($c->email, $c->dob))
-                ->filter()
-                ->flip();
-
-            $normalize = function ($intake, string $visaType, $assessment, $review = null) use ($convertedAssessmentIds, $caseIdentities): array {
+            $normalize = function ($intake, string $visaType, $assessment, $review = null) use ($caseLinks): array {
                 $first = (string) ($intake->first_name ?? '');
                 $last = (string) ($intake->last_name ?? $intake->family_name ?? '');
                 $hasAssessment = (bool) $assessment;
@@ -2605,17 +2757,12 @@ class ImmigrationController extends Controller
                 $isTriaged = $intake->status !== null
                     && ! in_array($intake->status, $defaultStatuses, true);
 
-                // Converted — this exact assessment is linked to a case, the
-                // intake was marked "Engaged" post-convert, OR the submitter is
-                // already a case (same email + DOB): their fresh form was synced
-                // into that case, so it isn't a new lead to convert.
-                $identityKey = \App\Http\Controllers\Concerns\SyncsIntakeToCase::caseSyncIdentityKey($intake->email, $intake->dob);
-                $belongsToCase = $identityKey !== null && isset($caseIdentities[$identityKey]);
-                $isConverted = ($assessment && isset($convertedAssessmentIds[$assessment->id]))
-                    || $intake->status === 'Engaged'
-                    || $belongsToCase;
+                // A stale Engaged/pre-screen status is not a case link.
+                $link = $caseLinks->resolve($intake, $assessment);
+                $isConverted = $link['case_id'] !== null;
 
                 return [
+                    ...$link,
                     'id' => $intake->id,
                     'record' => 'intake', // deletes from the intake table
                     'assessment_id' => $assessment?->id,
@@ -2633,17 +2780,13 @@ class ImmigrationController extends Controller
                     'extra' => $visaType === 'resident'
                         ? trim(($intake->current_visa_type ?? '').($intake->job_title ? ' · '.$intake->job_title : ''))
                         : null,
-                    // Convert is available to all four visa types now,
-                    // gated on (1) a paired Assessment exists, (2) the
-                    // intake isn't already Engaged, (3) no existing
-                    // Lead with matching email is already an
-                    // immigration case.
+                    // Only retry when no live case or unsafe/deleted link exists.
                     // Resident intakes can convert even without a paired
                     // Assessment — the controller falls back to the
                     // intake-only path (convertResidentIntakeWithoutAssessment)
                     // so the action isn't a dead end for pre-Assessment rows.
                     'can_convert' => ($hasAssessment || $visaType === 'resident')
-                        && $intake->status !== 'Engaged'
+                        && ! $link['conversion_blocked']
                         && ! $isConverted,
                     'detail_url' => $visaType === 'resident'
                         ? "/admin/immigration/resident-intakes/{$intake->id}"
@@ -2889,6 +3032,8 @@ class ImmigrationController extends Controller
             // assessment funnel is an immigration enquiry). Hidden once it's
             // already a case so it can't be double-converted.
             'can_convert' => ! $l->is_immigration_case,
+            'case_id' => $l->is_immigration_case ? $l->id : null,
+            'case_url' => $l->is_immigration_case ? "/portal/immigration/cases/{$l->id}/profile?tab=documents" : null,
             'detail_url' => "/admin/leads/{$l->id}",
             'data_url' => "/portal/immigration/assessments/free/{$l->id}/data",
             'journey' => [
@@ -3610,53 +3755,53 @@ class ImmigrationController extends Controller
     {
         return match ($type) {
             'resident' => [
-                'Personal Details' => ['dob', 'nationality'],
-                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history'],
-                'Employment' => ['job_title', 'employment_start', 'employment_type', 'hourly_rate'],
+                'Personal Details' => ['dob', 'nationality', 'birth_certificate_available', 'birth_certificate_reason'],
+                'Passport & Visa' => ['passport_number', 'passport_expiry', 'issuing_country', 'current_visa_type', 'current_visa_other', 'current_visa_expiry', 'nz_arrival_date', 'previous_nz_visa_history', 'face_image_consent'],
+                'Employment' => ['job_title', 'employer_name', 'employment_start', 'employment_type', 'hourly_rate', 'job_skills_level'],
                 'Qualifications' => ['highest_qualification', 'institution_name', 'country_of_study', 'nzqa_status', 'nzqa_iqa_reference'],
                 'Work Experience' => ['nz_skilled_years', 'total_skilled_years', 'career_summary'],
                 'English & Family' => ['english_evidence', 'english_test_score', 'english_test_date', 'include_family', 'family_members'],
                 'Documents' => ['documents', 'document_files'],
-                'Additional Information' => ['character_health_disclosure', 'other_notes'],
+                'Additional Information' => ['character_health_disclosure', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type', 'police_certificate_available', 'other_notes'],
             ],
             'work' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'partnership_status', 'current_address'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'previous_nz_visa', 'previous_nz_visa_details', 'previous_nzeta', 'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
-                'NZ Employer' => ['employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed', 'job_start_date', 'hourly_rate', 'supports_dependent_children'],
-                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details'],
-                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant'],
+                'NZ Employer' => ['employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed', 'job_start_date', 'hourly_rate', 'supports_dependent_children', 'job_skills_level'],
+                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details', 'police_certificate_available'],
+                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type'],
                 'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
                 'Military & Travel' => ['military_compulsory', 'military_undertaken', 'military_details', 'travelled_internationally'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'student' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'passport_number', 'passport_expiry', 'partnership_status', 'current_address', 'overseas_address'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'passport_number', 'passport_expiry', 'partnership_status', 'current_address', 'overseas_address', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
-                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details'],
-                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant'],
-                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
+                'Character' => ['character_convicted', 'character_investigation', 'character_deported', 'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details', 'police_certificate_available'],
+                'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type'],
+                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address', 'job_skills_level'],
                 'Study Plan' => ['programmes', 'study_period_from', 'study_period_to', 'school_name', 'has_offer'],
                 'Study Funds & Assets' => ['has_enough_funds', 'tuition_fee_nzd', 'living_expenses_nzd', 'has_sponsor', 'sponsor_relationship', 'sponsor_income_source', 'can_provide_statements', 'has_other_assets', 'other_assets_details'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'visitor' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'passport_number', 'passport_expiry', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'town_city', 'region', 'postcode'],
+                'Identity' => ['other_names', 'gender', 'dob', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'passport_number', 'passport_expiry', 'other_citizenships', 'national_id', 'partnership_status', 'current_address', 'town_city', 'region', 'postcode', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration History' => ['current_country', 'previous_nz_visa', 'previous_nzeta', 'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months'],
                 'Character' => ['character_convicted', 'character_deported', 'character_investigation', 'character_visa_refused', 'lived_other_country_5y', 'previous_police_certificate'],
                 'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'previous_xray', 'previous_inz1007', 'inz_requested_medical'],
                 'Education' => ['has_tertiary', 'qualification_duration', 'qualification_name', 'qualification_completed', 'education_provider'],
-                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address'],
+                'Current Employment' => ['currently_working', 'current_job_title', 'current_job_start', 'current_job_finish', 'current_job_country', 'current_job_region', 'current_employer_name', 'current_employer_phone', 'current_employer_email', 'current_job_duties', 'current_employer_address', 'job_skills_level'],
                 'Travel Plan' => ['purpose_of_visit', 'intended_stay_length', 'intended_from', 'intended_to', 'has_leave_permit', 'multi_entry_plans'],
                 'Travel Funds' => ['travel_funds_description', 'can_provide_statements', 'has_other_assets', 'other_assets_details'],
                 'Declaration' => ['declaration_accepted', 'signature_name', 'signature_date'],
             ],
             'family' => [
-                'Identity' => ['other_names', 'gender', 'dob', 'partnership_status', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id'],
+                'Identity' => ['other_names', 'gender', 'dob', 'partnership_status', 'country_of_birth', 'place_of_birth', 'country_of_citizenship', 'other_citizenships', 'national_id', 'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent'],
                 'NZ Immigration' => ['current_country', 'previous_nz_visa', 'current_address'],
                 'Visa Details' => ['applying_as', 'visa_type', 'partner_living_together', 'partner_12_months', 'partner_same_period', 'partner_close_relatives', 'child_dependent'],
                 'Character' => ['character_convicted', 'character_removed', 'character_investigation', 'character_visa_refused', 'lived_other_country_5y', 'previous_police_certificate'],
                 'Health' => ['health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant', 'previous_xray', 'previous_medical_cert', 'countries_visited_3m'],
-                'Work History' => ['currently_working', 'current_employer_name', 'current_occupation', 'current_employer_phone', 'current_employer_email', 'current_start', 'current_end', 'current_employer_address'],
+                'Work History' => ['currently_working', 'current_employer_name', 'current_occupation', 'current_employer_phone', 'current_employer_email', 'current_start', 'current_end', 'current_employer_address', 'job_skills_level'],
                 'Contacts & Declaration' => ['nz_contacts', 'declaration_accepted', 'signature_name', 'signature_date'],
             ],
             default => [],
@@ -3669,6 +3814,14 @@ class ImmigrationController extends Controller
         static $labels = [
             'dob' => 'Date of Birth',
             'nationality' => 'Nationality',
+            'birth_certificate_available' => 'Birth Certificate — can provide at processing',
+            'birth_certificate_reason' => 'If no birth certificate — reason',
+            'face_image_consent' => 'Agrees to provide a face image (JPG) at processing',
+            'medical_cert_recent' => 'Has a medical certificate under 3 months old (unsubmitted)',
+            'medical_cert_submitted_last' => 'Submitted a medical certificate in last visa application',
+            'medical_cert_type' => 'Medical certificate type',
+            'police_certificate_available' => 'Can provide a Police Certificate',
+            'job_skills_level' => 'Job Skills Level (ANZSCO / NOL)',
             'national_id' => 'National ID',
             'country_of_citizenship' => 'Country of Citizenship',
             'other_citizenships' => 'Other Citizenships',
@@ -3808,7 +3961,17 @@ class ImmigrationController extends Controller
             return $value ? 'Yes' : 'No';
         }
         if ($value instanceof \Illuminate\Support\Carbon || $value instanceof \DateTimeInterface) {
-            return \Illuminate\Support\Carbon::parse($value)->toFormattedDateString();
+            return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+        }
+        // Date columns arrive as ISO strings after ->toArray() serialisation
+        // (e.g. 1983-10-21T00:00:00.000000Z); render them as a plain date rather
+        // than the raw timestamp. Only touches values that are already dates.
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}([T ]|$)/', $value)) {
+            try {
+                return \Illuminate\Support\Carbon::parse($value)->isoFormat('D MMMM YYYY');
+            } catch (\Throwable $e) {
+                // fall through to the string return below
+            }
         }
         if (is_array($value)) {
             if (array_is_list($value) && collect($value)->every(fn ($v) => is_scalar($v))) {
@@ -4475,33 +4638,118 @@ class ImmigrationController extends Controller
 
     public function reports(Request $request)
     {
-        // ── Date range (default: last 2 weeks) ───────────────────────────
-        [$preset, $from, $to] = $this->resolveReportRange($request);
-        $now = now();
-        $rangeDays = max(1, (int) $from->diffInDays($to) + 1);
+        abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
+
+        // ── Date range (default: this week) ───────────────────────────
+        $week = ReportWeek::forPreset($request->input('preset', 'this_week'));
+        [$preset, $from, $to] = $week
+            ? [$week->preset, Carbon::instance($week->start), Carbon::instance($week->end->subMicrosecond())]
+            : $this->resolveReportRange($request);
+        $rangeFrom = $from->toDateString();
+        $rangeTo = $to->toDateString();
+        $rangeLabel = $this->reportRangeLabel($preset, $from, $to);
+        $rangeDays = (int) $from->copy()->startOfDay()->diff($to->copy()->startOfDay())->days + 1;
+        $from->utc();
+        $to->utc();
+        $now = now(ReportPeriod::TIMEZONE);
 
         // Stage groupings (based on the case's current immigration_stage).
-        $awaitingStages = ['Visa Lodged', 'Request for Information', 'Approved in Principle'];
-        $lodgedStages = ['Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
-        $endorsedStages = ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
-        $engagedStages = ['Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $awaitingStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
+        $lodgedStages = ['Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $endorsedStages = ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
+        $engagedStages = ['Agreement Signed', 'For Agreement & Invoice', 'Invoice Paid', 'Visa Lodged', 'Request for Medical', 'Request for Information', 'Approved in Principle', 'Approved Visa', 'Decline Visa'];
         $terminalStages = ['Approved Visa', 'Decline Visa'];
 
-        $count = fn ($stages) => Lead::immigrationCase()->whereIn('immigration_stage', (array) $stages)->count();
-        // Movements INTO a set of stages within the window (by stage_updated_at).
-        $inWindow = fn ($stages) => Lead::immigrationCase()
-            ->whereIn('immigration_stage', (array) $stages)
-            ->whereBetween('stage_updated_at', [$from, $to])
-            ->count();
+        $inCase = fn () => Lead::immigrationCase();
+        $count = fn ($stages) => $inCase()->whereIn('immigration_stage', (array) $stages)->count();
+        $newCases = fn () => $inCase()->whereBetween('immigration_converted_at', [$from, $to]);
+        $reportRow = fn (Lead $case, ?string $date) => [
+            'id' => $case->id,
+            'name' => trim("{$case->first_name} {$case->last_name}") ?: 'Case',
+            'visa' => $case->inz_visa_type,
+            'assignee' => $case->immigration_assignee,
+            'date' => $date,
+        ];
+
+        // The shared stage timestamp can move when Education updates the same client.
+        $trendStart = $now->copy()->startOfMonth()->subMonths(5);
+        $earliest = $from->lt($trendStart) ? $from : $trendStart;
+        // Older pathway entries have no intake marker. Match the dated audit entry for that initialization.
+        $pathwayIntakes = [];
+        foreach (ActivityLog::where('action', 'client.pathway_added')->where('properties->pathway', 'immigration')
+            ->where('created_at', '>=', $earliest->copy()->utc())->get(['created_at', 'properties']) as $intake) {
+            $properties = $intake->properties;
+            if (isset($properties['subject_id'], $properties['stage'])) {
+                $pathwayIntakes[$properties['subject_id']][$properties['stage']][$intake->created_at->timestamp] = true;
+            }
+        }
+        $stageEvents = [];
+        foreach ($inCase()->whereNotNull('stage_history')->select(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])->lazyById() as $case) {
+            foreach ($case->stage_history ?? [] as $event) {
+                $stage = $event['stage'] ?? null;
+                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage)) {
+                    continue;
+                }
+                $date = ReportPeriod::eventDate($event['at'] ?? null);
+                if (! $date || ! $date->betweenIncluded($earliest, $now)) {
+                    continue;
+                }
+                if (($event['pathway_intake'] ?? false) || isset($pathwayIntakes[$case->id][$stage][$date->timestamp])) {
+                    unset($pathwayIntakes[$case->id][$stage][$date->timestamp]);
+
+                    continue;
+                }
+                $stageEvents[$stage][] = $reportRow($case, $date->utc()->toIso8601String());
+            }
+        }
+        $rowsInPeriod = function (array $stages, Carbon $start, Carbon $end) use ($stageEvents) {
+            $first = $start->toIso8601String();
+            $last = $end->toIso8601String();
+
+            return collect($stages)->flatMap(fn ($stage) => $stageEvents[$stage] ?? [])
+                ->filter(fn ($row) => $row['date'] >= $first && $row['date'] <= $last)
+                ->sortByDesc('date')->unique('id')->values();
+        };
+        $stageRows = fn (...$stages) => $rowsInPeriod($stages, $from, $to);
+        $liaEndorsements = $stageRows('Endorsed');
+        $lodgements = $stageRows('Visa Lodged');
+        $approvals = $stageRows('Approved Visa');
+        $declines = $stageRows('Decline Visa');
+        $signatures = $stageRows('Agreement Signed');
+
+        $quotations = $stageRows('For Agreement & Invoice');
+        $quotedInvoices = LeadDocument::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->where('source', LeadDocument::SOURCE_GENERATED)->where('source_variant', 'invoice')
+            ->where('status', '!=', LeadDocument::STATUS_REJECTED)
+            ->where(fn ($query) => $query->whereNotNull('notes->engagement_sent_at')
+                ->orWhere('status', LeadDocument::STATUS_STAFF_SHARED)->orWhere('notes->invoice_finance->draft', false));
+        foreach ($quotedInvoices->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->notes['engagement_sent_at']
+                ?? ($invoice->status === LeadDocument::STATUS_STAFF_SHARED ? $invoice->reviewed_at : null)
+                ?? ($invoice->notes['invoice_finance']['issue_date'] ?? null));
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        // Use the verified Afirmo invoice date, so historical imports stay in their original reporting period.
+        foreach (\App\Models\FinanceReceivable::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->whereIn('status', ['sent', 'paid'])->where('notes', 'like', '%[afirmo-source:INVOICE:%')
+            ->whereDate('issue_date', '>=', $rangeFrom)->whereDate('issue_date', '<=', $rangeTo)->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->issue_date?->toDateString());
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        $quotations = $quotations->sortByDesc('date')->unique('id')->values();
 
         // ── Activity in the selected window ──────────────────────────────
         $activity = [
-            'new_clients' => Lead::immigrationCase()->whereBetween('immigration_converted_at', [$from, $to])->count(),
-            'files_endorsed' => $inWindow(['For Assessment', 'Endorsed']),
-            'agreements_signed' => $inWindow('Agreement Signed'),
-            'apps_lodged' => $inWindow('Visa Lodged'),
-            'visas_approved' => $inWindow('Approved Visa'),
-            'visas_declined' => $inWindow('Decline Visa'),
+            'new_clients' => $newCases()->count(),
+            'files_endorsed' => $stageRows('For Assessment', 'Endorsed')->count(),
+            'agreements_signed' => $signatures->count(),
+            'apps_lodged' => $lodgements->count(),
+            'visas_approved' => $approvals->count(),
+            'visas_declined' => $declines->count(),
         ];
 
         // ── Cases by stage — current snapshot ────────────────────────────
@@ -4523,14 +4771,14 @@ class ImmigrationController extends Controller
 
         // ── 6-month trend — new cases vs visas approved per month ────────
         $trend = [];
-        for ($i = 5; $i >= 0; $i--) {
-            $m = $now->copy()->subMonths($i);
-            $mStart = $m->copy()->startOfMonth();
-            $mEnd = $m->copy()->endOfMonth();
+        for ($i = 0; $i < 6; $i++) {
+            $m = $trendStart->copy()->addMonths($i);
+            $mStart = $m->copy()->utc();
+            $mEnd = $m->copy()->endOfMonth()->utc();
             $trend[] = [
                 'label' => $m->format('M'),
                 'new_cases' => Lead::immigrationCase()->whereBetween('immigration_converted_at', [$mStart, $mEnd])->count(),
-                'approved' => Lead::immigrationCase()->where('immigration_stage', 'Approved Visa')->whereBetween('stage_updated_at', [$mStart, $mEnd])->count(),
+                'approved' => $rowsInPeriod(['Approved Visa'], $mStart, $mEnd)->count(),
             ];
         }
 
@@ -4559,31 +4807,23 @@ class ImmigrationController extends Controller
         // ─────────────────────────────────────────────────────────────────
         // Weekly management report (the slide-deck format).
         // ─────────────────────────────────────────────────────────────────
-        $withInzStages = ['Visa Lodged', 'Interim Visa Issued', 'Request for Information', 'Approved in Principle'];
+        $withInzStages = ['Visa Lodged', 'Interim Visa Issued', 'Request for Medical', 'Request for Information', 'Approved in Principle'];
 
-        // Named-detail rows. Pass which date column labels the row.
-        $named = function ($query, string $dateField = 'stage_updated_at') {
+        $named = function ($query, bool $includeConversionDate = false) use ($reportRow) {
             return $query
-                ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'stage_updated_at', 'immigration_converted_at', 'immigration_assignee'])
-                ->map(fn ($l) => [
-                    'id' => $l->id,
-                    'name' => trim("{$l->first_name} {$l->last_name}") ?: 'Case',
-                    'visa' => $l->inz_visa_type,
-                    'assignee' => $l->immigration_assignee,
-                    'date' => optional($l->{$dateField})->toIso8601String(),
-                ])->values();
+                ->get(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_converted_at', 'immigration_assignee'])
+                ->map(fn ($case) => $reportRow($case, $includeConversionDate ? $case->immigration_converted_at?->toIso8601String() : null))
+                ->values();
         };
-        $inCase = fn () => Lead::immigrationCase();
 
         // Pipeline position — mostly current snapshots (new_clients is in-window).
-        // "For quotation" = the pricing/invoice stage; "on hold" is omitted.
         $pipeline = [
-            'new_clients' => $inCase()->whereBetween('immigration_converted_at', [$from, $to])->count(),
+            'new_clients' => $activity['new_clients'],
             'in_progress' => $inCase()->whereNotIn('immigration_stage', array_merge($withInzStages, $terminalStages))
                 ->where(fn ($q) => $q->whereNotNull('immigration_stage'))->count(),
-            'for_quotation' => $count('For Agreement & Invoice'),
-            'endorsed_dev' => $inCase()->where('immigration_assignee', 'Dev')->count(),
-            'endorsed_hendry' => $inCase()->where('immigration_assignee', 'Hendry')->count(),
+            'for_quotation' => $quotations->count(),
+            'quotation_cases' => $quotations,
+            'endorsed_lia' => $liaEndorsements->count(),
             'agreements_sent' => $count('Agreement Sent'),
             'with_inz' => $count($withInzStages),
             'pre_lodgement' => [
@@ -4595,24 +4835,25 @@ class ImmigrationController extends Controller
 
         // Intake & engagements — named, movements within the window.
         $namedIntake = [
-            'new_clients' => $named($inCase()->whereBetween('immigration_converted_at', [$from, $to])->orderBy('immigration_converted_at'), 'immigration_converted_at'),
-            'agreements_issued' => $named($inCase()->where('immigration_stage', 'Agreement Sent')->whereBetween('stage_updated_at', [$from, $to])),
-            'endorsed_dev' => $named($inCase()->where('immigration_assignee', 'Dev')->whereBetween('stage_updated_at', [$from, $to])),
-            'engagement_signed' => $named($inCase()->where('immigration_stage', 'Agreement Signed')->whereBetween('stage_updated_at', [$from, $to])),
+            'new_clients' => $named($newCases()->orderBy('immigration_converted_at'), true),
+            'agreements_issued' => $stageRows('Agreement Sent'),
+            'endorsed_lia' => $liaEndorsements,
+            'engagement_signed' => $signatures,
         ];
 
         // Submissions & information requests.
         $submissions = [
-            'lodged' => $named($inCase()->where('immigration_stage', 'Visa Lodged')->whereBetween('stage_updated_at', [$from, $to])),
+            'lodged' => $lodgements,
             'rfis' => $named($inCase()->where('immigration_stage', 'Request for Information')),          // current open
             'also_assessing' => $named($inCase()->whereIn('immigration_stage', ['Approved in Principle', 'Interim Visa Issued'])),
         ];
 
         // Decision outcomes — within the window; plus the with-INZ breakdown.
         $outcomes = [
-            'approved' => $named($inCase()->where('immigration_stage', 'Approved Visa')->whereBetween('stage_updated_at', [$from, $to])),
-            'interim' => $named($inCase()->where('immigration_stage', 'Interim Visa Issued')->whereBetween('stage_updated_at', [$from, $to])),
-            'declined' => $named($inCase()->where('immigration_stage', 'Decline Visa')->whereBetween('stage_updated_at', [$from, $to])),
+            'approved' => $approvals,
+            'interim' => $stageRows('Interim Visa Issued'),
+            'rfis' => $stageRows('Request for Information'),
+            'declined' => $declines,
             'with_inz_breakdown' => collect($withInzStages)
                 // Include the named cases per state so the report can reveal WHO
                 // is in each INZ queue (shown on hover).
@@ -4622,7 +4863,7 @@ class ImmigrationController extends Controller
         ];
 
         // Conclusion — auto factual summary (no interpretation), editable per period.
-        $noteKey = 'imm_report_note:'.$from->toDateString().':'.$to->toDateString();
+        $noteKey = 'imm_report_note:'.$rangeFrom.':'.$rangeTo;
         $autoSummary = sprintf(
             '%d application%s lodged with INZ and %d new client record%s opened this period. %d approved, %d declined. %d file%s currently sit with INZ awaiting a decision.',
             $activity['apps_lodged'], $activity['apps_lodged'] === 1 ? '' : 's',
@@ -4650,11 +4891,12 @@ class ImmigrationController extends Controller
             'conclusion' => $conclusion,
             'range' => [
                 'preset' => $preset,
-                'from' => $from->toDateString(),
-                'to' => $to->toDateString(),
+                'from' => $rangeFrom,
+                'to' => $rangeTo,
                 'days' => $rangeDays,
-                'label' => $this->reportRangeLabel($preset, $from, $to),
+                'label' => $rangeLabel,
             ],
+            'weeklyReport' => $week && ReportWeek::canUseNotes($request->user()) ? $week->notes('immigration') + ['tasks' => $week->tasks('immigration')] : null,
             'kpis' => $kpis,
             'activity' => $activity,
             'stageDistribution' => $stageDistribution,
@@ -4675,6 +4917,12 @@ class ImmigrationController extends Controller
      */
     public function saveReportNote(Request $request)
     {
+        abort_unless($request->user()->isAdmin() || $request->user()->hasAnyRole(['immigration', User::ROLE_IMMIGRATION_MANAGER, User::ROLE_IMMIGRATION_ADVISER]), 403);
+
+        if ($request->has('week_start')) {
+            return ReportWeek::save($request, 'immigration');
+        }
+
         $data = $request->validate([
             'note_key' => ['required', 'string', 'starts_with:imm_report_note:', 'max:120'],
             'note' => ['nullable', 'string', 'max:4000'],
@@ -4686,24 +4934,22 @@ class ImmigrationController extends Controller
     }
 
     /**
-     * Resolve the report window from the request. Default is the last 14 days.
+     * Resolve non-weekly report windows from the request.
      * Presets: two_weeks | this_month | last_month | quarter | custom(from,to).
      *
      * @return array{0: string, 1: \Illuminate\Support\Carbon, 2: \Illuminate\Support\Carbon}
      */
     private function resolveReportRange(Request $request): array
     {
-        $now = now();
-        $preset = $request->input('preset', 'two_weeks');
-        if (! in_array($preset, ['today', 'this_week', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
+        $now = now(ReportPeriod::TIMEZONE);
+        $preset = $request->input('preset');
+        if (! in_array($preset, ['today', 'two_weeks', 'this_month', 'last_month', 'quarter', 'custom'], true)) {
             $preset = 'two_weeks';
         }
 
         switch ($preset) {
             case 'today':
                 return [$preset, $now->copy()->startOfDay(), $now->copy()->endOfDay()];
-            case 'this_week':
-                return [$preset, $now->copy()->startOfWeek(), $now->copy()->endOfDay()];
             case 'this_month':
                 return [$preset, $now->copy()->startOfMonth(), $now->copy()->endOfDay()];
             case 'last_month':
@@ -4714,10 +4960,10 @@ class ImmigrationController extends Controller
                 return [$preset, $now->copy()->subMonthsNoOverflow(3)->startOfDay(), $now->copy()->endOfDay()];
             case 'custom':
                 $from = $request->filled('from')
-                    ? \Illuminate\Support\Carbon::parse($request->input('from'))->startOfDay()
+                    ? Carbon::parse($request->input('from'), ReportPeriod::TIMEZONE)->setTimezone(ReportPeriod::TIMEZONE)->startOfDay()
                     : $now->copy()->subDays(14)->startOfDay();
                 $to = $request->filled('to')
-                    ? \Illuminate\Support\Carbon::parse($request->input('to'))->endOfDay()
+                    ? Carbon::parse($request->input('to'), ReportPeriod::TIMEZONE)->setTimezone(ReportPeriod::TIMEZONE)->endOfDay()
                     : $now->copy()->endOfDay();
                 if ($from->gt($to)) {
                     [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
@@ -4734,6 +4980,7 @@ class ImmigrationController extends Controller
         return match ($preset) {
             'today' => 'Today',
             'this_week' => 'This week',
+            'last_week' => 'Last week',
             'this_month' => $from->format('F Y'),
             'last_month' => $from->format('F Y'),
             'quarter' => 'Last 3 months',
@@ -5231,14 +5478,15 @@ class ImmigrationController extends Controller
     {
         try {
             $userId = $request->user()->id;
-            $scope = $request->input('scope', 'mine');
+            $scope = in_array($request->input('scope'), ['mine', 'department'], true)
+                ? $request->input('scope') : 'mine';
             $now = now();
             $todayEnd = $now->copy()->endOfDay();
             $weekEnd = $now->copy()->endOfWeek();
 
             $base = \App\Models\LeadTask::with(['lead:id,lead_id,first_name,last_name,email,status', 'assignee:id,name,avatar_path', 'creator:id,name,avatar_path', 'attachments'])
                 ->withCount('comments')
-                ->when($scope === 'mine', fn ($q) => $q->where('assignee_id', $userId))
+                ->when($scope === 'mine', fn ($q) => $q->assignedTo($userId))
                 ->when($scope === 'department', fn ($q) => $q->where('department', 'immigration'));
 
             $serialize = fn ($t) => [

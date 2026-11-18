@@ -41,15 +41,26 @@ class LeadMessageTest extends TestCase
 
     public function test_staff_sees_only_own_and_shared_email_templates(): void
     {
+        // Migrations install shared templates too; preserve them in the expected pool.
+        $existingCount = MessageTemplate::active()->whereIn('department', ['sales', ''])->get()
+            ->filter(fn ($t) => $t->hasChannel('email'))->count();
         $this->tmpl(['department' => 'sales', 'key' => 'sales_email']);
         $this->tmpl(['department' => '', 'key' => 'shared_email']);
         $this->tmpl(['department' => 'education', 'key' => 'edu_email']);          // other dept — hidden
         $this->tmpl(['department' => 'sales', 'key' => 'sales_sms', 'channels' => ['sms']]); // not email — hidden
+        $this->tmpl(['key' => 'inactive_email', 'is_active' => false]);
 
-        $this->actingAs(User::factory()->create(['role' => 'sales']))
+        $response = $this->actingAs(User::factory()->create(['role' => 'sales']))
             ->getJson('/lead-message/templates')
             ->assertOk()
-            ->assertJsonCount(2);
+            ->assertJsonCount($existingCount + 2);
+
+        $keys = collect($response->json())->pluck('key')->all();
+        $this->assertContains('sales_email', $keys);
+        $this->assertContains('shared_email', $keys);
+        $this->assertNotContains('edu_email', $keys);
+        $this->assertNotContains('sales_sms', $keys);
+        $this->assertNotContains('inactive_email', $keys);
     }
 
     public function test_send_emails_lead_logs_and_substitutes_status(): void

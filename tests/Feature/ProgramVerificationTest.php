@@ -32,6 +32,20 @@ class ProgramVerificationTest extends TestCase
         ]);
     }
 
+    public function test_approved_history_includes_older_records_and_paginates(): void
+    {
+        $this->withoutVite();
+        for ($i = 0; $i < 51; $i++) {
+            $lead = $this->proposalLead([]);
+            $lead->update(['proposal_review' => ['status' => 'approved', 'approved_at' => now()->subDays(30)->toIso8601String()]]);
+        }
+        $this->actingAs($this->reviewer())->get('/program-verification?status=approved')
+            ->assertOk()->assertInertia(fn (Assert $p) => $p->has('proposals', 50)->where('counts.approved', 51)->where('counts.approved_today', 0)->where('pagination.total', 51)->where('selectedStatus', 'approved'));
+        $this->get('/program-verification?status=approved&page=2')->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->has('proposals', 1)->where('pagination.current_page', 2));
+        $this->get('/program-verification')->assertOk()->assertInertia(fn (Assert $p) => $p->has('proposals', 0)->where('counts.approved', 51));
+    }
+
     public function test_index_returns_enriched_queue_with_counts_and_programs(): void
     {
         $prog = Program::create(['title' => 'Bachelor of Applied Management', 'level' => 7, 'category' => 'bachelors', 'status' => 'published', 'institution' => 'Wintec', 'intake_months' => 'Feb 2027', 'tuition_fee' => 24500]);

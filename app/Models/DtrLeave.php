@@ -30,6 +30,8 @@ class DtrLeave extends Model
     ];
 
     protected $casts = [
+        'hr_version' => 'integer', 'calendar_snapshot' => 'array', 'emergency_required' => 'boolean', 'emergency_approved_at' => 'datetime', 'notified_at' => 'datetime',
+        'team_checked' => 'boolean', 'travel_acknowledged' => 'boolean', 'auto_reply_planned' => 'boolean',
         'start_date' => 'date',
         'end_date' => 'date',
         'return_date' => 'date',
@@ -43,5 +45,10 @@ class DtrLeave extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by')->withTrashed();
     }
 }

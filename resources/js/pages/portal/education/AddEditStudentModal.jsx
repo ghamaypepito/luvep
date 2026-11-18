@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
+import { EDUCATION_DISPOSITIONS } from "../../../lib/educationDispositions";
 import { X, Save, AlertTriangle, GraduationCap, ChevronDown, Search, UserPlus, Users, Briefcase, Check } from "lucide-react";
 
 // Add / edit student modal — used from the Students page.
@@ -21,7 +22,8 @@ const STAGES_BY_DEPARTMENT = {
             "Engagement Sent", "Goal Setting Done", "School Enrolment",
             "Conditional Offer", "Unconditional Offer", "Endorsed to Immigration",
             "Visa Lodged", "Approved Visa", "Started Course",
-            "For Relodgement", "Declined Visa",
+            "For Relodgement", "Declined Visa", "On Hold",
+            "Qualified but No Funds", "Archive",
         ],
     },
     english: {
@@ -103,7 +105,7 @@ const blankForm = () => ({
     department: "education", stage: "", assignee: "",
     date_of_engagement: "",
     program_text: "", internal_note: "",
-    payment: "", intake: "", school_id: "", school_text: "",
+    payment: "", intake: "", actual_course_started_on: "", school_id: "", school_text: "",
     coop: "", oop: "", english_test: "",
 });
 
@@ -116,6 +118,7 @@ export default function AddEditStudentModal({
     agentOptions   = [],
 }) {
     const editing = !! student;
+    const refereeOptionsId = useId();
     const [form,    setForm]    = useState(blankForm);
     const [errors,  setErrors]  = useState({});
     const [saving,  setSaving]  = useState(false);
@@ -126,6 +129,7 @@ export default function AddEditStudentModal({
     // and flag them as a student instead of creating a duplicate row.
     const [mode, setMode] = useState("new");          // "new" | "existing"
     const [linkedLead, setLinkedLead] = useState(null); // chosen existing lead
+    const lockCaseName = Boolean((student ?? linkedLead)?.case_name_locked);
     const [searchQ, setSearchQ] = useState("");
     const [searchResults, setSearchResults] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -157,12 +161,12 @@ export default function AddEditStudentModal({
         }
         // Detect which department track the student is currently on by
         // looking at which of the three *_stage columns has a value.
-        // Immigration wins if multiple are set (most-downstream signal).
-        const seedDept = student.immigration_stage
-            ? "immigration"
-            : student.english_stage
-                ? "english"
-                : "education";
+        // Keep an Education hold selected even when another team is active.
+        const seedDept = EDUCATION_DISPOSITIONS.has(student.education_stage)
+            ? "education"
+            : student.immigration_stage
+                ? "immigration"
+                : student.english_stage ? "english" : "education";
         const seedStage = student[STAGES_BY_DEPARTMENT[seedDept].field] ?? "";
         const seedAssignee = seedDept === "english"
             ? (student.english_assignee ?? "")
@@ -171,9 +175,9 @@ export default function AddEditStudentModal({
                 : "";
 
         setForm({
-            first_name:      student.name?.split(/\s+/)[0]              ?? "",
+            first_name:      student.first_name ?? student.name?.split(/\s+/)[0] ?? "",
             middle_name:     student.middle_name                        ?? "",
-            last_name:       student.name?.split(/\s+/).slice(-1)[0]    ?? "",
+            last_name:       student.last_name ?? student.name?.split(/\s+/).slice(-1)[0] ?? "",
             suffix:          student.suffix                             ?? "",
             gender:          student.gender                             ?? "",
             email:           student.email                              ?? "",
@@ -189,6 +193,7 @@ export default function AddEditStudentModal({
             internal_note:   student.comments                           ?? "",
             payment:         student.payment                            ?? "",
             intake:          student.intake                             ?? "",
+            actual_course_started_on: student.actual_course_started_on      ?? "",
             school_id:       student.school_id                          ?? "",
             // Multi-school text; fall back to the legacy single school name.
             school_text:     student.school || student.school_name || "",
@@ -308,7 +313,7 @@ export default function AddEditStudentModal({
         // Translate the UI's department + stage pair into the right
         // *_stage column on the wire. The two columns the user *didn't*
         // pick are sent as null so a department switch in edit mode
-        // clears the previous track's stage.
+        // clears the previous track's stage, except during a hold edit.
         const cfg = STAGES_BY_DEPARTMENT[form.department] || STAGES_BY_DEPARTMENT.education;
         const { department, stage, assignee, ...rest } = form;
         const payload = {
@@ -321,7 +326,22 @@ export default function AddEditStudentModal({
             english_assignee:     department === "english"     ? (assignee || null) : null,
             immigration_assignee: department === "immigration" ? (assignee || null) : null,
             date_of_engagement:   form.date_of_engagement || null,
+            actual_course_started_on: form.actual_course_started_on || null,
         };
+
+        // Holding or resuming Education leaves parallel work in place.
+        // The server preserves omitted fields and still accepts explicit clears.
+        if (editing && (EDUCATION_DISPOSITIONS.has(student.education_stage) || (department === "education" && EDUCATION_DISPOSITIONS.has(stage)))) {
+            if (department !== "education") delete payload.education_stage;
+            if (department !== "english") {
+                delete payload.english_stage;
+                delete payload.english_assignee;
+            }
+            if (department !== "immigration") {
+                delete payload.immigration_stage;
+                delete payload.immigration_assignee;
+            }
+        }
 
         // Per-program schools (aligned with program_text order) drive everything:
         // the study plan stores the aligned array; student_school keeps the
@@ -513,16 +533,16 @@ export default function AddEditStudentModal({
                     <Section title="Identity">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Field label="First name" required>
-                                <input type="text" required value={form.first_name} onChange={set("first_name")} className={ICls} maxLength={120} placeholder="e.g. Maria" />
+                                <input type="text" required readOnly={lockCaseName} value={form.first_name} onChange={set("first_name")} className={ICls} maxLength={120} placeholder="e.g. Maria" />
                             </Field>
                             <Field label="Middle name" hint="Optional">
-                                <input type="text" value={form.middle_name} onChange={set("middle_name")} className={ICls} maxLength={120} />
+                                <input type="text" readOnly={lockCaseName} value={form.middle_name} onChange={set("middle_name")} className={ICls} maxLength={120} />
                             </Field>
                             <Field label="Last name" required>
-                                <input type="text" required value={form.last_name} onChange={set("last_name")} className={ICls} maxLength={120} placeholder="e.g. Santos" />
+                                <input type="text" required readOnly={lockCaseName} value={form.last_name} onChange={set("last_name")} className={ICls} maxLength={120} placeholder="e.g. Santos" />
                             </Field>
                             <Field label="Suffix" hint="Optional">
-                                <select value={form.suffix} onChange={set("suffix")} className={ICls}>
+                                <select disabled={lockCaseName} value={form.suffix} onChange={set("suffix")} className={ICls}>
                                     {SUFFIX_OPTIONS.map((s) => (
                                         <option key={s || "none"} value={s}>
                                             {s || "— None —"}
@@ -551,13 +571,25 @@ export default function AddEditStudentModal({
                             <Field label="Contact number" required>
                                 <input type="tel" required value={form.phone} onChange={set("phone")} className={ICls} placeholder="+63 …" />
                             </Field>
-                            <Field label="Referring agent" hint="Recruiting agent who referred them · optional">
-                                <select value={form.agent_id} onChange={set("agent_id")} className={ICls}>
+                            <Field label="Linked recruiting agent" hint="Existing recruiting-agent account · optional">
+                                <select aria-label="Linked recruiting agent" value={form.agent_id} onChange={set("agent_id")} className={ICls}>
                                     <option value="">— No agent —</option>
                                     {agentOptions.map((a) => (
                                         <option key={a.id} value={String(a.id)}>{a.name}</option>
                                     ))}
                                 </select>
+                            </Field>
+                            <Field label="Agent / referee name" hint="Select SIT or type a name. The linked recruiting account stays unchanged.">
+                                <div className="flex items-center gap-2">
+                                    <input aria-label="Agent or referee name" type="text" list={refereeOptionsId} maxLength={191}
+                                        value={form.referral} onChange={set("referral")} className={`${ICls} min-w-0`}
+                                        placeholder="SIT or another agent / referee" aria-invalid={Boolean(errors.referral)} />
+                                    <button type="button" disabled={saving} aria-label="Use SIT as agent or referee"
+                                        onClick={() => setForm((current) => ({ ...current, referral: "SIT" }))}
+                                        className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">SIT</button>
+                                </div>
+                                <datalist id={refereeOptionsId}><option value="SIT" /></datalist>
+                                {errors.referral && <p role="alert" className="mt-1 text-xs text-red-700">{errors.referral}</p>}
                             </Field>
                             <Field label="Location" hint="Country only · optional">
                                 <input type="text" value={form.location} onChange={set("location")} className={ICls} maxLength={120} placeholder="e.g. Philippines" />
@@ -625,8 +657,11 @@ export default function AddEditStudentModal({
                                 />
                                 <p className="mt-1 text-[10.5px] text-gray-400">Auto-filled from each program's catalogue school when it has one — type to set or change any.</p>
                             </div>
-                            <Field label="Intake" hint="Intake start date · optional">
-                                <input type="date" value={form.intake} onChange={set("intake")} className={ICls} />
+                            <Field label="Planned intake" hint="Scheduled course start · optional">
+                                <input type="date" aria-label="Planned intake" value={form.intake} onChange={set("intake")} className={ICls} />
+                            </Field>
+                            <Field label="Actual course start date" hint="When the student started · optional">
+                                <input type="date" aria-label="Actual course start date" value={form.actual_course_started_on} onChange={set("actual_course_started_on")} className={ICls} />
                             </Field>
                         </div>
                     </Section>

@@ -100,7 +100,7 @@ export default function ClientDocuments({ cases = [], formats = [], usages = [],
             const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.appendChild(i);
         });
         document.body.appendChild(form);
-        form.submit();
+        form.requestSubmit();
         form.remove();
         setDlOpen(false);
     };

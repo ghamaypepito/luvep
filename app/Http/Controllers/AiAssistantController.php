@@ -37,6 +37,10 @@ class AiAssistantController extends Controller
             // in general mode rather than leaking that the record exists.
         }
 
+        if ($request->wantsJson()) {
+            return response()->json(['subject' => $subject, 'aiEnabled' => $ai->isEnabled()]);
+        }
+
         return inertia('ai/Assistant', [
             'subject' => $subject,
             'aiEnabled' => $ai->isEnabled(),

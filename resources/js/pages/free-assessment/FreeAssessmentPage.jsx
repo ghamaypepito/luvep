@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import PhoneField from "@/components/PhoneField";
+import FileDropzone from "@/components/visa/FileDropzone";
 import { CountryDropdown } from "react-country-region-selector";
 
 const COUNTRY_SELECT_CLS = "w-full bg-transparent border-b border-gray-200 py-3 text-[#282728] focus:outline-none focus:border-[#009688] transition-colors";
@@ -113,6 +114,7 @@ export default function FreeAssessment({ programs = [] }) {
         passport_number: '',
         passport_expiry: '',
         passport_pdf: null,
+        cv_files: [],
         // Study Plans
         study_plans: {
             preferred_course: '',
@@ -256,7 +258,7 @@ export default function FreeAssessment({ programs = [] }) {
             if (draft) {
                 try {
                     const parsed = JSON.parse(draft);
-                    setData(prev => ({ ...prev, ...parsed }));
+                    setData(prev => ({ ...prev, ...parsed, cv_files: [] }));
                 } catch (e) {
                     console.error("Could not load draft", e);
                 }
@@ -267,7 +269,7 @@ export default function FreeAssessment({ programs = [] }) {
 
     useEffect(() => {
         if (isLoaded && !isSuccess) {
-            localStorage.setItem('assessment_draft', JSON.stringify(data));
+            localStorage.setItem('assessment_draft', JSON.stringify({ ...data, cv_files: undefined }));
         }
     }, [data, isLoaded, isSuccess]);
 
@@ -291,7 +293,7 @@ export default function FreeAssessment({ programs = [] }) {
         // The passport PDF is only persisted on final submit, so re-uploading
         // it on every autosave would burn the applicant's bandwidth for
         // nothing. Strip it from both the payload and the change hash.
-        const draftPayload = { ...data, passport_pdf: undefined };
+        const draftPayload = { ...data, passport_pdf: undefined, cv_files: undefined };
         const hash = (() => {
             try { return JSON.stringify(draftPayload); } catch { return Math.random().toString(); }
         })();
@@ -355,7 +357,7 @@ export default function FreeAssessment({ programs = [] }) {
         if (key.startsWith('character_info') || key.startsWith('health_info')) return 9;
         if (key.startsWith('family_info')) return 10;
         if (key.startsWith('nz_contacts_info') || key.startsWith('military_info') || key.startsWith('home_ties_info')) return 11;
-        if (key === 'declaration_accepted') return 12;
+        if (key === 'declaration_accepted' || key === 'cv_files' || key.startsWith('cv_files.')) return 12;
         return null;
     };
 
@@ -779,7 +781,7 @@ export default function FreeAssessment({ programs = [] }) {
                                             {step === 9 && <StepCharacterHealth data={data} setData={setData} errors={allErrors} />}
                                             {step === 10 && <StepFamily data={data} setData={setData} errors={allErrors} />}
                                             {step === 11 && <StepAdditional data={data} setData={setData} errors={allErrors} />}
-                                            {step === 12 && <StepDeclaration data={data} setData={setData} errors={allErrors} />}
+                                            {step === 12 && <StepDeclaration data={data} setData={setData} errors={allErrors} includeCv />}
                                         </motion.div>
                                     </AnimatePresence>
                                 </div>
@@ -2055,10 +2057,19 @@ function StepAdditional({ data, setData, errors }) {
     );
 }
 
-export function StepDeclaration({ data, setData, errors }) {
+export function StepDeclaration({ data, setData, errors, includeCv = false }) {
     return (
         <div className="space-y-8">
             <h2 className="text-xl sm:text-2xl font-bold text-[#282728] mb-8 leading-tight">Declaration</h2>
+            {includeCv && (
+                <FileDropzone
+                    label="CV / Resume (optional)"
+                    files={data.cv_files || []}
+                    onFilesChange={(files) => setData('cv_files', files)}
+                    hint="Up to 10 files, 10 MB each. Files upload when you submit; reattach them if you reload this page."
+                    error={errors.cv_files || Object.entries(errors).find(([key]) => key.startsWith('cv_files.'))?.[1]}
+                />
+            )}
             <div className="bg-gray-50/50 rounded-3xl p-10 text-base text-gray-500 leading-[2] font-medium h-96 overflow-y-auto border border-gray-100/50">
                 <p className="mb-4">I declare that the above information I provide is true, correct and complete. I understand that I must inform Immigration New Zealand (INZ) of any relevant fact or change of circumstances that may affect this application, including changes that occur after this form is submitted and before the application is decided.</p>
                 <p className="mb-4">I understand that INZ may verify the information I have provided and may request further documentation to support my application.</p>

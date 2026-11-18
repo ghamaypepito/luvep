@@ -5,10 +5,18 @@ namespace App\Http\Controllers\Sales;
 use App\Http\Controllers\Controller;
 use App\Models\EmailReply;
 use App\Models\Lead;
+use App\Models\LeadDocument;
 use App\Models\MessageLog;
 use App\Services\CommunicationService;
-use App\Support\LeadAccess;
+use App\Services\Immigration\CaseChecklistService;
+use App\Services\MediaDrive\Attachments as MediaAttachments;
+use App\Support\LeadDiscussionAccess;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use League\Flysystem\FilesystemException;
 
 /**
  * Staff-side conversation for one lead — the emails/SMS we sent them
@@ -18,10 +26,14 @@ use Illuminate\Http\Request;
  */
 class LeadCommunicationsController extends Controller
 {
+    private const MAX_ATTACHMENTS = 5;
+
+    private const MAX_ATTACHMENT_KB = 10240;
+
     /** GET /admin/leads/{lead}/communications */
     public function index(Request $request, Lead $lead)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         // Outbound — everything we sent this lead (templates, composed, replies).
         $outbound = MessageLog::query()
@@ -74,11 +86,19 @@ class LeadCommunicationsController extends Controller
             ->map(fn ($i) => collect($i)->except('ts')->all())
             ->values();
 
+        $canAttachDocuments = $this->canAttachStudentDocuments($request, $lead);
+
         return response()->json([
             'data' => $items,
             'next_page_url' => null,
             'lead_email' => $lead->email,
             'can_email' => ! empty($lead->email),
+            'can_attach_documents' => $canAttachDocuments,
+            'attachment_documents' => $canAttachDocuments
+                ? $this->attachableDocuments($lead)->latest()->get(['id', 'original_name', 'status', 'created_at'])
+                    ->map(fn (LeadDocument $doc) => ['id' => $doc->id, 'name' => $doc->original_name,
+                        'status' => $doc->status, 'added_at' => $doc->created_at?->toIso8601String()])
+                : [],
         ]);
     }
 
@@ -89,7 +109,7 @@ class LeadCommunicationsController extends Controller
      */
     public function reply(Request $request, Lead $lead, CommunicationService $comms)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         if (empty($lead->email)) {
             return response()->json(['message' => 'This lead has no email address — add one in Personal Info first.'], 422);
@@ -97,27 +117,113 @@ class LeadCommunicationsController extends Controller
 
         $data = $request->validate([
             'subject' => ['nullable', 'string', 'max:255'],
-            'body' => ['required', 'string', 'max:50000'],
-            'attachments' => ['nullable', 'array', 'max:5'],
-            'attachments.*' => ['file', 'max:10240'],
+            'body' => ['nullable', 'required_without_all:attachments,document_ids', 'string', 'max:50000'],
+            'attachments' => ['nullable', 'array', 'max:'.self::MAX_ATTACHMENTS],
+            'attachments.*' => ['required', 'file', 'max:'.self::MAX_ATTACHMENT_KB],
+            'document_ids' => ['nullable', 'array', 'max:'.self::MAX_ATTACHMENTS],
+            'document_ids.*' => ['required', 'integer', 'distinct'],
         ]);
+
+        $files = $request->file('attachments') ?? [];
+        $documentIds = $data['document_ids'] ?? [];
+        if (count($files) + count($documentIds) > self::MAX_ATTACHMENTS) {
+            throw ValidationException::withMessages(['attachments' => 'You can attach up to five files per email.']);
+        }
+
+        $documents = collect();
+        if ($documentIds) {
+            abort_unless($this->canAttachStudentDocuments($request, $lead), 403);
+            $documents = $this->attachableDocuments($lead)->whereIn('id', $documentIds)->get();
+            if ($documents->count() !== count($documentIds)) {
+                throw ValidationException::withMessages(['document_ids' => 'Choose approved or shared documents from this student’s profile.']);
+            }
+        }
 
         // A full HTML document (e.g. pasted from the builder) sends as-is; plain
         // rich-text goes through the branded shell like every other send.
-        $rawHtml = (bool) preg_match('/^\s*<(!doctype|html)\b/i', $data['body']);
-
-        // Store attachments on the private disk; TemplatedMessage streams them.
-        $attachments = [];
-        foreach ($request->file('attachments', []) as $file) {
-            $attachments[] = ['path' => $file->store('compose-attachments', 'local'), 'name' => $file->getClientOriginalName()];
-        }
-
+        $draftBody = $data['body'] ?? '';
+        $rawHtml = (bool) preg_match('/^\s*<(!doctype|html)\b/i', $draftBody);
+        $attachments = $this->snapshotAttachments($request, $files, $documents);
         $subject = $comms->render($lead, trim((string) ($data['subject'] ?? ''))) ?: 'A message from EP';
-        $body = $comms->render($lead, $data['body']);
+        $body = $comms->render($lead, $draftBody);
 
         $log = $comms->sendComposedEmail($lead->email, $subject, $body, $attachments, $rawHtml, $lead->id);
 
+        if ($log->status === MessageLog::STATUS_FAILED) {
+            return response()->json(['message' => 'Could not send the email. Your draft has been kept; please try again.', 'log_id' => $log->id], 502);
+        }
+
         return response()->json(['ok' => true, 'log_id' => $log->id]);
+    }
+
+    private function canAttachStudentDocuments(Request $request, Lead $lead): bool
+    {
+        return $request->user()->canAccessPortal('education')
+            && Lead::inStudentsRegister()->whereKey($lead->id)->exists();
+    }
+
+    private function attachableDocuments(Lead $lead): HasMany
+    {
+        $hidden = app(CaseChecklistService::class)->hiddenKeysFor($lead);
+
+        return $lead->documents()
+            ->whereIn('status', [LeadDocument::STATUS_APPROVED, LeadDocument::STATUS_STAFF_SHARED])
+            ->whereNull('dependent_id')
+            ->where(fn ($query) => $query->whereNull('checklist_key')->orWhereNotIn('checklist_key', $hidden))
+            ->where('size', '<=', self::MAX_ATTACHMENT_KB * 1024);
+    }
+
+    private function snapshotAttachments(Request $request, array $files, \Illuminate\Support\Collection $documents): array
+    {
+        $disk = Storage::disk('local');
+        $folder = 'compose-attachments/'.Str::uuid();
+        $attachments = [];
+
+        try {
+            // Keep a private copy for delivery even if the original is replaced later.
+            foreach ($documents as $document) {
+                $source = $disk;
+                $path = $document->file_path;
+                if ($document->media_file_id) {
+                    $path = app(MediaAttachments::class)->documentFile($document, $request->user())->file_path;
+                } elseif (! $disk->exists($path)) {
+                    $source = Storage::disk('public');
+                }
+                if (! $source->exists($path) || $source->size($path) > self::MAX_ATTACHMENT_KB * 1024) {
+                    throw ValidationException::withMessages(['document_ids' => 'A selected document is unavailable or exceeds 10 MB.']);
+                }
+
+                $destination = $folder.'/'.$document->id;
+                $stream = $source->readStream($path);
+                try {
+                    if (! is_resource($stream) || ! $disk->put($destination, $stream)) {
+                        throw ValidationException::withMessages(['document_ids' => 'A selected document could not be attached.']);
+                    }
+                } finally {
+                    if (is_resource($stream)) {
+                        fclose($stream);
+                    }
+                }
+                $attachments[] = ['path' => $destination, 'name' => $document->original_name];
+            }
+
+            foreach ($files as $file) {
+                $path = $file->store($folder, 'local');
+                if (! $path) {
+                    throw ValidationException::withMessages(['attachments' => 'An uploaded file could not be attached.']);
+                }
+                $attachments[] = ['path' => $path, 'name' => $file->getClientOriginalName()];
+            }
+        } catch (\Throwable $e) {
+            $disk->deleteDirectory($folder);
+            if ($e instanceof FilesystemException) {
+                throw ValidationException::withMessages(['attachments' => 'A file could not be attached. Select it again or choose another copy.']);
+            }
+
+            throw $e;
+        }
+
+        return $attachments;
     }
 
     /**
@@ -128,7 +234,7 @@ class LeadCommunicationsController extends Controller
      */
     public function sync(Request $request, Lead $lead)
     {
-        abort_unless(LeadAccess::canView($request->user(), $lead), 403, 'You do not have access to this lead.');
+        abort_unless(LeadDiscussionAccess::staffCanDiscuss($request->user(), $lead), 403, 'You do not have access to this lead.');
 
         \App\Jobs\SyncEmailRepliesJob::dispatch();
 

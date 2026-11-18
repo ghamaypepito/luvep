@@ -24,6 +24,7 @@ class PropertyControllerTest extends TestCase
             'name' => 'Sunnyvale House',
             'location' => 'Auckland, NZ',
             'suburb' => 'Glenfield',
+            'rental_mode' => 'per_room',
             'room_type' => 'ensuite',
             'has_wardrobe' => true,
             'bed_type' => 'double',
@@ -35,6 +36,17 @@ class PropertyControllerTest extends TestCase
             'description' => 'A lovely home.',
             'status' => 'available',
         ], $overrides);
+    }
+
+    public function test_all_weekdays_and_fortnightly_can_be_saved_as_payment_schedules(): void
+    {
+        $this->actingAs($this->accommodationUser());
+        foreach (['Every Monday', 'Every Tuesday', 'Every Wednesday', 'Every Thursday', 'Every Friday', 'Every Saturday', 'Every Sunday', 'Fortnightly', 'Fortnight Friday', 'Auto Monday', 'Manual'] as $schedule) {
+            $this->post('/portal/accommodation/properties', $this->payload([
+                'rental_mode' => 'per_room', 'pm_payment_schedule' => $schedule,
+            ]))->assertSessionHasNoErrors()->assertRedirect();
+            $this->assertDatabaseHas('accommodation_properties', ['pm_payment_schedule' => $schedule]);
+        }
     }
 
     public function test_properties_index_requires_portal_access(): void

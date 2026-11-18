@@ -48,8 +48,7 @@ export function resolveThread(leadId, threadId, basePath = `${immBase()}/cases`)
     });
 }
 
-// The composer's textarea id for a given anchor, so a thread's "Reply" can focus
-// the composer that posts to the same place.
+// Stable textarea identity for document composers.
 const composerIdFor = (anchor) =>
     anchor && anchor.anchor_type === "document" && (anchor.anchor_id || anchor.anchor_key)
         ? `thread-composer-document-${anchor.anchor_id || anchor.anchor_key}`
@@ -74,9 +73,8 @@ function toneFor(thread) {
 }
 
 /** One thread: body, who wrote it, its audience, and an explicit resolve.
- * When `childrenOf`/`anchor` are supplied it renders nested replies and an
- * inline reply box (used for document comments). `isReply` renders it as a
- * plain white sub-card (no tone, no badge). */
+ * Replies use the thread's persisted anchor unless its caller supplies one.
+ * `childrenOf` renders nested replies; `isReply` uses a plain white sub-card. */
 export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = null, anchor = null, caseStaff = [], basePath = `${immBase()}/cases`, isReply = false }) {
     const open = ! thread.resolved_at;
     const [editing, setEditing] = useState(false);
@@ -84,7 +82,12 @@ export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = nu
     const [saving, setSaving] = useState(false);
     const [replyOpen, setReplyOpen] = useState(false);
     const replies = childrenOf ? childrenOf(thread.id) : [];
-    const canReplyInline = !! anchor;
+    const replyAnchor = anchor || {
+        anchor_type: thread.anchor_type,
+        anchor_id: thread.anchor_id ?? null,
+        anchor_key: thread.anchor_key ?? null,
+        anchor_attempt: thread.anchor_attempt ?? null,
+    };
     const tone = toneFor(thread);
 
     const saveEdit = () => {
@@ -96,11 +99,6 @@ export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = nu
             onError: (e) => toast.error(Object.values(e)[0] || "Could not update"),
             onFinish: () => setSaving(false),
         });
-    };
-
-    const focusReply = () => {
-        const el = document.getElementById(composerIdFor(thread));
-        if (el) { el.focus(); el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     };
 
     const cardClass = isReply
@@ -160,7 +158,7 @@ export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = nu
                         <div className="flex items-center gap-3 text-[12px] font-semibold text-gray-500">
                             <button
                                 type="button"
-                                onClick={() => (canReplyInline ? setReplyOpen((v) => ! v) : focusReply())}
+                                onClick={() => setReplyOpen((v) => ! v)}
                                 className={replyOpen ? "text-gray-900" : "hover:text-gray-900"}
                             >
                                 Reply
@@ -185,11 +183,11 @@ export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = nu
                 )}
             </div>
 
-            {replyOpen && canReplyInline && (
+            {replyOpen && (
                 <div className="mt-2 ml-6">
                     <ReplyComposer
                         leadId={leadId}
-                        anchor={anchor}
+                        anchor={replyAnchor}
                         parentId={thread.id}
                         clientVisible={thread.client_visible}
                         basePath={basePath}
@@ -205,7 +203,7 @@ export function ThreadItem({ thread, leadId, anchorLabel = null, childrenOf = nu
                             key={c.id}
                             thread={c}
                             leadId={leadId}
-                            anchor={anchor}
+                            anchor={replyAnchor}
                             caseStaff={caseStaff}
                             childrenOf={childrenOf}
                             basePath={basePath}

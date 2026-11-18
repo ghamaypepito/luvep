@@ -4,26 +4,21 @@
 
     Vars expected:
         $scenario                 ('std_150' | 'voucher_150' | 'std_100' | 'english_100')
-        $scenario_number          (1 | 2 | 3)
         $scenario_title           ('STANDARD 150,000' | 'WITH VOUCHER 150,000' | 'STANDARD' | 'WITH ENGLISH')
         $scenario_applicant       ('MAIN APPLICANT (Single and Couple)' | 'MAIN APPLICANT (Single)')
         $scenario_description     (paragraph text under the applicant line)
         $scenario_has_voucher     (bool — true only for WITH VOUCHER 150,000, adds the crossed-out Immigration NZ Fee line)
         $school_enrolment_fee     (integer, e.g. 150000 or 100000 — the headline fee for the chosen scenario)
-        $english_proficiency_fee  (integer, e.g. 14500 — English review / exam fee shown in the cost breakdown)
+        $english_proficiency_fee  (integer, e.g. 14500 — English Proficiency fee for the With English agreement)
         $inz_voucher_fee          (integer, e.g. 30600 — shown as strike-through under the fee cell in the voucher scenario)
-        $is_couple_scenario       (bool — controls whether Section 2 renders the Couple cost breakdown too)
         $client_name              (lead's full name in UPPERCASE for the intro paragraph)
         $client_reference         (slugified name for bank Reference)
         $generated_at_formatted   ('6th of July 2026')
 --}}
 @php
     $fmt = fn ($n) => 'PhP ' . number_format((float) $n, 2);
-    $fmt0 = fn ($n) => 'Php ' . number_format((float) $n, 0);
 
-    // Currency-aware formatters for the STAFF-ENTERED fees (School Enrolment
-    // + English Proficiency). These follow the chosen currency symbol; the
-    // static reference breakdown below keeps its canonical PHP estimates.
+    // Agreement fees follow the selected currency.
     $curSym = $currency_symbol ?? 'Php';
     $fmtFee  = fn ($n) => $curSym . ' ' . number_format((float) $n, 2);
     $fmtFee0 = fn ($n) => $curSym . ' ' . number_format((float) $n, 0);
@@ -119,6 +114,10 @@
     table.apptype td { border: 1px solid #b7ceac; background: #f4f8f0; padding: 10px 12px; font-size: 10pt; vertical-align: top; }
     table.apptype td.check-cell { width: 44px; text-align: center; font-size: 14pt; background: #fbfdf9; }
     table.apptype td.fee-cell { width: 150px; text-align: left; font-weight: bold; color: #2e7d32; font-size: 11pt; }
+    table.apptype.custom-description { border: 1px solid #b7ceac; }
+    table.apptype.custom-description tbody td { border-top: 0; border-bottom: 0; padding-top: 0; padding-bottom: 0; }
+    table.apptype.custom-description tr.application-summary td { padding-top: 10px; padding-bottom: 4px; }
+    table.apptype.custom-description tbody tr:last-child td { padding-bottom: 10px; border-bottom: 1px solid #b7ceac; }
     .voucher-strike { text-decoration: line-through; color: #555; font-weight: normal; display: block; margin-top: 8px; font-size: 10pt; }
     .voucher-note { color: #436235; font-weight: bold; font-size: 9pt; margin-top: 6px; }
 
@@ -128,19 +127,6 @@
     .bank-box .row { padding: 2px 0; font-size: 10pt; }
     .bank-box .label { display: inline-block; width: 130px; color: #555; }
     .bank-box .ref-red { color: #d0121a; font-weight: bold; }
-
-    /* Cost breakdown tables (pages 3-4). */
-    /* Kept dense on purpose — at looser padding the SINGLE breakdown spills
-       past its page and pushes every later page out of alignment. */
-    table.cost { width: 100%; border-collapse: collapse; margin: 8px 0 4px 0; line-height: 1.3; }
-    table.cost th { background: #436235; color: #fff; text-align: left; padding: 4px 8px; font-size: 9.5pt; }
-    table.cost th.right { text-align: right; }
-    table.cost td { border: 1px solid #d8d8d8; padding: 3px 8px; font-size: 9pt; vertical-align: top; }
-    table.cost td.right { text-align: right; font-weight: bold; }
-    table.cost tr.group td { background: #e8f0e2; color: #14213b; font-weight: bold; font-size: 9.5pt; border-color: #b7ceac; }
-    table.cost .muted { color: #666; font-style: italic; font-size: 8pt; }
-    table.cost tr.total td { background: #14213b; color: #fff; font-weight: bold; }
-    .breakdown-caption { color: #436235; font-weight: bold; font-size: 9.5pt; margin-top: 10px; margin-bottom: 3px; letter-spacing: 0.4px; }
 
     ul { margin: 6px 0 10px 20px; padding: 0; }
     ul li { margin: 4px 0; font-size: 10pt; }
@@ -188,6 +174,42 @@
     $s = $scenarios[(string) $scenario] ?? $scenarios['std_100'];
 @endphp
 
+@if ($scenario_description_custom ?? false)
+{{-- Dompdf paginates between rows, never inside a cell. Keep each explicit
+     custom line in its own row so long descriptions cannot cross the footer. --}}
+<table class="apptype custom-description">
+    <thead><tr><th colspan="2">APPLICATION TYPE</th></tr></thead>
+    <tbody>
+        <tr class="application-summary">
+            <td>
+                <div class="strong">{{ $s['title'] }}</div>
+                <div class="strong">{{ $scenario_applicant }}</div>
+            </td>
+            <td class="fee-cell">
+                {{ $fmtFee0($school_enrolment_fee) }}
+                @if ($s['has_voucher'])
+                    <span class="voucher-strike">{{ $fmt($inz_voucher_fee) }}</span>
+                @endif
+            </td>
+        </tr>
+        @foreach (preg_split('/\r\n|\r|\n/', $scenario_description) as $line)
+            <tr>
+                <td style="word-wrap: break-word;">{{ $line === '' ? "\u{00A0}" : $line }}</td>
+                <td class="fee-cell"></td>
+            </tr>
+        @endforeach
+        @if ($s['has_voucher'])
+            <tr>
+                <td>
+                    <div style="margin-top: 10px;"><strong>Immigration NZ Fee</strong></div>
+                    <div class="voucher-note">Already covered within the School Enrolment and Documentation Fee</div>
+                </td>
+                <td class="fee-cell"></td>
+            </tr>
+        @endif
+    </tbody>
+</table>
+@else
 <table class="apptype no-break">
     <thead>
         <tr><th colspan="2">APPLICATION TYPE</th></tr>
@@ -212,9 +234,15 @@
         </tr>
     </tbody>
 </table>
+@endif
+
+@if ($scenario === 'english_100')
+<p><strong>English Proficiency Fee:</strong> {{ $fmtFee($english_proficiency_fee) }}</p>
+@endif
 
 <p>It is explicitly acknowledged that the fees rendered for our services become <strong>non-refundable</strong> once work has commenced. Any refund requests will be assessed on an individual basis at the sole discretion of ePathways Philippines.</p>
 
+<div class="no-break">
 <h3>Section 1. Bank Details</h3>
 <div class="bank-box">
     <div class="heading">{{ $bank_heading ?? 'Payment for School Enrollment and Documentation Fee' }}</div>
@@ -223,114 +251,7 @@
     <div class="row"><span class="label">Account Number:</span> <strong>{{ $bank_account_number ?? '9045440503' }}</strong></div>
     <div class="row"><span class="label">Reference:</span> <span class="ref-red">#{{ $bank_reference ?? $client_reference }}</span></div>
 </div>
-
-{{-- ── Page 3 ───────────────────────────────────────────────── --}}
-<div class="page-break"></div>
-
-<div class="article-bar" style="margin-top:0;">REFERENCE &nbsp;•&nbsp; INDICATIVE COST BREAKDOWN</div>
-
-<p><em>The table below is provided for reference only. It sets out the indicative end-to-end cost of a New Zealand student visa application. All amounts marked (approximate) are estimates only and may vary with exchange rates, third-party providers, and the chosen program. Disbursements such as tuition, airfare, and show money are the responsibility of the Client.</em></p>
-
-{{-- Both breakdowns always render. They are reference-only tables from
-     the Word original, so the client sees single and couple side by side
-     regardless of which scenario was ticked. --}}
-<div class="breakdown-caption">BREAKDOWN COST FOR STUDENT VISA APPLICATION (SINGLE) &nbsp;•&nbsp; WITHOUT A VOUCHER</div>
-<table class="cost">
-    <tr class="group"><td colspan="2">School Enrolment and Documentation Fee</td></tr>
-    <tr>
-        <td>School Enrollment and Documentation Fee</td>
-        <td class="right">{{ $fmtFee($school_enrolment_fee) }}</td>
-    </tr>
-    <tr class="group"><td colspan="2">English Proficiency Exam</td></tr>
-    <tr>
-        <td>Personalized Review and Unlimited Mock Tests (optional)</td>
-        <td class="right">{{ $fmtFee($english_proficiency_fee) }}</td>
-    </tr>
-    <tr>
-        <td>Examination Fee<br><span class="muted">US$ 240.00</span></td>
-        <td class="right">{{ $fmtFee($english_proficiency_fee) }}</td>
-    </tr>
-    <tr class="group"><td colspan="2">Medical Exam</td></tr>
-    <tr>
-        <td>Medical Examination Fee (Full Medical)<br><span class="muted">Main Applicant &nbsp;·&nbsp; https://nhsgroup.ph/</span></td>
-        <td class="right">PhP 14,550.00</td>
-    </tr>
-    <tr class="group"><td colspan="2">Visa Application Fee</td></tr>
-    <tr>
-        <td>Professional Fee of Licensed Immigration Adviser<br><span class="muted">Main Applicant &nbsp;·&nbsp; NZ$ 1,500.00</span></td>
-        <td class="right">PhP 54,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr>
-        <td>Immigration NZ Fee<br><span class="muted">Main Applicant &nbsp;·&nbsp; NZ$ 850.00</span></td>
-        <td class="right">PhP 30,600.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr class="group"><td colspan="2">Travel and Medical Expenses</td></tr>
-    <tr>
-        <td>Travel and Medical Insurance Fee</td>
-        <td class="right">PhP 32,500.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr class="total"><td>TOTAL EXPENSE (estimate only)</td><td class="right">PHP 260,650.00</td></tr>
-    <tr><td>Tuition Fee (depends on the program)</td><td class="right">&hellip;&hellip;</td></tr>
-    <tr><td>Travel to New Zealand (flight tickets and other travel expenses)</td><td class="right">&hellip;&hellip;</td></tr>
-    <tr class="group"><td colspan="2">SHOW MONEY (required by Immigration New Zealand)</td></tr>
-    <tr>
-        <td>Living Expenses (per year)<br><span class="muted">NZ$ 20,000.00</span></td>
-        <td class="right">PhP 720,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-</table>
-
-<div class="breakdown-caption">BREAKDOWN COST FOR STUDENT VISA APPLICATION (COUPLE) &nbsp;•&nbsp; WITHOUT A VOUCHER</div>
-
-{{-- ── Page 4 ───────────────────────────────────────────────── --}}
-<div class="page-break"></div>
-
-<table class="cost">
-    <thead>
-        <tr><th>Particulars</th><th class="right">Cost</th></tr>
-    </thead>
-    <tr class="group"><td colspan="2">School Enrolment and Documentation Fee</td></tr>
-    <tr>
-        <td>School Enrollment and Documentation Fee (couple)</td>
-        <td class="right">{{ $fmt(150000) }}</td>
-    </tr>
-    <tr class="group"><td colspan="2">English Proficiency Exam</td></tr>
-    <tr>
-        <td>Personalized Review and Unlimited Mock Tests (optional)</td>
-        <td class="right">{{ $fmtFee($english_proficiency_fee) }}</td>
-    </tr>
-    <tr>
-        <td>Examination Fee<br><span class="muted">US$ 240.00</span></td>
-        <td class="right">{{ $fmtFee($english_proficiency_fee) }}</td>
-    </tr>
-    <tr class="group"><td colspan="2">Medical Exam</td></tr>
-    <tr>
-        <td>Medical Examination Fee (Full Medical)<br><span class="muted">Main Applicant &nbsp;·&nbsp; PhP 14,550.00 &nbsp;·&nbsp; Spouse / Partner &nbsp;·&nbsp; PhP 14,550.00</span></td>
-        <td class="right">PhP 29,100.00</td>
-    </tr>
-    <tr class="group"><td colspan="2">Visa Application Fee</td></tr>
-    <tr>
-        <td>Professional Fee of Licensed Immigration Adviser<br><span class="muted">Main Applicant &nbsp;·&nbsp; NZ$ 1,500.00 &nbsp;·&nbsp; Spouse / Partner &nbsp;·&nbsp; NZ$ 1,500.00</span></td>
-        <td class="right">PhP 108,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr>
-        <td>Immigration NZ Fee<br><span class="muted">Main Applicant &nbsp;·&nbsp; NZ$ 850.00 &nbsp;·&nbsp; Spouse / Partner &nbsp;·&nbsp; NZ$ 1,630.00</span></td>
-        <td class="right">PhP 90,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr class="group"><td colspan="2">Travel and Medical Expenses</td></tr>
-    <tr>
-        <td>Travel and Medical Insurance Fee<br><span class="muted">Main Applicant &nbsp;·&nbsp; NZ$ 900.00 &nbsp;·&nbsp; Spouse / Partner &nbsp;·&nbsp; NZ$ 1,000.00 &nbsp;·&nbsp; Mandatory for students only.</span></td>
-        <td class="right">PhP 69,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr class="total"><td>TOTAL EXPENSE (estimate only)</td><td class="right">PHP 475,100.00</td></tr>
-    <tr><td>Tuition Fee (depends on the program)</td><td class="right">&hellip;&hellip;</td></tr>
-    <tr><td>Travel to New Zealand (flight tickets and other travel expenses)</td><td class="right">&hellip;&hellip;</td></tr>
-    <tr class="group"><td colspan="2">SHOW MONEY (required by Immigration New Zealand)</td></tr>
-    <tr>
-        <td>Living Expenses (per year for couple)<br><span class="muted">NZ$ 25,000.00</span></td>
-        <td class="right">PhP 900,000.00<br><span class="muted">(approximate)</span></td>
-    </tr>
-    <tr><td>Tuition Fee (depends on the program)</td><td class="right">&hellip;&hellip;</td></tr>
-</table>
+</div>
 
 <div class="article-bar">ARTICLE 2 &nbsp;•&nbsp; SCOPE OF SERVICES</div>
 

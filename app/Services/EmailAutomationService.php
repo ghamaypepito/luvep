@@ -33,6 +33,22 @@ class EmailAutomationService
      */
     public function fire(string $eventKey, Lead $lead, array $context = [], array $attachments = []): bool
     {
+        return $this->dispatchEvent($eventKey, $lead, $context, $attachments, false);
+    }
+
+    /** For reminder deduplication: true when any recipient's message was queued or sent. */
+    public function fireAnyRecipient(string $eventKey, Lead $lead, array $context = [], array $attachments = []): bool
+    {
+        return $this->dispatchEvent($eventKey, $lead, $context, $attachments, true);
+    }
+
+    public function fireWithStaffRecipients(string $eventKey, Lead $lead, array $context, array $staffRecipients): void
+    {
+        $this->dispatchEvent($eventKey, $lead, $context, [], false, $staffRecipients);
+    }
+
+    private function dispatchEvent(string $eventKey, Lead $lead, array $context, array $attachments, bool $anyRecipient, ?array $staffRecipients = null): bool
+    {
         $firedClient = false;
         try {
             $messages = EmailAutomationMessage::where('event_key', $eventKey)
@@ -50,7 +66,7 @@ class EmailAutomationService
                 if (empty($msg->template_key)) {
                     continue;
                 }
-                if ($this->deliver($msg, $lead, $context, $department, $attachments)) {
+                if ($this->deliver($msg, $lead, $context, $department, $attachments, $anyRecipient, $staffRecipients)) {
                     $firedClient = true;
                 }
             }
@@ -63,7 +79,7 @@ class EmailAutomationService
 
     /** Returns true when a message was sent to the CLIENT (so a caller can skip a
      *  built-in client email and avoid double-sending). Staff notices return false. */
-    private function deliver(EmailAutomationMessage $msg, Lead $lead, array $context, string $department, array $attachments = []): bool
+    private function deliver(EmailAutomationMessage $msg, Lead $lead, array $context, string $department, array $attachments = [], bool $anyRecipient = false, ?array $staffRecipients = null): bool
     {
         // When configured, keep the lead's own recruiting agent in the loop by
         // CC-ing them — resolved per-lead, so each client's agent is used.
@@ -73,9 +89,9 @@ class EmailAutomationService
             // The client is the lead — CommunicationService handles email/SMS
             // routing and message logging for us.
             if (! empty($lead->email) || ! empty($lead->phone)) {
-                $this->comms->sendTemplated($msg->template_key, $lead, $context, $department, $agentCc, $attachments);
+                $logs = $this->comms->sendTemplated($msg->template_key, $lead, $context, $department, $agentCc, $attachments);
 
-                return true;
+                return ! $anyRecipient || collect($logs)->contains(fn ($log) => $log && in_array($log->status, ['queued', 'sent'], true));
             }
 
             return false;
@@ -83,7 +99,7 @@ class EmailAutomationService
 
         // Staff recipient — render the template with the case's context and send
         // to each resolved staff email as an internal notice.
-        $emails = $this->staffEmails($msg->recipient, $lead, $department);
+        $emails = $staffRecipients ?? $this->staffEmails($msg->recipient, $lead, $department);
         if (empty($emails)) {
             return false;
         }
@@ -105,19 +121,19 @@ class EmailAutomationService
         // "To — also send to" / Cc / Bcc add the rest, so a staff notice reaches
         // exactly the recipients configured on the template (e.g. "Case team"
         // resolves the adviser + manager, and the template Cc's the wider team).
-        $this->comms->sendComposedEmail(
+        $log = $this->comms->sendComposedEmail(
             array_values(array_unique($emails)),
             $subject !== '' ? $subject : 'Case update',
             $body,
             $attachments,
             true,
             $lead->id,
-            $template->to_extra,
-            $this->comms->mergeAddressList($template->cc, $agentCc),
-            $template->bcc,
+            $staffRecipients === null ? $template->to_extra : null,
+            $staffRecipients === null ? $this->comms->mergeAddressList($template->cc, $agentCc) : null,
+            $staffRecipients === null ? $template->bcc : null,
         );
 
-        return false; // staff notice — not a client send
+        return $anyRecipient && in_array($log->status, ['queued', 'sent'], true);
     }
 
     /** Resolve staff recipient role → email addresses for this case. */

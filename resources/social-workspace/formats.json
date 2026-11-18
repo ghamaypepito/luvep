@@ -1,0 +1,642 @@
+[
+  {
+    "id": "ig-feed",
+    "title": "Instagram feed",
+    "width": 1080,
+    "height": 1350,
+    "ratio": "4:5",
+    "placement": "Feed image",
+    "platform": "Instagram",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/ig-feed-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1350
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/ig-feed-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 688
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/ig-feed-layer-2.png",
+        "x": 81,
+        "y": 735,
+        "width": 124,
+        "height": 84
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/ig-feed-layer-3.png",
+        "x": 94,
+        "y": 746,
+        "width": 96,
+        "height": 55
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/ig-feed-layer-4.png",
+        "x": 245,
+        "y": 760,
+        "width": 250,
+        "height": 30
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/ig-feed-layer-5.png",
+        "x": 83,
+        "y": 880,
+        "width": 678,
+        "height": 149
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/ig-feed-layer-6.png",
+        "x": 83,
+        "y": 1098,
+        "width": 497,
+        "height": 33
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/ig-feed-layer-7.png",
+        "x": 83,
+        "y": 1207,
+        "width": 300,
+        "height": 26
+      }
+    ],
+    "psd": "exports/ig-feed.psd",
+    "png": "exports/ig-feed.png",
+    "thumbnail": "exports/ig-feed-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "fb-square",
+    "title": "Facebook / Instagram square",
+    "width": 1080,
+    "height": 1080,
+    "ratio": "1:1",
+    "placement": "Feed image",
+    "platform": "Facebook",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/fb-square-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1080
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/fb-square-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 486
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/fb-square-layer-2.png",
+        "x": 81,
+        "y": 523,
+        "width": 124,
+        "height": 84
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/fb-square-layer-3.png",
+        "x": 94,
+        "y": 534,
+        "width": 96,
+        "height": 55
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/fb-square-layer-4.png",
+        "x": 245,
+        "y": 548,
+        "width": 250,
+        "height": 30
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/fb-square-layer-5.png",
+        "x": 83,
+        "y": 668,
+        "width": 678,
+        "height": 149
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/fb-square-layer-6.png",
+        "x": 83,
+        "y": 886,
+        "width": 497,
+        "height": 33
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/fb-square-layer-7.png",
+        "x": 83,
+        "y": 995,
+        "width": 300,
+        "height": 26
+      }
+    ],
+    "psd": "exports/fb-square.psd",
+    "png": "exports/fb-square.png",
+    "thumbnail": "exports/fb-square-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "story",
+    "title": "Instagram / Facebook story",
+    "width": 1080,
+    "height": 1920,
+    "ratio": "9:16",
+    "placement": "Story image",
+    "platform": "Instagram",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/story-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/story-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 921
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/story-layer-2.png",
+        "x": 81,
+        "y": 988,
+        "width": 124,
+        "height": 84
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/story-layer-3.png",
+        "x": 94,
+        "y": 999,
+        "width": 96,
+        "height": 55
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/story-layer-4.png",
+        "x": 245,
+        "y": 1013,
+        "width": 250,
+        "height": 30
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/story-layer-5.png",
+        "x": 83,
+        "y": 1133,
+        "width": 678,
+        "height": 149
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/story-layer-6.png",
+        "x": 83,
+        "y": 1351,
+        "width": 497,
+        "height": 33
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/story-layer-7.png",
+        "x": 83,
+        "y": 1460,
+        "width": 300,
+        "height": 26
+      }
+    ],
+    "psd": "exports/story.psd",
+    "png": "exports/story.png",
+    "thumbnail": "exports/story-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "linkedin",
+    "title": "LinkedIn landscape",
+    "width": 1200,
+    "height": 628,
+    "ratio": "1.91:1",
+    "placement": "Feed image",
+    "platform": "LinkedIn",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/linkedin-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 628
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/linkedin-layer-1.png",
+        "x": 588,
+        "y": 0,
+        "width": 612,
+        "height": 628
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/linkedin-layer-2.png",
+        "x": 54,
+        "y": 43,
+        "width": 120,
+        "height": 78
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/linkedin-layer-3.png",
+        "x": 69,
+        "y": 51,
+        "width": 88,
+        "height": 50
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/linkedin-layer-4.png",
+        "x": 55,
+        "y": 172,
+        "width": 192,
+        "height": 22
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/linkedin-layer-5.png",
+        "x": 55,
+        "y": 248,
+        "width": 424,
+        "height": 195
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/linkedin-layer-6.png",
+        "x": 55,
+        "y": 444,
+        "width": 364,
+        "height": 24
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/linkedin-layer-7.png",
+        "x": 55,
+        "y": 532,
+        "width": 217,
+        "height": 19
+      }
+    ],
+    "psd": "exports/linkedin.psd",
+    "png": "exports/linkedin.png",
+    "thumbnail": "exports/linkedin-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "pin",
+    "title": "Pinterest pin",
+    "width": 1000,
+    "height": 1500,
+    "ratio": "2:3",
+    "placement": "Standard pin",
+    "platform": "Pinterest",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/pin-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 1500
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/pin-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 765
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/pin-layer-2.png",
+        "x": 75,
+        "y": 817,
+        "width": 115,
+        "height": 78
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/pin-layer-3.png",
+        "x": 88,
+        "y": 828,
+        "width": 89,
+        "height": 51
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/pin-layer-4.png",
+        "x": 227,
+        "y": 842,
+        "width": 232,
+        "height": 26
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/pin-layer-5.png",
+        "x": 77,
+        "y": 952,
+        "width": 627,
+        "height": 140
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/pin-layer-6.png",
+        "x": 77,
+        "y": 1153,
+        "width": 464,
+        "height": 32
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/pin-layer-7.png",
+        "x": 77,
+        "y": 1254,
+        "width": 285,
+        "height": 25
+      }
+    ],
+    "psd": "exports/pin.psd",
+    "png": "exports/pin.png",
+    "thumbnail": "exports/pin-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "tiktok",
+    "title": "TikTok / Shorts cover",
+    "width": 1080,
+    "height": 1920,
+    "ratio": "9:16",
+    "placement": "Cover artwork \u00b7 video required for video posts",
+    "platform": "TikTok",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/tiktok-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/tiktok-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 921
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/tiktok-layer-2.png",
+        "x": 81,
+        "y": 988,
+        "width": 124,
+        "height": 84
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/tiktok-layer-3.png",
+        "x": 94,
+        "y": 999,
+        "width": 96,
+        "height": 55
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/tiktok-layer-4.png",
+        "x": 245,
+        "y": 1013,
+        "width": 250,
+        "height": 30
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/tiktok-layer-5.png",
+        "x": 83,
+        "y": 1133,
+        "width": 678,
+        "height": 149
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/tiktok-layer-6.png",
+        "x": 83,
+        "y": 1351,
+        "width": 497,
+        "height": 33
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/tiktok-layer-7.png",
+        "x": 83,
+        "y": 1460,
+        "width": 300,
+        "height": 26
+      }
+    ],
+    "psd": "exports/tiktok.psd",
+    "png": "exports/tiktok.png",
+    "thumbnail": "exports/tiktok-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "youtube",
+    "title": "YouTube thumbnail",
+    "width": 3840,
+    "height": 2160,
+    "ratio": "16:9",
+    "placement": "Video thumbnail \u00b7 not a standalone post",
+    "platform": "YouTube",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/youtube-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 3840,
+        "height": 2160
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/youtube-layer-1.png",
+        "x": 1882,
+        "y": 0,
+        "width": 1958,
+        "height": 2160
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/youtube-layer-2.png",
+        "x": 172,
+        "y": 151,
+        "width": 384,
+        "height": 249
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/youtube-layer-3.png",
+        "x": 221,
+        "y": 177,
+        "width": 280,
+        "height": 159
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/youtube-layer-4.png",
+        "x": 176,
+        "y": 596,
+        "width": 617,
+        "height": 71
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/youtube-layer-5.png",
+        "x": 178,
+        "y": 853,
+        "width": 1352,
+        "height": 618
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/youtube-layer-6.png",
+        "x": 177,
+        "y": 1527,
+        "width": 1147,
+        "height": 77
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/youtube-layer-7.png",
+        "x": 177,
+        "y": 1830,
+        "width": 696,
+        "height": 62
+      }
+    ],
+    "psd": "exports/youtube.psd",
+    "png": "exports/youtube.png",
+    "thumbnail": "exports/youtube-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  },
+  {
+    "id": "linkedin-square",
+    "title": "LinkedIn square",
+    "width": 1200,
+    "height": 1200,
+    "ratio": "1:1",
+    "placement": "Feed image",
+    "platform": "LinkedIn",
+    "layers": [
+      {
+        "name": "EP green background",
+        "file": "exports/linkedin-square-layer-0.png",
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 1200
+      },
+      {
+        "name": "New Zealand photo",
+        "file": "exports/linkedin-square-layer-1.png",
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 540
+      },
+      {
+        "name": "Logo white backing",
+        "file": "exports/linkedin-square-layer-2.png",
+        "x": 90,
+        "y": 582,
+        "width": 138,
+        "height": 93
+      },
+      {
+        "name": "EP logo",
+        "file": "exports/linkedin-square-layer-3.png",
+        "x": 106,
+        "y": 595,
+        "width": 106,
+        "height": 60
+      },
+      {
+        "name": "Brand descriptor",
+        "file": "exports/linkedin-square-layer-4.png",
+        "x": 272,
+        "y": 612,
+        "width": 276,
+        "height": 32
+      },
+      {
+        "name": "Headline - raster typography",
+        "file": "exports/linkedin-square-layer-5.png",
+        "x": 92,
+        "y": 745,
+        "width": 759,
+        "height": 165
+      },
+      {
+        "name": "Supporting copy - raster typography",
+        "file": "exports/linkedin-square-layer-6.png",
+        "x": 92,
+        "y": 986,
+        "width": 555,
+        "height": 37
+      },
+      {
+        "name": "Call to action - raster typography",
+        "file": "exports/linkedin-square-layer-7.png",
+        "x": 92,
+        "y": 1107,
+        "width": 337,
+        "height": 30
+      }
+    ],
+    "psd": "exports/linkedin-square.psd",
+    "png": "exports/linkedin-square.png",
+    "thumbnail": "exports/linkedin-square-preview.jpg",
+    "editableText": false,
+    "note": "Sample template. PSD preserves separate raster layers; text is not native editable Photoshop text. The photograph remains one layer."
+  }
+]

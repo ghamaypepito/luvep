@@ -1,0 +1,2 @@
+import { Head } from '@inertiajs/react';
+export default function Pending(){return <><Head title="HR access pending"/><section className="hr-panel"><p className="hr-eyebrow">Employee setup</p><h1>Your HR access is pending</h1><p>Your administrator needs to review your employee profile, work schedule and reviewer assignments before activating access.</p><a className="hr-button" href="/">Back to Luvep</a></section></>;}

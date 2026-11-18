@@ -4,6 +4,14 @@
 @import 'tailwindcss';
 @import "flowbite";
 
+/* Flowbite's later width utilities otherwise override responsive column widths. */
+.engagement-builder .engagement-builder-body { flex-direction: row; overflow: hidden; }
+.engagement-builder .engagement-settings { width: 520px; max-width: 100%; flex: 0 0 520px; }
+@media (max-width: 1023px) {
+    .engagement-builder .engagement-builder-body { flex-direction: column; overflow-y: auto; }
+    .engagement-builder .engagement-settings { width: 100%; flex-basis: auto; max-height: 48vh; flex-shrink: 0; }
+}
+
 html {
     font-size: 100%;
 }
@@ -119,3 +127,43 @@ body {
     height: 0;
     pointer-events: none;
 }
+
+/* Flowbite's unlayered inset utilities can override responsive Tailwind rules.
+   Keep the shared assistant anchored explicitly, above its bottom-right launcher. */
+#ep-assistant-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    width: auto;
+    height: auto;
+}
+@media (min-width: 640px) {
+    #ep-assistant-panel {
+        inset: auto 20px 88px auto;
+        width: min(440px, calc(100vw - 40px));
+        height: min(640px, calc(100dvh - 112px));
+        border-radius: 16px;
+    }
+}
+
+/* Restore editorial hierarchy after Tailwind's element resets. */
+.published-article-body > * + * { margin-block-start: 1.1em; }
+.published-article-body :is(h2, h3, h4) {
+    color: var(--color-stone-900);
+    font-weight: 750;
+    line-height: 1.2;
+    margin-block-start: 1.65em;
+}
+.published-article-body h2 { font-size: 1.55em; }
+.published-article-body h3 { font-size: 1.25em; }
+.published-article-body :is(h2, h3, h4) + * { margin-block-start: .5em; }
+.published-article-body > :first-child { margin-block-start: 0; }
+.published-article-body ul { list-style: disc; padding-inline-start: 1.5em; }
+.published-article-body ol { list-style: decimal; padding-inline-start: 1.5em; }
+.published-article-body li + li { margin-block-start: .3em; }
+.published-article-body a { color: var(--color-brand-green); text-decoration: underline; text-underline-offset: .15em; }
+.published-article-body blockquote { border-inline-start: 1px solid var(--color-brand-green); padding-inline-start: 1.2em; }
+.published-article-body pre { overflow-x: auto; background: var(--color-stone-100); padding: 1em; }
+.published-article-body img { display: block; max-inline-size: 100%; block-size: auto; border-radius: .5rem; }
+.published-article-body table { display: block; overflow-x: auto; border-collapse: collapse; }
+.published-article-body :is(th, td) { border: 1px solid var(--color-stone-200); padding: .55em .75em; text-align: start; }

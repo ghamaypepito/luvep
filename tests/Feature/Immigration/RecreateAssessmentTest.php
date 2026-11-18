@@ -96,8 +96,9 @@ class RecreateAssessmentTest extends TestCase
         $this->assertSame('Philippines', $new->nationality);
         $this->assertSame('Juan', $new->first_name);
         $this->assertSame('Dela Cruz', $new->last_name);
-        // Required-but-unmapped fields seeded (not null), to be completed later.
-        $this->assertNotNull($new->current_visa_expiry);
+        // Luvep's linked-draft migration makes unknown dates nullable. Preserve
+        // that behavior rather than inventing an expiry date during conversion.
+        $this->assertNull($new->current_visa_expiry);
 
         $this->assertNotNull(
             Assessment::where('intakeable_type', ResidentIntake::class)->where('intakeable_id', $new->id)->first()

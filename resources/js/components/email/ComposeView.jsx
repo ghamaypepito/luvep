@@ -9,6 +9,7 @@ import EmailBuilder from "@/components/templates/EmailBuilder";
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 const statusTone = (s) => ({ sent: "bg-emerald-50 text-emerald-700", queued: "bg-amber-50 text-amber-700", failed: "bg-rose-50 text-rose-700", bounced: "bg-rose-50 text-rose-700" }[s] || "bg-gray-100 text-gray-500");
+const isFullHtml = (html) => /^\s*<(!doctype|html)\b/i.test(html || "");
 
 /**
  * Compose module — reused by the admin area and every department portal. Left:
@@ -16,7 +17,7 @@ const statusTone = (s) => ({ sent: "bg-emerald-50 text-emerald-700", queued: "bg
  * picked leads and/or typed addresses, subject, the shared body editor +
  * drag-and-drop builder, attachments).
  */
-export default function ComposeView({ basePath = "/admin/email/compose", sent = [] }) {
+export default function ComposeView({ basePath = "/admin/email/compose", sent = [], templates = [] }) {
     const [leads, setLeads] = useState([]);      // [{id,name,email}]
     const [emails, setEmails] = useState([]);     // [string]
     const [subject, setSubject] = useState("");
@@ -29,6 +30,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const [previewOpen, setPreviewOpen] = useState(false);
     const [selected, setSelected] = useState(null); // a sent item being previewed
     const [sending, setSending] = useState(false);
+    const [sendErrors, setSendErrors] = useState({});
     const fileRef = useRef(null);
 
     // Debounced lead typeahead.
@@ -59,18 +61,32 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     };
     const removeLead = (id) => setLeads((p) => p.filter((x) => x.id !== id));
     const removeEmail = (v) => setEmails((p) => p.filter((x) => x !== v));
-    const pickFiles = (e) => { setAttachments((p) => [...p, ...Array.from(e.target.files || [])]); e.target.value = ""; };
+    const pickFiles = (e) => {
+        const files = Array.from(e.target.files || []);
+        setAttachments((previous) => [...previous, ...files]);
+        e.target.value = "";
+    };
     const removeFile = (i) => setAttachments((p) => p.filter((_, ix) => ix !== i));
+    const applyTemplate = (id) => {
+        const template = templates.find((item) => String(item.id) === id);
+        if (!template) return;
+        if ((subject.trim() || body.trim()) && !window.confirm("Replace the draft subject and body with this template?")) return;
+        setSubject(template.email_subject || "");
+        setBody(template.email_body);
+        setDesignJson(template.design_json);
+    };
 
     const resetForm = () => {
         setLeads([]); setEmails([]); setSubject(""); setBody(""); setDesignJson(null);
         setAttachments([]); setQuery(""); setSuggestions([]);
+        setSendErrors({});
     };
 
     const canSend = (leads.length > 0 || emails.length > 0) && (subject.trim() || body.trim()) && !sending;
 
     const send = () => {
         if (!canSend) return;
+        setSendErrors({});
         setSending(true);
         const fd = new FormData();
         leads.forEach((l) => fd.append("lead_ids[]", l.id));
@@ -82,12 +98,13 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => resetForm(),
+            onError: setSendErrors,
             onFinish: () => setSending(false),
         });
     };
 
     const inp = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-300";
-    const bodyDoc = (html) => `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;color:#333;} .em{max-width:600px;margin:16px auto;background:#fff;padding:24px 28px;font-size:14px;line-height:1.6;} img{max-width:100%;}</style></head><body>${/^\s*<(!doctype|html)/i.test(html || "") ? (html || "") : `<div class="em">${html || ""}</div>`}</body></html>`;
+    const bodyDoc = (html) => isFullHtml(html) ? html : `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;color:#333;} .em{max-width:600px;margin:16px auto;background:#fff;padding:24px 28px;font-size:14px;line-height:1.6;} img{max-width:100%;}</style></head><body><div class="em">${html || ""}</div></body></html>`;
 
     return (
         <div className="flex h-[calc(100vh-120px)] gap-4 max-w-[1400px] mx-auto">
@@ -136,7 +153,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
                             {/* Recipients */}
                             <div className="relative">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">To</span>
@@ -164,6 +181,20 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                 )}
                             </div>
 
+                            {templates.length > 0 && (
+                                <label className="block">
+                                    <span className="block text-xs font-semibold text-gray-600 mb-1">Email template</span>
+                                    <select value="" onChange={(e) => applyTemplate(e.target.value)} className={inp}>
+                                        <option value="">Choose an email template</option>
+                                        {templates.map((template) => (
+                                            <option key={template.id} value={template.id}>
+                                                {template.name}{template.department ? ` · ${template.department}` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
+
                             {/* Subject */}
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Subject</span>
@@ -179,7 +210,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                         <button type="button" onClick={() => setPreviewOpen(true)} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1"><Eye size={12} /> Preview</button>
                                     </div>
                                 </div>
-                                {designJson ? (
+                                {designJson || isFullHtml(body) ? (
                                     <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-100">
                                         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white text-[11px] text-gray-600"><Wand2 size={13} className="text-[#436235]" /> Built with the visual editor — click <strong>Customize email body</strong> to edit.</div>
                                         <iframe title="Body" srcDoc={body} sandbox="" className="w-full bg-gray-100" style={{ height: 360 }} />
@@ -190,22 +221,24 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                 <span className="block text-[11px] text-gray-400 mt-1">Use <code>{"{{first_name}}"}</code>-style variables — they fill in for lead recipients (blank for typed addresses).</span>
                             </div>
 
-                            {/* Attachments */}
-                            <div className="block">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="block text-xs font-semibold text-gray-600">Attachments</span>
-                                    <button type="button" onClick={() => fileRef.current?.click()} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1"><Paperclip size={12} /> Add files</button>
-                                    <input ref={fileRef} type="file" multiple onChange={pickFiles} className="hidden" />
-                                </div>
-                                {attachments.length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {attachments.map((f, i) => (
-                                            <span key={i} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs rounded-lg px-2 py-1"><Paperclip size={11} /> {f.name} <button type="button" onClick={() => removeFile(i)} className="hover:text-rose-600"><X size={12} /></button></span>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
                         </div>
+
+                        <section aria-label="Attachments" className="shrink-0 border-t border-gray-100 px-5 py-3 max-h-40 overflow-y-auto">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="block text-xs font-semibold text-gray-600">Attachments ({attachments.length})</span>
+                                <button type="button" disabled={sending} onClick={() => fileRef.current?.click()} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1 disabled:opacity-40"><Paperclip size={12} /> Add files</button>
+                                <input ref={fileRef} type="file" multiple disabled={sending} onChange={pickFiles} className="hidden" />
+                            </div>
+                            <p className="text-[11px] text-gray-500 mb-2">Up to 10 files, 10 MB each. Files upload when you send.</p>
+                            <div aria-label="Selected attachments" aria-live="polite" className="flex flex-wrap gap-1.5">
+                                {attachments.map((f, i) => (
+                                    <span key={i} className="inline-flex max-w-full items-center gap-1 bg-gray-100 text-gray-700 text-xs rounded-lg px-2 py-1"><Paperclip size={11} className="shrink-0" /><span className="break-all">{f.name}</span><button type="button" aria-label={`Remove ${f.name}`} disabled={sending} onClick={() => removeFile(i)} className="shrink-0 hover:text-rose-600 disabled:opacity-40"><X size={12} /></button></span>
+                                ))}
+                            </div>
+                            {Object.keys(sendErrors).length > 0 && (
+                                <div role="alert" className="mt-2 text-xs text-rose-700">{Object.values(sendErrors).join(" ")}</div>
+                            )}
+                        </section>
                     </div>
                 )}
             </main>

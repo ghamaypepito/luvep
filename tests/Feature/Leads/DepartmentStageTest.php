@@ -22,12 +22,16 @@ class DepartmentStageTest extends TestCase
             'first_name' => 'F', 'last_name' => 'O', 'status' => 'English Pro', 'is_student' => true,
         ]);
 
-        $this->post("/admin/leads/{$lead->id}/stage", ['status' => 'Endorsed to School', 'field' => 'education_stage'])
-            ->assertRedirect();
+        $this->post("/admin/leads/{$lead->id}/stage", ['status' => 'School Enrolment', 'field' => 'education_stage'])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $fresh = $lead->fresh();
-        $this->assertSame('Endorsed to School', $fresh->education_stage);
+        $this->assertSame('School Enrolment', $fresh->education_stage);
         $this->assertSame('English Pro', $fresh->status, 'sales status must be untouched');
+        $this->assertSame(auth()->id(), $fresh->stage_updated_by);
+        $this->assertSame('education', $fresh->stage_history[0]['department']);
+        $this->assertSame('School Enrolment', $fresh->stage_history[0]['stage']);
     }
 
     public function test_sales_status_update_still_works_by_default(): void
@@ -51,7 +55,7 @@ class DepartmentStageTest extends TestCase
             ->assertSessionHasErrors('status');
     }
 
-    public function test_education_handoff_stage_auto_promotes_to_immigration(): void
+    public function test_education_handoff_promotes_to_immigration_and_preserves_the_student(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin']));
         $lead = Lead::create([
@@ -60,10 +64,14 @@ class DepartmentStageTest extends TestCase
         ]);
 
         $this->post("/admin/leads/{$lead->id}/stage", ['status' => 'Endorsed to Immigration', 'field' => 'education_stage'])
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $fresh = $lead->fresh();
         $this->assertTrue((bool) $fresh->is_immigration_case);
-        $this->assertFalse((bool) $fresh->is_student);
+        $this->assertTrue((bool) $fresh->is_student, 'the student remains in the Education register after handoff');
+        $this->assertSame('Endorsed to Immigration', $fresh->education_stage);
+        $this->assertNotNull($fresh->immigration_converted_at);
+        $this->assertSame(auth()->id(), $fresh->immigration_converted_by);
     }
 }

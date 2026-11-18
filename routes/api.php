@@ -7,4 +7,4 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-Route::post('/chat', \App\Http\Controllers\ChatController::class);
+Route::post('/chat', \App\Http\Controllers\ChatController::class)->middleware('throttle:15,1');

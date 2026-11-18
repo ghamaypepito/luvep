@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'ghl' => [
+        'article_facebook_enabled' => env('GHL_ARTICLE_FACEBOOK_ENABLED', false),
+    ],
+
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],
@@ -37,6 +41,7 @@ return [
     ],
 
     'slack' => [
+        'education_webhook' => env('EDUCATION_SLACK_WEBHOOK'),
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
@@ -191,7 +196,7 @@ return [
         // Sender for event-registration emails (must be verified in Brevo).
         // Used by the built-in fallback; the template carries its own from_email.
         'event_from_email' => env('EVENT_FROM_EMAIL', 'hello@epathways.ph'),
-        'event_from_name' => env('EVENT_FROM_NAME', 'Fhilip Bryll - EP'),
+        'event_from_name' => env('EVENT_FROM_NAME', 'Eireen Serrano - EP'),
         // Central "Reply-To" — when set, replies to any of our emails route
         // to this monitored inbox. Null = replies go to each email's From.
         'reply_to' => env('REPLY_TO_EMAIL'),

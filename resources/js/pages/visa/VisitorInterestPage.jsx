@@ -68,6 +68,7 @@ export default function VisitorInterestPage() {
         country_of_birth: '', place_of_birth: '', country_of_citizenship: '',
         passport_number: '', passport_expiry: '', other_citizenships: '',
         national_id: '', partnership_status: '',
+        birth_certificate_available: '', birth_certificate_reason: '', face_image_consent: false,
         current_address: '', town_city: '', region: '', postcode: '',
         phone: '', email: '',
 
@@ -86,7 +87,7 @@ export default function VisitorInterestPage() {
         currently_working: '', current_job_title: '', current_job_duties: '',
         current_job_start: '', current_job_finish: '', current_job_country: '', current_job_region: '',
         current_employer_name: '', current_employer_address: '',
-        current_employer_phone: '', current_employer_email: '',
+        current_employer_phone: '', current_employer_email: '', job_skills_level: '',
 
         has_nz_contacts: '',
         military_compulsory: '', military_undertaken: '',
@@ -150,6 +151,7 @@ export default function VisitorInterestPage() {
                 if (!data.phone?.trim()) errs.phone = 'Contact number is required';
                 if (!data.country_of_citizenship?.trim()) errs.country_of_citizenship = 'Country of citizenship is required';
                 if (!data.passport_number?.trim()) errs.passport_number = 'Passport number is required';
+                if (data.birth_certificate_available === 'No' && !data.birth_certificate_reason?.trim()) errs.birth_certificate_reason = 'Please tell us why';
                 break;
             case 3:
                 if (!data.travelled_nz) errs.travelled_nz = 'Please answer';
@@ -291,6 +293,16 @@ export default function VisitorInterestPage() {
                         <TextField label="Mobile number" value={data.phone} onChange={set('phone')} required hint="Include country code" error={errors.phone} />
                         <TextField label="Email address" type="email" value={data.email} onChange={set('email')} required error={errors.email} />
                     </FieldGrid>
+                    <div className="mt-4 space-y-4">
+                        <YesNoField label="Do you have a birth certificate you can provide at the time of processing your visa?" value={data.birth_certificate_available} onChange={set('birth_certificate_available')} error={errors.birth_certificate_available} />
+                        {data.birth_certificate_available === 'No' && (
+                            <TextField label="If no, please tell us why" value={data.birth_certificate_reason} onChange={set('birth_certificate_reason')} error={errors.birth_certificate_reason} />
+                        )}
+                        <label className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 bg-white cursor-pointer">
+                            <input type="checkbox" className="w-5 h-5 rounded border-gray-300 text-[#00A693] focus:ring-[#00A693]" checked={!!data.face_image_consent} onChange={(e) => set('face_image_consent')(e.target.checked)} />
+                            <span className="text-sm text-gray-600">I understand you will ask me for a face image (JPG format) at the time of processing my visa.</span>
+                        </label>
+                    </div>
                 </>
             ),
         },
@@ -364,6 +376,7 @@ export default function VisitorInterestPage() {
                             <TextField label="Organisation name" value={data.current_employer_name} onChange={set('current_employer_name')} />
                             <TextField label="Employer phone" value={data.current_employer_phone} onChange={set('current_employer_phone')} />
                             <TextField label="Employer email" type="email" value={data.current_employer_email} onChange={set('current_employer_email')} />
+                            <SelectField label="Do you know your Job Skills Level as per ANZSCO or NOL?" value={data.job_skills_level} onChange={set('job_skills_level')} options={['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'No']} />
                         </FieldGrid>
                         <div className="mt-4 space-y-4">
                             <TextareaField label="Detailed job duties" value={data.current_job_duties} onChange={set('current_job_duties')} />

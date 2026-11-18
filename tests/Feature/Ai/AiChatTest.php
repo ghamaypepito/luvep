@@ -15,11 +15,13 @@ class AiChatTest extends TestCase
 
     private function fakeAssistant(string $reply = 'Here is a draft for you.'): void
     {
+        \App\Models\Setting::set('claude_connector.staff_enabled', true, 'bool');
+        config(['claude.api_key' => 'sk-ant-test-staff-connector-12345']);
         Http::fake([
-            'openrouter.ai/*' => Http::response([
-                'choices' => [['message' => ['content' => $reply]]],
-                'usage'   => ['total_tokens' => 42],
-                'model'   => 'google/gemini-2.5-flash',
+            'api.anthropic.com/*' => Http::response([
+                'content' => [['type' => 'text', 'text' => $reply]],
+                'usage'   => ['input_tokens' => 20, 'output_tokens' => 22],
+                'model'   => 'claude-sonnet-5-5',
             ], 200),
         ]);
     }

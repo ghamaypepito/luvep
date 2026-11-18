@@ -5,7 +5,6 @@ namespace Tests\Feature\Communication;
 use App\Mail\TemplatedMessage;
 use App\Models\MessageTemplate;
 use App\Models\User;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -30,12 +29,15 @@ class MessageTemplateAdminTest extends TestCase
 
     public function test_admin_can_list_templates(): void
     {
-        $this->template();
+        $existingCount = MessageTemplate::count();
+        $template = $this->template();
 
         $this->actingAs($this->admin())
             ->get('/admin/message-templates')
             ->assertOk()
-            ->assertInertia(fn (Assert $p) => $p->component('admin/MessageTemplates')->has('templates', 1));
+            ->assertInertia(fn (Assert $p) => $p->component('admin/MessageTemplates')
+                ->has('templates', $existingCount + 1)
+                ->where('templates', fn ($templates) => collect($templates)->pluck('id')->contains($template->id)));
     }
 
     public function test_admin_can_create_template(): void

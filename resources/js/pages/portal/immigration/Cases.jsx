@@ -13,7 +13,7 @@ import {
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing, priorityRank } from "@/utils/priority";
-import { immBase, leadBase, isAgentCasePortal } from "@/lib/caseRoutes";
+import { immBase, isAgentCasePortal } from "@/lib/caseRoutes";
 
 // This board is shared by the manager (/portal/immigration), the adviser
 // (/portal/immigration-adviser), and a First-Immigration recruiting agent
@@ -43,6 +43,7 @@ const STAGE_COLORS = {
     'Request to Lodge':       'bg-cyan-500',
     'Visa Lodged':             'bg-indigo-500',
     'Interim Visa Issued':     'bg-blue-500',
+    'Request for Medical': 'bg-amber-500',
     'Request for Information': 'bg-amber-500',
     'RFI Responded':           'bg-indigo-500',
     'Approved in Principle':   'bg-violet-500',
@@ -63,6 +64,7 @@ const STAGE_HEX = {
     'Request to Lodge':       '#06b6d4',
     'Visa Lodged':             '#6366f1',
     'Interim Visa Issued':     '#3b82f6',
+    'Request for Medical': '#f59e0b',
     'Request for Information': '#f59e0b',
     'RFI Responded':           '#6366f1',
     'Approved in Principle':   '#8b5cf6',
@@ -82,6 +84,7 @@ const STAGE_CHIP = {
     'Request to Lodge':       'bg-cyan-50 text-cyan-700 border-cyan-200',
     'Visa Lodged':             'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Interim Visa Issued':     'bg-blue-50 text-blue-700 border-blue-200',
+    'Request for Medical': 'bg-amber-50 text-amber-700 border-amber-200',
     'Request for Information': 'bg-amber-50 text-amber-700 border-amber-200',
     'RFI Responded':           'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Approved in Principle':   'bg-violet-50 text-violet-700 border-violet-200',
@@ -111,7 +114,7 @@ const SUBSTATUS_LABEL = {
  */
 const CASE_TABS = [
     { key: 'applications', label: 'Assessment',   hint: 'For Assessment',     stages: ['For Assessment'] },
-    { key: 'advisers',     label: 'Advisers',     hint: 'Endorsed → RFI',     stages: ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Request to Lodge', 'Request for Information'] },
+    { key: 'advisers',     label: 'Advisers',     hint: 'Endorsed → RFI',     stages: ['Endorsed', 'Agreement Sent', 'Agreement Signed', 'For Agreement & Invoice', 'Request to Lodge', 'Request for Medical', 'Request for Information'] },
     { key: 'invoice',      label: 'Invoice',      hint: 'Invoice paid',       stages: ['Invoice Paid'] },
     { key: 'lodged',       label: 'Lodged',       hint: 'Submitted to INZ',   stages: ['Visa Lodged', 'Interim Visa Issued', 'RFI Responded'] },
     { key: 'visa',         label: 'Visa',         hint: 'Outcome',            stages: ['Approved in Principle', 'Approved Visa', 'Decline Visa'] },
@@ -141,7 +144,7 @@ const tabKeyForStage = (stage) => {
     return hit ? hit.key : 'applications';
 };
 
-export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false }) {
+export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false, canManageCaseArchive = false }) {
     // True queue size vs. how many the server actually loaded. When these
     // differ, the safety ceiling truncated the list — warn loudly rather than
     // silently hiding cases (the "For Assessment cases vanished" bug).
@@ -327,6 +330,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                             </button>
                         );
                     })}
+                    {canManageCaseArchive && <Link href="/portal/immigration/cases/archived" className="inline-flex items-center gap-2 px-4 py-3 text-[13px] font-semibold whitespace-nowrap text-gray-500 hover:text-gray-800">Archived Cases</Link>}
                 </div>
 
                 <div className="px-4 sm:px-5 py-2.5 flex items-center gap-3 border-b border-gray-100">
@@ -421,6 +425,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                                     stages={stages}
                                     visaTypes={visaTypes}
                                     readOnly={readOnly}
+                                    canManageCaseArchive={canManageCaseArchive}
                                     isExpanded={expandedId === c.id}
                                     onExpand={() => setExpandedId(expandedId === c.id ? null : c.id)}
                                     stageMenuOpen={openStageMenuId === c.id}
@@ -443,6 +448,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                     stages={stages}
                     visaTypes={visaTypes}
                     agents={agents}
+                    canCorrectCaseNames={canManageCaseArchive}
                     onClose={() => { setCreating(false); setEditingCase(null); }}
                 />
             )}
@@ -469,8 +475,9 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
 
 // ─── Create case modal ─────────────────────────────────────────────────
 
-function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClose }) {
+function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, canCorrectCaseNames = false, onClose }) {
     const isEdit = !!editing;
+    const lockName = isEdit && !canCorrectCaseNames;
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         first_name: editing?.first_name || '',
         middle_name: editing?.middle_name || '',
@@ -561,12 +568,14 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                     {(!isEdit || tab === 'personal') && (
                     <form id="caseModalForm" onSubmit={submit} className="space-y-4">
+                    {lockName && <p className="text-xs text-gray-500">Only an Admin or Super Admin can change the case name.</p>}
                     {/* Name row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <CaseField label="First name" required error={errors.first_name}>
                             <input
                                 type="text"
                                 value={data.first_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('first_name', e.target.value)}
                                 maxLength={80}
                                 autoFocus
@@ -577,6 +586,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.middle_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('middle_name', e.target.value)}
                                 maxLength={80}
                                 className={caseInput(errors.middle_name)}
@@ -586,6 +596,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.last_name}
+                                readOnly={lockName}
                                 onChange={(e) => setData('last_name', e.target.value)}
                                 maxLength={80}
                                 className={caseInput(errors.last_name)}
@@ -595,6 +606,7 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, onClo
                             <input
                                 type="text"
                                 value={data.suffix}
+                                readOnly={lockName}
                                 onChange={(e) => setData('suffix', e.target.value)}
                                 maxLength={20}
                                 className={caseInput(errors.suffix)}
@@ -1007,7 +1019,7 @@ function DistributionGraph({ distribution = [], total = 0, activeStage = null, o
 
 // ─── Table row ──────────────────────────────────────────────────────────
 
-function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, isExpanded, onExpand, stageMenuOpen, onStageMenuToggle, onStageMenuClose, onEdit, onViewFiles, onHandoff }) {
+function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, canManageCaseArchive = false, isExpanded, onExpand, stageMenuOpen, onStageMenuToggle, onStageMenuClose, onEdit, onViewFiles, onHandoff }) {
     // Recruiting agents get this exact board read-only (list of their referrals'
     // cases). When readOnly, the name isn't a link (no case profile for agents),
     // the inline editors render as static chips, and the Actions menu is hidden.
@@ -1223,9 +1235,7 @@ function CaseRow({ c, meId = null, stages, visaTypes = [], readOnly = false, isE
                                 icon: Pencil,
                                 onClick: () => onEdit?.(),
                             },
-                            // A recruiting agent works their referrals but can't
-                            // archive/delete the case — that stays with staff.
-                            ! isAgentCasePortal() && {
+                            canManageCaseArchive && {
                                 key: 'archive',
                                 label: 'Archive case',
                                 icon: Archive,
@@ -1579,6 +1589,7 @@ function StagePicker({ caseId, stages, value, fallback, open, onToggle, onClose,
     const [outcomeStage, setOutcomeStage] = useState(null);
     // "Request for Information" opens a modal for the deadline + RFI PDFs.
     const [rfiOpen, setRfiOpen] = useState(false);
+    const [medicalOpen, setMedicalOpen] = useState(false);
     const [coords, setCoords] = useState({ top: 0, left: 0, openUp: false });
     const triggerRef = useRef(null);
     const menuRef = useRef(null);
@@ -1658,6 +1669,11 @@ function StagePicker({ caseId, stages, value, fallback, open, onToggle, onClose,
         }
         // Request for Information — capture a response deadline + attach the RFI
         // PDF(s), then the configured RFI automation emails the client.
+        if (stage === "Request for Medical") {
+            onClose();
+            setMedicalOpen(true);
+            return;
+        }
         if (stage === "Request for Information") {
             onClose();
             setRfiOpen(true);
@@ -1706,7 +1722,7 @@ function StagePicker({ caseId, stages, value, fallback, open, onToggle, onClose,
                     <p className="px-3 pt-2 pb-1.5 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">
                         Move to stage
                     </p>
-                    {stages.map((s) => (
+                    {stages.filter((s) => s !== "Request for Medical" || !isAgentCasePortal()).map((s) => (
                         <button
                             key={s}
                             type="button"
@@ -1745,6 +1761,10 @@ function StagePicker({ caseId, stages, value, fallback, open, onToggle, onClose,
 
             {outcomeStage && (
                 <OutcomeModal caseId={caseId} stage={outcomeStage} onClose={() => setOutcomeStage(null)} />
+            )}
+
+            {medicalOpen && (
+                <RequestInfoModal caseId={caseId} medical onClose={() => setMedicalOpen(false)} />
             )}
 
             {rfiOpen && (
@@ -2040,14 +2060,15 @@ function OutcomeModal({ caseId, stage, onClose }) {
 // Captures the response DEADLINE, attaches the RFI PDF(s) (shared to the case +
 // client portal), an optional note, and fires the configured RFI stage
 // automation (PDFs attached to the email) when "notify" is ticked.
-function RequestInfoModal({ caseId, onClose }) {
-    const STAGE = "Request for Information";
+export function RequestInfoModal({ caseId, onClose, medical = false }) {
+    const STAGE = medical ? "Request for Medical" : "Request for Information";
     const today = new Date().toISOString().slice(0, 10);
     const [files, setFiles] = useState([]);
     const [deadline, setDeadline] = useState("");
     const [note, setNote] = useState("");
     const [notify, setNotify] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [notificationRetry, setNotificationRetry] = useState(false);
 
     // AI reads the uploaded RFI letter and lists the documents INZ is asking
     // for. Staff review / edit this list; on submit each becomes a request the
@@ -2082,7 +2103,7 @@ function RequestInfoModal({ caseId, onClose }) {
         setPreviewIdx(0);
         setAnalyzed(false);
         setReqDocs([]);
-        if (chosen.length) analyze(chosen);
+        if (chosen.length && !medical) analyze(chosen);
     };
 
     // Ask the server to read the PDF(s) and extract the requested documents.
@@ -2116,20 +2137,21 @@ function RequestInfoModal({ caseId, onClose }) {
 
     const submit = () => {
         if (saving) return;
-        if (!deadline) { toast.error("Set a response deadline."); return; }
+        if (!notificationRetry && !deadline) { toast.error("Set a response deadline."); return; }
+        if (!notificationRetry && medical && !files.length) { toast.error("Attach the INZ medical notice PDF."); return; }
         // Only included rows with a real label are sent to the client.
         const requested_documents = reqDocs
             .filter((d) => d.include && d.label.trim())
             .map((d) => ({ label: d.label.trim(), description: d.description.trim(), required: d.required ? 1 : 0 }));
         setSaving(true);
         router.post(
-            `${immBase()}/cases/${caseId}/rfi`,
-            { deadline, note, notify: notify ? 1 : 0, documents: files, requested_documents },
+            `${immBase()}/cases/${caseId}/${medical ? "medical" : "rfi"}`,
+            notificationRetry ? { retry_notification: 1 } : { deadline, note, notify: notify ? 1 : 0, documents: files, ...(medical ? {} : { requested_documents }) },
             {
                 forceFormData: true,
                 preserveScroll: true,
-                onSuccess: () => { toast.success(`Case moved to ${STAGE}`); onClose(); },
-                onError: (e) => toast.error(Object.values(e)[0] || "Could not save"),
+                onSuccess: () => { toast.success(notificationRetry ? "Medical notification queued" : `Case moved to ${STAGE}`); onClose(); },
+                onError: (e) => { if (medical && e.notification) setNotificationRetry(true); toast.error(Object.values(e)[0] || "Could not save"); },
                 onFinish: () => setSaving(false),
             }
         );
@@ -2143,9 +2165,9 @@ function RequestInfoModal({ caseId, onClose }) {
                 <header className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
                     <div>
                         <h2 className="text-sm font-bold text-gray-900 inline-flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[STAGE] || 'bg-amber-500'}`} /> Request for Information
+                            <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[STAGE] || 'bg-amber-500'}`} /> {STAGE}
                         </h2>
-                        <p className="text-[11px] text-gray-500 mt-0.5">Set the response deadline and attach INZ&apos;s RFI letter(s).</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">{medical ? "Attach INZ’s medical notice and set its response deadline." : "Set the response deadline and attach INZ’s RFI letter(s)."}</p>
                     </div>
                     <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={16} /></button>
                 </header>
@@ -2178,12 +2200,13 @@ function RequestInfoModal({ caseId, onClose }) {
 
                     {/* Right pane — the form + extracted documents. */}
                     <div className={`px-5 py-4 space-y-4 overflow-y-auto min-h-0 flex-1 ${files.length ? "md:w-1/2" : ""}`}>
+                    {notificationRetry && <p role="alert" className="text-sm text-amber-800">The medical request and notice are saved. The email could not be queued. Check the client email and active Request for Medical template, then retry notification. This will not upload the notice again.</p>}
                     {/* Sequence: 1) upload the letter, 2) deadline (auto-filled
                         from it), 3) the documents it requests. */}
 
                     {/* 1 — RFI PDFs (multiple) */}
                     <div>
-                        <label className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">RFI document(s) — PDF</label>
+                        <label className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">{medical ? "INZ medical notice — PDF (required)" : "RFI document(s) — PDF"}</label>
                         <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-gray-300 cursor-pointer hover:border-gray-400 text-[12px] text-gray-600">
                             <Paperclip size={14} className="text-gray-400" />
                             <span className="truncate">{files.length ? `${files.length} file${files.length > 1 ? "s" : ""} selected` : "Choose PDF file(s)"}</span>
@@ -2314,7 +2337,7 @@ function RequestInfoModal({ caseId, onClose }) {
                             onChange={(e) => setNote(e.target.value)}
                             rows={3}
                             maxLength={2000}
-                            placeholder="What INZ is asking for…"
+                            placeholder={medical ? "Optional case note…" : "What INZ is asking for…"}
                             className="w-full text-sm px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:border-gray-900 resize-none"
                         />
                     </div>
@@ -2322,7 +2345,7 @@ function RequestInfoModal({ caseId, onClose }) {
                     {/* Email toggle */}
                     <label className="inline-flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer">
                         <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} className="rounded border-gray-300" />
-                        <Mail size={13} className="text-gray-400" /> Email the client (uses the RFI stage automation)
+                        <Mail size={13} className="text-gray-400" /> {medical ? "Email the client the notice and deadline" : "Email the client (uses the RFI stage automation)"}
                     </label>
                     </div>
                 </div>
@@ -2336,7 +2359,7 @@ function RequestInfoModal({ caseId, onClose }) {
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold bg-gray-900 text-white hover:bg-black disabled:opacity-50"
                     >
                         {saving ? <Loader2 size={12} className="animate-spin" /> : null}
-                        Move to {STAGE}
+                        {notificationRetry ? "Retry notification" : `Move to ${STAGE}`}
                     </button>
                 </footer>
             </div>
@@ -2735,16 +2758,12 @@ function requestCasePortal(c) {
     });
 }
 
-// Soft-delete (archive) a case. The Lead row is soft-deleted via the
-// admin/leads/{id} DELETE endpoint; notes/tasks/documents survive and
-// the case can be restored from the archive view. A confirm dialog
-// gates the destructive action — there's no undo button in the table.
 function archiveCase(id, name) {
     const label = (name || 'this case').trim();
     if (! window.confirm(`Archive ${label}?\n\nThe case will be hidden from the Cases list. Notes, tasks, and documents are preserved and the case can be restored later.`)) return;
-    router.delete(`${leadBase()}/${id}`, {
+    router.post(`/portal/immigration/cases/${id}/archive`, {}, {
         preserveScroll: true,
         onSuccess: () => toast.success(`${label} archived`),
-        onError: () => toast.error('Could not archive — please try again.'),
+        onError: (errors) => toast.error(errors.archive || 'Could not archive the case.'),
     });
 }

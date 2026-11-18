@@ -229,11 +229,11 @@ class AgreementGenerator
         $clientReference = Str::slug($clientName ?: 'ClientName', '') ?: 'ClientName';
         $today = now();
 
-        // Only these two are editable from the modal. Everything else in
-        // the cost-breakdown table stays static — those are canonical
-        // reference amounts from the ePathways template.
+        // The English fee is used by the With English agreement.
         $schoolFee = (int) ($overrides['school_enrolment_fee'] ?? $s['default_school_fee']);
         $englishFee = (int) ($overrides['english_proficiency_fee'] ?? 14500);
+        $customDescription = is_string($overrides['application_description'] ?? null)
+            ? trim($overrides['application_description']) : '';
 
         // Currency for the staff-entered fees (php | nzd). Only the symbol
         // changes — amounts are never converted. The static reference
@@ -253,9 +253,7 @@ class AgreementGenerator
 
         // Applicant mode — Single or Couple. Only meaningful for scenarios
         // that support both (Std 150, Voucher 150). Single-only scenarios
-        // ignore the override and pin to 'single'. Drives both the
-        // "MAIN APPLICANT (…)" line on page 1 and which cost breakdown
-        // table renders on pages 3-4.
+        // ignore the override and pin to 'single'.
         $applicantMode = ($overrides['applicant_mode'] ?? 'single') === 'couple' ? 'couple' : 'single';
         if (! $s['supports_both']) {
             $applicantMode = 'single';
@@ -293,11 +291,11 @@ class AgreementGenerator
             'scenario_number' => $s['number'],
             'scenario_title' => $s['title'],
             'scenario_applicant' => $applicantLabel,
-            'scenario_description' => $s['description'],
+            'scenario_description' => $customDescription !== '' ? $customDescription : $s['description'],
+            'scenario_description_custom' => $customDescription !== '',
             'scenario_has_voucher' => $s['has_voucher'],
             'applicant_mode' => $applicantMode,
             'supports_both' => $s['supports_both'],
-            'is_couple_scenario' => $applicantMode === 'couple',
             'school_enrolment_fee' => $schoolFee,
             'english_proficiency_fee' => $englishFee,
             'inz_voucher_fee' => 30600,
@@ -475,9 +473,8 @@ class AgreementGenerator
     }
 
     /**
-     * The 4-scenario catalogue — matches the Word template's Application
-     * Type table. `is_couple` toggles whether the couple cost breakdown
-     * renders alongside the single one on pages 3-4 of the PDF.
+     * The Philippines consultancy templates, including the legacy voucher
+     * scenario for historic reviews.
      */
     public static function consultancyScenarios(): array
     {

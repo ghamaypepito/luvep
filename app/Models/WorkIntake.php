@@ -15,7 +15,7 @@ class WorkIntake extends Model
         'current_country', 'previous_nz_visa', 'previous_nz_visa_details', 'previous_nzeta',
         'australian_pr', 'travelled_nz', 'last_nz_departure', 'over_24_months',
         'employer_name', 'employer_is_family', 'employer_family_relation', 'self_employed',
-        'job_start_date', 'hourly_rate', 'supports_dependent_children',
+        'job_start_date', 'hourly_rate', 'supports_dependent_children', 'job_skills_level',
         'character_convicted', 'character_investigation', 'character_deported',
         'character_visa_refused', 'lived_other_country_5y', 'lived_other_country_details',
         'health_tb', 'health_renal', 'health_hospital', 'health_residential', 'health_pregnant',
@@ -26,24 +26,29 @@ class WorkIntake extends Model
         'military_compulsory', 'military_undertaken', 'military_details',
         'travelled_internationally', 'travel_trips', 'declaration_accepted',
         'signature_name', 'signature_date',
+        // Extra processing questions (birth cert / face image / medical / police).
+        'birth_certificate_available', 'birth_certificate_reason', 'face_image_consent',
+        'medical_cert_recent', 'medical_cert_submitted_last', 'medical_cert_type',
+        'police_certificate_available',
         // Work Interest & Qualifications document tab (see the intake controller).
         'documents', 'document_files',
     ];
 
     protected $casts = [
-        'dob'                => 'date',
-        'last_nz_departure'  => 'date',
-        'job_start_date'     => 'date',
-        'current_job_start'  => 'date',
-        'signature_date'     => 'date',
-        'hourly_rate'        => 'decimal:2',
-        'previous_roles'     => 'array',
-        'family_members'     => 'array',
-        'nz_contacts'        => 'array',
-        'travel_trips'       => 'array',
-        'documents'          => 'array',
-        'document_files'     => 'array',
+        'dob' => 'date',
+        'last_nz_departure' => 'date',
+        'job_start_date' => 'date',
+        'current_job_start' => 'date',
+        'signature_date' => 'date',
+        'hourly_rate' => 'decimal:2',
+        'previous_roles' => 'array',
+        'family_members' => 'array',
+        'nz_contacts' => 'array',
+        'travel_trips' => 'array',
+        'documents' => 'array',
+        'document_files' => 'array',
         'declaration_accepted' => 'bool',
+        'face_image_consent' => 'bool',
     ];
 
     public function assessment(): MorphOne

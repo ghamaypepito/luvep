@@ -10,14 +10,19 @@ use App\Models\LeadTag;
 use App\Models\Program;
 use App\Models\User;
 use App\Notifications\NewRegistrationReceived;
+use App\Services\EducationImmigrationHandoff;
+use App\Support\CaseRecordAccess;
+use App\Support\LeadAccess;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class LeadController extends Controller
 {
@@ -337,12 +342,8 @@ class LeadController extends Controller
             // along — never demote a Submitted/Engaged lead back to Draft.
             $shouldFlipToDraft = ! in_array($lead->status, ['Submitted', 'Engaged', 'Converted', 'Completed', 'Closed'], true);
 
-            // The assessment form IS the freshest source of truth for the
-            // applicant's identity, so override the conservative "backfill
-            // only" behaviour of LeadIntakeService for these fields. This
-            // means staff see the current name/phone the applicant is using
-            // right now, not whatever they typed into a Quick-Lead months ago.
-            $lead->update(array_filter([
+            // Refresh earlier lead details while retaining the identity of an existing case.
+            $draft = array_filter([
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -350,7 +351,8 @@ class LeadController extends Controller
                 'source' => $source,
                 'ai_analysis' => $request->except(['_token']),
                 'ai_analysis_status' => 'completed',
-            ], fn ($v) => $v !== null));
+            ], fn ($v) => $v !== null);
+            $lead->update(CaseRecordAccess::preserveCaseIdentity($lead, $draft));
 
             // Use a distinct flash key so the page can tell a draft save
             // apart from the final submit — the latter sets `flash.success`
@@ -703,7 +705,7 @@ class LeadController extends Controller
             // Update the existing lead with the full assessment payload —
             // assessment is our richest form so its fields take precedence
             // over any earlier partial submissions.
-            $existing->update($payload);
+            $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $payload));
             $lead = $existing->fresh();
 
             // 3b. Store Education Enrolment document uploads (CV / Passport /
@@ -1081,7 +1083,7 @@ class LeadController extends Controller
                 ));
             }
 
-            $existing->update([
+            $registration = [
                 'lead_id' => str_starts_with((string) $existing->lead_id, 'REG-')
                     ? $existing->lead_id
                     : 'REG-'.strtoupper(uniqid()),
@@ -1170,7 +1172,8 @@ class LeadController extends Controller
                         : $existing->status,
                 'stage' => 'Evaluation',
                 'source' => 'registration',
-            ]);
+            ];
+            $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $registration));
             $lead = $existing->fresh();
 
             // CV / Passport / Diploma / Transcript uploads — stored on the
@@ -1364,6 +1367,8 @@ class LeadController extends Controller
             ->map(fn ($n) => [
                 'id' => $n->id,
                 'body' => $n->body,
+                'programs' => $n->programs ?? [],
+                'attachments' => collect($n->attachments ?? [])->map(fn ($a, $i) => ['name' => $a['original_name'] ?? 'Attachment', 'mime' => $a['mime'] ?? 'application/octet-stream', 'size' => $a['size'] ?? 0, 'url' => url('/admin/leads/'.$n->lead_id.'/notes/'.$n->id.'/attachments/'.$i)]),
                 'author_name' => $n->author_name ?: 'Unknown',
                 'author_role' => $n->author_role ?: 'staff',
                 'user_id' => $n->user_id,
@@ -1475,7 +1480,8 @@ class LeadController extends Controller
         // They have no `checklist_key`, so the Documents tab surfaces them
         // as a separate list at the bottom instead of losing them.
         $documentOrphans = \App\Models\LeadDocument::where('lead_id', $lead->id)
-            ->whereNull('checklist_key')
+            ->where(fn ($query) => $query->whereNull('checklist_key')
+                ->when(! $lead->is_immigration_case, fn ($query) => $query->orWhere('checklist_key', 'agree.proposal')))
             ->with('uploader:id,name')
             ->orderByDesc('created_at')
             ->get()
@@ -1595,6 +1601,7 @@ class LeadController extends Controller
                 ->values();
             $proposal = [
                 'programs' => $ppOrdered,
+                'review_status' => $lead->proposal_review['status'] ?? null,
                 'preferred_program_id' => $lead->preferred_program_id,
                 'chosen_at' => optional($lead->preferred_program_chosen_at)->toIso8601String(),
             ];
@@ -2130,41 +2137,42 @@ class LeadController extends Controller
             'status' => ['required', \Illuminate\Validation\Rule::in($lists[$field])],
         ]);
 
+        $newValue = $validated['status'];
+        $educationStage = $field === 'education_stage' ? $newValue : null;
+        $isHandoff = EducationImmigrationHandoff::isHandoffStage($educationStage);
+
         try {
-            $lead = Lead::findOrFail($id);
-            $newValue = $validated['status'];
-            $changed = ($lead->{$field} ?? null) !== $newValue;
-            $lead->{$field} = $newValue;
+            $update = function () use ($request, $id, $field, $newValue, $educationStage, $isHandoff) {
+                $lead = $isHandoff ? Lead::lockForUpdate()->findOrFail($id) : Lead::findOrFail($id);
+                $handoff = app(EducationImmigrationHandoff::class);
+                $handoff->authorizeRecord($request->user(), $lead, $educationStage);
 
-            // Department stage moves push a dated history entry + timestamp and
-            // may auto-promote to an Immigration case — mirroring the Students
-            // page's dashboard-field flow so the two surfaces stay consistent.
-            $deptMap = ['education_stage' => 'education', 'english_stage' => 'english', 'immigration_stage' => 'immigration'];
-            if ($field !== 'status' && $changed && isset($deptMap[$field])) {
-                $dept = $deptMap[$field];
-                $assignee = $dept === 'english'
-                    ? $lead->english_assignee
-                    : ($dept === 'immigration' ? $lead->immigration_assignee : null);
-                $lead->stage_updated_at = now();
-                $lead->stage_updated_by = auth()->id();
-                $lead->pushStageHistory($dept, $newValue, $assignee);
+                $changed = ($lead->{$field} ?? null) !== $newValue;
+                $lead->{$field} = $newValue;
 
-                // Education handoff → auto-promote to an immigration case, but
-                // KEEP is_student so the person stays visible under Education too
-                // (they are legitimately under both departments). Matches
-                // updateStudentField.
-                if ($field === 'education_stage' && in_array($newValue, \App\Models\Lead::EDUCATION_STAGES_IMMIGRATION, true)) {
-                    if (! $lead->is_immigration_case) {
-                        $lead->is_immigration_case = true;
-                        $lead->immigration_converted_at = now();
-                        $lead->immigration_converted_by = auth()->id();
-                    }
+                // Department stage moves push a dated history entry + timestamp and
+                // may auto-promote to an Immigration case — mirroring the Students
+                // page's dashboard-field flow so the two surfaces stay consistent.
+                $deptMap = ['education_stage' => 'education', 'english_stage' => 'english', 'immigration_stage' => 'immigration'];
+                if ($field !== 'status' && $changed && isset($deptMap[$field])) {
+                    $dept = $deptMap[$field];
+                    $assignee = $dept === 'english'
+                        ? $lead->english_assignee
+                        : ($dept === 'immigration' ? $lead->immigration_assignee : null);
+                    $lead->stage_updated_at = now();
+                    $lead->stage_updated_by = auth()->id();
+                    $lead->pushStageHistory($dept, $newValue, $assignee);
                 }
-            }
 
-            $lead->save();
+                $becameImmigrationCase = $handoff->prepare($lead, $educationStage);
+                $lead->save();
+                $handoff->notify($lead, $becameImmigrationCase);
+            };
+            $isHandoff ? DB::transaction($update) : $update();
 
             return back()->with('success', "Stage updated to {$newValue}.");
+        } catch (HttpExceptionInterface $e) {
+            throw $e;
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Lead stage update failed', ['id' => $id, 'error' => $e->getMessage()]);
 
@@ -2366,6 +2374,9 @@ class LeadController extends Controller
                     ->map(fn ($v) => $v === '' ? null : $v)
                     ->all();
 
+                if (\App\Support\CaseRecordAccess::nameLocked($request, $lead)) {
+                    \App\Support\CaseRecordAccess::authorizeNameChanges($request, $lead, $patch, \App\Support\CaseRecordAccess::NAME_FIELDS);
+                }
                 $lead->fill($patch);
                 $lead->save();
 
@@ -2375,6 +2386,8 @@ class LeadController extends Controller
                 // flash messages + page-prop refresh.
                 return back()->with('success', 'Personal information updated.');
             });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Lead personal update failed', ['id' => $id, 'error' => $e->getMessage()]);
 
@@ -2433,6 +2446,7 @@ class LeadController extends Controller
             'notes' => $lead->notes->map(fn ($n) => [
                 'id' => $n->id,
                 'body' => $n->body,
+                'programs' => $n->programs ?? [],
                 'author_name' => $n->author_name ?: 'Unknown',
                 'kind' => $n->kind ?: 'general',
                 'created_at' => optional($n->created_at)->toIso8601String(),
@@ -2508,6 +2522,7 @@ class LeadController extends Controller
      */
     public function destroy($id)
     {
+        \App\Support\CaseRecordAccess::authorizeArchive(request(), [(int) $id]);
         try {
             $lead = Lead::findOrFail($id);
             $label = $lead->lead_id ?: trim("{$lead->first_name} {$lead->last_name}");
@@ -2977,24 +2992,32 @@ class LeadController extends Controller
     public function convertToCase($id)
     {
         try {
-            $lead = Lead::findOrFail($id);
-            if ($lead->is_immigration_case) {
-                return back()->with('error', 'Already an immigration case.');
-            }
-            $lead->fill([
-                'is_immigration_case' => true,
-                'immigration_converted_at' => now(),
-                'immigration_converted_by' => auth()->id(),
-            ])->save();
-            $this->notifyDepartmentOfConversion($lead, ['immigration', 'immigration_manager', 'immigration_adviser'], 'Immigration');
+            return DB::transaction(function () use ($id) {
+                $lead = Lead::lockForUpdate()->findOrFail($id);
+                abort_unless(auth()->user()->is_active && LeadAccess::canView(auth()->user(), $lead), 403);
 
-            // Configurable email automation — a no-op unless an admin enabled a
-            // message for this event (client welcome and/or staff notice).
-            app(\App\Services\EmailAutomationService::class)->fire('immigration.case.converted', $lead, [
-                'visa_type' => $lead->inz_visa_type ?? '',
-            ]);
+                if ($lead->is_immigration_case) {
+                    return back()->with('error', 'Already an immigration case.');
+                }
+                $lead->fill([
+                    'is_immigration_case' => true,
+                    'immigration_converted_at' => now(),
+                    'immigration_converted_by' => auth()->id(),
+                ])->save();
 
-            return back()->with('success', "Lead {$lead->lead_id} is now an immigration case.");
+                DB::afterCommit(function () use ($lead) {
+                    $this->notifyDepartmentOfConversion($lead, ['immigration', 'immigration_manager', 'immigration_adviser'], 'Immigration');
+
+                    // A no-op unless staff enabled a client and/or team message for this event.
+                    app(\App\Services\EmailAutomationService::class)->fire($lead->is_student ? 'immigration.education.handoff' : 'immigration.case.converted', $lead, [
+                        'visa_type' => $lead->inz_visa_type ?? '',
+                    ]);
+                });
+
+                return back()->with('success', "Lead {$lead->lead_id} is now an immigration case.");
+            });
+        } catch (HttpExceptionInterface|ModelNotFoundException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Convert to case failed', ['id' => $id, 'error' => $e->getMessage()]);
 

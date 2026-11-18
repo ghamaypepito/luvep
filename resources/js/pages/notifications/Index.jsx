@@ -30,7 +30,13 @@ export default function NotificationsIndex({ notifications = { data: [], links: 
     const setFilter = (f) => router.get(path, f === "all" ? {} : { filter: f }, { preserveState: true, preserveScroll: true, replace: true });
 
     const open = (n) => {
-        const go = () => n.url && router.visit(n.url);
+        const go = () => {
+            if (!n.url) return;
+            const destination = new URL(n.url, window.location.origin);
+            if (!['https:', 'http:'].includes(destination.protocol)) return;
+            if (destination.origin !== window.location.origin) window.location.assign(destination.href);
+            else router.visit(destination.href);
+        };
         if (n.is_read) return go();
         router.post(`/notifications/${n.id}/read`, {}, { preserveScroll: true, preserveState: true, onFinish: go });
     };
@@ -62,7 +68,7 @@ export default function NotificationsIndex({ notifications = { data: [], links: 
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <Bell className="w-6 h-6 text-gray-700" /> Notifications
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">Activity across your leads, documents, and visa pricing.</p>
+                    <p className="text-sm text-gray-500 mt-1">Updates and actions available to your account.</p>
                 </div>
                 {(counts.unread ?? 0) > 0 && (
                     <button onClick={markAll} className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-black flex items-center gap-2">

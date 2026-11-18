@@ -13,8 +13,8 @@ use Tests\TestCase;
  * Build 11.D Phase 4 — CaseChecklistService unit coverage.
  *
  * Pins the resolution-order semantics (per-lead override → visa-type →
- * empty), the status-attach behaviour, the category grouping default,
- * and the defensive normalisation of malformed checklist items.
+ * universal-only fallback), the required universal information form,
+ * status attachment, category grouping, and defensive normalisation.
  */
 class CaseChecklistServiceTest extends TestCase
 {
@@ -58,24 +58,29 @@ class CaseChecklistServiceTest extends TestCase
 
         $items = $this->service()->forCase($lead);
 
-        $this->assertCount(2, $items);
-        $this->assertSame('passport', $items[0]['key']);
+        $this->assertSame(['svf', 'passport', 'ielts'], array_column($items, 'key'));
+        $this->assertSame('Student Visa Information Form', $items[0]['label']);
+        $this->assertTrue($items[0]['required']);
     }
 
-    public function test_02_for_case_returns_empty_when_no_visa_type(): void
+    public function test_02_for_case_returns_universal_form_when_no_visa_type(): void
     {
         $this->makeVisaType('Student Visa', [['key' => 'passport', 'label' => 'Passport']]);
         $lead = $this->makeCase(['inz_visa_type' => null]);
 
-        $this->assertSame([], $this->service()->forCase($lead));
+        $this->assertSame([
+            ['key' => 'svf', 'label' => 'Visa Information Form', 'hint' => 'Visa information form prepared with your adviser.', 'required' => true, 'category' => 'Information Form'],
+        ], $this->service()->forCase($lead));
     }
 
-    public function test_03_for_case_returns_empty_when_visa_type_does_not_match(): void
+    public function test_03_for_case_returns_universal_form_when_visa_type_does_not_match(): void
     {
         $this->makeVisaType('Student Visa', [['key' => 'passport', 'label' => 'Passport']]);
         $lead = $this->makeCase(['inz_visa_type' => 'Some Made-up Visa']);
 
-        $this->assertSame([], $this->service()->forCase($lead));
+        $this->assertSame([
+            ['key' => 'svf', 'label' => 'Visa Information Form', 'hint' => 'Visa information form prepared with your adviser.', 'required' => true, 'category' => 'Information Form'],
+        ], $this->service()->forCase($lead));
     }
 
     public function test_04_for_case_uses_lead_override_when_set(): void
@@ -90,8 +95,8 @@ class CaseChecklistServiceTest extends TestCase
         ]);
 
         $items = $this->service()->forCase($lead);
-        $this->assertCount(2, $items);
-        $this->assertSame('custom_a', $items[0]['key']);
+        $this->assertSame(['svf', 'custom_a', 'custom_b'], array_column($items, 'key'));
+        $this->assertTrue($items[0]['required']);
     }
 
     public function test_05_for_case_drops_malformed_items_defensively(): void
@@ -107,8 +112,7 @@ class CaseChecklistServiceTest extends TestCase
 
         $items = $this->service()->forCase($lead);
 
-        $this->assertCount(1, $items);
-        $this->assertSame('passport', $items[0]['key']);
+        $this->assertSame(['svf', 'passport'], array_column($items, 'key'));
     }
 
     public function test_06_with_statuses_marks_not_submitted_when_no_document(): void
@@ -118,10 +122,12 @@ class CaseChecklistServiceTest extends TestCase
         ]);
         $lead = $this->makeCase();
 
-        $items = $this->service()->withStatuses($lead);
+        $items = collect($this->service()->withStatuses($lead))->keyBy('key');
 
-        $this->assertSame('not_submitted', $items[0]['status']);
-        $this->assertNull($items[0]['document_id']);
+        foreach (['svf', 'passport'] as $key) {
+            $this->assertSame('not_submitted', $items[$key]['status']);
+            $this->assertNull($items[$key]['document_id']);
+        }
     }
 
     public function test_07_with_statuses_attaches_approved_status_with_upload_timestamp(): void
@@ -141,11 +147,12 @@ class CaseChecklistServiceTest extends TestCase
             'source'        => LeadDocument::SOURCE_UPLOAD,
         ]);
 
-        $items = $this->service()->withStatuses($lead);
+        $items = collect($this->service()->withStatuses($lead))->keyBy('key');
 
-        $this->assertSame('Approved', $items[0]['status']);
-        $this->assertSame($doc->id, $items[0]['document_id']);
-        $this->assertNotNull($items[0]['uploaded_at']);
+        $this->assertSame('Approved', $items['passport']['status']);
+        $this->assertSame($doc->id, $items['passport']['document_id']);
+        $this->assertNotNull($items['passport']['uploaded_at']);
+        $this->assertSame('not_submitted', $items['svf']['status']);
     }
 
     public function test_08_with_statuses_attaches_rejected_status_with_note(): void
@@ -166,10 +173,10 @@ class CaseChecklistServiceTest extends TestCase
             'note'          => 'Bio page missing.',
         ]);
 
-        $items = $this->service()->withStatuses($lead);
+        $items = collect($this->service()->withStatuses($lead))->keyBy('key');
 
-        $this->assertSame('Rejected', $items[0]['status']);
-        $this->assertSame('Bio page missing.', $items[0]['note']);
+        $this->assertSame('Rejected', $items['passport']['status']);
+        $this->assertSame('Bio page missing.', $items['passport']['note']);
     }
 
     public function test_09_with_statuses_picks_most_recent_document_per_key(): void
@@ -205,10 +212,10 @@ class CaseChecklistServiceTest extends TestCase
             'source'        => LeadDocument::SOURCE_UPLOAD,
         ]);
 
-        $items = $this->service()->withStatuses($lead);
+        $items = collect($this->service()->withStatuses($lead))->keyBy('key');
 
-        $this->assertSame($newer->id, $items[0]['document_id']);
-        $this->assertSame('Submitted', $items[0]['status']);
+        $this->assertSame($newer->id, $items['passport']['document_id']);
+        $this->assertSame('Submitted', $items['passport']['status']);
     }
 
     public function test_10_grouped_by_category_uses_required_documents_default(): void
@@ -225,6 +232,7 @@ class CaseChecklistServiceTest extends TestCase
 
         $this->assertArrayHasKey('Required Documents', $grouped);
         $this->assertCount(2, $grouped['Required Documents']);
+        $this->assertSame(['svf'], array_column($grouped['Information Form'], 'key'));
     }
 
     public function test_11_grouped_by_category_honours_explicit_category_field(): void
@@ -237,7 +245,7 @@ class CaseChecklistServiceTest extends TestCase
 
         $grouped = $this->service()->groupedByCategory($lead);
 
-        $this->assertEqualsCanonicalizing(['Identity', 'English'], array_keys($grouped));
+        $this->assertEqualsCanonicalizing(['Information Form', 'Identity', 'English'], array_keys($grouped));
     }
 
     public function test_12_progress_counts_required_only(): void
@@ -265,9 +273,10 @@ class CaseChecklistServiceTest extends TestCase
 
         $progress = $this->service()->progress($lead);
 
-        $this->assertSame(2, $progress['required_total']);
+        // The universal information form is required even without an upload.
+        $this->assertSame(3, $progress['required_total']);
         $this->assertSame(1, $progress['required_approved']);
-        $this->assertSame(3, $progress['total']);
+        $this->assertSame(4, $progress['total']);
         $this->assertSame(2, $progress['approved']);
     }
 
@@ -304,5 +313,50 @@ class CaseChecklistServiceTest extends TestCase
         $this->assertCount(2, $unstructured);
         $names = collect($unstructured)->pluck('original_name')->all();
         $this->assertEqualsCanonicalizing(['orphan-stale.pdf', 'orphan-nokey.pdf'], $names);
+    }
+
+    public function test_universal_form_is_required_and_deduplicated_in_catalogue_and_overrides(): void
+    {
+        $items = [
+            ['key' => 'passport', 'label' => 'Passport', 'required' => true],
+            ['key' => 'svf', 'label' => 'Optional custom form', 'required' => false],
+            ['key' => 'svf', 'label' => 'Duplicate form', 'required' => false],
+        ];
+        $this->makeVisaType('Student Visa', $items);
+
+        foreach ([[], ['document_checklist' => $items]] as $attributes) {
+            $lead = $this->makeCase($attributes);
+            $resolved = $this->service()->forCase($lead);
+
+            $this->assertSame(['svf', 'passport'], array_column($resolved, 'key'));
+            $this->assertSame('Student Visa Information Form', $resolved[0]['label']);
+            $this->assertTrue($resolved[0]['required']);
+            $this->assertSame('Information Form', $resolved[0]['category']);
+            $this->assertSame(2, $this->service()->progress($lead)['required_total']);
+        }
+    }
+
+    public function test_universal_form_upload_has_status_and_progress_without_a_visa_catalogue(): void
+    {
+        $lead = $this->makeCase(['inz_visa_type' => null, 'hidden_track_documents' => ['svf']]);
+        $doc = LeadDocument::create([
+            'lead_id' => $lead->id, 'checklist_key' => 'svf',
+            'original_name' => 'information-form.pdf', 'file_path' => 'p/form.pdf',
+            'mime' => 'application/pdf', 'size' => 1,
+            'status' => LeadDocument::STATUS_APPROVED, 'source' => LeadDocument::SOURCE_UPLOAD,
+        ]);
+
+        $items = $this->service()->withStatuses($lead);
+
+        $this->assertCount(1, $items);
+        $this->assertSame('svf', $items[0]['key']);
+        $this->assertTrue($items[0]['required']);
+        $this->assertTrue($items[0]['hidden']);
+        $this->assertSame($doc->id, $items[0]['document_id']);
+        $this->assertSame(LeadDocument::STATUS_APPROVED, $items[0]['status']);
+        $this->assertSame([], $this->service()->unstructuredDocuments($lead));
+        $this->assertSame([
+            'required_total' => 1, 'required_approved' => 1, 'total' => 1, 'approved' => 1,
+        ], $this->service()->progress($lead));
     }
 }

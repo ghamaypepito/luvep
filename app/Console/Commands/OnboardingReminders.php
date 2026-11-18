@@ -50,12 +50,14 @@ class OnboardingReminders extends Command
             $token = optional(PreScreening::where('lead_id', $lead->id)->latest('id')->first())->token;
 
             try {
-                $automation->fire('immigration.engagement.reminder', $lead, [
+                $sent = $automation->fireAnyRecipient('immigration.engagement.reminder', $lead, [
                     'engagement_url' => $token ? rtrim((string) config('app.url'), '/').'/application/'.$token : null,
                     'sign_by' => $signBy->toFormattedDateString(),
                 ]);
-                $a->forceFill(['sign_reminded_at' => $now])->save();
-                $signCount++;
+                if ($sent) {
+                    $a->forceFill(['sign_reminded_at' => $now])->save();
+                    $signCount++;
+                }
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -85,11 +87,13 @@ class OnboardingReminders extends Command
             }
 
             try {
-                $automation->fire('immigration.payment.choice.reminder', $lead, [
+                $sent = $automation->fireAnyRecipient('immigration.payment.choice.reminder', $lead, [
                     'choose_by' => $chooseBy->toFormattedDateString(),
                 ]);
-                $a->forceFill(['choose_reminded_at' => $now])->save();
-                $chooseCount++;
+                if ($sent) {
+                    $a->forceFill(['choose_reminded_at' => $now])->save();
+                    $chooseCount++;
+                }
             } catch (\Throwable $e) {
                 report($e);
             }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FinancePayable;
 use App\Models\FinancePayment;
 use App\Models\FinanceReceivable;
+use App\Services\Reports\ReportWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -26,33 +27,44 @@ class FinanceReportController extends Controller
             $report = 'income';
         }
 
+        $week = ReportWeek::forPreset($request->input('preset'));
+        [$weekStart, $weekEnd] = $week?->dates() ?? [null, null];
         $tz = config('app.timezone', 'UTC');
-        $start = Carbon::parse($request->query('start') ?: now($tz)->startOfMonth())->startOfDay();
-        $end = Carbon::parse($request->query('end') ?: now($tz)->endOfMonth())->endOfDay();
+        $start = Carbon::parse($weekStart ?? ($request->query('start') ?: now($tz)->startOfMonth()))->startOfDay();
+        $end = Carbon::parse($weekEnd ?? ($request->query('end') ?: now($tz)->endOfMonth()))->endOfDay();
 
+        $defaultCurrency = strtoupper(config('services.booking.currency', 'nzd'));
+        $currencies = FinanceReceivable::distinct()->pluck('currency')
+            ->merge(FinancePayable::distinct()->pluck('currency'))
+            ->prepend($defaultCurrency)->unique()->values();
+        $selected = $request->query('currency');
+        $currency = $currencies->containsStrict($selected) ? $selected : $defaultCurrency;
         $data = match ($report) {
-            'receivables_aging' => $this->aging(FinanceReceivable::class),
-            'payables_aging' => $this->aging(FinancePayable::class),
-            'collections' => $this->collections($start, $end),
-            default => $this->income($start, $end),
+            'receivables_aging' => $this->aging(FinanceReceivable::class, $currency),
+            'payables_aging' => $this->aging(FinancePayable::class, $currency),
+            'collections' => $this->collections($start, $end, $currency),
+            default => $this->income($start, $end, $currency),
         };
 
         return inertia('portal/finance/Reports', [
             'report' => $report,
+            'preset' => $week?->preset,
+            'weeklyReport' => $week && ! str_ends_with($report, '_aging') && ReportWeek::canUseNotes($request->user()) ? $week->notes('finance') + ['tasks' => $week->tasks('finance')] : null,
             'start' => $start->toDateString(),
             'end' => $end->toDateString(),
-            'currency' => strtoupper(config('services.booking.currency', 'nzd')),
+            'currency' => $currency,
+            'currencies' => $currencies,
             'data' => $data,
         ]);
     }
 
     /** Cash-basis P&L: revenue received minus expenses paid, in the window. */
-    private function income(Carbon $start, Carbon $end): array
+    private function income(Carbon $start, Carbon $end, string $currency): array
     {
-        $revenue = (float) FinancePayment::where('paymentable_type', FinanceReceivable::class)
+        $revenue = (float) FinancePayment::forLedger(FinanceReceivable::class, $currency)
             ->whereBetween('paid_on', [$start, $end])->sum('amount');
 
-        $expensePayments = FinancePayment::where('paymentable_type', FinancePayable::class)
+        $expensePayments = FinancePayment::forLedger(FinancePayable::class, $currency)
             ->whereBetween('paid_on', [$start, $end])->get(['paymentable_id', 'amount']);
         $expenses = (float) $expensePayments->sum('amount');
 
@@ -74,9 +86,9 @@ class FinanceReportController extends Controller
     }
 
     /** Live aging snapshot for a receivable/payable model. */
-    private function aging(string $model): array
+    private function aging(string $model, string $currency): array
     {
-        $rows = $model::with('payments')->get()
+        $rows = $model::where('currency', $currency)->with('payments')->get()
             ->filter(fn ($r) => ! in_array($r->payment_status, ['paid', 'void'], true) && $r->balance > 0.005);
 
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
@@ -104,11 +116,11 @@ class FinanceReportController extends Controller
     }
 
     /** Cash in vs cash out over the window. */
-    private function collections(Carbon $start, Carbon $end): array
+    private function collections(Carbon $start, Carbon $end, string $currency): array
     {
-        $in = FinancePayment::where('paymentable_type', FinanceReceivable::class)
+        $in = FinancePayment::forLedger(FinanceReceivable::class, $currency)
             ->whereBetween('paid_on', [$start, $end])->orderBy('paid_on')->get();
-        $out = FinancePayment::where('paymentable_type', FinancePayable::class)
+        $out = FinancePayment::forLedger(FinancePayable::class, $currency)
             ->whereBetween('paid_on', [$start, $end])->orderBy('paid_on')->get();
 
         $recv = FinanceReceivable::whereIn('id', $in->pluck('paymentable_id')->unique())->get()->keyBy('id');

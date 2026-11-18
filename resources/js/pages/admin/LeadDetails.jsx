@@ -1,7 +1,13 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
+import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
+import MediaPicker from '@/components/media/MediaPicker';
+import AddPathwayButton from '@/components/leads/AddPathwayButton';
+import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
+import NoteProgramPicker, { NotePrograms } from '@/components/leads/NoteProgramPicker';
 import AiRecordAssistant from '@/components/ai/AiRecordAssistant';
 import {
     ArrowLeft, User, BookOpen, DollarSign, GraduationCap,
@@ -271,6 +277,7 @@ function ProposedProgramsCard({ proposal, leadId, programOptions = [], onViewPro
                     </div>
                     <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500 mb-0.5">Programs offered</p>
+                        <ApprovalReviewLink leadId={leadId} status={proposal?.review_status} />
                         <h2 className="text-base font-bold text-gray-900 tracking-tight">
                             {chosen ? 'Client chose a program' : 'Programs proposed to this lead'}
                         </h2>
@@ -964,7 +971,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex max-w-full flex-wrap items-center gap-2">
                         <button
                             type="button"
                             onClick={() => setComposeOpen(true)}
@@ -979,6 +986,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                         >
                             <CalendarCheck size={15} className="text-[#436235]" /> Book
                         </button>
+                        <AddPathwayButton leadId={backendLead.id} />
                         <ConvertMenu lead={backendLead} canRevert={currentUser?.is_admin} />
                         <LeadActionsMenu
                             editAll={editAll}
@@ -1071,7 +1079,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div className="lg:col-span-2">
-                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} />
+                            <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} educationReport={portalBase === '/portal/education' || (portalBase === '/admin' && currentUser?.role === 'education')} />
                         </div>
                         <JourneyPanel
                             lead={backendLead}
@@ -1114,7 +1122,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
                 {/* Notes and tasks side by side — the two things staff act on. */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} />
+                    <NotesPanel leadId={backendLead.id} notes={notes} currentUser={currentUser} staffOptions={staffOptions} programOptions={programOptions} educationReport={portalBase === '/portal/education' || (portalBase === '/admin' && currentUser?.role === 'education')} />
                     <TasksPanel leadId={backendLead.id} tasks={tasks} staffOptions={staffOptions} currentUser={currentUser} />
                 </div>
 
@@ -2306,9 +2314,7 @@ function MenuItem({ icon: Icon, children, onClick, disabled, disabledTitle, tone
     );
 }
 
-// ── Convert menu — single "Move to" dropdown listing all three flags
-//    (Student / Case / Accommodation) so the header stays compact. Active
-//    flags display a check + an admin-only revert affordance inline.
+// Existing admin-only reversion controls. New pathways use AddPathwayButton.
 
 const MENU_TONE = {
     emerald: { dot: 'bg-emerald-500', icon: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -2346,9 +2352,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <GraduationCap size={14} />,
             tone: 'emerald',
             active: !!lead.is_student,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-student`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-student`,
-            confirmText: 'Convert to a student? They stay on the same record — all documents, notes and history come with them.',
         },
         {
             key: 'case',
@@ -2357,9 +2361,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Globe size={14} />,
             tone: 'amber',
             active: !!lead.is_immigration_case,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-case`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-case`,
-            confirmText: "Open as an immigration case? Lands them in Immigration's Cases queue with full document folder access.",
         },
         {
             key: 'accommodation',
@@ -2368,9 +2370,7 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Home size={14} />,
             tone: 'cyan',
             active: !!lead.is_accommodation_client,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-accommodation`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-accommodation`,
-            confirmText: "Open as an accommodation client? They appear in the Accommodation team's queue.",
         },
         {
             key: 'english',
@@ -2379,19 +2379,12 @@ function ConvertMenu({ lead, canRevert }) {
             icon: <Globe size={14} />,
             tone: 'purple',
             active: !!lead.is_english_student,
-            endpoint: `${writeBase}/leads/${lead.id}/convert-to-english`,
             revertEndpoint: `${writeBase}/leads/${lead.id}/revert-english`,
-            confirmText: "Convert to an English student? Lands them in the English team's queue (PTE / DIY / mocktest pipeline).",
         },
     ];
 
     const activeCount = items.filter((i) => i.active).length;
-
-    const convert = (item) => {
-        if (!confirm(`${lead.first_name ? `${lead.first_name}: ` : ''}${item.confirmText}`)) return;
-        router.post(item.endpoint, {}, { preserveScroll: true, preserveState: true });
-        setOpen(false);
-    };
+    if (!canRevert || activeCount === 0) return null;
 
     const revert = (item) => {
         if (!confirm(`Revert this ${item.label.toLowerCase()} status? History stays attached.`)) return;
@@ -2407,7 +2400,7 @@ function ConvertMenu({ lead, canRevert }) {
                 className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 text-sm font-semibold transition-colors shadow-sm"
             >
                 <ArrowRight size={15} />
-                Move to
+                Manage pathways
                 {activeCount > 0 && (
                     <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/20 text-[10px] font-bold tabular-nums">
                         {activeCount}
@@ -2419,17 +2412,16 @@ function ConvertMenu({ lead, canRevert }) {
             {open && (
                 <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden">
                     <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-500">Move this lead to…</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-500">Active pathways</p>
                     </div>
                     <ul className="py-1">
-                        {items.map((item) => {
+                        {items.filter(item => item.active).map((item) => {
                             const t = MENU_TONE[item.tone] || MENU_TONE.emerald;
                             return (
                                 <li key={item.key}>
                                     <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group">
                                         <button
                                             type="button"
-                                            onClick={() => !item.active && convert(item)}
                                             disabled={item.active}
                                             className={`flex-1 flex items-center gap-2.5 text-left text-sm ${
                                                 item.active ? 'cursor-default' : 'cursor-pointer'
@@ -4012,7 +4004,9 @@ function ChecklistRow({ item, lead, entry, files = [], onSave, hidden = false, o
                                     className="inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                     <Eye size={12} /> View
                                 </button>
-                                <LeadDocFileMenu doc={f} leadId={lead.id} checklistKey={item.id} />
+                                <LeadDocFileMenu doc={f} leadId={lead.id} checklistKey={item.id}
+                                    basePath={`${writeBase}/leads`} canDelete canReject={Boolean(currentUser?.is_admin)}
+                                    only={['lead', 'checklistFiles', 'documentOrphans']} />
                             </div>
                         </div>
                     ))}
@@ -4020,6 +4014,7 @@ function ChecklistRow({ item, lead, entry, files = [], onSave, hidden = false, o
                     <input ref={fileInputRef} type="file" multiple onChange={handleFiles} className="hidden" />
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        <MediaAttachButton clientId={lead.id} checklistKey={item.id} />
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -4233,7 +4228,8 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
             ? CHECKLIST
             : ['personal', 'academic', 'agreements']
                 .map((k) => CHECKLIST.find((s) => s.key === k))
-                .filter(Boolean);
+                .filter(Boolean)
+                .map((section) => ({ ...section, items: section.items.filter((item) => item.id !== 'agree.proposal') }));
 
         // Per-lead ad-hoc documents (leads.custom_documents) drop into the
         // folder staff chose — this lead only. Each is a custom.* item so
@@ -5151,6 +5147,7 @@ function ChecklistCard({ item, lead, entry, onSave, files = [], currentUser = nu
                     </ul>
                 )}
 
+                <div className="mb-2"><MediaAttachButton clientId={lead.id} checklistKey={item.id} /></div>
                 {/* Upload button + hidden input */}
                 <input
                     ref={fileInputRef}
@@ -5354,9 +5351,14 @@ const GOAL_STATUS_OPTS = ['Consultation Done', 'For Proposal', 'Proposal Sent', 
 // dropdown filtered to roles that legitimately pre-screen leads.
 const PRESCREEN_ROLES = ['sales', 'education', 'admin'];
 
-function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
+function NotesPanel({ leadId, notes, currentUser, staffOptions = [], programOptions = [], educationReport = false }) {
+    const [reportActivity, setReportActivity] = useState('update');
+    const [notePrograms, setNotePrograms] = useState([]);
     const writeBase = useWriteBase();
     const [body, setBody] = useState('');
+    const [mediaFiles,setMediaFiles]=useState([]);
+    const [mediaOpen,setMediaOpen]=useState(false);
+    const [noteError,setNoteError]=useState('');
     const [pinned, setPinned] = useState(false);
     const [kind, setKind] = useState('general');
     const [preScreenedBy, setPreScreenedBy] = useState('');
@@ -5382,7 +5384,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
     useEffect(() => { grow(editRef.current); }, [editBody, editingId]);
 
     const reset = () => {
-        setBody(''); setPinned(false); setKind('general');
+        setBody(''); setMediaFiles([]); setPinned(false); setKind('general'); setNotePrograms([]); setReportActivity('update');
         setPreScreenedBy(''); setPreScreenMode(''); setPreScreenDate('');
         setGoalStatus(''); setGoalBy('');
     };
@@ -5390,9 +5392,11 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
     const submit = (e) => {
         e.preventDefault();
         if (!body.trim()) return;
-        setSubmitting(true);
+        setSubmitting(true); setNoteError('');
         const payload = {
             body: body.trim(),
+            media_file_ids: mediaFiles.map(file=>file.id),
+            programs: notePrograms,
             pinned,
             kind,
             pre_screened_by:     kind === 'pre_screen'   ? (preScreenedBy || null) : null,
@@ -5401,10 +5405,12 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
             goal_setting_status: kind === 'goal_setting' ? (goalStatus    || null) : null,
             goal_setting_by:     kind === 'goal_setting' ? (goalBy        || null) : null,
         };
-        router.post(`${writeBase}/leads/${leadId}/notes`, payload, {
+        const reporting = educationNoteSubmission(educationReport, writeBase, reportActivity);
+        router.post(`${reporting.base}/leads/${leadId}/notes`, { ...payload, ...reporting.fields }, {
             preserveScroll: true,
             preserveState: true,
             onSuccess: reset,
+            onError: errors=>setNoteError(Object.values(errors).flat()[0]||'Could not save the note. Please retry.'),
             onFinish: () => setSubmitting(false),
         });
     };
@@ -5444,6 +5450,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
 
             {/* Compose — one bordered block, controls on the footer row. */}
             <form onSubmit={submit} className="rounded-xl border border-gray-200 bg-gray-50/40 p-2.5 space-y-2.5">
+                {educationReport && <EducationNoteReportControl value={reportActivity} onChange={setReportActivity} disabled={submitting} />}
                 {/* Kind selector */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                     {Object.entries(NOTE_KIND_META).map(([k, meta]) => (
@@ -5567,6 +5574,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                     </div>
                 )}
 
+                <NoteProgramPicker options={programOptions} value={notePrograms} onChange={setNotePrograms} />
                 <textarea
                     ref={composeRef}
                     value={body}
@@ -5576,6 +5584,9 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                     className="w-full text-[13px] bg-transparent outline-none resize-none overflow-hidden placeholder-gray-400"
                     style={{ minHeight: '2.5rem' }}
                 />
+                {noteError&&<p role="alert" className="text-xs text-red-700">{noteError}</p>}
+                {mediaFiles.length>0&&<div className="mdrive md-selection">{mediaFiles.map(file=><span key={file.id}><Paperclip size={12}/>{file.name}<button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setMediaFiles(old=>old.filter(f=>f.id!==file.id))}><X size={12}/></button></span>)}</div>}
+                {mediaOpen&&<MediaPicker clientId={leadId} noteOnly maxFiles={6} onClose={()=>setMediaOpen(false)} onSelect={files=>{setMediaFiles(files);setMediaOpen(false);}}/>}
                 <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-100">
                     <button
                         type="button"
@@ -5585,6 +5596,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                     >
                         <Pin size={13} />
                     </button>
+                    <button type="button" className="mdrive md-secondary md-attach-button" disabled={submitting} onClick={()=>setMediaOpen(true)}><Paperclip size={12}/>Media Drive / Upload</button>
                     <button
                         type="submit"
                         disabled={submitting || !body.trim()}
@@ -5605,6 +5617,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                         const isEditing = editingId === n.id;
                         return (
                             <li key={n.id} className={`rounded-xl border p-3 ${n.kind === 'risk' ? 'border-red-100 bg-red-50/40' : n.pinned ? 'border-teal-100 bg-teal-50/40' : 'border-gray-100 bg-white'}`}>
+                                {n.attachments?.length>0&&<div className="mb-2 flex flex-wrap gap-2">{n.attachments.map((a,i)=><a key={i} href={`${writeBase}/leads/${leadId}/notes/${n.id}/attachments/${i}`} className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-emerald-800"><Paperclip size={12}/>{a.name||'Attachment'}</a>)}</div>}
                                 <div className="flex items-center justify-between gap-3 mb-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <div className="w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
@@ -5626,6 +5639,7 @@ function NotesPanel({ leadId, notes, currentUser, staffOptions = [] }) {
                                     <span className="text-[10px] text-gray-400 whitespace-nowrap">{fmt(n.created_at)}</span>
                                 </div>
 
+                                <NotePrograms programs={n.programs} />
                                 {/* Kind-specific meta — pre-screener name,
                                     mode, date, goal status + assigned staff,
                                     rendered as small chips above the body. */}

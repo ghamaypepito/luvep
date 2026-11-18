@@ -5,8 +5,11 @@ import { Instagram, Facebook, Linkedin, MessageCircle } from "lucide-react";
 import { usePage } from "@inertiajs/react";
 
 export default function Footer() {
+  return <PublicFooter contact={usePage().props?.contact} />;
+}
+
+export function PublicFooter({ contact = {} }) {
   const currentYear = new Date().getFullYear();
-  const contact = usePage().props?.contact || {};
 
   const whatsappHref = contact.whatsapp
     ? `https://wa.me/${String(contact.whatsapp).replace(/[^\d]/g, "")}`
@@ -128,14 +131,13 @@ export default function Footer() {
       {/* Bottom Bar - Dark Background */}
       <div className="bg-[#282728] text-white py-6 border-t border-gray-800">
         <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20 flex flex-col md:flex-row justify-between items-center text-sm">
-          <div className="flex space-x-6 mb-4 md:mb-0">
+          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mb-4 sm:gap-x-6 md:mb-0">
             <a href="/about-us" className="hover:text-green-400 transition-colors">About Us</a>
-            <span className="text-gray-600">|</span>
             <a href="/booking" className="hover:text-green-400 transition-colors">Contact</a>
-            <span className="text-gray-600">|</span>
             <a href="/activities" className="hover:text-green-400 transition-colors">Activities</a>
-          </div>
-          <div className="text-gray-500">
+            <a href="/articles" className="hover:text-green-400 transition-colors">Articles</a>
+          </nav>
+          <div className="text-gray-400">
             © {currentYear} eP. All rights reserved.
           </div>
         </div>

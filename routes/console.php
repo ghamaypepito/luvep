@@ -87,6 +87,24 @@ Schedule::command('tasks:overdue-digest')
     ->name('tasks-overdue-digest')
     ->withoutOverlapping();
 
+Schedule::command('hr:dispatch-notifications')->everyMinute()->withoutOverlapping();
+
+Schedule::command('hr:notify-due-work')->hourly()->withoutOverlapping();
+
+Schedule::command('hr:expire-exports')->hourly()->withoutOverlapping();
+
+Schedule::command('tickets:archive')->dailyAt('02:00')->timezone('Asia/Manila')->withoutOverlapping();
+
+Schedule::command('education:dispatch-registration-outreach')->everyMinute()->withoutOverlapping();
+
+Artisan::command('education:sync-event-email', function (\App\Services\Ghl\EducationEventEmailSync $sync) {
+    $sync->run();
+})->purpose('Sync confirmed Education event email subscriptions and stage exits to HighLevel');
+
+Schedule::command('education:sync-event-email')->everyMinute()->withoutOverlapping(5);
+
+\Illuminate\Support\Facades\Schedule::command('education:dispatch-rsvps')->everyMinute()->withoutOverlapping();
+
 // Chase onboarding deadlines: remind clients who haven't signed the agreement
 // within the sign-by window, then haven't chosen a payment option within the
 // choose-by window. Once-per-window markers dedupe, so once daily is enough.
@@ -95,3 +113,5 @@ Schedule::command('immigration:onboarding-reminders')
     ->timezone('Pacific/Auckland')
     ->name('immigration-onboarding-reminders')
     ->withoutOverlapping();
+
+Schedule::command('editorial:dispatch-social')->everyMinute()->withoutOverlapping(5);

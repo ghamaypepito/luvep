@@ -22,6 +22,7 @@ class NotificationController extends Controller
     /** Full paginated inbox page. Filter: all | unread | read. */
     public function index(Request $request)
     {
+        abort_if(config('hr.enabled') && app(\App\Services\Hr\HrContext::class)->isPreview($request), 403, 'Exit employee preview to open notifications.');
         $user = $request->user();
         $filter = in_array($request->query('filter'), ['unread', 'read'], true)
             ? $request->query('filter')
@@ -29,8 +30,8 @@ class NotificationController extends Controller
 
         $source = match ($filter) {
             'unread' => $user->unreadNotifications(),
-            'read'   => $user->readNotifications(),
-            default  => $user->notifications(),
+            'read' => $user->readNotifications(),
+            default => $user->notifications(),
         };
 
         $notifications = $source
@@ -40,11 +41,11 @@ class NotificationController extends Controller
 
         return inertia($this->pageComponent($user), [
             'notifications' => $notifications,
-            'filter'        => $filter,
-            'counts'        => [
-                'all'    => $user->notifications()->count(),
+            'filter' => $filter,
+            'counts' => [
+                'all' => $user->notifications()->count(),
                 'unread' => $user->unreadNotifications()->count(),
-                'read'   => $user->readNotifications()->count(),
+                'read' => $user->readNotifications()->count(),
             ],
         ]);
     }
@@ -57,21 +58,27 @@ class NotificationController extends Controller
      */
     private function pageComponent($user): string
     {
+        if (request()->getHost() === config('hr.host') || str_starts_with(request()->route()?->getName() ?? '', 'hr.')) {
+            return 'hr/Notifications';
+        }
+
         return match ($user->role) {
-            'sales'         => 'portal/sales/Notifications',
-            'education'     => 'portal/education/Notifications',
-            'english'       => 'portal/english/Notifications',
+            'sales' => 'portal/sales/Notifications',
+            'education' => 'portal/education/Notifications',
+            'english' => 'portal/english/Notifications',
             'accommodation' => 'portal/accommodation/Notifications',
-            'lead'          => 'portal/lead/Notifications',
+            'finance' => 'portal/finance/Notifications',
+            'lead' => 'portal/lead/Notifications',
             'immigration_adviser' => 'portal/immigration-adviser/Notifications',
             'immigration', 'immigration_manager' => 'portal/immigration/Notifications',
-            default         => 'admin/Notifications', // admin + super_admin
+            default => 'admin/Notifications', // admin + super_admin
         };
     }
 
     /** Recent 10 (read + unread) for the bell dropdown. */
     public function recent(Request $request)
     {
+        abort_if(config('hr.enabled') && app(\App\Services\Hr\HrContext::class)->isPreview($request), 403, 'Exit employee preview to open notifications.');
         $user = $request->user();
 
         return response()->json([
@@ -88,6 +95,8 @@ class NotificationController extends Controller
     /** Lightweight count endpoint (for future polling). */
     public function unreadCount(Request $request)
     {
+        abort_if(config('hr.enabled') && app(\App\Services\Hr\HrContext::class)->isPreview($request), 403);
+
         return response()->json([
             'count' => $request->user()->unreadNotifications()->count(),
         ]);
@@ -137,19 +146,19 @@ class NotificationController extends Controller
         $formatted = NotificationFormatter::format([
             'type' => $n->type,
             'data' => $n->data,
-        ]);
+        ], request()->user());
 
         return [
-            'id'         => $n->id,
-            'type'       => $formatted['type'],
-            'data'       => $n->data,
-            'icon'       => $formatted['icon'],
-            'color'      => $formatted['color'],
-            'title'      => $formatted['title'],
-            'body'       => $formatted['body'],
-            'url'        => $formatted['url'],
-            'is_read'    => $n->read_at !== null,
-            'read_at'    => optional($n->read_at)?->toIso8601String(),
+            'id' => $n->id,
+            'type' => $formatted['type'],
+            'data' => $n->data,
+            'icon' => $formatted['icon'],
+            'color' => $formatted['color'],
+            'title' => $formatted['title'],
+            'body' => $formatted['body'],
+            'url' => $formatted['url'],
+            'is_read' => $n->read_at !== null,
+            'read_at' => optional($n->read_at)?->toIso8601String(),
             'created_at' => optional($n->created_at)?->toIso8601String(),
         ];
     }

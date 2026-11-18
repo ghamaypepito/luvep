@@ -4,7 +4,6 @@ namespace App\Services\Immigration\Findings\Rules;
 
 use App\Models\CasePayment;
 use App\Models\Lead;
-use App\Models\LeadDocument;
 use App\Services\Immigration\Findings\FindingRule;
 use App\Services\Immigration\Findings\RuleResult;
 
@@ -21,18 +20,17 @@ class InvoiceOverdueRule implements FindingRule
 {
     public function evaluate(Lead $lead): RuleResult
     {
-        $invoice = LeadDocument::query()
-            ->where('lead_id', $lead->id)
-            ->where('source_variant', 'invoice')
-            ->orderBy('created_at')
-            ->first();
-
+        $invoices = \App\Services\PaymentProofService::invoiceQuery($lead)->with('invoicePayments')->orderBy('created_at')->get();
+        $invoice = $invoices->first(fn ($item) => ! app(\App\Services\PaymentProofService::class)->invoiceSummary($item)['paid']);
         if (! $invoice) {
-            return RuleResult::empty(); // nothing invoiced
+            return RuleResult::empty();
         }
 
         $payment = CasePayment::where('lead_id', $lead->id)->latest('id')->first();
-        if ($payment && $payment->isPaid()) {
+        // Preserve an older manually recorded payment gate only for an invoice
+        // without the new per-invoice evidence/receipt associations.
+        $hasProofReview = \App\Models\PaymentProofReview::where('invoice_document_id', $invoice->id)->exists();
+        if (! $hasProofReview && $payment && $payment->isPaid() && (! $payment->received_at || $payment->received_at->gte($invoice->created_at))) {
             return RuleResult::empty();
         }
 

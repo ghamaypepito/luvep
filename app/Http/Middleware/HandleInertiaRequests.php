@@ -35,12 +35,24 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if (config('hr.enabled') && str_starts_with($request->route()?->getName() ?? '', 'hr.')) {
+            $context = app(\App\Services\Hr\HrContext::class);
+            $hr = $context->props($request);
+            $user = $hr['preview'] ? $context->subject($request)->user : $request->user();
+
+            return [...parent::share($request), 'userView' => \App\Services\UserView::props($request), 'auth' => ['user' => $user?->only(['id', 'name', 'email', 'avatar_url']), 'modules' => [], 'portals' => [], 'can_manage_modules' => false],
+                'notifications' => ['unread_count' => $hr['preview'] ? 0 : ($request->user()?->unreadNotifications()->count() ?? 0)], 'hr' => $hr, 'flash' => ['success' => $request->session()->get('success'), 'error' => $request->session()->get('error')]];
+        }
+
         return [
-            ...parent::share($request),
+            ...parent::share($request), 'userView' => \App\Services\UserView::props($request),
+            'media_drive' => ['max_upload_mb' => \App\Services\MediaDrive\Limits::maxUploadMb()],
+            'hr' => fn () => config('hr.enabled') && $request->user() ? app(\App\Services\Hr\HrContext::class)->props($request) : null,
             'auth' => [
                 'user' => $request->user(),
                 // Drives the topbar AI button + lead health badge. True only
                 // when the config kill switch AND the tenant toggle are on.
+                'ep_agent' => app(\App\EpAgent\Pilot::class)->state($request->user()),
                 'ai_enabled' => (bool) config('ai.enabled') && (bool) \App\Models\Setting::get('ai_enabled', true),
                 // Restricted modules (config/modules.php) this user may see, so
                 // the sidebar can hide gated items. Grandfathered modules aren't
@@ -187,9 +199,10 @@ class HandleInertiaRequests extends Middleware
             $caseScope = \App\Models\Lead::immigrationCase()
                 ->when(! $user->isAdmin(), fn ($q) => $q->where('current_owner_id', $user->id));
             $myIds = (clone $caseScope)->pluck('id');
+            $pending = \App\Models\CaseAttestation::pendingCountsFor($myIds);
             $out['immigration-adviser'] = [
                 'my_cases' => $myIds->count(),
-                'pending_signoff' => $myIds->filter(fn ($id) => \App\Models\CaseAttestation::currentVerdict($id) === null || ! \App\Models\CaseAttestation::hasLodgementSignoff($id))->count(),
+                'pending_signoff' => $pending['pending_signoff'],
                 'pending_verification' => \App\Models\LeadDocument::where('status', \App\Models\LeadDocument::STATUS_CHECKED)
                     ->whereHas('lead', fn ($q) => $q->immigrationCase())->count(),
                 'notifications_unread' => $user->unreadNotifications()->count(),

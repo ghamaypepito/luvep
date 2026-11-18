@@ -480,7 +480,7 @@ server {
         deny all;
     }
 
-    client_max_body_size 50M;
+    client_max_body_size 512M;
 }
 ```
 
@@ -493,20 +493,20 @@ nginx -t
 systemctl reload nginx
 ```
 
-**Upload size limits.** Document uploads are capped at **50 MB** in the app
+**Upload size limits.** Standard document endpoints accept up to ten files per request, each capped at **50 MB** in the app
 (`App\Support\UploadValidation::DOCUMENT_MAX_KB`). For a large file to reach
 Laravel, all three layers must allow it, otherwise the client gets a `413`
 (nginx) or a silent "file failed to upload" (PHP) before validation runs:
 
-1. **nginx** — `client_max_body_size 50M;` in each server block (above).
+1. **nginx** — `client_max_body_size 512M;` in each server block (above).
 2. **PHP-FPM** — in `/etc/php/8.x/fpm/php.ini` set both:
 
    ```ini
    upload_max_filesize = 50M
-   post_max_size = 55M          ; a little larger than upload_max_filesize
+   post_max_size = 512M         ; ten 50 MiB files plus multipart overhead
    ```
 
-   then `systemctl restart php8.x-fpm`.
+   Validate with `nginx -t` and `php-fpm8.x -t` before reloading nginx and PHP-FPM. Check the effective FPM configuration, not only CLI PHP. Preserve configuration backups for rollback. Multipart uploads stream to temporary disk; monitor disk capacity and request concurrency rather than increasing PHP memory to match the request limit. Other upload screens may enforce smaller file or batch limits.
 
 If a client "cannot submit" a big PDF on the tracker, one of these three is
 still at the old 20 M — check nginx and PHP first.
@@ -861,7 +861,7 @@ server {
         deny all;
     }
 
-    client_max_body_size 50M;
+    client_max_body_size 512M;
 }
 ```
 

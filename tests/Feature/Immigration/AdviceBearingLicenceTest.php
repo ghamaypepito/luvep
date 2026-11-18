@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Immigration;
 
+use App\Models\ActivityLog;
 use App\Models\Lead;
 use App\Models\User;
 use App\Models\VisaType;
@@ -17,9 +18,9 @@ use Tests\TestCase;
  * refactor: without them, an unlicensed user silently gaining approval rights
  * would go unnoticed until someone approved something they should not have.
  *
- * They also pin the boundary deliberately drawn in phase 1: an adviser now has
- * case document write, but still cannot edit the visa-type catalogue (pricing
- * is a commercial function, not a per-case advice artifact).
+ * Case documents and catalogue pricing are ordinary role-authorized work.
+ * Adviser catalogue access was expanded after Build 12; it does not grant
+ * approval rights over advice-bearing content without a current licence.
  */
 class AdviceBearingLicenceTest extends TestCase
 {
@@ -112,10 +113,9 @@ class AdviceBearingLicenceTest extends TestCase
         ]);
     }
 
-    public function test_adviser_cannot_edit_visa_type_prices(): void
+    public function test_an_unlicensed_adviser_can_edit_catalogue_fees_with_an_audit_trail(): void
     {
-        // Pricing is a commercial/manager function — advisers stay read-only on
-        // the catalogue even though they now have full case write.
+        $adviser = $this->adviser();
         $visa = VisaType::create([
             'code' => 'TESTVISA', 'name' => 'Test Visa', 'category' => 'work',
             'consultation_price_nzd' => 250, 'consultation_duration_minutes' => 30,
@@ -123,7 +123,39 @@ class AdviceBearingLicenceTest extends TestCase
             'professional_fees' => 1000,
         ]);
 
-        $this->actingAs($this->adviser())
+        $this->actingAs($adviser)
+            ->post("/portal/immigration/visa-types/{$visa->id}", [
+                'name' => 'Test Visa', 'code' => 'TESTVISA', 'icon' => 'Globe',
+                'active' => true, 'consultation_price_nzd' => 250,
+                'consultation_duration_minutes' => 30, 'estimated_minutes' => 15,
+                'professional_fees' => 9999,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(9999.0, (float) $visa->fresh()->professional_fees);
+        $audit = ActivityLog::where('action', 'visa_type.updated')
+            ->where('entity_type', VisaType::class)
+            ->where('entity_id', $visa->id)
+            ->sole();
+        $this->assertSame($adviser->id, $audit->user_id);
+        $this->assertSame(1000.0, (float) $audit->changes['professional_fees']['old']);
+        $this->assertSame(9999.0, (float) $audit->changes['professional_fees']['new']);
+        $this->assertFalse(Gate::forUser($adviser)->allows('approve-advice-bearing'));
+    }
+
+    public function test_sales_cannot_edit_catalogue_fees(): void
+    {
+        $sales = User::factory()->create(['role' => 'sales']);
+        $visa = VisaType::create([
+            'code' => 'TESTVISA', 'name' => 'Test Visa', 'category' => 'work',
+            'consultation_price_nzd' => 250, 'consultation_duration_minutes' => 30,
+            'estimated_minutes' => 15, 'icon' => 'Globe', 'active' => true,
+            'professional_fees' => 1000,
+        ]);
+
+        $this->assertFalse(Gate::forUser($sales)->allows('update', $visa));
+        $this->actingAs($sales)
             ->post("/portal/immigration/visa-types/{$visa->id}", [
                 'name' => 'Test Visa', 'code' => 'TESTVISA', 'icon' => 'Globe',
                 'active' => true, 'consultation_price_nzd' => 250,
@@ -133,5 +165,8 @@ class AdviceBearingLicenceTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(1000.0, (float) $visa->fresh()->professional_fees);
+        $this->assertDatabaseMissing('activity_logs', [
+            'action' => 'visa_type.updated', 'entity_id' => $visa->id,
+        ]);
     }
 }

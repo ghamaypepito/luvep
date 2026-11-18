@@ -1,0 +1,71 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const { JSDOM } = require('jsdom');
+const Module = require('node:module');
+const path = require('node:path');
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/admin/system-tickets' });
+for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent', 'KeyboardEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); this.querySelector('[autofocus], button')?.focus(); };
+global.IS_REACT_ACT_ENVIRONMENT = true;
+const React = require('react'), { act } = React, { createRoot } = require('react-dom/client');
+const requests = [], gets = [];
+const inertia = { Head: () => null, useForm: () => ({ data: {}, errors: {}, setData() {} }), router: { get: (...args) => gets.push(args), post: (url, data, options) => requests.push({ url, data, options }) } };
+const axios = require('axios');
+axios.defaults.adapter = async config => ({ data: { messages: { data: [], next_page_url: null } }, status: 200, statusText: 'OK', headers: {}, config });
+const output = buildSync({ entryPoints: ['resources/js/pages/admin/SystemTickets.jsx'], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') }, external: ['react', 'react/jsx-runtime', 'react-dom', '@inertiajs/react', 'axios'] }).outputFiles[0].text;
+const loaded = new Module(path.resolve('ticket-board-actions.cjs'), module); loaded.filename = path.resolve('ticket-board-actions.cjs'); loaded.paths = module.paths;
+loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name); loaded._compile(output, loaded.filename);
+const Component = loaded.exports.default;
+const root = createRoot(document.getElementById('root'));
+const statuses = ['open', 'in_review', 'planned', 'in_progress', 'done', 'declined'];
+const complete = { issue_summary: 'Issue', root_cause: 'Cause', resolution: 'Fix', verification: 'Verified', documentation_summary: 'Guide' };
+const ticket = { id: 42, ticket_ref: 'TKT-42', title: 'Synthetic board request', description: 'Synthetic details', category: 'bug', status: 'open', archived_at: null, can_edit_request: false, resolution_report: complete, assigned_to: 7, assignee: 'Owner' };
+let generation = 0;
+const render = async (record = ticket, filters = { status: 'open', tab: 'active', department: 'education' }, manage = true) => act(async () => root.render(React.createElement(Component, { key: ++generation, tickets: { data: [record], links: [] }, meta: { statuses }, filters, can_manage: manage })));
+const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
+const click = async node => { assert.ok(node, 'Requested button exists'); await act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true }))); };
+const key = async (node, value) => act(async () => node.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+const actions = () => document.querySelector('[aria-label="Actions for TKT-42"]');
+const menu = () => document.querySelector('[role=menu]');
+const menuItem = text => [...menu().querySelectorAll('button')].find(node => node.textContent === text);
+const confirm = () => document.querySelector('dialog');
+(async () => {
+    // Catches incorrect tab order/default/query parameters and stale drawers after changing views.
+    await render();
+    assert.deepEqual([...document.querySelectorAll('[aria-label="Ticket status"] button')].map(n => n.textContent), ['Open', 'In review', 'Planned', 'In progress', 'Done', 'Declined', 'All']);
+    await click(button('Synthetic board request')); assert.ok(document.querySelector('[role=dialog]'));
+    await click(button('In review')); assert.equal(document.querySelector('[role=dialog]'), null);
+    assert.deepEqual(gets.at(-1)[1], { tab: 'active', status: 'in_review', department: 'education' });
+    await click(button('Archive')); assert.deepEqual(gets.at(-1)[1], { tab: 'archived', status: 'all', department: 'education' });
+    // Catches clipping inside the table, pointer bubbling into the drawer and inaccessible keyboard navigation.
+    await render(); await click(actions()); assert.ok(menu()); assert.equal(menu().parentNode, document.body);
+    assert.equal(document.querySelector('[role=dialog]'), null); assert.equal(document.activeElement.textContent, 'Decline');
+    await key(menu(), 'ArrowDown'); assert.equal(document.activeElement.textContent, 'Done'); await key(menu(), 'End'); assert.equal(document.activeElement.textContent, 'Archive');
+    await key(menu(), 'Escape'); assert.equal(menu(), null); assert.equal(document.activeElement, actions());
+    await click(actions()); await act(async () => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))); assert.equal(menu(), null);
+    await click(actions()); await act(async () => window.dispatchEvent(new Event('resize'))); assert.equal(menu(), null);
+    // Catches immediate writes without confirmation, duplicate submissions, leaked management fields and hidden server errors.
+    await click(actions()); await click(menuItem('Decline')); assert.ok(confirm()); assert.equal(requests.length, 0);
+    await click(button('Cancel')); assert.equal(confirm(), null); assert.equal(requests.length, 0);
+    await click(actions()); await click(menuItem('Decline')); await click([...confirm().querySelectorAll('button')].find(n => n.textContent === 'Decline'));
+    const decline = requests.at(-1); assert.equal(decline.url, '/admin/system-tickets/42'); assert.deepEqual(decline.data, { status: 'declined', expected_status: 'open' });
+    assert.equal(button('Saving…').disabled, true); await click(button('Saving…')); assert.equal(requests.length, 1);
+    await act(async () => { decline.options.onError({ status: 'This ticket changed. Refresh the list.' }); decline.options.onFinish(); });
+    assert.match(confirm().textContent, /This ticket changed/); assert.equal(button('Decline').disabled, false); await click(button('Cancel'));
+    // Catches bypassing the saved-resolution requirement through the list's Done shortcut.
+    await render({ ...ticket, resolution_report: { resolution: 'Incomplete' } }); await click(actions()); await click(menuItem('Done'));
+    assert.equal(confirm(), null); assert.equal(requests.length, 1); assert.ok(document.querySelector('[role=dialog]')); assert.match(document.body.textContent, /Complete and save this resolution report/);
+    assert.equal([...document.querySelectorAll('select')][0].value, 'done');
+    await render(); await click(actions()); await click(menuItem('Done')); await click(button('Mark Done'));
+    assert.deepEqual(requests.at(-1).data, { status: 'done', expected_status: 'open' }); await act(async () => { requests.at(-1).options.onSuccess(); requests.at(-1).options.onFinish(); }); assert.equal(confirm(), null);
+    // Catches incorrect archive endpoint/status writes and exposing actions for archives or non-admin views.
+    await render(); await click(actions()); await click(menuItem('Archive')); assert.match(confirm().textContent, /read-only/);
+    await click([...confirm().querySelectorAll('button')].find(n => n.textContent === 'Archive'));
+    assert.equal(requests.at(-1).url, '/admin/system-tickets/42/archive'); assert.deepEqual(requests.at(-1).data, { expected_status: 'open' });
+    await act(async () => { requests.at(-1).options.onSuccess(); requests.at(-1).options.onFinish(); });
+    await render({ ...ticket, archived_at: '2026-11-05T00:00:00Z' }, { tab: 'archived', status: 'all' }); assert.equal(actions(), null); assert.equal(document.querySelectorAll('[aria-label="Ticket status"] button').length, 0);
+    await click(button('Tickets')); assert.equal(gets.at(-1)[1].status, 'open');
+    await render(ticket, undefined, false); assert.equal(actions(), null);
+    await act(async () => root.unmount()); console.log('Ticket board: exact status navigation, All last, archive isolation, portal menus/keyboard, confirmation, stale errors, resolution gate and narrow action payloads verified.');
+})().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });

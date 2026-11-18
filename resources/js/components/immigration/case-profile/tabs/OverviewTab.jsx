@@ -53,7 +53,7 @@ export default function OverviewTab(props) {
     // and beyond), with the INZ status field kept as a secondary signal so either
     // lights the milestone.
     const stage = lead.immigration_stage || "";
-    const LODGED_STAGES = new Set(["Visa Lodged", "Interim Visa Issued", "Request for Information", "RFI Responded", "Approved in Principle", "Approved Visa", "Decline Visa"]);
+    const LODGED_STAGES = new Set(["Visa Lodged", "Interim Visa Issued", "Request for Medical", "Request for Information", "RFI Responded", "Approved in Principle", "Approved Visa", "Decline Visa"]);
     const DECISION_STAGES = new Set(["Approved Visa", "Decline Visa", "Withdrawn"]);
     const lodged = LODGED_STAGES.has(stage) || /lodg|decision|approv|declin/i.test(lead.inz_status || "");
     const decided = DECISION_STAGES.has(stage) || /approv|declin/i.test(lead.inz_status || "");

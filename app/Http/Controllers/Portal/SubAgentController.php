@@ -9,6 +9,7 @@ use App\Models\LeadDocument;
 use App\Models\LeadDocumentRequest;
 use App\Models\LeadTask;
 use App\Models\User;
+use App\Support\CaseRecordAccess;
 use App\Traits\BuildsLeadRow;
 use App\Traits\CreatesDashboardLead;
 use Illuminate\Http\Request;
@@ -211,6 +212,7 @@ class SubAgentController extends Controller
 
             // ── Identity ──
             'full_legal_name' => $join([$l->first_name, $l->middle_name, $l->last_name, $l->suffix], ' '),
+            'case_name_locked' => CaseRecordAccess::nameLocked(request(), $l),
             'dob' => $l->dob ? Carbon::parse($l->dob)->toDateString() : null,
             'age' => $l->dob ? Carbon::parse($l->dob)->age : ($l->age ? (int) $l->age : null),
             'nationality' => $l->citizenship,
@@ -700,7 +702,7 @@ class SubAgentController extends Controller
             ->get()
             ->each(function (LeadDocument $old) {
                 if ($old->file_path && Storage::disk('local')->exists($old->file_path)) {
-                    Storage::disk('local')->delete($old->file_path);
+                    \App\Support\DocumentFiles::delete($old->file_path, 'local');
                 }
                 $old->delete();
             });

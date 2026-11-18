@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { ChevronDown, Clock, Filter, Plus, Search, X } from "lucide-react";
+import AssignedTaskFocus from "./AssignedTaskFocus";
 import NewTaskModal from "./NewTaskModal";
 import KanbanBoard from "./KanbanBoard";
 import CalendarView from "./CalendarView";
@@ -88,6 +89,7 @@ export default function TaskBoardPage({
     portal,
     staffOptions = [],
 }) {
+    const { url = "" } = usePage();
     const isAdmin = department === "admin";
     const portalKey = portal || department;
     const portalBase = isAdmin ? "/admin" : `/portal/${portalKey}`;
@@ -467,6 +469,8 @@ export default function TaskBoardPage({
                     )}
                 </button>
             </div>
+
+            <AssignedTaskFocus key={url} tasks={[...all_tasks, ...overdue, ...today, ...this_week, ...undated, ...recently_done]} />
 
             {/* The board — kanban, calendar, or list depending on the toggle. */}
             {view === "kanban" && (

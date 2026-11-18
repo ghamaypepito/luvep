@@ -52,6 +52,23 @@ class SubAgentContactProfileTest extends TestCase
         $this->assertSame(1, LeadContactProfile::where('lead_id', $lead->id)->count());
     }
 
+    public function test_referral_case_names_require_admin_permission(): void
+    {
+        $lead = Lead::create(['first_name' => 'Original', 'last_name' => 'Applicant', 'is_immigration_case' => true]);
+        $subAgent = $this->makeSubAgentFor($lead);
+        $url = "/portal/sub-agent/leads/{$lead->id}/profile";
+
+        $this->actingAs($subAgent)->postJson($url, ['first_name' => 'Changed'])
+            ->assertUnprocessable()->assertJsonValidationErrors('first_name');
+        $this->post($url, ['phone' => '0210000000'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('leads', ['id' => $lead->id, 'first_name' => 'Original', 'phone' => '0210000000']);
+
+        $unconverted = Lead::create(['first_name' => 'Unconverted', 'last_name' => 'Referral', 'agent_id' => $subAgent->parent_agent_id]);
+        $this->post("/portal/sub-agent/leads/{$unconverted->id}/profile", ['first_name' => 'Corrected'])
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('leads', ['id' => $unconverted->id, 'first_name' => 'Corrected']);
+    }
+
     public function test_a_later_save_merges_and_does_not_blank_earlier_fields(): void
     {
         $lead = Lead::create(['first_name' => 'Ref', 'last_name' => 'Lead']);

@@ -9,6 +9,7 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
 use App\Services\Immigration\CaseChecklistService;
+use App\Services\Reports\ReportWeek;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -40,14 +41,13 @@ class ImmigrationAdviserController extends Controller
         $myCaseIds = (clone $this->caseScope($user))->pluck('id');
 
         // Awaiting the adviser's attestation = a case with no current verdict.
-        $awaitingVerdict = $myCaseIds->filter(fn ($id) => CaseAttestation::currentVerdict($id) === null)->count();
-        $awaitingLodgement = $myCaseIds->filter(fn ($id) => ! CaseAttestation::hasLodgementSignoff($id))->count();
+        $pending = CaseAttestation::pendingCountsFor($myCaseIds);
 
         return inertia('portal/immigration-adviser/Dashboard', [
             'stats' => [
                 'my_cases' => $myCaseIds->count(),
-                'awaiting_verdict' => $awaitingVerdict,
-                'awaiting_lodgement' => $awaitingLodgement,
+                'awaiting_verdict' => $pending['awaiting_verdict'],
+                'awaiting_lodgement' => $pending['awaiting_lodgement'],
                 'lodged' => (clone $this->caseScope($user))->whereIn('inz_status', ['Lodged', 'Decision Pending', 'Info Requested'])->count(),
             ],
             'recentCases' => $cases->map(fn ($l) => $this->caseRow($l))->values(),
@@ -198,6 +198,8 @@ class ImmigrationAdviserController extends Controller
         $user = $request->user();
         abort_unless($document->lead && $document->lead->is_immigration_case, 404);
 
+        abort_if($document->source_variant === 'proof_of_payment' || \App\Services\PaymentProofService::isInvoice($document), 422, 'Review payment evidence through Finance.');
+
         $data = $request->validate([
             'action' => ['required', Rule::in(['approve', 'reject'])],
             'note' => 'nullable|string|max:500',
@@ -304,11 +306,17 @@ class ImmigrationAdviserController extends Controller
     {
         $user = $request->user();
         $myIds = (clone $this->caseScope($user))->pluck('id');
+        $week = ReportWeek::forPreset($request->input('preset', 'this_week')) ?? ReportWeek::forPreset('this_week');
 
         $verified = LeadDocument::whereIn('status', [LeadDocument::STATUS_APPROVED, LeadDocument::STATUS_REJECTED])
-            ->where('reviewed_by', $user->id);
+            ->where('reviewed_by', $user->id)
+            ->where('reviewed_at', '>=', $week->start->utc())
+            ->where('reviewed_at', '<', $week->end->utc());
 
         return inertia('portal/immigration-adviser/Reports', [
+            'preset' => $week->preset,
+            'weeklyReport' => ReportWeek::canUseNotes($user) ? $week->notes('immigration-adviser:'.$user->id)
+                + ['tasks' => $week->tasks(null, $user->id)] : null,
             'stats' => [
                 'total_cases' => Lead::immigrationCase()->count(),
                 'my_cases' => $myIds->count(),
@@ -414,14 +422,15 @@ class ImmigrationAdviserController extends Controller
     {
         try {
             $userId = $request->user()->id;
-            $scope = $request->input('scope', 'mine');
+            $scope = in_array($request->input('scope'), ['mine', 'department'], true)
+                ? $request->input('scope') : 'mine';
             $now = now();
             $todayEnd = $now->copy()->endOfDay();
             $weekEnd = $now->copy()->endOfWeek();
 
             $base = \App\Models\LeadTask::with(['lead:id,lead_id,first_name,last_name,email,status', 'assignee:id,name,avatar_path', 'creator:id,name,avatar_path', 'attachments'])
                 ->withCount('comments')
-                ->when($scope === 'mine', fn ($q) => $q->where('assignee_id', $userId))
+                ->when($scope === 'mine', fn ($q) => $q->assignedTo($userId))
                 ->when($scope === 'department', fn ($q) => $q->where('department', 'immigration'));
 
             $serialize = fn ($t) => [

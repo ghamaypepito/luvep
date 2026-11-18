@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Head, Link } from "@inertiajs/react";
-import { Sparkles, ArrowLeft, Plus, Send, Trash2, Loader2, ShieldCheck, MessageSquarePlus } from "lucide-react";
+import { Sparkles, ArrowLeft, Plus, Send, Trash2, Loader2, ShieldCheck, MessageSquarePlus, History } from "lucide-react";
 import { aiClient } from "@/lib/aiClient";
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day: "2-digit", month: "short" }) : "");
@@ -8,11 +8,12 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleDateString("en-NZ", { day:
 /**
  * The single, dedicated AI Assistant page. General by default; when the server
  * passes a `subject` it scopes to that record (grounded answers + immigration
- * guardrail, enforced server-side). Renders standalone (ai/* gets no portal
- * layout), so it's the same clean surface for every department.
+ * guardrail, enforced server-side). Reused by the full page and the global side panel.
  */
-export default function Assistant({ subject = null, aiEnabled = true, backUrl = "/" }) {
+export default function Assistant({ subject = null, aiEnabled = true, backUrl = "/", embedded = false, onConversationChange, onBusyChange }) {
     const scoped = !!subject;
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [error, setError] = useState("");
 
     const [conversations, setConversations] = useState([]);
     const [activeId, setActiveId] = useState(null);
@@ -24,23 +25,39 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, sending]);
 
     const loadConversation = useCallback(async (id) => {
-        const { ok, data } = await aiClient.getConversation(id);
-        if (!ok) return;
-        setActiveId(id);
-        setMessages(data.messages ?? []);
+        try {
+            const { ok, data } = await aiClient.getConversation(id);
+            if (!ok) { setError("This conversation is unavailable."); return; }
+            setActiveId(id);
+            setMessages(data.messages ?? []);
+            setHistoryOpen(false);
+            setError("");
+        } catch { setError("Could not load the conversation. Please try again."); }
     }, []);
+
+    useEffect(() => { onBusyChange?.(sending || !!input.trim()); }, [sending, input, onBusyChange]);
+    useEffect(() => { onConversationChange?.(activeId); }, [activeId, onConversationChange]);
+    useEffect(() => {
+        if (!embedded && aiEnabled) {
+            const id = new URLSearchParams(window.location.search).get("conversation_id");
+            if (id && /^\d+$/.test(id)) loadConversation(Number(id));
+        }
+    }, [embedded, aiEnabled, loadConversation]);
 
     // Load the thread list. In record mode we always start a fresh scoped
     // thread rather than resuming a general one.
     useEffect(() => {
         if (!aiEnabled) return;
         (async () => {
-            const { data } = await aiClient.listConversations();
-            setConversations(data.conversations ?? []);
+            try {
+                const { ok, data } = await aiClient.listConversations();
+                if (ok) setConversations(data.conversations ?? []);
+                else setError("Conversation history is unavailable.");
+            } catch { setError("Could not load conversation history."); }
         })();
     }, [aiEnabled]);
 
-    const newChat = () => { setActiveId(null); setMessages([]); };
+    const newChat = () => { if (sending) return; setActiveId(null); setMessages([]); setInput(""); setError(""); };
 
     const send = async (text) => {
         const q = (text ?? input).trim();
@@ -63,6 +80,9 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
                 ]);
             }
             if (data.message) setMessages((m) => [...m, data.message]);
+        } catch {
+            setInput(q);
+            setError("Connection interrupted. Your message is restored below; check history before retrying.");
         } finally {
             setSending(false);
         }
@@ -70,7 +90,11 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
 
     const archive = async (id, e) => {
         e.stopPropagation();
-        await aiClient.archiveConversation(id);
+        if (sending) return;
+        try {
+            const { ok } = await aiClient.archiveConversation(id);
+            if (!ok) { setError("Could not archive the conversation."); return; }
+        } catch { setError("Could not archive the conversation."); return; }
         setConversations((list) => list.filter((c) => c.id !== id));
         if (id === activeId) newChat();
     };
@@ -81,29 +105,31 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
 
     return (
         <div className="h-full min-h-0 bg-gray-50 flex flex-col font-urbanist rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <Head title="AI Assistant — EP" />
+            {!embedded && <Head title="AI Assistant — EP" />}
 
             {/* Top bar */}
             <header className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3 flex items-center gap-3">
-                <Link href={backUrl} className="p-2 -ml-2 rounded-lg text-gray-500 hover:bg-gray-100" title="Back">
+                {!embedded && <Link href={backUrl} className="p-2 -ml-2 rounded-lg text-gray-500 hover:bg-gray-100" title="Back">
                     <ArrowLeft size={18} />
-                </Link>
+                </Link>}
                 <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gray-900 text-white">
                     <Sparkles size={17} className="text-amber-300" />
                 </span>
                 <div className="min-w-0 flex-1">
-                    <h1 className="text-sm font-bold text-gray-900 leading-tight">EP Assistant</h1>
+                    {!embedded && <h1 className="text-sm font-bold text-gray-900 leading-tight">EP Assistant</h1>}
                     {scoped ? (
                         <p className="text-[11px] text-gray-500 leading-tight truncate">About: {subject.label}</p>
                     ) : (
                         <p className="text-[11px] text-gray-400 leading-tight">Your work assistant · always review before acting</p>
                     )}
                 </div>
-                <button onClick={newChat} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                <button type="button" aria-label="Conversation history" aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)} className="p-2 rounded-lg hover:bg-gray-100"><History size={17} /></button>
+                <button disabled={sending} onClick={newChat} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
                     <Plus size={14} /> New chat
                 </button>
             </header>
 
+            {error && <p role="alert" className="px-4 py-2 text-xs text-rose-700 bg-rose-50">{error}</p>}
             {!aiEnabled ? (
                 <div className="flex-1 flex items-center justify-center p-8 text-sm text-gray-500">
                     The AI assistant is currently turned off.
@@ -111,13 +137,13 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
             ) : (
                 <div className="flex-1 flex min-h-0 max-w-6xl w-full mx-auto">
                     {/* History sidebar */}
-                    <aside className="hidden md:flex md:flex-col w-64 border-r border-gray-100 bg-white/60">
+                    <aside className={`${embedded ? (historyOpen ? "flex flex-col w-44" : "hidden") : (historyOpen ? "flex flex-col w-52" : "hidden md:flex md:flex-col w-64")} shrink-0 border-r border-gray-100 bg-white/60`}>
                         <div className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Conversations</div>
                         <div className="flex-1 overflow-y-auto">
                             {conversations.length === 0 ? (
                                 <p className="px-4 py-4 text-xs text-gray-400">No previous conversations.</p>
                             ) : conversations.map((c) => (
-                                <button key={c.id} onClick={() => loadConversation(c.id)}
+                                <button key={c.id} disabled={sending} onClick={() => loadConversation(c.id)}
                                     className={`group w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-white ${c.id === activeId ? "bg-white" : ""}`}>
                                     <span className="flex-1 min-w-0 truncate text-sm text-gray-700">{c.title || "Untitled chat"}</span>
                                     <span className="text-[10px] text-gray-400 shrink-0">{fmtTime(c.last_message_at)}</span>
@@ -184,12 +210,13 @@ export default function Assistant({ subject = null, aiEnabled = true, backUrl = 
                         <form onSubmit={(e) => { e.preventDefault(); send(); }} className="border-t border-gray-100 p-3 sm:p-4">
                             <div className="flex items-end gap-2 rounded-2xl bg-gray-100 px-3 py-2 max-w-3xl mx-auto">
                                 <textarea
+                                    aria-label="Message EP Assistant"
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                                     rows={1}
                                     placeholder={scoped ? "Ask about this record…" : "Message the assistant…"}
-                                    className="flex-1 resize-none max-h-40 text-sm bg-transparent outline-none focus:ring-0"
+                                    className="min-w-0 flex-1 resize-none max-h-40 text-sm bg-transparent outline-none focus:ring-0"
                                 />
                                 <button type="submit" disabled={!input.trim() || sending}
                                     className="shrink-0 p-2 rounded-xl bg-gray-900 text-white disabled:opacity-40 hover:bg-gray-800" title="Send">

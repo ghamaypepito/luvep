@@ -82,8 +82,8 @@ class EmailEventRegistry
             $vars = ['first_name', 'stage', 'adviser_name', 'tracker_url'];
             // The RFI move captures a response deadline + note, passed to the
             // email — advertise them so admins can use them in the template.
-            if ($stage === 'Request for Information') {
-                $vars[] = 'rfi_deadline';
+            if (in_array($stage, ['Request for Information', 'Request for Medical'], true)) {
+                $vars[] = $stage === 'Request for Medical' ? 'medical_deadline' : 'rfi_deadline';
                 $vars[] = 'status_detail';
             }
             $stageEvents[] = [
@@ -97,6 +97,7 @@ class EmailEventRegistry
         return [
             ['group' => 'Leads & assessment', 'events' => [
                 ['key' => 'immigration.lead.captured', 'label' => 'New enquiry captured', 'when' => 'When a client submits a visa assessment on the website', 'vars' => ['first_name', 'visa_type']],
+                ['key' => 'immigration.education.handoff', 'label' => 'Education student handed to Immigration', 'when' => 'When an Education student first becomes an immigration case', 'vars' => ['first_name', 'visa_type']],
                 ['key' => 'immigration.case.converted', 'label' => 'Converted to case', 'when' => 'When a lead or assessment becomes an immigration case', 'vars' => ['first_name', 'visa_type']],
                 ['key' => 'immigration.assessment.ready', 'label' => 'Assessment result ready', 'when' => 'When eligibility scoring finishes', 'vars' => ['first_name', 'eligibility_score']],
                 ['key' => 'immigration.lead.cold', 'label' => 'Lead went cold', 'when' => 'No client reply for 7 days', 'vars' => ['first_name'], 'scheduled' => true],

@@ -1,3 +1,6 @@
+import MediaAttachButton from '@/components/media/MediaAttachButton';
+import RecentVisaDialog from "./RecentVisaDialog";
+import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { router, usePage } from "@inertiajs/react";
@@ -172,14 +175,14 @@ export default function DocumentsTab({
     // Build a checklist-keyed map of uploaded documents (latest wins per key).
     // Orphans (no matching checklist entry) get collected separately.
     const items = checklist.items || [];
-    const knownKeys = new Set(items.map((i) => i.key));
+    const knownKeys = new Set(items.flatMap((i) => [i.key, ...(i.aliases || [])]));
 
     // A checklist key can hold several files (the client can "Upload another"
     // without replacing the first), so keep the full list per key, oldest first.
     const docsByKey = useMemo(() => {
         const map = new Map();
         for (const d of documents) {
-            const key = d.checklist_key;
+            const key = items.find((item) => item.aliases?.includes(d.checklist_key))?.key || d.checklist_key;
             if (! key) continue;
             if (! map.has(key)) map.set(key, []);
             map.get(key).push(d);
@@ -188,7 +191,7 @@ export default function DocumentsTab({
             arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         }
         return map;
-    }, [documents]);
+    }, [documents, items]);
 
     // The "Request Information Form" row displays INZ's RFI letter(s) that the
     // adviser attached (source_variant 'rfi'). The client responds through the
@@ -256,7 +259,9 @@ export default function DocumentsTab({
             kind:     "orphan",
             key:      `orphan-${d.id}`,
             label:    d.original_name,
-            category: isDecline
+            category: variant === "medical"
+                ? "Request for Medical"
+                : isDecline
                 ? "Visa outcome"
                 : isInvoice
                     ? "Invoices"
@@ -552,6 +557,11 @@ export default function DocumentsTab({
                                                         <span className="text-[11px] font-semibold text-gray-400">
                                                             {secApproved}/{secTotal}
                                                         </span>
+                                                        {category === "Request for Medical" && lead.medical_deadline && (
+                                                            <span className="text-[11px] font-medium text-amber-700 inline-flex items-center gap-1">
+                                                                <Calendar size={11} /> Due {formatDate(lead.medical_deadline)}
+                                                            </span>
+                                                        )}
                                                         {category === "Request Information" && lead.rfi_deadline && (
                                                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 ml-1">
                                                                 <Calendar size={11} /> Due {formatDate(lead.rfi_deadline)}
@@ -581,11 +591,11 @@ export default function DocumentsTab({
                                                 engagementSignedAt={engagement.signed_at}
                                                 invoicePaid={!! engagement.invoice_paid}
                                                 invoicePaidAt={engagement.invoice_paid_at}
-                                                proofs={proofDocs}
+                                                proofs={proofDocs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === row.document?.id || proof.proof_review.invoice_id === row.documents?.[0]?.id)}
                                             />
                                         ))}
                                         {! collapsed && sectionRfiReqs.map((req) => (
-                                            <RfiRequestTableRow key={`rfireq-${req.id}`} req={req} leadId={lead.id} />
+                                            <RfiRequestTableRow key={`rfireq-${req.id}`} req={req} leadId={lead.id} caseStaff={caseStaff} threadsByDoc={threadsByDoc} />
                                         ))}
                                     </Fragment>
                                 );
@@ -722,6 +732,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
     // rather than the review-status dropdown used for client-uploaded documents.
     const variant = typeof doc?.source_variant === "string" ? doc.source_variant : "";
     const isInvoice = variant === "invoice" || variant.startsWith("invoice:");
+    const isProof = variant === "proof_of_payment";
     const isEngagementDoc = variant.startsWith("engagement:");
     const isWrittenAgreement = variant === "engagement:written_agreement";
     // "Sent" once the pack's emailed, or the tax invoice was shared with the client.
@@ -868,7 +879,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => setPreviewDoc(d)}
+                                    onClick={() => d.source_variant === "proof_of_payment" ? setVerifyOpen(true) : setPreviewDoc(d)}
                                     title="View & comment"
                                     className="text-[12px] font-semibold text-teal-700 hover:text-teal-900 flex-shrink-0"
                                 >
@@ -942,7 +953,7 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
                 ) : doc ? (
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                            <VerdictSelect value={status} options={statusOptions} onPick={pickStatus} saving={savingStatus} />
+                            {isProof ? <button type="button" onClick={() => setVerifyOpen(true)} className="text-[11px] font-semibold text-teal-700 hover:text-teal-900">{doc.status === "Approved" ? "Confirmed — view review" : doc.status === "Rejected" ? "Needs attention — review" : "Review payment"}</button> : <VerdictSelect value={status} options={statusOptions} onPick={pickStatus} saving={savingStatus} />}
                             {savingStatus && <span className="text-[10px] text-gray-400">Saving…</span>}
                         </div>
                         {row.document?.reviewed_by ? (
@@ -1164,9 +1175,9 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
         )}
         {verifyOpen && (
             <ProofVerifyModal
-                proofs={proofs}
+                proofs={isProof ? [doc] : proofs.filter(proof => !proof.proof_review?.invoice_id || proof.proof_review.invoice_id === doc?.id)}
                 leadId={leadId}
-                invoiceId={doc?.id}
+                invoiceId={isProof ? doc?.proof_review?.invoice_id : doc?.id}
                 onClose={() => setVerifyOpen(false)}
             />
         )}
@@ -1174,145 +1185,13 @@ function Row({ row, leadId, docThreads = [], threadsByDoc = new Map(), keyThread
     );
 }
 
-// Proof-of-payment verification — previews the client-uploaded proof inline and,
-// when several are submitted, exposes a tab per proof so staff can flip between
-// them. Verifying posts the same document-status endpoint the review flow uses;
-// an Approved proof advances the case stage to "Invoice Paid" and flips the
-// invoice badge to "Paid".
+// Keep existing per-proof tabs; payment decisions use the shared Finance review.
 function ProofVerifyModal({ proofs = [], leadId, invoiceId = null, onClose }) {
-    const [busyId, setBusyId] = useState(null);
     const [activeId, setActiveId] = useState(proofs[0]?.id ?? null);
-
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === "Escape") onClose(); };
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        window.addEventListener("keydown", onKey);
-        return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-    }, [onClose]);
-
-    const active = proofs.find((p) => p.id === activeId) || proofs[0] || null;
-
-    const act = (proof, status) => {
-        if (!proof) return;
-        setBusyId(proof.id);
-        router.post(
-            `${leadBase()}/${leadId}/documents/${proof.id}/status`,
-            { status, invoice_id: status === "Approved" ? invoiceId : null },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(status === "Approved" ? "Payment verified" : "Proof rejected");
-                    onClose();
-                },
-                onError: () => toast.error("Could not update the proof"),
-                onFinish: () => setBusyId(null),
-            },
-        );
-    };
-
-    const inlineUrl = active ? docDownloadUrl(active.id, { inline: true }) : null;
-    const isPdf = (active?.mime || "").includes("pdf") || /\.pdf$/i.test(active?.original_name || "");
-    const isImage = (active?.mime || "").startsWith("image/") || /\.(png|jpe?g|gif|webp|heic)$/i.test(active?.original_name || "");
-    const approved = active?.status === "Approved";
-    const rejected = active?.status === "Rejected";
-
-    return createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-            <div className="flex h-[88vh] w-[94vw] max-w-[1000px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
-                    <div>
-                        <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-gray-400">Proof of payment</p>
-                        <h3 className="text-sm font-semibold text-gray-900">Verify to mark the invoice paid</h3>
-                    </div>
-                    <button type="button" onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-700"><XIcon size={18} /></button>
-                </div>
-
-                {/* Tabs — one per submitted proof */}
-                {proofs.length > 1 && (
-                    <div className="flex flex-wrap gap-1.5 border-b border-gray-100 bg-gray-50 px-4 py-2">
-                        {proofs.map((p, i) => {
-                            const isActive = p.id === active?.id;
-                            const dot = p.status === "Approved" ? "bg-teal-500" : p.status === "Rejected" ? "bg-red-400" : "bg-amber-400";
-                            return (
-                                <button
-                                    key={p.id}
-                                    type="button"
-                                    onClick={() => setActiveId(p.id)}
-                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium ${isActive ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-800"}`}
-                                >
-                                    <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-                                    Proof {i + 1}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Preview */}
-                <div className="flex min-h-0 flex-1 flex-col bg-gray-100">
-                    {!active ? (
-                        <div className="flex flex-1 items-center justify-center text-[13px] text-gray-500">No proof of payment uploaded yet.</div>
-                    ) : isImage ? (
-                        <div className="flex flex-1 items-start justify-center overflow-auto p-4">
-                            <img src={inlineUrl} alt={active.original_name} className="h-auto max-w-full rounded-lg shadow-sm" />
-                        </div>
-                    ) : isPdf ? (
-                        <iframe src={inlineUrl} title={active.original_name} className="w-full flex-1 border-0" />
-                    ) : (
-                        <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                            <FileText size={40} className="text-gray-300" />
-                            <p className="mt-3 text-sm text-gray-600">No inline preview for this file type.</p>
-                            <a href={docDownloadUrl(active.id)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-white"><Download size={13} /> Download to view</a>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer — filename + verify/reject for the active proof */}
-                {active && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-5 py-3">
-                        <div className="min-w-0">
-                            <p className="truncate text-[13px] font-medium text-gray-800">{active.original_name || "Proof of payment"}</p>
-                            <p className="text-[11px] text-gray-400">
-                                {approved ? "Verified" : rejected ? "Rejected" : "Awaiting verification"}
-                                {active.created_at ? ` · uploaded ${formatDate(active.created_at)}` : ""}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <a href={inlineUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[12px] font-semibold text-gray-600 hover:bg-gray-50"><Eye size={13} /> Open in tab</a>
-                            {!approved && !rejected && (
-                                <button
-                                    type="button"
-                                    disabled={busyId === active.id}
-                                    onClick={() => act(active, "Rejected")}
-                                    className="rounded-lg border border-red-200 px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                >
-                                    Reject
-                                </button>
-                            )}
-                            {!rejected && (
-                                <button
-                                    type="button"
-                                    disabled={busyId === active.id}
-                                    onClick={() => act(active, "Approved")}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-                                >
-                                    {busyId === active.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                                    {approved ? "Mark this invoice paid" : "Verify payment"}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>,
-        document.body,
-    );
+    const active = proofs.find(proof => proof.id === activeId) || proofs[0];
+    return active ? <ProofReviewModal key={active.id} proof={active} leadId={leadId} invoiceId={invoiceId} proofChoices={proofs} onSelect={setActiveId} onClose={onClose} /> : null;
 }
 
-// Bulk-download dropdown — "Download approved (ZIP)" (the lodgement bundle) or
-// "Download all (ZIP)" (every document on the case).
 function DownloadAllMenu({ leadId }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -1430,6 +1309,12 @@ function VerdictSelect({ value, options, onPick, saving }) {
 }
 
 function FileMenu({ doc, leadId, checklistKey = null }) {
+    const { props: menuProps, url: menuUrl } = usePage();
+    const [recentVisaOpen, setRecentVisaOpen] = useState(false);
+    const canClassifyRecentVisa = (menuUrl || "").startsWith("/portal/immigration/")
+        && menuProps?.auth?.user?.is_active
+        && ["admin", "super_admin", "immigration", "immigration_manager", "immigration_adviser"].includes(menuProps.auth.user.role)
+        && !checklistKey && !doc.request_id && doc.source === "upload" && (!doc.source_variant || doc.source_variant.startsWith("outcome:"));
     const [open, setOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -1514,6 +1399,7 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
             >
                 <MoreVertical size={12} />
             </button>
+            {recentVisaOpen && <RecentVisaDialog doc={doc} leadId={leadId} onClose={() => setRecentVisaOpen(false)} />}
             {checklistKey && (
                 <input
                     ref={fileRef}
@@ -1560,6 +1446,12 @@ function FileMenu({ doc, leadId, checklistKey = null }) {
                             >
                                 {uploading ? <Loader2 size={13} className="animate-spin text-gray-400" /> : <Upload size={13} className="text-gray-400" />}
                                 {uploading ? "Uploading…" : "Replace"}
+                            </button>
+                        )}
+                        {canClassifyRecentVisa && (
+                            <button type="button" onClick={() => { btnRef.current?.focus(); close(); setRecentVisaOpen(true); }}
+                                className="w-full text-left px-3 py-1.5 text-[12px] text-gray-700 hover:bg-gray-50">
+                                Move to Recent visa / eVisa
                             </button>
                         )}
                         {! confirming ? (
@@ -1863,6 +1755,7 @@ function UploadSlot({ leadId, checklistKey, label = "Upload", empty = false }) {
 
     return (
         <>
+            <MediaAttachButton clientId={leadId} checklistKey={checklistKey} onAttached={()=>router.reload({only:['documents'],preserveScroll:true})} />
             <button
                 type="button"
                 onClick={onPick}
@@ -2098,7 +1991,7 @@ function RequestRow({ req, leadId }) {
 // inside the "Request Information" checklist table — so the letter and the
 // documents it asks for sit together. Shows the client's uploaded file once it
 // arrives, else an "awaiting" state; staff can re-send the reminder or withdraw.
-function RfiRequestTableRow({ req, leadId }) {
+function RfiRequestTableRow({ req, leadId, caseStaff = [], threadsByDoc = new Map() }) {
     const pageUrl = usePage().url || "";
     const doc = req.latest_document || null;
     const [busy, setBusy] = useState(false);
@@ -2198,6 +2091,7 @@ function RfiRequestTableRow({ req, leadId }) {
             {/* Attachment — the standard file card (View + menu) once uploaded,
                 or a staff upload button while awaiting. */}
             <td className="px-4 py-3">
+                <div className="mb-2"><MediaAttachButton clientId={leadId} requestId={req.id} onAttached={()=>router.reload({only:['documentRequests','documents'],preserveScroll:true})} /></div>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={onFile} />
                 {doc ? (
                     <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 max-w-[300px]">
@@ -2270,7 +2164,7 @@ function RfiRequestTableRow({ req, leadId }) {
                 />
             )}
             {previewDoc && (
-                <DocPreviewModal doc={previewDoc} label={req.label} leadId={leadId} onClose={() => setPreviewDoc(null)} />
+                <DocPreviewModal doc={previewDoc} label={req.label} leadId={leadId} caseStaff={caseStaff} threads={threadsByDoc.get(previewDoc.id) || []} onClose={() => setPreviewDoc(null)} />
             )}
         </tr>
     );

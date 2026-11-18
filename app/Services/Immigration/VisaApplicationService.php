@@ -26,6 +26,7 @@ class VisaApplicationService
         'first_name', 'last_name', 'email', 'phone', 'dob', 'gender',
         'marital_status', 'citizenship', 'nationality', 'country_of_birth',
         'place_of_birth', 'passport_number', 'passport_expiry',
+        'agent_id', 'assigned_to', 'immigration_assignee',
     ];
 
     /** Get (or lazily create) the registry row for a case — defaults to Visa 1. */
@@ -93,7 +94,12 @@ class VisaApplicationService
     public function startNextVisa(Lead $from, string $newVisaLabel, ?int $newVisaTypeId, ?User $by): Lead
     {
         return DB::transaction(function () use ($from, $newVisaLabel, $newVisaTypeId, $by) {
+            $from = Lead::whereKey($from->id)->lockForUpdate()->firstOrFail();
             $current = $this->ensureFor($from);
+            $latest = VisaApplication::where('root_lead_id', $current->root_lead_id)->max('sequence');
+            abort_unless($from->is_immigration_case && $from->immigration_stage === 'Approved Visa'
+                && ! $current->isClosed() && $current->sequence === (int) $latest,
+                422, 'Only the latest approved, open application can start another visa.');
 
             // 1. New case Lead — copy the client's personal details.
             $attrs = ['lead_id' => Lead::generateLeadId()];
@@ -102,6 +108,7 @@ class VisaApplicationService
             }
             $attrs = array_merge($attrs, [
                 'is_immigration_case' => true,
+                'immigration_stage' => 'For Assessment',
                 'inz_visa_type' => $newVisaLabel,
                 'immigration_converted_at' => Carbon::now(),
                 'immigration_converted_by' => $by?->id,

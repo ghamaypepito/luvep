@@ -119,6 +119,7 @@ class User extends Authenticatable
             'iaa_licence_verified_at' => 'date',
             'signature_updated_at' => 'datetime',
             'module_permissions' => 'array',
+            'hr_access_version' => 'integer',
             'portal_access' => 'array',
             'password' => 'hashed',
         ];

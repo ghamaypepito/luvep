@@ -39,6 +39,25 @@ class ModuleManagementTest extends TestCase
         $this->assertContains('agents', $admin->fresh()->grantedModules());
     }
 
+    public function test_client_pathways_can_be_granted_individually_without_changing_roles_or_portals(): void
+    {
+        $super = User::factory()->create(['role' => 'super_admin']);
+        foreach (['education', 'immigration_manager'] as $role) {
+            $staff = User::factory()->create(['role' => $role, 'module_permissions' => ['dtr.reports'], 'portal_access' => []]);
+            $this->assertFalse($staff->canSeeModule('client_pathways'));
+            $this->actingAs($super)->post("/admin/module-management/{$staff->id}", [
+                'modules' => ['dtr.reports', 'client_pathways'],
+            ])->assertRedirect()->assertSessionHasNoErrors();
+            $staff->refresh();
+            $this->assertTrue($staff->canSeeModule('client_pathways'));
+            $this->assertSame($role, $staff->role);
+            $this->assertSame([], $staff->portal_access);
+            $this->assertContains('dtr.reports', $staff->grantedModules());
+            $this->assertContains('client_pathways', $staff->grantedModules());
+            $this->actingAs($staff)->post("/admin/module-management/{$staff->id}", ['modules' => []])->assertForbidden();
+        }
+    }
+
     public function test_invalid_module_key_is_rejected(): void
     {
         $super = User::factory()->create(['role' => 'super_admin']);

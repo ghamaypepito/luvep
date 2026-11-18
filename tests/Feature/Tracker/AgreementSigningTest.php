@@ -66,7 +66,8 @@ class AgreementSigningTest extends TestCase
         $case = $this->makeCase();
         $this->makeAgreement($case, 'draft', ['tracker_signing_token' => null, 'sent_at' => null]);
 
-        $this->get('/track/' . $case->tracking_code)
+        $this->actingAs(User::factory()->create(['role' => 'lead', 'lead_id' => $case->id]))
+            ->get('/portal/lead/tracker')
             ->assertOk()
             ->assertInertia(fn ($p) => $p->has('agreements', 0));
     }
@@ -76,7 +77,8 @@ class AgreementSigningTest extends TestCase
         $case = $this->makeCase();
         $this->makeAgreement($case, 'sent');
 
-        $this->get('/track/' . $case->tracking_code)
+        $this->actingAs(User::factory()->create(['role' => 'lead', 'lead_id' => $case->id]))
+            ->get('/portal/lead/tracker')
             ->assertOk()
             ->assertInertia(fn ($p) => $p->has('agreements', 1)
                 ->where('agreements.0.status', 'sent')
@@ -89,7 +91,8 @@ class AgreementSigningTest extends TestCase
         $case = $this->makeCase();
         $this->makeAgreement($case, 'voided');
 
-        $this->get('/track/' . $case->tracking_code)
+        $this->actingAs(User::factory()->create(['role' => 'lead', 'lead_id' => $case->id]))
+            ->get('/portal/lead/tracker')
             ->assertOk()
             ->assertInertia(fn ($p) => $p->has('agreements', 0));
     }
@@ -101,6 +104,20 @@ class AgreementSigningTest extends TestCase
 
         $this->get("/track/{$case->tracking_code}/agreements/" . str_repeat('z', 48) . '/sign')
             ->assertNotFound();
+    }
+
+    public function test_client_cannot_select_another_cases_agreement_with_query_parameters(): void
+    {
+        $own = $this->makeCase();
+        $other = $this->makeCase(['email' => 'other@example.test']);
+        $this->makeAgreement($other, 'sent');
+
+        $this->actingAs(User::factory()->create(['role' => 'lead', 'lead_id' => $own->id]))
+            ->get("/portal/lead/tracker?lead_id={$other->id}&code={$other->tracking_code}")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('lead.tracking_code', $own->tracking_code)->has('agreements', 0)
+            );
     }
 
     public function test_token_for_different_lead_returns_404(): void

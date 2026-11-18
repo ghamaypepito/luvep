@@ -59,13 +59,17 @@ class EmailAutomationSweep extends Command
             ->pluck('lead_id')->unique();
 
         foreach ($overdueLeadIds as $leadId) {
-            $paid = LeadDocument::where('lead_id', $leadId)
-                ->where('source_variant', 'proof_of_payment')
-                ->where('status', LeadDocument::STATUS_APPROVED)->exists();
-            if ($paid) {
+            $lead = Lead::find($leadId);
+            if (! $lead) {
                 continue;
             }
-            $lead = Lead::find($leadId);
+            $unpaid = \App\Services\PaymentProofService::invoiceQuery($lead)
+                ->whereBetween('created_at', [now()->subDays(15), now()->subDays(14)])
+                ->with('invoicePayments')->get()
+                ->contains(fn ($invoice) => ! app(\App\Services\PaymentProofService::class)->invoiceSummary($invoice)['paid']);
+            if (! $unpaid) {
+                continue;
+            }
             if ($lead) {
                 $automation->fire('immigration.invoice.overdue', $lead, []);
                 $fired++;

@@ -1,6 +1,10 @@
+import { UserViewButton } from '../admin/UserViewControls';
+import ProfileMenu from '../hr/ProfileMenu';
+import PreviewBanner from '../hr/PreviewBanner';
+import '../../../css/hr.css';
 import { Link, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
-import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen } from "lucide-react";
 
 // Admin-area restricted modules that, when granted via Module Management, should
 // surface as a sidebar link for a NON-admin staffer (admins already see them in
@@ -24,6 +28,7 @@ const portalIcon = (key) => {
     const Icon = PORTAL_ICONS[key] || LayoutGrid;
     return <Icon size={20} />;
 };
+import ClockWidget from "@/components/hr/ClockWidget";
 import NotificationBell from "@/components/NotificationBell";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 import RequestTicketButton from "@/components/RequestTicketButton";
@@ -52,6 +57,7 @@ export default function DashboardLayout({
     settingsHref = null,
     footerNav = [],
 }) {
+    const { hr } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { url, props } = usePage();
     const user = props.auth?.user;
@@ -74,8 +80,14 @@ export default function DashboardLayout({
 
     // Append a "Tools" section for granted admin modules, plus a collapsible
     // "Portals" group when the user can reach more than one portal.
+    const driveRoles=['super_admin','admin','sales','education','english','immigration','immigration_manager','immigration_adviser','accommodation','finance','agent','sub_agent','lead'];
+    const portalPath=url.match(/^\/portal\/([a-z-]+)\//)?.[1];
+    const driveHref=user?.role==='lead'?'/portal/lead/media-drive':portalPath?`/portal/${portalPath}/media-drive`:'/admin/media-drive';
     const navWithPortals = [
-        ...nav,
+        ...nav.slice(0,1),
+        ...(driveRoles.includes(user?.role)?[{name:user.role==='lead'?'Shared folders':'Media Drive',href:driveHref,icon:<FolderOpen size={20}/>}]:[]),
+        ...nav.slice(1),
+        ...(hr?.enabled && (hr?.employee || Object.values(hr?.permissions || {}).some(Boolean)) ? [{name: "HR Portal", href: "/portal/hr/dashboard", icon: <LayoutGrid size={20} />}]: []),
         ...(moduleExtras.length > 0 ? [{ section: true, name: "Tools" }, ...moduleExtras] : []),
         ...(portals.length > 1
             ? [{
@@ -105,13 +117,13 @@ export default function DashboardLayout({
     // Match `/leads` against `/leads/123` (lead detail) but NOT against
     // `/leads/proposals-agreements` — otherwise sibling children share
     // a prefix and both light up. Path must either equal the href or
-    // continue with a `/`. When a `?nav=` hint is present it wins: ONLY the
+    // continue with a `/` or a query string. A `?nav=` hint still wins: ONLY the
     // item whose href slug equals the hint is active, so the shared page lights
     // up the section it was opened from rather than the one its URL sits under.
     const isPathMatch = (href) =>
         navHint
             ? hrefSlug(href) === navHint
-            : url === href || url.startsWith(href + "/");
+            : url === href || url.startsWith(href + "/") || url.startsWith(href + "?");
 
     // The single best top-level match — the item whose href is the LONGEST
     // prefix of the current URL — so sibling prefixes don't both light up
@@ -174,6 +186,7 @@ export default function DashboardLayout({
     const handleLogout = () => router.post("/logout");
 
     const getPageTitle = () => {
+        if (url.split("?")[0].endsWith("/media-drive")) return user?.role === "lead" ? "Shared folders" : "Media Drive";
         for (const item of nav) {
             if (item.href && isPathMatch(item.href)) return item.name;
             const child = activeChildFor(item);
@@ -196,6 +209,12 @@ export default function DashboardLayout({
                 </button>
             </div>
 
+            {props.auth?.ep_agent?.enabled ? <div className="px-3 pt-2 pb-1">
+                <Link href="/ep-agent" onClick={event => { event.preventDefault(); setSidebarOpen(false); window.dispatchEvent(new CustomEvent("ep-assistant-open")); }} title="Ep Agent" className="flex items-center gap-3 rounded-xl bg-[#edf2e9] px-3 py-2 text-[#254b3e]">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#254b3e] text-white"><Sparkles size={16} /></span>
+                    <span className="flex min-w-0 flex-col leading-tight"><span className="text-[13px] font-bold">Ep Agent</span><span className="text-[11px] text-[#52665b]">Your private workspace</span></span>
+                </Link>
+            </div> : <>
             {/* AI Assistant — pinned above the nav so it's always visible, and
                 styled distinctly (gradient) so it reads as the AI surface
                 rather than a regular menu row. Staff only, and hidden when AI
@@ -204,7 +223,7 @@ export default function DashboardLayout({
                 <div className="px-3 pt-2 pb-1">
                     <Link
                         href="/assistant"
-                        onClick={() => setSidebarOpen(false)}
+                        onClick={(event) => { event.preventDefault(); setSidebarOpen(false); window.dispatchEvent(new CustomEvent("ep-assistant-open")); }}
                         title="EP AI Assistant"
                         className={`group flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
                             isPathMatch("/assistant")
@@ -230,6 +249,11 @@ export default function DashboardLayout({
                     </Link>
                 </div>
             )}
+
+            </>}
+            {props.auth?.ep_agent?.manager && <div className="px-3 pb-2"><Link href="/ep-manager" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#254b3e] hover:bg-[#edf2e9]"><Users size={18} />Ep Manager</Link></div>}
+
+            {props.auth?.ep_agent?.enabled && ['admin', 'super_admin'].includes(user?.role) && <div className="px-3 pb-2"><Link href="/admin/ep-agent" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-[#254b3e] hover:bg-[#edf2e9]"><LayoutGrid size={18} />Ep Admin</Link></div>}
 
             <div className="flex-1 overflow-y-auto px-3 py-1.5 flex flex-col gap-0.5 scrollbar-hide">
                 {navWithPortals.map((item) => {
@@ -427,6 +451,7 @@ export default function DashboardLayout({
                             </div>
                         )}
 
+                        <UserViewButton />
                         <GlobalSearchBar />
 
                         {user?.role !== "lead" && user?.role !== "agent" && <RequestTicketButton />}
@@ -439,6 +464,7 @@ export default function DashboardLayout({
                                 <p className="text-sm font-semibold text-gray-900">{user?.name || "User"}</p>
                                 {user?.role && <p className="text-[11px] text-gray-500 capitalize">{user.role}</p>}
                             </div>
+                            {hr?.enabled && (hr?.employee || hr?.permissions?.preview) ? <ProfileMenu /> : (
                             <div
                                 className={`flex items-center justify-center w-9 h-9 rounded-full overflow-hidden ${accent} text-white font-bold text-sm shadow-md ring-2 ring-white`}
                             >
@@ -446,10 +472,12 @@ export default function DashboardLayout({
                                     {user?.name?.charAt(0)?.toUpperCase() || "U"}
                                 </AvatarPhoto>
                             </div>
+                            )}
                         </div>
                     </div>
                 </header>
 
+                <PreviewBanner />
                 {/* Content */}
                 <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-2">
                     {/* Cross-portal admin banner — shown when an admin user is viewing a department portal. */}
@@ -465,6 +493,7 @@ export default function DashboardLayout({
                         </div>
                     )}
                     <h1 className="text-2xl font-bold text-gray-900 lg:hidden mb-6 tracking-tight">{getPageTitle()}</h1>
+                    <ClockWidget />
                     {children}
                 </main>
             </div>

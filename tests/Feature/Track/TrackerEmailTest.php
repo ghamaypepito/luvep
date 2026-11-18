@@ -23,13 +23,15 @@ class TrackerEmailTest extends TestCase
         Mail::fake();
     }
 
-    public function test_lead_creation_with_email_queues_tracker_welcome(): void
+    public function test_lead_creation_with_email_does_not_automatically_send_tracker_welcome(): void
     {
-        app(LeadIntakeService::class)->ingest('booking', [
+        $lead = app(LeadIntakeService::class)->ingest('booking', [
             'first_name' => 'New', 'last_name' => 'Lead', 'email' => 'new@example.com',
         ]);
 
-        Mail::assertQueued(TrackerWelcome::class, fn ($m) => $m->hasTo('new@example.com'));
+        $this->assertNotNull($lead->id);
+        $this->assertNotEmpty($lead->tracking_code);
+        Mail::assertNothingOutgoing();
     }
 
     public function test_lead_creation_without_email_does_not_queue_and_does_not_crash(): void

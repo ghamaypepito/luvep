@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync('resources/social-workspace/ghl-live.js','utf8');
+const el=(tag,className='',text='')=>({tag,className,textContent:text,children:[],style:{},append(...nodes){this.children.push(...nodes)},setAttribute(name,value){this[name]=value},replaceWith(node){this.replacement=node}});
+const context={el};vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf('function ghlMediaNodes('),source.indexOf('function ghlOpenPost(')),context);
+const video=context.ghlMediaNodes({image:'https://cdn/poster.png',media:[{kind:'video',type:'video/mp4',url:'https://cdn/clip.mp4',poster:'https://cdn/poster.png'}]})[0];
+assert.equal(video.children[1].tag,'video');assert.equal(video.children[1].controls,true);assert.equal(video.children[1].poster,'https://cdn/poster.png');assert.equal(video.children[1].autoplay,undefined);
+video.children[1].onerror();assert.equal(video.children[2].hidden,false);assert.match(video.children[2].textContent,/could not play/);assert.equal(video.children[3].href,'https://cdn/clip.mp4');
+const gallery=context.ghlMediaNodes({media:[{kind:'image',url:'https://cdn/a.jpg'},{kind:'image',url:'https://cdn/b.png'}]});assert.equal(gallery.length,2);assert.equal(gallery[1].children[1].tag,'img');assert.equal(gallery[1].children[1].src,'https://cdn/b.png');gallery[1].children[1].onerror();assert.equal(gallery[1].children[2].hidden,false);
+const card=context.ghlCardMedia({image:'https://cdn/poster.png'});assert.equal(card.src,'https://cdn/poster.png');card.onerror();assert.match(card.replacement.textContent,/Artwork unavailable/);
+console.log('GHL video player, image gallery and visible failure regressions passed.');

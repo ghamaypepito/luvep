@@ -6,6 +6,7 @@ use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -26,13 +27,21 @@ class SystemTicket extends Model
     protected $fillable = [
         'ticket_ref', 'title', 'description', 'category', 'priority', 'status',
         'submitted_by', 'department', 'admin_response', 'resolved_by', 'resolved_at',
-        'images',
+        'images', 'attachments', 'assigned_to', 'assigned_at', 'tracking_started_at', 'archived_at',
+        'waiting_on', 'topic', 'resolution_report', 'documentation_title', 'documentation_body',
+        'documentation_published_at', 'response_target_hours',
     ];
+
+    protected $hidden = ['attachments'];
 
     protected $casts = [
         'resolved_at' => 'datetime',
+        'assigned_at' => 'datetime', 'tracking_started_at' => 'datetime', 'archived_at' => 'datetime',
+        'documentation_published_at' => 'datetime', 'resolution_report' => 'array',
+        'response_target_hours' => 'integer',
         // Array of private-disk paths for the submitter's screenshots.
         'images' => 'array',
+        'attachments' => 'array',
     ];
 
     protected static function booted(): void
@@ -42,9 +51,28 @@ class SystemTicket extends Model
         });
     }
 
+    public function activityIgnoredAttributes(): array
+    {
+        return ['images', 'attachments'];
+    }
+
     public function submitter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    public function canEditRequest(User $user): bool
+    {
+        return $user->is_active
+            && ! in_array($user->role, ['lead', 'revoked_lead'], true)
+            && (int) $this->submitted_by === (int) $user->id
+            && ! $this->archived_at;
+    }
+
+    /** Support triage must not invalidate a sender's unchanged request draft. */
+    public function requestVersion(): string
+    {
+        return hash('sha256', json_encode($this->only(['title', 'description', 'category', 'priority', 'images', 'attachments'])));
     }
 
     public function resolver(): BelongsTo
@@ -52,9 +80,24 @@ class SystemTicket extends Model
         return $this->belongsTo(User::class, 'resolved_by');
     }
 
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(SystemTicketMessage::class, 'ticket_id');
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(SystemTicketEvent::class, 'ticket_id');
+    }
+
     public function scopeOpen(Builder $query): Builder
     {
-        return $query->whereNotIn('status', ['done', 'declined']);
+        return $query->whereNull('archived_at')->whereNotIn('status', ['done', 'declined']);
     }
 
     /**

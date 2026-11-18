@@ -41,7 +41,8 @@ export default function LeadDocumentsPage({
     const rfiRequests = requests.filter((r) => r.origin === "rfi");
     const otherRequests = requests.filter((r) => r.origin !== "rfi");
     const rfiLetters = shared_by_staff.filter((d) => d.source_variant === "rfi");
-    const immTeamDocs = shared_by_staff.filter((d) => d.source_variant !== "rfi" && d.source_variant !== "vif");
+    const medicalLetters = shared_by_staff.filter((d) => d.source_variant === "medical");
+    const immTeamDocs = shared_by_staff.filter((d) => !["rfi", "vif", "medical"].includes(d.source_variant));
 
     // Table sections (Immigration Team → Request Information → checklist categories).
     // Requested documents are handled separately as a highlighted card above.
@@ -52,6 +53,10 @@ export default function LeadDocumentsPage({
     if (vifItem) immRows.push({ kind: "checklist", item: vifItem, files: checklistFiles[vifItem.key] || [] });
     immTeamDocs.forEach((d) => immRows.push({ kind: "shared", d }));
     if (immRows.length) sections.push({ key: "imm", title: "Immigration Team", rows: immRows });
+    if (medicalLetters.length) {
+        sections.push({ key: "medical", title: "Request for Medical", deadline: lead?.medical_deadline,
+            rows: medicalLetters.map((d) => ({ kind: "shared", d, label: "INZ medical notice" })) });
+    }
     if (rfiRequests.length || rfiLetters.length) {
         sections.push({
             key: "rfi", title: "Request Information", deadline: rfiDeadline,

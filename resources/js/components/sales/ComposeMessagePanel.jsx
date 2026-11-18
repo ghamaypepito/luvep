@@ -18,6 +18,8 @@ const CHANNELS = [
 export default function ComposeMessagePanel({ open, onClose, lead }) {
     const [channel, setChannel] = useState("email");
     const [templates, setTemplates] = useState([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+    const [templateError, setTemplateError] = useState("");
     const [templateId, setTemplateId] = useState("");
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
@@ -25,27 +27,60 @@ export default function ComposeMessagePanel({ open, onClose, lead }) {
     const [visible, setVisible] = useState(false);
 
     useEffect(() => {
-        if (!open) return;
+        if (!open || !lead?.id) return;
+        let active = true;
         setVisible(false);
+        setTemplates([]);
+        setTemplateId("");
+        setTemplateError("");
+        setTemplatesLoading(true);
         const id = requestAnimationFrame(() => setVisible(true));
-        getJson("/api/message-templates").then(({ data }) => setTemplates(data || []));
-        return () => cancelAnimationFrame(id);
-    }, [open]);
+        const loadTemplates = async () => {
+            try {
+                const { ok, data } = await getJson(`/admin/leads/${lead.id}/compose/templates`);
+                if (!ok || !Array.isArray(data)) throw new Error(data?.message || "Could not load templates.");
+                if (active) setTemplates(data);
+            } catch (error) {
+                if (active) setTemplateError(error.message || "Could not load templates.");
+            } finally {
+                if (active) setTemplatesLoading(false);
+            }
+        };
+        loadTemplates();
+        return () => { active = false; cancelAnimationFrame(id); };
+    }, [open, lead?.id]);
 
     if (!open) return null;
 
     const close = () => { setVisible(false); setTimeout(onClose, 200); };
     const needsSubject = channel === "email" || channel === "both";
-    const valid = templateId || (body.trim() && (!needsSubject || subject.trim()));
+    const supportsChannel = (template, nextChannel) => (nextChannel === "both" ? ["email", "sms"] : [nextChannel])
+        .every((selectedChannel) => template.channels?.includes(selectedChannel));
+    const eligibleTemplates = templates.filter((template) => supportsChannel(template, channel));
+    const valid = templateId
+        ? eligibleTemplates.some((template) => String(template.id) === templateId)
+        : body.trim() && (!needsSubject || subject.trim());
+    const changeChannel = (nextChannel) => {
+        setChannel(nextChannel);
+        if (templateId && !templates.some((template) => String(template.id) === templateId && supportsChannel(template, nextChannel))) {
+            setTemplateId("");
+        }
+    };
 
     const send = async () => {
+        if (busy || !valid) return;
         setBusy(true);
-        const payload = { channel, ...(templateId ? { template_id: Number(templateId) } : { subject, body }) };
-        const { ok, data } = await postJson(`/admin/leads/${lead.id}/compose`, payload);
-        setBusy(false);
-        if (!ok) { toast.error(data?.message || "Could not send the message."); return; }
-        toast.success(`Message sent to ${lead.name || "lead"}.`);
-        close();
+        try {
+            const payload = { channel, ...(templateId ? { template_id: Number(templateId) } : { subject, body }) };
+            const { ok, data } = await postJson(`/admin/leads/${lead.id}/compose`, payload);
+            if (!ok) { toast.error(data?.message || "Could not send the message."); return; }
+            toast.success(`Message sent to ${lead.name || "lead"}.`);
+            close();
+        } catch {
+            toast.error("Could not send the message. Please try again.");
+        } finally {
+            setBusy(false);
+        }
     };
 
     return (
@@ -66,7 +101,7 @@ export default function ComposeMessagePanel({ open, onClose, lead }) {
                         <span className="block text-xs font-semibold text-gray-600 mb-1.5">Send as</span>
                         <div className="flex gap-2">
                             {CHANNELS.map((c) => (
-                                <button key={c.key} onClick={() => setChannel(c.key)}
+                                <button key={c.key} onClick={() => changeChannel(c.key)}
                                     className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium ${channel === c.key ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}>
                                     {c.icon} {c.label}
                                 </button>
@@ -76,10 +111,11 @@ export default function ComposeMessagePanel({ open, onClose, lead }) {
 
                     <label className="block">
                         <span className="block text-xs font-semibold text-gray-600 mb-1">Template</span>
-                        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className={inp}>
-                            <option value="">Custom message…</option>
-                            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={templatesLoading || !!templateError} className={inp}>
+                            <option value="">{templatesLoading ? "Loading templates…" : "Custom message…"}</option>
+                            {eligibleTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
+                        {templateError && <span role="alert" className="block text-xs text-red-600 mt-1">{templateError} You can still write a custom message.</span>}
                     </label>
 
                     {!templateId && (

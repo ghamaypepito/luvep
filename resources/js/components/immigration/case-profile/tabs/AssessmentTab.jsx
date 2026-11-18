@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ClipboardList, Send, ExternalLink, Download, Pencil } from "lucide-react";
+import { ClipboardList, ExternalLink, Download, Pencil } from "lucide-react";
 import { Link } from "@inertiajs/react";
+import SendAssessmentButton from "../SendAssessmentButton";
 import IntakeDownloadModal from "@/components/immigration/IntakeDownloadModal";
 import { IntakeViewModal } from "@/pages/portal/immigration/Assessments";
 
@@ -130,14 +131,7 @@ function EmptyState({ lead }) {
                 This case was created from a sales lead, not from a public visa-interest form. To gather a full intake,
                 send the client an assessment form.
             </p>
-            <button
-                type="button"
-                disabled
-                title="Send assessment — wired by Build 11.E"
-                className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold border border-gray-200 bg-white text-gray-500 cursor-not-allowed"
-            >
-                <Send size={12} /> Send Assessment Form
-            </button>
+            <div className="mt-4"><SendAssessmentButton leadId={lead.id} /></div>
         </div>
     );
 }

@@ -23,11 +23,11 @@ class EducationReportTest extends TestCase
             'tracking_code' => 'ER2', 'status' => 'Proposal Sent', 'stage_updated_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->component('portal/education/Reports')
-                ->where('range.preset', 'this_month')
+                ->where('range.preset', 'all')
                 ->where('pipeline.0.stage', 'Proposal Sent')
                 ->where('pipeline.0.count', 1)
                 ->where('totalRegister', 1)
@@ -48,7 +48,7 @@ class EducationReportTest extends TestCase
 
         // It shows under its "New Leads" sales status immediately — no conversion
         // needed, because Section 01 mirrors the Leads list.
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertInertia(fn (Assert $p) => $p
                 ->where('pipeline.0.stage', 'New Leads')
                 ->where('pipeline.0.count', 1)
@@ -69,7 +69,7 @@ class EducationReportTest extends TestCase
             'student_converted_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('totalRegister', 0)          // not in the leads pipeline
@@ -90,15 +90,16 @@ class EducationReportTest extends TestCase
             'tracking_code' => 'ER3', 'english_stage' => 'For PTE Exam', 'stage_updated_at' => now(),
         ]);
 
-        // A student-visa immigration case — tracked under the Immigration
-        // department at its own status "Request for Information".
+        // An education student handed to Immigration remains in the Students
+        // register, tracked at its own "Request for Information" status.
         Lead::create([
             'first_name' => 'Raj', 'last_name' => 'Patel', 'email' => 'raj@x.com',
-            'tracking_code' => 'ER4', 'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa',
+            'tracking_code' => 'ER4', 'is_student' => true,
+            'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa',
             'immigration_stage' => 'Request for Information', 'stage_updated_at' => now(),
         ]);
 
-        $this->actingAs($edu)->get('/portal/education/reports?preset=this_month')
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
             ->assertOk()
             ->assertInertia(fn (Assert $p) => $p
                 ->where('departments.english.total', 1)
@@ -111,6 +112,24 @@ class EducationReportTest extends TestCase
                 // Immigration case sits under "Request for Information".
                 ->where('departments.immigration.stages', fn ($stages) => collect($stages)
                     ->firstWhere('stage', 'Request for Information')['count'] === 1)
+            );
+    }
+
+    public function test_a_pure_immigration_case_is_excluded_from_the_students_report(): void
+    {
+        $edu = User::factory()->create(['role' => 'education']);
+        Lead::create([
+            'first_name' => 'Visa', 'last_name' => 'Applicant', 'email' => 'visa@x.com',
+            'is_immigration_case' => true, 'inz_visa_type' => 'Student Visa',
+            'immigration_stage' => 'Request for Information', 'stage_updated_at' => now(),
+        ]);
+
+        $this->actingAs($edu)->get('/portal/education/reports?preset=all')
+            ->assertOk()
+            ->assertInertia(fn (Assert $p) => $p
+                ->where('totalRegister', 0)
+                ->where('departments.education.total', 0)
+                ->where('departments.immigration.total', 0)
             );
     }
 

@@ -1,5 +1,5 @@
+import { postTaskComment } from "@/lib/taskComments";
 import { useEffect, useRef, useState } from "react";
-import { usePage } from "@inertiajs/react";
 import { toast } from "sonner";
 import { MessageCircle, Send, X } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
@@ -20,10 +20,6 @@ const initialsOf = (name = "") =>
     name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
 
 export default function CommentsPopover({ open, onClose, taskId, taskTitle, onCountChange }) {
-    const { props } = usePage();
-    const csrf = props?.csrf || (typeof document !== "undefined"
-        ? document.querySelector('meta[name="csrf-token"]')?.getAttribute("content")
-        : null);
 
     const [loading, setLoading]   = useState(false);
     const [comments, setComments] = useState([]);
@@ -61,19 +57,7 @@ export default function CommentsPopover({ open, onClose, taskId, taskTitle, onCo
         if (! text || sending) return;
         setSending(true);
         try {
-            const res = await fetch(`/api/tasks/${taskId}/comments`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    "X-CSRF-TOKEN": csrf || "",
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-                credentials: "same-origin",
-                body: JSON.stringify({ body: text }),
-            });
-            if (! res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
+            const data = await postTaskComment(taskId, text);
             setComments((prev) => {
                 const next = [...prev, data.comment];
                 onCountChange?.(next.length);

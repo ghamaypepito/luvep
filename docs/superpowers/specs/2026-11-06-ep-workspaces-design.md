@@ -1,0 +1,11 @@
+# Ep private workspace and Manager
+
+Continuation of the approved preview, readiness assessment and foundation release. The user's “Proceed” authorizes the next interfaces using the existing stack and direct execution; it does not approve paid generation or a global staff cutover.
+
+Use the established Luvep React/Inertia shell, Urbanist typography and green palette, with the approved conversation/history/context structure. Keep one private conversation component for compact and full page views. Use authenticated APIs for persistence, preserve history, recheck record scope and block impersonation. No assistant response is fabricated: user requests can be saved; generation remains unavailable and visibly explained.
+
+Manager is a mobile-first read-only screen with Today, Attention, Team and Ask Ep. Query actual permission-scoped Education/Immigration Leads; show assigned personnel and client details in accessible dialogs. Admins see authorized mapped-portal records; Immigration Managers still require existing record assignment/grants. Totals describe this accessible scope, not the entire company. Stale means no record update in seven days; null timestamps are unknown. Do not infer missing-document requirements from absent uploads. Count only explicit outstanding requests whose portal ownership can be verified; otherwise omit that metric.
+
+Approaches: keep a separate demo (cannot supply real data); rewrite portal navigation (unnecessary disruption); extend existing shell behind a reversible pilot gate (chosen from prior approved rollout). The old assistant remains the fallback for users outside the pilot. Core Ep and UI switches must both permit the pilot, which is additionally limited to explicitly selected users/admins. Default switches off. No private API caching, new service worker, background writes, external tools, provider calls or credential changes.
+
+This release does not implement retrieval, approvals/actions, voice, generated artifacts or Employment/Residency mappings. It must label these unavailable rather than present sample output as a live feature. Design choices inherited from the approved preview; no unrelated visual identity, HR product brief or existing portal functionality is changed.

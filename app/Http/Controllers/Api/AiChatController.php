@@ -43,6 +43,11 @@ class AiChatController extends Controller
     {
         abort_unless($conversation->user_id === $request->user()->id, 403);
 
+        if ($conversation->subject_type === 'lead') {
+            $subject = \App\Models\Lead::findOrFail($conversation->subject_id);
+            abort_unless(\App\Support\AiScope::canAccessLead($request->user(), $subject), 403);
+        }
+
         return response()->json([
             'conversation' => $conversation,
             'messages'     => $conversation->messages, // ordered asc by the relation
@@ -79,6 +84,18 @@ class AiChatController extends Controller
             $subject = \App\Models\Lead::findOrFail($data['subject_id']);
             abort_unless(\App\Support\AiScope::canAccessLead($request->user(), $subject), 403,
                 'You do not have access to this record.');
+        }
+
+        // Resumed record conversations must retain their record scope and recheck access.
+        if ($conversation && $subject && $conversation->subject_type !== 'lead') {
+            abort(422, 'Start a new record conversation to attach a record.');
+        }
+        if ($conversation && $conversation->subject_type === 'lead') {
+            if ($subject && $subject->id !== $conversation->subject_id) {
+                abort(422, 'Start a new conversation to change the record.');
+            }
+            $subject = \App\Models\Lead::findOrFail($conversation->subject_id);
+            abort_unless(\App\Support\AiScope::canAccessLead($request->user(), $subject), 403);
         }
 
         $result = $this->chatService->sendMessage($request->user(), $conversation, $data['message'], $subject);

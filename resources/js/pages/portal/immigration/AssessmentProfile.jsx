@@ -8,6 +8,7 @@ import {
     Wallet, Receipt, Check, ArrowRightCircle, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+import AssessmentCaseLink from "@/components/immigration/AssessmentCaseLink";
 import { IntakeViewModal, PRE_STATUS } from "./Assessments";
 import RichTextEditor from "@/components/templates/RichTextEditor";
 import CaseEngagementModal from "@/components/immigration/case-profile/CaseEngagementModal";
@@ -606,7 +607,7 @@ const ACTION_TONE = {
  * pre-screening, driven by the existing pre-screen state. Replaces the flat
  * action bar with a clear primary action + secondary options. Same endpoints.
  */
-function NextAction({ i }) {
+function NextAction({ i, canEndorseAewv, endorsementFailed }) {
     const p = i?.pre_screen;
     if (!p) return null;
 
@@ -630,7 +631,11 @@ function NextAction({ i }) {
     if (p.status === "declined") {
         kind = "DECLINED"; tone = "muted"; title = "Pre-screening declined";
         body = p.decline_reason ? `Reason: ${p.decline_reason}` : "This pre-screening was declined.";
-    } else if (p.status === "converted") {
+    } else if (i.conversion_issue) {
+        kind = "CASE NEEDS REVIEW"; tone = "wait"; title = "Conversion needs verification";
+        body = i.conversion_issue;
+        if (i.can_convert) primary = { label: "Retry conversion", onClick: convert };
+    } else if (i.case_url) {
         kind = "CONVERTED"; tone = "done"; title = "Converted to a case";
         body = "This applicant is now an immigration case.";
     } else if (p.status === "eligible") {
@@ -663,6 +668,7 @@ function NextAction({ i }) {
                     <p className="text-[14px] font-bold text-gray-900 mt-1">{title}</p>
                     <p className="text-[12.5px] text-gray-500 mt-0.5 max-w-xl">{body}</p>
                 </div>
+                <AssessmentCaseLink assessment={{ case_url: i.case_url }} />
                 {primary && (
                     <button type="button" onClick={primary.onClick}
                         className={`flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold ${
@@ -675,6 +681,14 @@ function NextAction({ i }) {
 
             {/* Secondary options */}
             <div className="mt-3 flex items-center gap-3 flex-wrap text-[12px]">
+                {p.aewv_endorsed_at && !endorsementFailed && (
+                    <span className="font-semibold text-emerald-700">Endorsed to Hendry · {fmtDate(p.aewv_endorsed_at)}</span>
+                )}
+                {canEndorseAewv && (!p.aewv_endorsed_at || endorsementFailed) && (
+                    <button type="button" onClick={() => act("aewv-endorse")} className="text-[#00796b] hover:underline font-semibold">
+                        {endorsementFailed ? "Retry endorsement email to Hendry" : "Endorse to Hendry"}
+                    </button>
+                )}
                 {i.application_link && (
                     <button type="button" onClick={copyLink} className="inline-flex items-center gap-1.5 text-gray-500 hover:text-[#009688] font-semibold">
                         <Copy size={13} /> Copy application link
@@ -749,7 +763,7 @@ function RecreateVisaControl({ intake }) {
  * (consultation + consent), and the client's uploaded documents — with the
  * pre-screening pipeline + actions on top. Procedural, not immigration advice.
  */
-export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null, engagement_pack = null }) {
+export default function AssessmentProfile({ intake, bookings = {}, client_documents = [], plan = null, fee_quote = null, installment_config = null, agreement = null, engagement_pack = null, can_endorse_aewv = false, aewv_endorsement_failed = false }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showAssessment, setShowAssessment] = useState(false);
@@ -775,7 +789,9 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
     // Intake-attached files + the client's /application uploads, shown together.
     const docs = [...(data?.documents || []), ...client_documents];
     const status = intake.pre_screen?.status || "new";
-    const st = PRE_STATUS[status] || PRE_STATUS.new;
+    const st = intake.conversion_issue
+        ? { label: "Case needs review", cls: "bg-amber-50 text-amber-800 border-amber-200" }
+        : PRE_STATUS[status] || PRE_STATUS.new;
 
     return (
         <>
@@ -823,11 +839,11 @@ export default function AssessmentProfile({ intake, bookings = {}, client_docume
 
                     {/* Pipeline */}
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                        <Stepper status={status} />
+                        {!intake.conversion_issue && <Stepper status={status} />}
                     </div>
 
                     {/* Next action — what the staff member should do now */}
-                    <NextAction i={intake} />
+                    <NextAction i={intake} canEndorseAewv={can_endorse_aewv} endorsementFailed={aewv_endorsement_failed} />
                 </div>
 
                 {/* Visa assessment — a compact "available" card; opens the full

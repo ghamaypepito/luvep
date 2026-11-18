@@ -25,7 +25,7 @@ class ProposalHistoryTest extends TestCase
             'slug' => \Illuminate\Support\Str::slug($title),
             'level' => '7',
             'location' => 'Auckland',
-            'category' => 'Bachelors',
+            'category' => 'bachelors',
             'status' => 'published',
         ]);
     }

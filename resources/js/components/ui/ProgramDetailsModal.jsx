@@ -1,3 +1,4 @@
+import { hasProgramCost } from '@/utils/programCosts.mjs';
 import React, { useEffect, useState } from 'react';
 import {
     X, MapPin, Clock, Award, GraduationCap, BookOpen, Building2, TrendingUp, Loader2,
@@ -96,14 +97,14 @@ function Body({ program: p }) {
         ? p.tuition_fees
         : (p.tuition_fee !== null && p.tuition_fee !== undefined && p.tuition_fee !== ''
             ? [{ label: '', amount: p.tuition_fee, notes: p.tuition_fee_notes }]
-            : []);
+            : []).filter(row => hasProgramCost(row.amount));
 
     const costs = [
         ['Insurance', p.insurance_fee],
         ['Visa processing', p.visa_processing_fee],
         ['Living expenses', p.living_expense],
         ['Accommodation', p.accommodation],
-    ].filter(([, v]) => v !== null && v !== undefined && v !== '');
+    ].filter(([, value]) => hasProgramCost(value));
 
     const facts = [
         [MapPin, 'Location', p.location],

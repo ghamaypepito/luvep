@@ -35,8 +35,10 @@
     $c = $data['costs'] ?? [];
     $bank = $data['bank'] ?? [];
     $subtenants = $data['subtenants'] ?? [];
-    // Always show at least 3 sub-tenant blocks like the source template.
-    $slots = max(3, count($subtenants));
+    // Only render the sub-tenants that actually exist — Sub-Tenant 1 (the main
+    // applicant) always shows; additional blocks appear only when the client
+    // listed other sub-tenants in the pre-tenancy form (solo = just Sub-Tenant 1).
+    $slots = max(1, count($subtenants));
 @endphp
 
 @section('body')
@@ -74,6 +76,7 @@
             <tr><td class="label">Current Address</td><td colspan="3">{!! $f($s['current_address'] ?? '') !!}</td></tr>
             <tr><td class="label">Email</td><td colspan="3">{!! $f($s['email'] ?? '') !!}</td></tr>
             <tr><td class="label">Mobile No / WhatsApp</td><td colspan="3">{!! $f($s['mobile'] ?? '') !!}</td></tr>
+            <tr><td class="label">Visa Type</td><td colspan="3">{!! $f($s['visa_type'] ?? '') !!}</td></tr>
             @if($i > 0)
                 <tr><td class="label">Relationship to Sub-Tenant 1</td><td colspan="3">{!! $f($s['relationship'] ?? '') !!}</td></tr>
             @endif
@@ -145,10 +148,20 @@
     @endif
 
     <h3 class="blk">Weekly Rent{{ $isTransient ? ' + Utilities' : '' }} Payable</h3>
+    @php
+        $utilOption = $t['utility_option'] ?? '';
+        $utilAmount = $t['utility_amount'] ?? '';
+        $hasUtility = ! $isTransient && $utilAmount !== '' && $utilAmount !== null;
+        $weeklyTotal = (float) ($t['weekly_rent'] ?? 0) + ($hasUtility ? (float) $utilAmount : 0);
+    @endphp
     <table class="grid">
         <tr><th style="width:60%">Item</th><th class="amt">Amount</th></tr>
         <tr><td>Weekly Rent — payable in advance every {!! $f($t['rent_day'] ?? 'Friday', 'Friday') !!}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
-        <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : 'Rent' }}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
+        @unless($isTransient)
+            <tr><td>Option 1 — Exalt Manages Utilities</td><td class="amt">{{ ($utilOption == '1' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+            <tr><td>Option 2 — Tenant Arranges Utilities Directly</td><td class="amt">{{ ($utilOption == '2' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
+        @endunless
+        <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : ($hasUtility ? 'Rent + Utilities' : 'Rent') }}</td><td class="amt">NZ${!! $m($weeklyTotal) !!}</td></tr>
     </table>
     <p class="callout">Weekly rent is due every {{ $t['rent_day'] ?? 'Friday' }}. The payment made each {{ $t['rent_day'] ?? 'Friday' }} is for the upcoming rental week.
         @unless($isTransient) Under Option 1, applicable utility costs are payable separately from the weekly rent and an administration fee applies. Under Option 2, the Tenant pays the utility providers directly.@endunless
@@ -164,10 +177,10 @@
         <tr><td class="label">Reference</td><td>{!! $f($bank['reference'] ?? '', '[Property name]') !!}</td></tr>
     </table>
 
-    {{-- ---------- Signatures ---------- --}}
+    {{-- ---------- Signatures (sub-tenants + Exalt Property Management) ---------- --}}
+    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <h2 class="section">Signatures</h2>
     <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
-    @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; @endphp
     <table class="sign">
         <tr>
             <td>
@@ -198,4 +211,19 @@
     <div class="appendix">@include('agreements.flatmate._terms')</div>
     <div class="appendix">@include('agreements.flatmate._house_rules')</div>
     <div class="appendix">@include('agreements.flatmate._declaration')</div>
+
+    {{-- ---------- Exalt Property Admin signatory (at the very end, after the Declaration) ---------- --}}
+    <table class="sign">
+        <tr>
+            <td>
+                @if($adminSignature)
+                    <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
+                @endif
+                <div class="sign-line"></div>
+                <div class="sign-cap">Exalt Property Admin</div>
+                <div class="decl-cap">[signatory of admin]</div>
+            </td>
+            <td></td>
+        </tr>
+    </table>
 @endsection

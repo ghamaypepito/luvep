@@ -1,33 +1,42 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { router } from "@inertiajs/react";
 import { toast } from "sonner";
 import {
     X as XIcon, FileText, Download, Eye, MessageSquare, MoreVertical,
-    Send, Upload, Check, Loader2,
+    Send, Upload, Check, Loader2, Trash2,
 } from "lucide-react";
 import { ThreadItem, ThreadComposer } from "@/components/immigration/case-profile/threads";
 
 // Shared document viewer + per-file action menu — the immigration Case
 // Documents experience, reused on the general lead Documents tab. Parametrized
 // on `basePath` + `anchor` so comments post to the right endpoint (general
-// leads anchor by checklist key; immigration by document id). No Delete action.
+// leads anchor by checklist key; immigration by document id).
 
-// ── Per-file "⋮" menu: Download / Send to client / Replace (no Delete) ──────
-export function LeadDocFileMenu({ doc, leadId, checklistKey = null, only = ["documents"] }) {
+// Destructive actions are opt-in for the lead-profile document workflow.
+export function LeadDocFileMenu({ doc, leadId, checklistKey = null, only = ["documents"], basePath = "/admin/leads", canDelete = false, canReject = false }) {
     const [open, setOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [sharing, setSharing] = useState(false);
+    const [acting, setActing] = useState(false);
     const [coords, setCoords] = useState({ top: 0, left: 0 });
     const btnRef = useRef(null);
+    const menuRef = useRef(null);
     const fileRef = useRef(null);
     const MENU_W = 168;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (! open) return;
         const place = () => {
             const r = btnRef.current?.getBoundingClientRect();
-            if (r) setCoords({ top: r.bottom + 4, left: Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8)) });
+            if (!r) return;
+            const height = menuRef.current?.getBoundingClientRect().height || 0;
+            const below = r.bottom + 4;
+            const top = below + height <= window.innerHeight - 8 ? below : r.top - height - 4;
+            setCoords({
+                top: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
+                left: Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8)),
+            });
         };
         place();
         window.addEventListener("scroll", place, true);
@@ -36,6 +45,29 @@ export function LeadDocFileMenu({ doc, leadId, checklistKey = null, only = ["doc
     }, [open]);
 
     const close = () => setOpen(false);
+
+    const removeFile = () => {
+        if (!window.confirm(`Delete ${doc.original_name}? This removes the uploaded file.`)) return;
+        setActing(true);
+        router.delete(`${basePath}/${leadId}/documents/${doc.id}`, {
+            preserveScroll: true, preserveState: true, only,
+            onSuccess: () => toast.success("File removed"),
+            onError: (errors) => toast.error(Object.values(errors)[0] || "Could not remove file"),
+            onFinish: () => { setActing(false); close(); },
+        });
+    };
+
+    const rejectFile = () => {
+        const note = window.prompt("Why does this document need to be replaced?");
+        if (note === null) return;
+        setActing(true);
+        router.post(`${basePath}/${leadId}/documents/${doc.id}/status`, { status: "Rejected", note }, {
+            preserveScroll: true, preserveState: true, only,
+            onSuccess: () => toast.success("Document rejected"),
+            onError: (errors) => toast.error(Object.values(errors)[0] || "Could not reject document"),
+            onFinish: () => { setActing(false); close(); },
+        });
+    };
 
     const sendToClient = () => {
         setSharing(true);
@@ -97,7 +129,8 @@ export function LeadDocFileMenu({ doc, leadId, checklistKey = null, only = ["doc
                 <>
                     <div className="fixed inset-0 z-[59]" onClick={close} />
                     <div
-                        style={{ position: "fixed", top: coords.top, left: coords.left, width: MENU_W }}
+                        ref={menuRef}
+                        style={{ position: "fixed", top: coords.top, left: coords.left, width: MENU_W, maxHeight: "calc(100vh - 16px)", overflowY: "auto" }}
                         className="z-[60] bg-white rounded-lg shadow-xl border border-gray-100 py-1"
                     >
                         <a
@@ -129,6 +162,18 @@ export function LeadDocFileMenu({ doc, leadId, checklistKey = null, only = ["doc
                             >
                                 {uploading ? <Loader2 size={13} className="animate-spin text-gray-400" /> : <Upload size={13} className="text-gray-400" />}
                                 {uploading ? "Uploading…" : "Replace"}
+                            </button>
+                        )}
+                        {canReject && doc?.status !== "StaffShared" && (
+                            <button type="button" onClick={rejectFile} disabled={acting}
+                                className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-700 hover:bg-red-50 disabled:opacity-50">
+                                <XIcon size={13} /> Reject file
+                            </button>
+                        )}
+                        {canDelete && (
+                            <button type="button" onClick={removeFile} disabled={acting}
+                                className="w-full text-left flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-700 hover:bg-red-50 disabled:opacity-50">
+                                <Trash2 size={13} /> Delete file
                             </button>
                         )}
                     </div>

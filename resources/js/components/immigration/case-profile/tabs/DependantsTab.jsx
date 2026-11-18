@@ -23,7 +23,7 @@ const STATUS = {
     Rejected:    { label: "Rejected",      tone: "bg-red-50 text-red-700 border-red-200",            icon: XCircle },
 };
 
-export default function DependantsTab({ lead, dependents = [], caseOptions = [], visaTypes = [] }) {
+export default function DependantsTab({ lead, dependents = [], caseOptions = [], visaTypes = [], canCorrectCaseNames = false }) {
     const [editing, setEditing] = useState(null);
     const [docsFor, setDocsFor] = useState(null);
     if (!lead?.id) return null;
@@ -102,7 +102,7 @@ export default function DependantsTab({ lead, dependents = [], caseOptions = [],
                 </div>
             )}
 
-            {editing && <DependantModal dependant={editing} base={base} caseOptions={caseOptions} visaTypes={visaTypes} currentLeadId={lead.id} onClose={() => setEditing(null)} />}
+            {editing && <DependantModal dependant={editing} base={base} caseOptions={caseOptions} visaTypes={visaTypes} currentLeadId={lead.id} canCorrectCaseNames={canCorrectCaseNames} onClose={() => setEditing(null)} />}
             {openDoc && <DocumentsModal d={openDoc} base={base} onClose={() => setDocsFor(null)} />}
         </div>
     );
@@ -390,7 +390,7 @@ function NoteCell({ doc, onSave }) {
     );
 }
 
-function DependantModal({ dependant, base, caseOptions = [], visaTypes = [], currentLeadId, onClose }) {
+function DependantModal({ dependant, base, caseOptions = [], visaTypes = [], currentLeadId, canCorrectCaseNames, onClose }) {
     const isNew = !dependant.id;
     const [form, setForm] = useState({
         linked_lead_id: dependant.linked_lead_id || "", // ties this dependant to the child's own case
@@ -424,9 +424,11 @@ function DependantModal({ dependant, base, caseOptions = [], visaTypes = [], cur
                 if (!d) return;
                 setForm((f) => ({
                     ...f,
-                    first_name: f.first_name || d.first_name || "",
-                    family_name: f.family_name || d.family_name || "",
-                    middle_name: f.middle_name || d.middle_name || "",
+                    ...(isNew || canCorrectCaseNames ? {
+                        first_name: f.first_name || d.first_name || "",
+                        family_name: f.family_name || d.family_name || "",
+                        middle_name: f.middle_name || d.middle_name || "",
+                    } : {}),
                     dob: f.dob || d.dob || "",
                     gender: f.gender || d.gender || "",
                     nationality: f.nationality || d.nationality || "",
@@ -517,8 +519,8 @@ function DependantModal({ dependant, base, caseOptions = [], visaTypes = [], cur
                     ) : (
                         <>
                             <div className="grid grid-cols-2 gap-3">
-                                <Field label="Given name(s)"><input className={INPUT} value={form.first_name} onChange={(e) => set("first_name", e.target.value)} /></Field>
-                                <Field label="Family name"><input className={INPUT} value={form.family_name} onChange={(e) => set("family_name", e.target.value)} /></Field>
+                                <Field label="Given name(s)"><input className={INPUT} readOnly={!isNew && !canCorrectCaseNames} value={form.first_name} onChange={(e) => set("first_name", e.target.value)} /></Field>
+                                <Field label="Family name"><input className={INPUT} readOnly={!isNew && !canCorrectCaseNames} value={form.family_name} onChange={(e) => set("family_name", e.target.value)} /></Field>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <Field label="Date of birth"><input type="date" className={INPUT} value={form.dob} onChange={(e) => set("dob", e.target.value)} /></Field>
