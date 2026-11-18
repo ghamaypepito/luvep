@@ -112,6 +112,21 @@ class AffiliateAgreementHistoryTest extends TestCase
         $this->actingAs($agent)->get('/admin/agents/agreements')->assertForbidden();
     }
 
+    public function test_deleted_partner_history_remains_readable_without_reenabling_mutations(): void
+    {
+        [$staff, $agent, $agreement] = $this->setupAgreement();
+        $agent->delete();
+        $this->get('/admin/agents/agreements?search='.urlencode($agent->name))->assertOk()
+            ->assertInertia(fn ($p) => $p->where('agreements.data.0.partner_name', $agent->name)
+                ->where('agreements.data.0.partner_archived', true)->where('agreements.data.0.profile_url', null));
+        $this->get("/admin/agents/{$agent->id}/agreement/view?agreement={$agreement->id}")->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $this->get("/admin/agents/{$agent->id}/agreement/download?agreement={$agreement->id}")->assertOk();
+        $this->post("/admin/agents/{$agent->id}/agreement/generate")->assertNotFound();
+        $this->post("/admin/agents/{$agent->id}/agreement/send?agreement={$agreement->id}")->assertNotFound();
+        $this->actingAs(User::factory()->create(['role' => 'agent']))
+            ->get("/admin/agents/{$agent->id}/agreement/download?agreement={$agreement->id}")->assertForbidden();
+    }
+
     public function test_mail_job_sends_named_version_and_does_not_repeat_after_delivery(): void
     {
         Mail::fake();

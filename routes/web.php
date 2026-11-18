@@ -630,9 +630,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/admin/agents/{agent}/agreement/sign', [\App\Http\Controllers\Admin\AgentModuleController::class, 'signAgreement'])
             ->name('admin.agents.agreement.sign');
         Route::get('/admin/agents/{agent}/agreement/view', [\App\Http\Controllers\Admin\AgentModuleController::class, 'viewAgreement'])
-            ->name('admin.agents.agreement.view');
+            ->withTrashed()->name('admin.agents.agreement.view');
         Route::get('/admin/agents/{agent}/agreement/download', [\App\Http\Controllers\Admin\AgentModuleController::class, 'downloadAgreement'])
-            ->name('admin.agents.agreement.download');
+            ->withTrashed()->name('admin.agents.agreement.download');
     });
 
     // Verification module — restricted (default super-admin-only + admins,

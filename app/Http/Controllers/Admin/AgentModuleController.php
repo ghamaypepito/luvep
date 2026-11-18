@@ -211,9 +211,9 @@ class AgentModuleController extends Controller
     public function agreements(Request $request)
     {
         $filters = $request->validate(['search' => 'nullable|string|max:150', 'status' => 'nullable|in:Draft,Generated,Sent,Pending Signature,Signed,Expired']);
-        $query = AgentAgreement::with('agent:id,name');
+        $query = AgentAgreement::with(['agent' => fn ($q) => $q->withTrashed()->select('id', 'name', 'deleted_at')]);
         if ($search = trim($filters['search'] ?? '')) {
-            $query->whereHas('agent', fn ($q) => $q->where('name', 'like', '%'.$search.'%'));
+            $query->whereHas('agent', fn ($q) => $q->withTrashed()->where('name', 'like', '%'.$search.'%'));
         }
         $status = $filters['status'] ?? null;
         if ($status === 'Draft') {
@@ -239,7 +239,7 @@ class AgentModuleController extends Controller
         return inertia('admin/agents/Agreements', [
             'filters' => $filters,
             'agreements' => $query->latest('id')->paginate(25)->withQueryString()->through(fn ($agreement) => $agreement->historyPayload("/admin/agents/{$agreement->agent_id}/agreement")
-                + ['partner_name' => $agreement->agent->name, 'profile_url' => "/admin/agents/{$agreement->agent_id}"]),
+                + ['partner_name' => $agreement->agent->name, 'partner_archived' => $agreement->agent->trashed(), 'profile_url' => $agreement->agent->trashed() ? null : "/admin/agents/{$agreement->agent_id}"]),
         ]);
     }
 
