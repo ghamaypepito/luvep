@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import AssignedCreativeWork from "@/components/creative/AssignedCreativeWork";
 import { Head, Link, router } from "@inertiajs/react";
 import { Clock, LogIn, LogOut, Save, Settings, AlertTriangle, CheckCircle, BarChart3, Download, ChevronDown, ListChecks, ChevronLeft, ChevronRight, Plus, CalendarDays, FileSignature, Eraser, X, Check, ArrowRight, Undo2, CalendarClock, Loader2, CloudOff } from "lucide-react";
 
@@ -741,11 +742,12 @@ const compute = (timeIn, timeOut, s, date = null) => {
     return { net, variance, attendance };
 };
 
-export default function DtrPage({ setting = null, entries = [], carried = [], leaves = [], leaveTypes = [], minLeaveDate = "", holidays = {}, account = {}, today = "", canSummary = false, canManage = false, canReports = false, adminLeaves = [], adminPendingLeaves = [] }) {
+export default function DtrPage({ setting = null, entries = [], carried = [], leaves = [], leaveTypes = [], minLeaveDate = "", holidays = {}, account = {}, today = "", canSummary = false, canManage = false, canReports = false, adminLeaves = [], adminPendingLeaves = [], creativeRequests = [] }) {
     const ready = setting && setting.is_complete;
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
             <Head title="DTR — Daily Time & Task Record" />
+            <AssignedCreativeWork requests={creativeRequests} />
             {ready
                 ? <DailyRecord setting={setting} entries={entries} carried={carried} leaves={leaves} leaveTypes={leaveTypes} minLeaveDate={minLeaveDate} holidays={holidays} account={account} today={today} canSummary={canSummary} canManage={canManage} canReports={canReports} adminLeaves={adminLeaves} adminPendingLeaves={adminPendingLeaves} />
                 : <NotSetUp account={account} canManage={canManage} />}

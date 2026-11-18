@@ -22,7 +22,7 @@ export function attachmentKind(file) {
     return "file";
 }
 
-export default function TicketAttachmentPicker({ files, onChange, disabled = false, errors = {} }) {
+export default function TicketAttachmentPicker({ files, onChange, disabled = false, errors = {}, label = "Attachments" }) {
     const id = useId();
     const [error, setError] = useState("");
     const previews = useMemo(() => files.map((file) => attachmentKind(file) === "file" ? null : URL.createObjectURL(file)), [files]);
@@ -40,7 +40,7 @@ export default function TicketAttachmentPicker({ files, onChange, disabled = fal
         setError(""); onChange([...files, ...incoming]);
     };
     return <div className="space-y-2">
-        <label htmlFor={id} className="block text-xs font-semibold text-gray-600">Attachments <span className="font-normal text-gray-400">— optional</span></label>
+        <label htmlFor={id} className="block text-xs font-semibold text-gray-600">{label} <span className="font-normal text-gray-400">— optional</span></label>
         <p id={`${id}-help`} className="text-xs text-gray-500">Screenshots, videos, documents or ZIP files. Up to 10 files, 50 MB each.</p>
         <label className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 ${disabled ? "opacity-50" : "cursor-pointer hover:bg-gray-50"}`}>
             <Paperclip size={14} /> Add files

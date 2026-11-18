@@ -3,6 +3,7 @@ import TicketConversation from "@/components/TicketConversation";
 import TicketAttachments from "@/components/TicketAttachments";
 import TicketRequestEditor from "@/components/TicketRequestEditor";
 import { Head } from "@inertiajs/react";
+import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
 import { Ticket, MessageSquare } from "lucide-react";
 import Pagination from "@/components/ui/Pagination";
 import RequestTicketButton from "@/components/RequestTicketButton";
@@ -29,6 +30,7 @@ export default function MyTickets({ tickets = { data: [], links: [] }, counts = 
     return (
         <div className="space-y-6 max-w-4xl mx-auto">
             <Head title="My Tickets" />
+            <TicketTypeTabs isAdmin={false} />
 
             <header className="flex items-start justify-between gap-4">
                 <div>

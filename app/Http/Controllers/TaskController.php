@@ -181,6 +181,10 @@ class TaskController extends Controller
 
         abort_unless($canEdit, 403, 'You do not have permission to update this task.');
 
+        if (\App\Models\CreativeRequest::where('lead_task_id', $task->id)->exists()) {
+            abort_unless($user->isAdmin() || in_array($user->id, $task->allAssigneeIds(), true), 403, 'Only the assigned creative owner or an administrator can update this request.');
+        }
+
         // Snapshot current assignees so we can notify anyone newly added.
         $assigneesBefore = $task->allAssigneeIds();
 
