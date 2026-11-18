@@ -522,6 +522,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/creative-requests', [\App\Http\Controllers\CreativeRequestController::class, 'store'])->middleware('throttle:20,1');
     Route::get('/creative-requests/{creative}', [\App\Http\Controllers\CreativeRequestController::class, 'show'])->whereNumber('creative');
     Route::post('/creative-requests/{creative}/status', [\App\Http\Controllers\CreativeRequestController::class, 'status'])->whereNumber('creative');
+    Route::delete('/creative-requests/{creative}', [\App\Http\Controllers\CreativeRequestController::class, 'destroy'])->whereNumber('creative');
+    Route::post('/creative-requests/{creative}/restore', [\App\Http\Controllers\CreativeRequestController::class, 'restore'])->whereNumber('creative')->withTrashed();
     Route::get('/creative-requests/{creative}/attachments/{index}', [\App\Http\Controllers\CreativeRequestController::class, 'attachment'])->whereNumber(['creative', 'index']);
 
     Route::get('/clients/{lead}/payment-proofs/{document}/review-options', [\App\Http\Controllers\PaymentProofController::class, 'options'])->whereNumber(['lead', 'document']);

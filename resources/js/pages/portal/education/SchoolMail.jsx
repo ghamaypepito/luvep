@@ -120,6 +120,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                     <span>{r.name} · {r.email}<small className="block text-gray-600">{r.schools.join(', ')} · {r.attendance}</small>
                         {!r.eligible&&<small className="block text-amber-800">{r.reason}</small>}
                         {r.conflicting_names?.map(record=><small key={`${record.source}:${record.id}`} className="block text-gray-600">{record.source==='rsvp'?'RSVP':'Programme registration'} #{record.id}: {record.name}</small>)}
+                        {!!r.conflicting_names?.length&&<small className="block text-gray-600">{r.contact_numbers_match?'Recorded contact numbers match.':'Recorded contact numbers could not be matched.'}</small>}
                     </span>
                 </label></li>)}</ul>
                 {!rows.length&&<p>No registrations match these visits and filters. Do not select a general event as a substitute.</p>}

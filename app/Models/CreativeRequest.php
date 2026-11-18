@@ -6,9 +6,12 @@ use App\Support\TicketAttachments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CreativeRequest extends Model
 {
+    use SoftDeletes;
+
     public const DESIGN_TYPES = ['Social media graphic', 'Poster / flyer', 'Video / reel', 'Other'];
 
     protected $fillable = ['request_ref', 'lead_task_id', 'brief', 'attachments'];
@@ -19,7 +22,7 @@ class CreativeRequest extends Model
 
     public function task(): BelongsTo
     {
-        return $this->belongsTo(LeadTask::class, 'lead_task_id');
+        return $this->belongsTo(LeadTask::class, 'lead_task_id')->withTrashed();
     }
 
     public function scopeVisibleTo(Builder $query, User $user): Builder
@@ -40,6 +43,8 @@ class CreativeRequest extends Model
     public function row(bool $detail = false): array
     {
         $task = $this->task;
+        $viewer = auth()->user();
+        $deleted = $this->trashed();
 
         return [
             'id' => $this->id, 'request_ref' => $this->request_ref, 'title' => $task->title,
@@ -47,7 +52,11 @@ class CreativeRequest extends Model
             'types' => $this->brief['types'], 'assignee' => $task->assignee?->name,
             'submitter' => $task->creator?->name, 'attachment_count' => count($this->attachments ?? []),
             'task_id' => $task->id, 'url' => $this->url(),
-            ...($detail ? ['brief' => $this->brief, 'can_manage' => $this->canManage(auth()->user()),
+            'is_deleted' => $deleted,
+            'can_manage' => ! $deleted && ! $task->trashed() && $viewer && $this->canManage($viewer),
+            'can_delete' => ! $deleted && (bool) $viewer?->isAdmin(),
+            'can_restore' => $deleted && (bool) $viewer?->isAdmin(),
+            ...($detail ? ['brief' => $this->brief,
                 'attachments' => TicketAttachments::serialize($this->attachments ?? [], "/creative-requests/{$this->id}/attachments")] : []),
         ];
     }
