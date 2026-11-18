@@ -104,7 +104,7 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 </select></label>
                 <button className="rounded-lg bg-teal-800 px-4 py-2 text-white disabled:opacity-50" disabled={!visitIds.length||visitIds.length>20} onClick={load}>Load recipients</button>
             </div>
-            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. “Recorded attended” does not independently verify physical attendance. RSVP email addresses must be verified. Programme registrations need a confirmed email choice or a matching verified RSVP. Missing or conflicting permissions remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
+            <p className="text-sm text-gray-600">Attendance can be marked automatically after the event date. “Recorded attended” does not independently verify physical attendance. {purpose==='email_follow_up'?'Recorded follow-up permission is sufficient; email verification is not required.':'Newsletters require a verified RSVP email or confirmed programme email choice.'} Missing or conflicting permissions, unsubscribes and prior bounces remain excluded. Older programme registrations without a visit link require support review and are not guessed into a school group.</p>
         </section>
         {dirty&&<p role="alert" className="text-amber-800">Filters changed. Load recipients again before reviewing or sending.</p>}
         {!dirty&&<>

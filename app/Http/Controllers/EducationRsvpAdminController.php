@@ -7,13 +7,17 @@ use App\Models\EducationOutreach;
 use App\Models\EducationRsvp;
 use App\Models\EducationVisit;
 use App\Models\Setting;
+use App\Services\EducationRsvpWorkflow;
 use App\Services\ProgramSlackNotifier;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class EducationRsvpAdminController extends Controller
 {
@@ -86,6 +90,82 @@ class EducationRsvpAdminController extends Controller
         });
 
         return $request->expectsJson() ? response()->json(['ok' => true]) : redirect()->route('education.rsvps.manage')->with('status', 'Schedule saved. Confirmed changes will be sent to verified RSVP contacts.')->with('open_visit', $visit->id);
+    }
+
+    public function answers(Request $request, EducationRsvp $rsvp)
+    {
+        $data = $request->validate([
+            'revision' => 'required|string|size:64',
+            'full_name' => 'required|string|max:150', 'email' => 'required|email:rfc|max:254',
+            'phone' => 'nullable|string|max:40', 'role' => 'nullable|string|max:100',
+            'email_reminders' => 'required|boolean', 'future_invites' => 'required|boolean',
+            'email_follow_up' => 'required|boolean', 'email_newsletter' => 'required|boolean',
+        ]);
+        $revision = $data['revision'];
+        unset($data['revision']);
+        $data['full_name'] = preg_replace('/\s+/u', ' ', trim($data['full_name']));
+        $data['email'] = strtolower(trim($data['email']));
+        $data['phone'] = trim($data['phone'] ?? '') ?: null;
+        $data['role'] = trim($data['role'] ?? '') ?: null;
+        $data['name_key'] = EducationRsvpWorkflow::nameKey($data['full_name']);
+        if (! $data['name_key']) {
+            throw ValidationException::withMessages(['full_name' => 'Please enter a name.']);
+        }
+
+        try {
+            DB::transaction(function () use ($rsvp, $data, $revision) {
+                $current = EducationRsvp::whereKey($rsvp->id)->lockForUpdate()->firstOrFail();
+                if (! hash_equals($current->answersRevision(), $revision)) {
+                    throw ValidationException::withMessages(['revision' => 'This RSVP changed while you were editing. Reload the page and review the latest answers before saving.']);
+                }
+                if (EducationRsvp::where('education_visit_id', $current->education_visit_id)->whereRaw('LOWER(TRIM(email)) = ?', [$data['email']])->whereKeyNot($current->id)->exists()) {
+                    throw ValidationException::withMessages(['email' => 'This email already has an RSVP for this event. Edit that RSVP instead.']);
+                }
+                $before = $current->only(array_keys($data));
+                $identityChanged = $data['email'] !== strtolower(trim($current->email)) || $data['name_key'] !== EducationRsvpWorkflow::nameKey($current->full_name);
+                $current->fill($data);
+                if (! $current->isDirty()) {
+                    return;
+                }
+                if ($identityChanged) {
+                    // A signed link for the original identity must not verify the corrected address.
+                    $current->fill(['public_id' => (string) Str::uuid(), 'verified_at' => null, 'lead_id' => null, 'linked_at' => null]);
+                    EducationOutreach::where('education_rsvp_id', $current->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['cancelled_at' => now()]);
+                }
+                $current->save();
+                ActivityLog::record('education.rsvp.answers_updated', [
+                    'portal' => 'education', 'entity_type' => EducationRsvp::class, 'entity_id' => $current->id,
+                    'description' => 'Corrected RSVP answers',
+                    'changes' => ['before' => $before, 'after' => $current->only(array_keys($data))],
+                    'properties' => ['rsvp_id' => $current->id, 'identity_changed' => $identityChanged],
+                ]);
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages(['email' => 'This email already has an RSVP for this event. Reload and review the existing RSVP.']);
+        }
+
+        return back()->with('status', 'RSVP answers saved. No email was queued.');
+    }
+
+    public function confirmation(Request $request, EducationRsvp $rsvp, EducationRsvpWorkflow $workflow)
+    {
+        $data = $request->validate(['revision' => 'required|string|size:64']);
+        $created = DB::transaction(function () use ($data, $rsvp, $workflow) {
+            $current = EducationRsvp::whereKey($rsvp->id)->lockForUpdate()->firstOrFail();
+            if (! hash_equals($current->answersRevision(), $data['revision'])) {
+                throw ValidationException::withMessages(['revision' => 'This RSVP changed. Reload and check the email address before requesting a verification email.']);
+            }
+            abort_unless(! $current->verified_at && app(\App\Services\EducationRsvpContactUpdate::class)->contactAllowed($current), 422);
+            $delivery = $workflow->receipt('rsvp:'.$current->id.':staff-confirmation:'.$current->public_id, ['education_rsvp_id' => $current->id, 'channel' => 'mail', 'kind' => 'confirmation']);
+            if ($delivery->wasRecentlyCreated) {
+                EducationOutreach::where('education_rsvp_id', $current->id)->where('kind', 'confirmation')->whereKeyNot($delivery->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['cancelled_at' => now()]);
+                ActivityLog::record('education.rsvp.confirmation_requested', ['portal' => 'education', 'entity_type' => EducationRsvp::class, 'entity_id' => $current->id]);
+            }
+
+            return $delivery->wasRecentlyCreated;
+        });
+
+        return back()->with('status', $created ? 'Verification email queued for the current RSVP address.' : 'A verification email has already been requested for these details.');
     }
 
     public function attendance(Request $request, EducationRsvp $rsvp)
