@@ -64,21 +64,27 @@ class EducationSchoolMailAudience
             ->when($onlyEmail, fn ($query) => $query->whereRaw('LOWER(TRIM(email)) = ?', [$onlyEmail]))
             ->whereIn('education_visit_id', $visits->keys())->pluck('id')->flip();
 
-        // Keep all consent evidence for an address, including records outside the requested date range or group.
-        return $rows->groupBy('email')->filter(fn ($group) => $group->contains(fn ($row) => ($matchingRsvpIds === null || ($row['ref']['type'] === 'rsvp' && $matchingRsvpIds->has($row['ref']['id'])))
-            && (empty($filters['registered_from']) || ($row['registered_on'] && $row['registered_on'] >= $filters['registered_from']))
-            && (empty($filters['registered_to']) || ($row['registered_on'] && $row['registered_on'] <= $filters['registered_to']))
-        ))->map(function ($group, $email) use ($suppressed) {
-            $first = $group->first();
+        $memberRefs = collect($filters['member_refs'] ?? [])->map(fn ($ref) => $ref['type'].':'.$ref['id'])->flip();
+
+        // Keep all consent evidence, but personalise from a registration matching the requested audience.
+        return $rows->groupBy('email')->map(function ($group, $email) use ($suppressed, $matchingRsvpIds, $filters, $memberRefs) {
+            $matches = $group->filter(fn ($row) => ($matchingRsvpIds === null || ($row['ref']['type'] === 'rsvp' && $matchingRsvpIds->has($row['ref']['id'])))
+                && (! isset($filters['member_refs']) || $memberRefs->has($row['ref']['type'].':'.$row['ref']['id']))
+                && (empty($filters['registered_from']) || ($row['registered_on'] && $row['registered_on'] >= $filters['registered_from']))
+                && (empty($filters['registered_to']) || ($row['registered_on'] && $row['registered_on'] <= $filters['registered_to'])));
+            if ($matches->isEmpty()) {
+                return null;
+            }
+            $first = $matches->first();
             $sameName = $group->map(fn ($r) => EducationRsvpWorkflow::nameKey($r['name']))->unique()->count() === 1;
             $eligible = ! isset($suppressed[$email]) && filter_var($email, FILTER_VALIDATE_EMAIL) && $sameName && $group->every(fn ($r) => $r['eligible']);
 
             return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.'),
-                'schools' => $group->pluck('school')->unique()->values()->all(),
-                'attendance' => $group->pluck('attendance')->unique()->implode(', '),
+                'schools' => $matches->pluck('school')->unique()->values()->all(),
+                'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
                 'source_refs' => $group->pluck('ref')->values()->all(), 'context' => $first['context']];
-        })->sortBy('name')->values();
+        })->filter()->sortBy('name')->values();
     }
 
     private function row($type, $id, $name, $email, $visitId, $eligible, $attendance, EducationVisit $v, $registeredAt): array

@@ -10,6 +10,6 @@ class EducationRecipientList extends Model
 
     protected function casts(): array
     {
-        return ['filters' => 'array', 'lead_ids' => 'array'];
+        return ['filters' => 'array', 'lead_ids' => 'array', 'source_refs' => 'array'];
     }
 }

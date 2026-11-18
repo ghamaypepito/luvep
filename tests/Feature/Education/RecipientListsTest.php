@@ -27,7 +27,7 @@ class RecipientListsTest extends TestCase
         $this->assertSame('2026-11-17', $smart->filters['registered_from']);
         $this->assertSame([], $smart->lead_ids);
         $this->actingAs($staff)->post('/portal/education/bulk-email/recipient-lists', [
-            'name' => 'Selected clients', 'mode' => 'custom', 'filters' => [], 'lead_ids' => [$lead->id],
+            'name' => 'Selected clients', 'mode' => 'custom', 'filters' => [], 'lead_ids' => [(string) $lead->id],
         ])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame([$lead->id], EducationRecipientList::where('mode', 'custom')->sole()->lead_ids);
         $this->get('/portal/education/bulk-email')->assertOk()->assertInertia(fn ($page) => $page
@@ -58,7 +58,7 @@ class RecipientListsTest extends TestCase
             ->post('/portal/education/bulk-email/recipient-lists', [
                 'name' => 'Invalid', 'mode' => 'custom', 'lead_ids' => [999999],
                 'filters' => ['registered_from' => '2026-11-18', 'registered_to' => '2026-11-17'],
-            ])->assertSessionHasErrors(['lead_ids.0', 'filters.registered_to']);
+            ])->assertSessionHasErrors(['lead_ids', 'filters.registered_to']);
         $this->post('/portal/education/bulk-email/recipient-lists', ['list_id' => ['invalid']])->assertSessionHasErrors('list_id');
         $this->actingAs(User::factory()->create(['role' => 'sales']))
             ->post('/portal/education/bulk-email/recipient-lists', ['name' => 'Invalid', 'mode' => 'smart', 'filters' => []])->assertForbidden();

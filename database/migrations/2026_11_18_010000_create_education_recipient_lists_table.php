@@ -13,8 +13,10 @@ return new class extends Migration
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
             $table->string('name', 100);
             $table->string('mode', 10);
+            $table->string('source', 10)->default('leads');
             $table->json('filters');
             $table->json('lead_ids');
+            $table->json('source_refs')->nullable();
             $table->timestamps();
             $table->unique(['created_by', 'name']);
         });

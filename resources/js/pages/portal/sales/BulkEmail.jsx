@@ -163,7 +163,8 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         }, isSms, filterNewLeads));
     }, [recipients, search, stage, eventId, registeredFrom, registeredTo, isSms, filterNewLeads]);
 
-    const visibleSelection = newLeadsOnly ? new Set(filtered.filter((r) => selected.has(r.id)).map((r) => r.id)) : selected;
+    const selectionFollowsFilters = newLeadsOnly || (filterNewLeads && listMode === "smart");
+    const visibleSelection = selectionFollowsFilters ? new Set(filtered.filter((r) => selected.has(r.id)).map((r) => r.id)) : selected;
     const previewLead = recipients.find((r) => visibleSelection.has(r.id)) || filtered[0] || null;
 
     const toggle = (id) => setSelected((prev) => {
@@ -171,7 +172,9 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         next.has(id) ? next.delete(id) : next.add(id);
         return next;
     });
-    const selectAllMatching = () => setSelected((prev) => new Set([...prev, ...filtered.map((r) => r.id)]));
+    const selectAllMatching = () => setSelected((prev) => new Set([
+        ...(selectionFollowsFilters ? [] : prev), ...filtered.map((r) => r.id),
+    ]));
     const clearAll = () => setSelected(new Set());
 
     const applyList = (id) => {
@@ -192,7 +195,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         router.post(`${basePath}/recipient-lists`, {
             list_id: listId || null, name: listName, mode: listMode,
             filters: { search, stage, event_id: eventId, registered_from: registeredFrom, registered_to: registeredTo },
-            lead_ids: [...visibleSelection],
+            ...(listMode === "custom" ? { lead_ids: [...visibleSelection] } : {}),
         }, {
             preserveScroll: true,
             onSuccess: () => { setListId(""); setListName(""); },

@@ -13,7 +13,8 @@ const fill=(value,context,html=false)=>String(value||'').replace(/\{\{[ \t\r\n\f
 export default function SchoolMail(props) {
     return <SchoolMailForm key={JSON.stringify(props.filters)} {...props} />;
 }
-function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[],audienceLists=[],audienceGroups=[]}) {
+function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[],audienceLists=[],audienceGroups=[],recipientLists=[]}) {
+    const activeList=recipientLists.find(list=>list.id===filters.recipient_list_id);
     const [visitIds,setVisits]=useState(filters.visit_ids.map(String));
     const [audience,setAudience]=useState(filters.audience);
     const [purpose,setPurpose]=useState(filters.purpose);
@@ -28,6 +29,11 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const [confirmedReview,setConfirmed]=useState(null);
     const [sending,setSending]=useState(false);
     const [errors,setErrors]=useState({});
+    const [saveListId,setSaveListId]=useState(activeList?.id||null);
+    const [listName,setListName]=useState(activeList?.name||'');
+    const [listMode,setListMode]=useState(activeList?.mode||'smart');
+    const [savingList,setSavingList]=useState(false);
+    const [listErrors,setListErrors]=useState({});
     const [submissionId]=useState(()=>crypto.randomUUID());
     const dirty=JSON.stringify(visitIds)!==JSON.stringify(filters.visit_ids.map(String)) || audience!==filters.audience || purpose!==filters.purpose
         || listId!==String(filters.list_id||'') || folderId!==String(filters.folder_id||'') || registeredFrom!==(filters.registered_from||'') || registeredTo!==(filters.registered_to||'');
@@ -42,7 +48,14 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
     const resetReview=()=>{setConfirmed(null);setSelected(new Set());};
     const toggleVisit=id=>{resetReview();setVisits(ids=>ids.includes(id)?ids.filter(v=>v!==id):[...ids,id]);};
     const toggle=id=>{setConfirmed(null);setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});};
-    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose,list_id:listId,folder_id:folderId,registered_from:registeredFrom,registered_to:registeredTo},{preserveState:false});
+    const load=()=>router.get(base,{visit_ids:visitIds,audience,purpose,list_id:listId,folder_id:folderId,registered_from:registeredFrom,registered_to:registeredTo,recipient_list_id:filters.recipient_list_id},{preserveState:false});
+    const saveList=()=>{
+        if(dirty||savingList||!listName.trim()) return;
+        setSavingList(true);setListErrors({});
+        router.post(`${base}/recipient-lists`,{...filters,save_list_id:saveListId,list_name:listName,mode:listMode,
+            ...(listMode==='custom'?{recipient_keys:chosen.map(row=>row.id)}:{}),
+        },{preserveScroll:true,onError:setListErrors,onFinish:()=>setSavingList(false)});
+    };
     const send=()=>{
         if (!confirmed||dirty||sending||!chosen.length||!template||!name.trim()) return;
         setSending(true);setErrors({});
@@ -58,6 +71,9 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
         </header>
         <section className="space-y-4 rounded-xl border bg-white p-5">
             <h2 className="font-semibold">School visits</h2>
+            <label className="block text-sm">My event recipient lists<select aria-label="My event recipient lists" className={`${input} mt-1 w-full`} value={filters.recipient_list_id||''} onChange={event=>router.get(base,event.target.value?{recipient_list_id:event.target.value,load_saved_list:true,purpose}:{},{preserveState:false})}>
+                <option value="">Choose a saved event list</option>{recipientLists.map(list=><option key={list.id} value={list.id}>{list.name} · {list.mode==='smart'?'Smart':'Custom'}</option>)}
+            </select></label>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-sm">Saved RSVP smart list<select aria-label="Saved RSVP smart list" value={listId} className={`${input} mt-1 w-full`} onChange={event=>{
                     resetReview();setListId(event.target.value);setFolderId('');
@@ -103,6 +119,20 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                         {!r.eligible&&<small className="block text-amber-800">{r.reason}</small>}</span>
                 </label></li>)}</ul>
                 {!rows.length&&<p>No registrations match these visits and filters. Do not select a general event as a substitute.</p>}
+                <details className="rounded-lg border p-3">
+                    <summary className="cursor-pointer font-semibold">Save event recipient list</summary>
+                    <div className="mt-3 space-y-3">
+                        <label className="block text-sm">List name<input aria-label="Event recipient list name" maxLength={100} value={listName} onChange={event=>setListName(event.target.value)} className={`${input} mt-1 w-full`} /></label>
+                        <label className="block text-sm">List type<select aria-label="Event recipient list type" value={listMode} onChange={event=>setListMode(event.target.value)} className={`${input} mt-1 w-full`}>
+                            <option value="smart">Smart list — matches these visits and filters</option><option value="custom">Custom list — selected registrants</option>
+                        </select></label>
+                        <p className="text-sm text-gray-600">These private lists include RSVPs and programme registrations. Smart lists refresh when opened. Every mailing checks current email permissions.</p>
+                        {Object.keys(listErrors).length>0&&<p role="alert" className="text-sm text-red-700">{Object.values(listErrors).join(' ')}</p>}
+                        <div className="flex gap-3"><button type="button" disabled={dirty||!visitIds.length||savingList||!listName.trim()||(listMode==='custom'&&!chosen.length)} onClick={saveList} className="rounded-lg bg-teal-800 px-3 py-2 text-sm text-white disabled:opacity-50">{savingList?'Saving…':saveListId?'Update event list':'Save event list'}</button>
+                            {saveListId&&<button type="button" onClick={()=>{setSaveListId(null);setListName('');}} className="text-sm underline">Save as a new event list</button>}
+                        </div>
+                    </div>
+                </details>
             </section>
             <section className="space-y-4 rounded-xl border bg-white p-5">
                 <h2 className="font-semibold">Message and review</h2>

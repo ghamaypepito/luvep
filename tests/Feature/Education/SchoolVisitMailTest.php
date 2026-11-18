@@ -27,6 +27,44 @@ class SchoolVisitMailTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_filtered_audience_personalises_from_a_matching_visit_and_keeps_all_consent_evidence(): void
+    {
+        $old = $this->visit(['school' => 'Earlier college']);
+        $new = $this->visit(['school' => 'Selected college']);
+        $this->rsvp($old, ['created_at' => '2026-11-15 02:00:00']);
+        $this->rsvp($new, ['created_at' => '2026-11-17 02:00:00']);
+        $row = $this->rows($this->filters($new, ['visit_ids' => [$old->id, $new->id], 'registered_from' => '2026-11-17']))->sole();
+        $this->assertSame('Selected college', $row['context']['school']);
+        $this->assertSame(['Selected college'], $row['schools']);
+        $this->assertCount(2, $row['source_refs']);
+        $this->assertTrue($row['eligible']);
+    }
+
+    public function test_private_event_lists_include_programme_only_registrants_and_refresh_smart_rules(): void
+    {
+        Queue::fake();
+        $staff = $this->staff();
+        $visit = $this->visit();
+        $registration = $this->registration($visit);
+        $this->confirmFollowUp($registration);
+        $keys = $this->rows($this->filters($visit))->pluck('id')->all();
+        foreach (['custom', 'smart'] as $mode) {
+            $this->actingAs($staff)->post('/portal/education/school-mail/recipient-lists', $this->filters($visit) + [
+                'list_name' => $mode.' programme registrants', 'mode' => $mode, 'recipient_keys' => $keys,
+            ])->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $custom = \App\Models\EducationRecipientList::where('mode', 'custom')->sole();
+        $this->assertSame('registration', $custom->source_refs[0]['type']);
+        $this->assertSame($registration->id, $custom->source_refs[0]['id']);
+        $this->rsvp($visit, ['email' => 'new-match@example.test']);
+        foreach (\App\Models\EducationRecipientList::all() as $list) {
+            $this->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $list->id, 'load_saved_list' => true]))
+                ->assertOk()->assertInertia(fn ($page) => $page->has('recipients', $list->mode === 'custom' ? 1 : 2));
+        }
+        $this->actingAs($this->staff())->get('/portal/education/school-mail?'.http_build_query(['recipient_list_id' => $custom->id, 'load_saved_list' => true]))->assertNotFound();
+        Queue::assertNothingPushed();
+    }
+
     public function test_saved_rsvp_lists_and_manual_groups_keep_conflicting_permission_checks(): void
     {
         $staff = $this->staff();

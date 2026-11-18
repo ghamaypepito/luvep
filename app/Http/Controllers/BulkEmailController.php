@@ -35,7 +35,7 @@ class BulkEmailController extends Controller
             'templates' => $this->availableTemplates($department, $channel),
             'recipients' => $this->recipientPool($channel, $filterNewLeads),
             'filterNewLeads' => $filterNewLeads,
-            'recipientLists' => $filterNewLeads ? EducationRecipientList::where('created_by', $request->user()->id)
+            'recipientLists' => $filterNewLeads ? EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'leads')
                 ->orderBy('name')->get(['id', 'name', 'mode', 'filters', 'lead_ids']) : [],
             'events' => \App\Models\Event::orderBy('name')
                 ->get()
@@ -56,8 +56,8 @@ class BulkEmailController extends Controller
         abort_unless($this->department($request) === 'education' && $this->channel($request) === EmailCampaign::CHANNEL_EMAIL, 403);
         $request->validate(['list_id' => ['nullable', 'integer']]);
         $list = $request->filled('list_id')
-            ? EducationRecipientList::where('created_by', $request->user()->id)->findOrFail($request->input('list_id'))
-            : new EducationRecipientList(['created_by' => $request->user()->id]);
+            ? EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'leads')->findOrFail($request->input('list_id'))
+            : new EducationRecipientList(['created_by' => $request->user()->id, 'source' => 'leads']);
         $request->merge(['name' => is_string($request->input('name')) ? trim($request->input('name')) : $request->input('name')]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100', Rule::unique('education_recipient_lists')->where('created_by', $request->user()->id)->ignore($list->id)],
@@ -68,14 +68,14 @@ class BulkEmailController extends Controller
             'filters.event_id' => ['nullable', 'integer', 'exists:events,id'],
             'filters.registered_from' => ['nullable', 'date_format:Y-m-d'],
             'filters.registered_to' => ['nullable', 'date_format:Y-m-d', Rule::when($request->filled('filters.registered_from'), 'after_or_equal:filters.registered_from')],
-            'lead_ids' => ['required_if:mode,custom', 'array', 'max:10000'],
-            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
+            'lead_ids' => ['exclude_unless:mode,custom', 'required', 'array', 'min:1', 'max:10000', Rule::exists('leads', 'id')],
+            'lead_ids.*' => ['integer', 'distinct'],
         ]);
         try {
             $list->fill([
                 'name' => $data['name'], 'mode' => $data['mode'],
                 'filters' => $data['mode'] === 'smart' ? $data['filters'] : [],
-                'lead_ids' => $data['mode'] === 'custom' ? array_values($data['lead_ids']) : [],
+                'lead_ids' => $data['mode'] === 'custom' ? array_map('intval', array_values($data['lead_ids'])) : [],
             ])->save();
         } catch (\Illuminate\Database\UniqueConstraintViolationException $exception) {
             throw ValidationException::withMessages(['name' => 'You already have a recipient list with this name.']);
