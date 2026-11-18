@@ -5,7 +5,7 @@
 <meta name="color-scheme" content="light dark"><title>Your New Zealand chapter · EP Education</title>
 <link rel="icon" href="/education-landing/ep-logo.png"><link rel="stylesheet" href="/education-landing/landing.css?v={{ filemtime(public_path('education-landing/landing.css')) }}">
 <script src="/education-landing/landing.js?v={{ filemtime(public_path('education-landing/landing.js')) }}" defer></script>
-</head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/education-ui/education.css?v={{ filemtime(public_path('education-ui/education.css')) }}"></head><body class="edu-design edu-registration">
 @include('education.landing-form')
 <section id="ep-public-contact" class="ep-public-screen" hidden>
  <button type="button" data-return>← Back to registration</button>
