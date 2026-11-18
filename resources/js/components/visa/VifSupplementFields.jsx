@@ -27,12 +27,12 @@ function Question({ field, value, onChange, path, errors }) {
             {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         </fieldset>;
     }
-    const props = { id, value: typeof value === 'string' || typeof value === 'number' ? value : '', onChange: e => onChange(e.target.value), className: inputClass, 'aria-invalid': !!error, 'aria-describedby': error ? `${id}-error` : undefined };
+    const props = { id, value: typeof value === 'boolean' && field.type === 'select' ? (value ? 'Yes' : 'No') : typeof value === 'string' || typeof value === 'number' ? value : '', onChange: e => onChange(e.target.value), className: inputClass, 'aria-invalid': !!error, 'aria-describedby': error ? `${id}-error` : undefined };
     return <div className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
         <label htmlFor={id} className="mb-1 block text-sm font-medium text-gray-700">{field.label}</label>
         {field.type === 'select' ? <select {...props}><option value="">Please select</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
             : field.type === 'textarea' ? <textarea {...props} rows={3} maxLength={field.max || 5000} />
-                : <input {...props} type={field.type === 'date' ? 'date' : 'text'} maxLength={255} />}
+                : <input {...props} type={field.type === 'date' && (!value || /^\d{4}-\d{2}-\d{2}$/.test(String(value))) ? 'date' : 'text'} maxLength={255} />}
         {error && <p id={`${id}-error`} role="alert" className="mt-1 text-sm text-red-700">{error}</p>}
     </div>;
 }

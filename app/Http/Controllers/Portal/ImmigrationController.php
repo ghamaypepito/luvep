@@ -3499,7 +3499,8 @@ class ImmigrationController extends Controller
             'email' => $intake->email,
             'phone' => $intake->phone,
             'reference' => $intake->intake_id,
-            'visa_label' => \App\Support\IntakeVisaTypeMap::label($intake::class),
+            'visa_label' => $type === 'work' && ($intake->vif_answers['work_visa_category'] ?? '') === 'Post-Study Work Visa'
+                ? 'Post-Study Work Visa' : \App\Support\IntakeVisaTypeMap::label($intake::class),
             'submitted_at' => optional($intake->created_at)->toIso8601String(),
             'documents_count' => $documentsCount,
             'documents' => $documents,

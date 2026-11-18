@@ -37,9 +37,19 @@ final class VifSupplement
         $rules[$key] = match ($f['type']) {
             'list' => ['nullable', 'array', 'max:25'],
             'date' => ['nullable', 'date'],
-            'select' => ['nullable', \Illuminate\Validation\Rule::in($f['options'])],
+            'select' => ['nullable', \Illuminate\Validation\Rule::in($f['options'] === ['Yes', 'No'] ? ['Yes', 'No', '1', '0'] : $f['options'])],
             default => ['nullable', 'string', 'max:'.($f['max'] ?? ($f['type'] === 'textarea' ? 5000 : 255))],
         };
+        if ($f['type'] === 'date' && ! str_contains($key, 'vif_answers.') && in_array($f['key'], ['start_date', 'finish_date', 'from', 'to'], true)) {
+            $rules[$key] = ['nullable', function ($attribute, $value, $fail) {
+                if (is_string($value) && preg_match('/^\d{4}(?:-(0[1-9]|1[0-2]))?$/', $value)) {
+                    return; // retain historical year/month precision without inventing a day
+                }
+                if (\Illuminate\Support\Facades\Validator::make(['date' => $value], ['date' => 'date'])->fails()) {
+                    $fail('The '.$attribute.' must be a valid date.');
+                }
+            }];
+        }
         if ($f['type'] === 'list') {
             $rules[$key.'.*'] = ['array'];
             foreach ($f['fields'] as $child) {
@@ -123,6 +133,6 @@ final class VifSupplement
 
     private static function scalar($value): string
     {
-        return is_scalar($value) ? (string) $value : '';
+        return is_bool($value) ? ($value ? 'Yes' : 'No') : (is_scalar($value) ? (string) $value : '');
     }
 }

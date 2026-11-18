@@ -4,7 +4,7 @@ Status: implementation branch; full regression/staging acceptance pending. Do no
 
 ## Findings
 
-The live ticket was inspected read-only on 18 November 2026. It contains seven PDFs and a 4.57-second video. The PDFs total 187 pages, with 163 highlight annotations on 68 pages. Highlighted pages were rendered and reviewed; no client examples or attachment contents are committed. The video shows the public Immigration assessment entry cards, rather than a failing form submission. Six visa categories are listed in the request (the final reference to five is inconsistent). SMC has separate EOI and Resident Visa attachments.
+The live ticket was inspected read-only on 18 November 2026. It contains seven PDFs and a 4.57-second video. The PDFs total 187 pages, with 163 highlight annotations on 68 pages. Highlighted pages were rendered and reviewed; no client examples or attachment contents are committed. The video was reviewed visually (its audio was not independently transcribed). It shows the public Immigration assessment entry cards, rather than a failing form submission. Six visa categories are listed in the request (the final reference to five is inconsistent). SMC has separate EOI and Resident Visa attachments.
 
 Existing forms already capture many names, contact, passport, employment, health and character fields. They also already have private document/checklist workflows. A number of visa-specific questions were missing. Some Student list/military/travel fields existed in storage but were absent from the editable/rendered layout. The actual VIF exports use ImmigrationController::buildVifSections; the older VisaInformationForm helper is not the active export path.
 
@@ -25,7 +25,7 @@ Existing forms already capture many names, contact, passport, employment, health
 | Source | Highlighted pages | Coverage |
 | --- | --- | --- |
 | AEWV | 1–5, 8 | Reuse existing identity/history/employment/health/character; add missing employer/occupation/PCC/contact details. |
-| Dependent Child Resident Visa | 1–4, 6 | Reuse Family identity/history and medical fields; add supporting-parent/residence/character details. Existing passport/birth-certificate checklist workflows remain. |
+| Dependent Child Resident Visa | 1–4, 6–7 | Reuse Family identity/history and medical fields; add supporting-parent/residence/character details. Existing passport/birth-certificate checklist workflows remain. |
 | General Visitor Visa | 1–8 | Reuse existing identity/history/travel dates/health; add missing support/journey/partner/contact questions. Existing passport/itinerary uploads remain. |
 | Post Study Work Visa | 1–3, 5 | Add PSWV-specific history and detailed certificate questions within Work; reuse personal data and existing private qualification/funds uploads. |
 | SMC EOI | 4–17, 24–28, 30, 33, 40 | Add missing detailed health/character/pathway/family questions; reuse qualifications, employment and English evidence. |

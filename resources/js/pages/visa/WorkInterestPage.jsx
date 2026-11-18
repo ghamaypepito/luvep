@@ -308,6 +308,7 @@ export default function WorkInterestPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data]);
 
+    const workVisaLabel = data.vif_answers?.work_visa_category === 'Post-Study Work Visa' ? 'Post-Study Work Visa' : 'Work Visa (AEWV)';
     const steps = [
         {
             title: 'Terms',
@@ -569,8 +570,8 @@ export default function WorkInterestPage() {
     return (
         <>
             <IntakeFormShell
-                title="Work Visa (AEWV) — Applicant Information"
-                visaLabel="AEWV — Work"
+                title={`${workVisaLabel} — Applicant Information`}
+                visaLabel={workVisaLabel}
                 steps={steps}
                 onSubmit={submit}
                 processing={processing}
@@ -588,7 +589,7 @@ export default function WorkInterestPage() {
                 onClose={() => setShowConfirm(false)}
                 onConfirm={confirmSubmit}
                 processing={processing}
-                visaLabel="Work Visa (AEWV)"
+                visaLabel={workVisaLabel}
                 submitLabel="Submit intake"
                 summaryItems={[
                     ['Name', `${data.first_name} ${data.family_name}`.trim()],
@@ -601,7 +602,7 @@ export default function WorkInterestPage() {
             <IntakeSuccessModal
                 open={showSuccess}
                 onClose={() => setShowSuccess(false)}
-                visaLabel={flash?.intake_submitted || 'Work Visa (AEWV)'}
+                visaLabel={flash?.intake_submitted || workVisaLabel}
             />
         </>
     );

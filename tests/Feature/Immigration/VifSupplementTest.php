@@ -135,6 +135,33 @@ class VifSupplementTest extends TestCase
         $this->assertSame('No', \App\Models\WorkIntake::firstOrFail()->vif_answers['previous_post_study_work_visa']);
     }
 
+    public function test_legacy_boolean_and_month_precision_education_answers_are_preserved(): void
+    {
+        $values = ['qualifications' => [['name' => 'Legacy synthetic qualification', 'start_date' => '2014-06', 'finish_date' => '2017', 'completed' => true]]];
+        $this->assertTrue(Validator::make($values, VifSupplement::rules('student'))->passes());
+        $text = json_encode(VifSupplement::sections('student', $values));
+        $this->assertStringContainsString('Legacy synthetic qualification', $text);
+        $this->assertStringContainsString('2014-06', $text);
+        $this->assertStringContainsString('2017', $text);
+        $this->assertStringContainsString('Yes', $text);
+    }
+
+    public function test_staff_changes_refresh_an_existing_vif_and_require_adviser_review_again(): void
+    {
+        [$staff, $lead, $intake, $client] = $this->linkedDraft('work');
+        $this->actingAs($client)->post('/portal/lead/vif')->assertRedirect();
+        $document = LeadDocument::where('lead_id', $lead->id)->where('source_variant', 'vif')->firstOrFail();
+        $oldPath = $document->file_path;
+        $document->update(['status' => LeadDocument::STATUS_APPROVED, 'reviewed_by' => $staff->id, 'reviewed_at' => now()]);
+        $this->actingAs($staff)->patchJson("/portal/immigration/intakes/work/{$intake->id}", ['fields' => ['vif_answers' => ['middle_name' => 'Staff confirmed synthetic name']]])->assertOk();
+        $this->assertSame(LeadDocument::STATUS_CHECKED, $document->refresh()->status);
+        $this->assertNull($document->reviewed_by);
+        $this->assertNotSame($oldPath, $document->file_path);
+        Storage::disk('local')->assertExists($oldPath);
+        Storage::disk('local')->assertExists($document->file_path);
+        $this->actingAs($client)->get('/portal/lead/vif')->assertForbidden();
+    }
+
     public function test_catalogue_is_scoped_and_does_not_guess_post_study_answers(): void
     {
         $aewv = json_encode(VifSupplement::sections('work', []));
