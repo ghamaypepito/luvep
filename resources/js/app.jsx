@@ -45,6 +45,7 @@ createInertiaApp({
     let loadLayout;
     if (name.startsWith('hr/')) loadLayout = () => import('./components/layout/HrLayout');
     else if (ROLE_CHROME_PAGES.includes(name) || name.startsWith('ai/')) loadLayout = () => import('./components/layout/RoleLayout');
+    else if (name.startsWith('admin/agents/')) loadLayout = () => import('./components/layout/AffiliateAdminLayout');
     else if (name.startsWith('admin/')) loadLayout = () => import('./components/layout/AdminLayout');
     else {
       const match = Object.keys(PORTAL_LAYOUTS).find(prefix => name.startsWith(prefix));

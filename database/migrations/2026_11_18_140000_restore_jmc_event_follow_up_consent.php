@@ -19,8 +19,8 @@ return new class extends Migration
         }
         // The original agreement covers contact about this event, not the later study-tips preference.
         $cutoff = Carbon::parse('2026-11-08 00:00:00', 'Asia/Manila')->utc();
-        $visits = DB::table('education_visits')->where('school', 'Jose Maria College Foundation, Inc.')
-            ->where('kind', 'school')->whereDate('event_date', '2026-11-06')
+        $visits = DB::table('education_visits')->where('slug', 'jmc')->where('school', 'Jose Maria College Foundation, Inc.')
+            ->where('kind', 'partnership')->whereDate('event_date', '2026-11-06')
             ->where('event_time', '08:30')->where('timezone', 'Asia/Manila')->where('status', '!=', 'cancelled')->pluck('id');
         foreach ($visits as $visitId) {
             DB::transaction(function () use ($visitId, $cutoff) {

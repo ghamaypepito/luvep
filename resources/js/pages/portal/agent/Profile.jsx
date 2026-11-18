@@ -1,35 +1,17 @@
-import { useState } from "react";
 import { Head } from "@inertiajs/react";
-import { User, Mail, Briefcase, ShieldCheck, Lock, Phone, Link as LinkIcon, Copy, Check } from "lucide-react";
+import { User, Mail, Briefcase, ShieldCheck, Lock, Phone } from "lucide-react";
 import PortalPageHeader from "@/components/portal/PortalPageHeader";
 import AvatarUploader from "@/components/AvatarUploader";
+import ReferralLinkCard from "@/components/affiliate/ReferralLinkCard";
 
 export default function AgentProfile({ user, referral = null }) {
-    const [copied, setCopied] = useState(false);
-
-    const copyReferral = async () => {
-        if (! referral?.url) return;
-        try {
-            await navigator.clipboard.writeText(referral.url);
-        } catch (e) {
-            const t = document.createElement("textarea");
-            t.value = referral.url;
-            document.body.appendChild(t);
-            t.select();
-            document.execCommand("copy");
-            document.body.removeChild(t);
-        }
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1800);
-    };
-
     return (
         <div className="space-y-6 max-w-3xl mx-auto pb-12">
-            <Head title="My Profile — Agent" />
+            <Head title="My Profile — Affiliate Partner" />
             <PortalPageHeader
                 eyebrow="Account"
                 title="My Profile"
-                description="Your recruiting agent account on EP."
+                description="Your Affiliate Partner account on EP."
             />
 
             <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -39,7 +21,7 @@ export default function AgentProfile({ user, referral = null }) {
                         <h2 className="text-xl font-medium text-gray-900 tracking-tight">{user?.name || "—"}</h2>
                         <p className="text-sm text-gray-500 mt-0.5">{user?.email || "—"}</p>
                         <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-teal-600 mt-1.5">
-                            <Briefcase size={9} className="inline" /> {user?.role || "agent"}
+                            <Briefcase size={9} className="inline" /> {user?.role === "agent" ? "Affiliate Partner" : user?.role || "—"}
                         </p>
                     </div>
                 </div>
@@ -48,48 +30,13 @@ export default function AgentProfile({ user, referral = null }) {
                     <Row icon={<User size={14} />} label="Name" value={user?.name || "—"} />
                     <Row icon={<Mail size={14} />} label="Email" value={user?.email || "—"} />
                     <Row icon={<Phone size={14} />} label="Phone" value={user?.phone || "—"} />
-                    <Row icon={<Briefcase size={14} />} label="Role" value={user?.role || "agent"} />
+                    <Row icon={<Briefcase size={14} />} label="Role" value={user?.role === "agent" ? "Affiliate Partner" : user?.role || "—"} />
                 </dl>
             </section>
 
             {/* Referral link — same URL the dashboard card shows; kept
                 here too so agents can find it under Account. */}
-            {referral?.url && (
-                <section className="bg-gray-900 text-white rounded-2xl shadow-sm border border-gray-800 overflow-hidden">
-                    <div className="p-6">
-                        <div className="flex items-center gap-2.5 mb-4">
-                            <LinkIcon size={16} className="text-emerald-300" />
-                            <h2 className="text-sm font-bold uppercase tracking-[0.18em] text-white">Your referral link</h2>
-                        </div>
-                        <p className="text-[13px] text-gray-300 mb-4 leading-relaxed">
-                            Share this link with prospective leads. Anyone who registers through it will be
-                            automatically attributed to your account so Sales can follow up with you.
-                        </p>
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 font-mono text-[12px] text-emerald-100 truncate" title={referral.url}>
-                                {referral.url}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={copyReferral}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-[12px] font-bold transition-colors flex-shrink-0 ${
-                                    copied
-                                        ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                                        : "bg-white text-gray-900 hover:bg-gray-100"
-                                }`}
-                            >
-                                {copied ? <><Check size={13} strokeWidth={3} /> Copied</> : <><Copy size={13} /> Copy link</>}
-                            </button>
-                        </div>
-                        {referral.code && (
-                            <div className="mt-3 text-[11px] text-gray-400 flex items-center gap-2">
-                                <span className="uppercase tracking-wider text-[10px] font-bold">Code</span>
-                                <span className="font-mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded">{referral.code}</span>
-                            </div>
-                        )}
-                    </div>
-                </section>
-            )}
+            <ReferralLinkCard referral={referral} />
 
             <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <div className="flex items-center gap-2.5 mb-4">

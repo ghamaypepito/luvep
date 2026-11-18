@@ -435,6 +435,10 @@ Route::middleware(['throttle:tracker'])->group(function () {
     Route::get('/application/{preScreening}/uploads/{doc}', [$clientApp, 'streamUpload'])->name('application.upload.stream');
 });
 
+// Affiliate referrals use their own form and never enter the event funnel.
+Route::get('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'show'])->middleware('throttle:60,1')->name('affiliate.registration');
+Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'store'])->middleware('throttle:10,1')->name('affiliate.registration.store');
+
 // Public Registration & Assessment Routes
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the
@@ -620,6 +624,10 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['portal:admin', 'module:agents'])->group(function () {
         Route::get('/admin/agents', [\App\Http\Controllers\Admin\AgentModuleController::class, 'index'])
             ->name('admin.agents.index');
+        Route::get('/admin/agents/agreements', [\App\Http\Controllers\Admin\AgentModuleController::class, 'agreements'])
+            ->name('admin.agents.agreements');
+        Route::post('/admin/agents/{agent}/agreement/send', [\App\Http\Controllers\Admin\AgentModuleController::class, 'sendAgreement'])
+            ->name('admin.agents.agreement.send');
         Route::get('/admin/agents/{agent}', [\App\Http\Controllers\Admin\AgentModuleController::class, 'show'])
             ->name('admin.agents.show');
         Route::get('/admin/agents/{agent}/agreement/preview', [\App\Http\Controllers\Admin\AgentModuleController::class, 'previewAgreement'])
@@ -629,9 +637,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/admin/agents/{agent}/agreement/sign', [\App\Http\Controllers\Admin\AgentModuleController::class, 'signAgreement'])
             ->name('admin.agents.agreement.sign');
         Route::get('/admin/agents/{agent}/agreement/view', [\App\Http\Controllers\Admin\AgentModuleController::class, 'viewAgreement'])
-            ->name('admin.agents.agreement.view');
+            ->withTrashed()->name('admin.agents.agreement.view');
         Route::get('/admin/agents/{agent}/agreement/download', [\App\Http\Controllers\Admin\AgentModuleController::class, 'downloadAgreement'])
-            ->name('admin.agents.agreement.download');
+            ->withTrashed()->name('admin.agents.agreement.download');
     });
 
     // Verification module — restricted (default super-admin-only + admins,

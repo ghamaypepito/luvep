@@ -35,9 +35,16 @@ class EducationSchoolMailAudience
             if ($r->attendance_status === 'cancelled' || ($filters['audience'] === 'attended' && $r->attendance_status !== 'attended')) {
                 continue;
             }
-            $rows->push($this->row('rsvp', $r->id, $r->full_name, $r->email, $r->education_visit_id,
+            $row = $this->row('rsvp', $r->id, $r->full_name, $r->email, $r->education_visit_id,
                 $r->consented_at && ($followUp ? ($r->legacy_event_follow_up ?? $r->email_follow_up) : $r->email_newsletter) && ($followUp || $r->verified_at),
-                $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id], $r->created_at));
+                $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id], $r->created_at);
+            $row += ['source_name' => $row['name'], 'legacy_event_follow_up' => $r->legacy_event_follow_up,
+                'phone_key' => app(CommunicationService::class)->normalizePhone((string) $r->phone)];
+            if ($followUp && $r->legacy_event_follow_up && preg_match('/^([^,]+),\s*([^,]+)$/u', $row['name'], $parts)) {
+                $row['name'] = trim($parts[2]).' '.trim($parts[1]);
+                $row['context'] = array_replace($row['context'], ['full_name' => $row['name'], 'first_name' => trim($parts[2]), 'last_name' => trim($parts[1])]);
+            }
+            $rows->push($row);
         }
         // Programme registrations and RSVPs are independent. Never manufacture Lead links.
         // Recorded-attendance mode uses RSVP evidence only.
@@ -54,10 +61,16 @@ class EducationSchoolMailAudience
                 $nameKey = EducationRsvpWorkflow::nameKey($name);
                 $subscription = $subscriptions->get($r->id);
                 $confirmed = $subscription && $subscription->lead_id === $r->lead_id && strtolower(trim($subscription->email)) === $email;
-                $matchedRsvp = $r->{$filters['purpose']} && $eligibleRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
+                $matchedRsvp = $r->{$filters['purpose']} && $eligibleRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['source_name']) === $nameKey);
                 $permission = $followUp ? ($r->legacy_event_follow_up ?? ($confirmed || $r->email_follow_up || $matchedRsvp)) : ($confirmed || $matchedRsvp);
-                $rows->push($this->row('registration', $r->id, $name, $email, $r->education_visit_id,
-                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && $permission, 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
+                $row = $this->row('registration', $r->id, $name, $email, $r->education_visit_id,
+                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && $permission, 'Programme registration', $visits[$r->education_visit_id], $r->created_at);
+                $row += ['source_name' => $row['name'], 'given_name' => (string) ($c['first_name'] ?? ''), 'family_name' => (string) ($c['last_name'] ?? ''),
+                    'legacy_event_follow_up' => $r->legacy_event_follow_up, 'phone_key' => app(CommunicationService::class)->normalizePhone((string) ($c['phone'] ?? ''))];
+                if ($followUp && $r->legacy_event_follow_up) {
+                    $row['context'] = array_replace($row['context'], ['first_name' => trim($row['given_name']), 'last_name' => trim($row['family_name'])]);
+                }
+                $rows->push($row);
             }
         }
 
@@ -78,16 +91,74 @@ class EducationSchoolMailAudience
                 return null;
             }
             $first = $matches->first();
-            $sameName = $group->map(fn ($r) => EducationRsvpWorkflow::nameKey($r['name']))->unique()->count() === 1;
+            $samePhone = $group->every(fn ($r) => ! empty($r['phone_key'])) && $group->pluck('phone_key')->unique()->count() === 1;
+            $sameName = $this->namesAgree($group, $filters['purpose'] === 'email_follow_up', $samePhone);
             $eligible = ! isset($suppressed[$email]) && filter_var($email, FILTER_VALIDATE_EMAIL) && $sameName && $group->every(fn ($r) => $r['eligible']);
 
             return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : ($filters['purpose'] === 'email_follow_up' ? 'Missing follow-up permission, identity mismatch, invalid address, unsubscribe or prior bounce.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.')),
-                'conflicting_names' => $sameName ? [] : $group->map(fn ($r) => ['source' => $r['ref']['type'], 'id' => $r['ref']['id'], 'name' => $r['name']])->values()->all(),
+                'conflicting_names' => $sameName ? [] : $group->map(fn ($r) => ['source' => $r['ref']['type'], 'id' => $r['ref']['id'], 'name' => $r['source_name']])->values()->all(),
+                'contact_numbers_match' => (bool) $samePhone,
                 'schools' => $matches->pluck('school')->unique()->values()->all(),
                 'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
                 'source_refs' => $group->pluck('ref')->values()->all(), 'member_refs' => $matches->pluck('ref')->values()->all(), 'context' => $first['context']];
         })->filter()->sortBy('name')->values();
+    }
+
+    private function namesAgree(Collection $group, bool $followUp, bool $samePhone): bool
+    {
+        if ($group->map(fn ($r) => EducationRsvpWorkflow::nameKey($r['source_name']))->unique()->count() === 1) {
+            return true;
+        }
+        if (! $followUp || ! $samePhone || ! $group->every(fn ($r) => $r['legacy_event_follow_up'] === true)) {
+            return false;
+        }
+        // The two JMC forms collected full names versus separate given/family names.
+        $registration = $group->first(fn ($r) => $r['ref']['type'] === 'registration');
+        $family = EducationRsvpWorkflow::nameKey($registration['family_name'] ?? '');
+        if (strlen($family) < 2) {
+            return false;
+        }
+        $givenNames = [];
+        $suffixes = ['jr', 'sr', 'ii', 'iii', 'iv', 'v'];
+        foreach ($group as $row) {
+            if ($row['ref']['type'] === 'registration') {
+                if (EducationRsvpWorkflow::nameKey($row['family_name']) !== $family) {
+                    return false;
+                }
+                $given = $this->nameTokens($row['given_name']);
+            } else {
+                $tokens = $this->nameTokens($row['name']);
+                $given = [];
+                for ($n = 1; $n < count($tokens); $n++) {
+                    if (implode('', array_slice($tokens, -$n)) === $family) {
+                        $given = array_slice($tokens, 0, -$n);
+                        break;
+                    }
+                }
+            }
+            if (! $given || strlen($given[0]) < 2) {
+                return false;
+            }
+            foreach ($givenNames as $prior) {
+                if ($given[0] !== $prior[0] || array_values(array_intersect($given, $suffixes)) !== array_values(array_intersect($prior, $suffixes))) {
+                    return false;
+                }
+                for ($i = 1; $i < min(count($given), count($prior)); $i++) {
+                    if ($given[$i] !== $prior[$i] && ! (strlen($given[$i]) === 1 && str_starts_with($prior[$i], $given[$i])) && ! (strlen($prior[$i]) === 1 && str_starts_with($given[$i], $prior[$i]))) {
+                        return false;
+                    }
+                }
+            }
+            $givenNames[] = $given;
+        }
+
+        return true;
+    }
+
+    private function nameTokens(string $name): array
+    {
+        return array_values(array_filter(array_map(fn ($part) => EducationRsvpWorkflow::nameKey($part), preg_split('/\s+/u', trim($name)))));
     }
 
     private function row($type, $id, $name, $email, $visitId, $eligible, $attendance, EducationVisit $v, $registeredAt): array
