@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
+import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
 import { Ticket, Search, X } from "lucide-react";
 import TicketConversation from "@/components/TicketConversation";
 import TicketAttachments from "@/components/TicketAttachments";
@@ -60,6 +61,7 @@ export default function SystemTickets({ tickets = { data: [], links: [] }, filte
                 </div>
             </header>
 
+            <TicketTypeTabs />
             <nav className="flex flex-wrap gap-4 text-sm font-medium" aria-label="Ticket views">
                 <button onClick={() => setFilter({ tab: "active", status: "open" })} className={(filters.tab ?? "active") === "active" ? "underline" : "text-gray-500"}>Tickets</button>
                 <button onClick={() => setFilter({ tab: "archived", status: "all" })} className={filters.tab === "archived" ? "underline" : "text-gray-500"}>Archive</button>

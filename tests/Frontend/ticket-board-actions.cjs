@@ -10,7 +10,7 @@ dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribu
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react'), { act } = React, { createRoot } = require('react-dom/client');
 const requests = [], gets = [];
-const inertia = { Head: () => null, useForm: () => ({ data: {}, errors: {}, setData() {} }), router: { get: (...args) => gets.push(args), post: (url, data, options) => requests.push({ url, data, options }) } };
+const inertia = { Link: ({ children, ...props }) => React.createElement('a', props, children), Head: () => null, useForm: () => ({ data: {}, errors: {}, setData() {} }), router: { get: (...args) => gets.push(args), post: (url, data, options) => requests.push({ url, data, options }) } };
 const axios = require('axios');
 axios.defaults.adapter = async config => ({ data: { messages: { data: [], next_page_url: null } }, status: 200, statusText: 'OK', headers: {}, config });
 const output = buildSync({ entryPoints: ['resources/js/pages/admin/SystemTickets.jsx'], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') }, external: ['react', 'react/jsx-runtime', 'react-dom', '@inertiajs/react', 'axios'] }).outputFiles[0].text;

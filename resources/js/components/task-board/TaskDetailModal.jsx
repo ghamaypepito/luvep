@@ -1,4 +1,5 @@
 import { postTaskComment } from "@/lib/taskComments";
+import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { router, usePage } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -80,7 +81,7 @@ const STATUS_OPTIONS = [
     ["completed",   "Done"],
 ];
 
-const isoDate = (iso) => iso ? new Date(iso).toISOString().slice(0, 10) : "";
+const isoDate = (iso) => iso ? format(new Date(iso), "yyyy-MM-dd") : "";
 const isoTime = (iso) => {
     if (! iso) return "17:00";
     const d = new Date(iso);
@@ -110,6 +111,9 @@ export default function TaskDetailModal({ task, onClose }) {
     }, [task?.id, task?.assignee?.id, task?.additional_assignee_ids]);
 
     const initialDepartment = task?.department || "";
+    const readOnlyCreative = task?.category === "Creative request"
+        && !["admin", "super_admin"].includes(currentUser?.role)
+        && !initialAssigneeIds.includes(Number(currentUser?.id));
     const categoryOptions   = CATEGORIES_BY_DEPT[initialDepartment] || [];
 
     // Local form state
@@ -276,7 +280,9 @@ export default function TaskDetailModal({ task, onClose }) {
         setError(null);
 
         const tags = tagsInput.split(",").map((s) => s.trim()).filter(Boolean);
-        const dueAt = dueDate ? `${dueDate} ${dueTime || "17:00"}:00` : null;
+        const unchangedDeadline = dueDate === isoDate(task.due_at) && dueTime === isoTime(task.due_at);
+        const dueAt = !dueDate ? null : unchangedDeadline ? task.due_at
+            : new Date(`${dueDate}T${dueTime || "17:00"}:00`).toISOString();
 
         const resolvedCategory = isLinked
             ? null
@@ -373,6 +379,7 @@ export default function TaskDetailModal({ task, onClose }) {
                     </button>
                 </div>
 
+                {task.category === "Creative request" && <div className="mx-5 my-3"><a href={`/creative-requests/task/${task.id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-[#214f44] underline"><Link2 size={16} /> Open creative brief, caption & reference designs</a>{readOnlyCreative && <p className="mt-2 text-xs text-gray-600">The assigned creative owner or an administrator manages this task’s progress.</p>}</div>}
                 {/* Body — Craftboard-style 2-column layout:
                     left column owns the editable properties (title, status,
                     schedule, assignee, description, attachments). The right
@@ -653,7 +660,7 @@ export default function TaskDetailModal({ task, onClose }) {
                     <button
                         type="button"
                         onClick={onSave}
-                        disabled={saving}
+                        disabled={saving || readOnlyCreative}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold uppercase tracking-wider hover:bg-gray-800 transition-colors disabled:opacity-40"
                     >
                         <Save size={12} />

@@ -100,6 +100,8 @@ export default function KanbanBoard({
 
     const canDrag = (task) => {
         if (! currentUser) return false;
+        if (task.category === "Creative request") return ["admin", "super_admin"].includes(currentUser.role)
+            || [task.assignee?.id, ...(task.additional_assignee_ids || [])].map(Number).includes(Number(currentUser.id));
         if (currentUser.role === "admin") return true;
         if (task.assignee?.id === currentUser.id) return true;
         if (task.department && task.department === currentUser.role) return true;
