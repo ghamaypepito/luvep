@@ -30,7 +30,11 @@ class EducationRsvpAdminController extends Controller
         $attendanceContext = $attendance->context($request);
         $rsvps = $attendance->query($attendanceContext['attendanceFilters'])->with('folders:id,name')->latest('id')->paginate(50)->withQueryString()->fragment('attendance');
 
-        return response()->view('education.rsvp-admin', $attendanceContext + ['attendanceFolders' => \App\Models\EducationRsvpFolder::with('lists')->withCount('rsvps')->orderBy('name')->get(), 'page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
+        $attendanceOverview = EducationRsvp::query()->selectRaw(
+            "COUNT(*) as total, COALESCE(SUM(CASE WHEN attendance_status = 'attended' THEN 1 ELSE 0 END), 0) as attended"
+        )->first();
+
+        return response()->view('education.rsvp-admin', $attendanceContext + ['attendanceOverview' => $attendanceOverview, 'attendanceFolders' => \App\Models\EducationRsvpFolder::with('lists')->withCount('rsvps')->orderBy('name')->get(), 'page' => app(\App\Services\EducationRsvpContent::class)->get(), 'contentSchema' => app(\App\Services\EducationRsvpContent::class)->schema(), 'visits' => EducationVisit::withCount('rsvps')->orderBy('id')->get(), 'rsvps' => $rsvps, 'slackReady' => app(ProgramSlackNotifier::class)->configured(), 'pending' => EducationOutreach::whereNull('sent_at')->whereNull('cancelled_at')->count(), 'failed' => EducationOutreach::where('attempts', '>=', 8)->whereNull('sent_at')->count()])->header('Cache-Control', 'private, no-store');
     }
 
     public function content(Request $request, string $section)
