@@ -21,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SchoolVisitMailTest extends TestCase
@@ -273,6 +274,68 @@ class SchoolVisitMailTest extends TestCase
         $this->assertNull($rsvp->fresh()->verified_at);
         $this->assertNull($rsvp->fresh()->lead_id);
         $this->assertDatabaseCount('education_event_email_subscriptions', 0);
+    }
+
+    public static function legacyNameCases(): array
+    {
+        return [
+            'middle initial omitted' => ['Alex M. Example', 'Alex', 'Example', '+639171234567', true, 'email_follow_up', true],
+            'surname-first format' => ['Example, Alex M.', 'Alex', 'Example', '+639171234567', true, 'email_follow_up', true],
+            'comma format cannot bypass phone check' => ['Example, Alex', 'Alex', 'Example', '+639181234567', true, 'email_follow_up', false],
+            'comma format cannot bypass legacy check' => ['Example, Alex', 'Alex', 'Example', '+639171234567', null, 'email_follow_up', false],
+            'incomplete first given name' => ['A. M. Example', 'A.', 'Example', '+639171234567', true, 'email_follow_up', false],
+            'incomplete family name' => ['Alex M. E.', 'Alex', 'E.', '+639171234567', true, 'email_follow_up', false],
+            'second given name omitted' => ['Alex Robin M. Example', 'Alex', 'Example', '+639171234567', true, 'email_follow_up', true],
+            'registration has second given name' => ['Alex Example', 'Alex Robin', 'Example', '+639171234567', true, 'email_follow_up', true],
+            'compound surname' => ['Alex M. De Los Examples', 'Alex', 'De Los Examples', '+639171234567', true, 'email_follow_up', true],
+            'matching generation suffix' => ['Alex Jose III M. Example', 'Alex Jose III', 'Example', '+639171234567', true, 'email_follow_up', true],
+            'different middle names' => ['Alex Robert Example', 'Alex Richard', 'Example', '+639171234567', true, 'email_follow_up', false],
+            'different initial' => ['Alex R. Example', 'Alex William', 'Example', '+639171234567', true, 'email_follow_up', false],
+            'different given names' => ['Morgan M. Example', 'Alex', 'Example', '+639171234567', true, 'email_follow_up', false],
+            'different surnames' => ['Alex M. Example', 'Alex', 'Exampler', '+639171234567', true, 'email_follow_up', false],
+            'phone differs' => ['Alex M. Example', 'Alex', 'Example', '+639181234567', true, 'email_follow_up', false],
+            'phone missing' => ['Alex M. Example', 'Alex', 'Example', '', true, 'email_follow_up', false],
+            'legacy not recognised' => ['Alex M. Example', 'Alex', 'Example', '+639171234567', null, 'email_follow_up', false],
+            'event withdrawn' => ['Alex M. Example', 'Alex', 'Example', '+639171234567', false, 'email_follow_up', false],
+            'newsletter unchanged' => ['Alex M. Example', 'Alex', 'Example', '+639171234567', true, 'email_newsletter', false],
+            'generation must match' => ['Alex Jr Example', 'Alex', 'Example', '+639171234567', true, 'email_follow_up', false],
+        ];
+    }
+
+    #[DataProvider('legacyNameCases')]
+    public function test_legacy_name_variants_require_same_contact_and_compatible_names(string $rsvpName, string $given, string $family, string $phone, ?bool $legacy, string $purpose, bool $eligible): void
+    {
+        $visit = $this->visit();
+        $rsvp = $this->rsvp($visit, ['full_name' => $rsvpName, 'phone' => '09171234567', 'legacy_event_follow_up' => $legacy, 'email_newsletter' => true]);
+        $this->registration($visit, ['legacy_event_follow_up' => $legacy, 'email_newsletter' => true,
+            'contact_details' => ['first_name' => $given, 'last_name' => $family, 'email' => 'alex@example.test', 'phone' => $phone]]);
+        $row = $this->rows($this->filters($visit, ['purpose' => $purpose]))->sole();
+        $this->assertSame($eligible, $row['eligible']);
+        $this->assertArrayNotHasKey('phone_key', $row);
+        $this->assertSame($rsvpName, $rsvp->fresh()->full_name);
+        if ($rsvpName === 'Example, Alex M.') {
+            $this->assertSame('Alex M.', $row['context']['first_name']);
+            $this->assertSame('Example', $row['context']['last_name']);
+        }
+    }
+
+    public function test_comma_reordering_cannot_bypass_missing_legacy_permission_on_one_source(): void
+    {
+        $visit = $this->visit();
+        $this->rsvp($visit, ['full_name' => 'Example, Alex', 'phone' => '09171234567', 'legacy_event_follow_up' => true]);
+        $this->registration($visit, ['contact_details' => ['first_name' => 'Alex', 'last_name' => 'Example', 'email' => 'alex@example.test', 'phone' => '+639171234567']]);
+        $this->assertFalse($this->rows($this->filters($visit))->sole()['eligible']);
+    }
+
+    public function test_a_short_name_cannot_hide_two_conflicting_complete_given_names(): void
+    {
+        $visit = $this->visit();
+        $this->rsvp($visit, ['full_name' => 'Alex R. Example', 'phone' => '09171234567', 'legacy_event_follow_up' => true]);
+        foreach (['Alex Robert', 'Alex Richard'] as $given) {
+            $this->registration($visit, ['legacy_event_follow_up' => true,
+                'contact_details' => ['first_name' => $given, 'last_name' => 'Example', 'email' => 'alex@example.test', 'phone' => '+639171234567']]);
+        }
+        $this->assertFalse($this->rows($this->filters($visit))->sole()['eligible']);
     }
 
     public function test_event_specific_withdrawal_overrides_broad_and_confirmed_follow_up_choices(): void
