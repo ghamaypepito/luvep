@@ -39,7 +39,7 @@ class AffiliatePerformance
             ->groupByRaw("{$partner}, {$status}")->get();
         $daily = (clone $query)->selectRaw('DATE(created_at) AS date, COUNT(*) AS total')->groupByRaw('DATE(created_at)')->orderBy('date')->get()
             ->map(fn ($row) => ['date' => $row->date, 'count' => (int) $row->total])->values();
-        $agreements = AgentAgreement::whereIn('id', AgentAgreement::selectRaw('MAX(id)')->groupBy('agent_id'))->get()->keyBy('agent_id');
+        $agreements = AgentAgreement::whereRaw('version = (SELECT MAX(latest.version) FROM agent_agreements latest WHERE latest.agent_id = agent_agreements.agent_id)')->get()->keyBy('agent_id');
         $agents = User::where('role', 'agent')->orderBy('name')->get(['id', 'name', 'email', 'phone', 'location', 'avatar_path', 'referral_code'])
             ->map(function (User $agent) use ($totals, $breakdown, $agreements) {
                 $counts = $totals->get($agent->id);

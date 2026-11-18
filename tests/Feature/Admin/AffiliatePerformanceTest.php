@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\AgentAgreement;
 use App\Models\Lead;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -67,6 +68,17 @@ class AffiliatePerformanceTest extends TestCase
             ->where('filters.from', '2026-11-01')->where('filters.to', '2026-11-18')
             ->where('summary', ['registered_partners' => 1, 'leads' => 0, 'converted' => 0])
             ->has('daily', 0)->has('statusCounts', 0));
+    }
+
+    public function test_directory_uses_version_order_when_an_older_draft_is_issued_last(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $agent = User::factory()->create(['role' => 'agent']);
+        AgentAgreement::create(['agent_id' => $agent->id, 'version' => 3, 'is_draft' => false, 'file_path' => 'current.pdf', 'original_name' => 'current.pdf']);
+        AgentAgreement::create(['agent_id' => $agent->id, 'version' => 2, 'is_draft' => true, 'file_path' => '', 'original_name' => 'Draft']);
+
+        $this->actingAs($admin)->get('/admin/agents')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('agents.0.agreement_status', 'Generated'));
     }
 
     public function test_invalid_filter_or_nonaffiliate_id_is_rejected(): void
