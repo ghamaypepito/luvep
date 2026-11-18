@@ -85,6 +85,78 @@ class CreativeRequestTest extends TestCase
         $this->assertDatabaseCount('dtr_entries', 0);
     }
 
+    public function test_curated_uploads_are_separate_private_files_on_the_same_request(): void
+    {
+        $owner = $this->owner();
+        $sender = User::factory()->create(['role' => 'sales']);
+        $this->actingAs($sender)->post('/creative-requests', $this->brief([
+            'attachments' => [UploadedFile::fake()->image('reference.png')],
+            'asset_attachments' => [UploadedFile::fake()->image('logo.png'), UploadedFile::fake()->create('footage.mp4', 10, 'video/mp4'), UploadedFile::fake()->create('brand.zip', 2, 'application/zip')],
+        ]))->assertRedirect()->assertSessionHasNoErrors();
+        $creative = CreativeRequest::firstOrFail();
+        $this->assertCount(4, $creative->attachments);
+        $this->assertSame('assets', $creative->attachments[1]['group']);
+        $this->assertArrayNotHasKey('asset_attachments', $creative->brief);
+        $this->assertSame(4, $creative->row()['attachment_count']);
+        $this->assertSame(3, $creative->row()['asset_attachment_count']);
+        foreach ([$sender, $owner] as $user) {
+            $this->actingAs($user)->get("/creative-requests/{$creative->id}")->assertInertia(fn (Assert $p) => $p
+                ->has('creative.attachments', 1)->where('creative.attachments.0.name', 'reference.png')
+                ->has('creative.asset_attachments', 3)->where('creative.asset_attachments.0.name', 'logo.png')
+                ->where('creative.asset_attachments.0.download_url', url("/creative-requests/{$creative->id}/attachments/1")));
+            $this->get("/creative-requests/{$creative->id}/attachments/1?inline=1")->assertOk()->assertHeader('Content-Type', 'image/png');
+            $this->get("/creative-requests/{$creative->id}/attachments/2?inline=1")->assertOk()->assertHeader('Content-Type', 'video/mp4');
+            $this->get("/creative-requests/{$creative->id}/attachments/3")->assertOk();
+        }
+        foreach ($creative->attachments as $file) {
+            Storage::disk('local')->assertExists($file['path']);
+        }
+        $this->actingAs(User::factory()->create(['role' => 'education']))->get("/creative-requests/{$creative->id}/attachments/1")->assertForbidden();
+        $this->assertSame(1, LeadTask::count());
+    }
+
+    public function test_invalid_or_over_limit_curated_uploads_leave_no_files_or_tasks(): void
+    {
+        $this->owner();
+        $sender = User::factory()->create(['role' => 'sales']);
+        foreach ([
+            ['asset_attachments' => [UploadedFile::fake()->create('unsafe.svg', 1, 'image/svg+xml')]],
+            ['asset_attachments' => [UploadedFile::fake()->create('too-large.mp4', 51201, 'video/mp4')]],
+            ['asset_attachments' => array_map(fn ($i) => UploadedFile::fake()->image("asset-{$i}.png"), range(1, 11))],
+            ['attachments' => array_map(fn ($i) => UploadedFile::fake()->image("ref-{$i}.png"), range(1, 6)),
+                'asset_attachments' => array_map(fn ($i) => UploadedFile::fake()->image("asset-{$i}.png"), range(1, 5))],
+        ] as $files) {
+            $this->actingAs($sender)->post('/creative-requests', $this->brief($files))->assertSessionHasErrors();
+            $this->assertDatabaseCount('creative_requests', 0);
+            $this->assertDatabaseCount('lead_tasks', 0);
+            $this->assertSame([], Storage::disk('local')->allFiles());
+        }
+        Notification::assertNothingSent();
+    }
+
+    public function test_the_ten_file_limit_is_shared_between_references_and_curated_assets(): void
+    {
+        $this->owner();
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->post('/creative-requests', $this->brief([
+            'attachments' => array_map(fn ($i) => UploadedFile::fake()->image("ref-{$i}.png"), range(1, 6)),
+            'asset_attachments' => array_map(fn ($i) => UploadedFile::fake()->image("asset-{$i}.png"), range(1, 4)),
+        ]))->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertCount(10, CreativeRequest::firstOrFail()->attachments);
+        $this->assertCount(10, Storage::disk('local')->allFiles());
+    }
+
+    public function test_curated_assets_can_be_submitted_without_reference_files(): void
+    {
+        $this->owner();
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->post('/creative-requests', $this->brief([
+            'asset_attachments' => [UploadedFile::fake()->image('logo.png')],
+        ]))->assertRedirect()->assertSessionHasNoErrors();
+        $creative = CreativeRequest::firstOrFail();
+        $this->assertSame([], $creative->row(true)['attachments']);
+        $this->assertSame(url("/creative-requests/{$creative->id}/attachments/0"), $creative->row(true)['asset_attachments'][0]['download_url']);
+        $this->get("/creative-requests/{$creative->id}/attachments/0")->assertOk();
+    }
+
     public function test_missing_or_inactive_owner_never_silently_routes_a_request(): void
     {
         $sender = User::factory()->create(['role' => 'sales']);
@@ -229,10 +301,11 @@ class CreativeRequestTest extends TestCase
     {
         $owner = $this->owner();
         $sender = User::factory()->create(['role' => 'sales']);
-        $this->actingAs($sender)->post('/creative-requests', $this->brief(['attachments' => [UploadedFile::fake()->image('reference.png')]]));
+        $this->actingAs($sender)->post('/creative-requests', $this->brief(['attachments' => [UploadedFile::fake()->image('reference.png')], 'asset_attachments' => [UploadedFile::fake()->image('logo.png')]]));
         $creative = CreativeRequest::firstOrFail();
         $taskId = $creative->lead_task_id;
         $path = $creative->attachments[0]['path'];
+        $assetPath = $creative->attachments[1]['path'];
         $creative->task->comments()->create(['user_id' => $owner->id, 'body' => 'Keep this feedback.']);
         Notification::fake();
         $this->actingAs($owner)->delete("/creative-requests/{$creative->id}", ['expected_status' => 'not_started'])->assertRedirect();
@@ -241,17 +314,21 @@ class CreativeRequestTest extends TestCase
         $this->assertNull(LeadTask::find($taskId));
         $this->assertSame([], CreativeRequest::assignedFor($owner));
         Storage::disk('local')->assertExists($path);
+        Storage::disk('local')->assertExists($assetPath);
         $this->assertDatabaseHas('lead_task_comments', ['lead_task_id' => $taskId, 'body' => 'Keep this feedback.']);
         $this->get('/creative-requests')->assertInertia(fn (Assert $p) => $p->has('requests.data', 0));
         $this->get('/creative-requests?view=deleted')->assertInertia(fn (Assert $p) => $p->has('requests.data', 1)->where('requests.data.0.can_restore', true)->where('requests.data.0.is_deleted', true));
         $this->get("/creative-requests/{$creative->id}")->assertNotFound();
         $this->get("/creative-requests/{$creative->id}/attachments/0")->assertNotFound();
+        $this->get("/creative-requests/{$creative->id}/attachments/1")->assertNotFound();
         $this->patchJson("/api/tasks/{$taskId}", ['status' => 'completed'])->assertNotFound();
         $this->post("/creative-requests/{$creative->id}/restore", ['expected_status' => 'not_started'])->assertRedirect();
         $this->assertNotNull(CreativeRequest::find($creative->id));
         $this->assertSame('not_started', LeadTask::findOrFail($taskId)->status);
         $this->assertCount(1, CreativeRequest::assignedFor($owner));
         $this->actingAs($sender)->get("/creative-requests/{$creative->id}/attachments/0")->assertOk();
+        $this->get("/creative-requests/{$creative->id}/attachments/1")->assertOk();
+        Storage::disk('local')->assertExists($assetPath);
         Notification::assertNothingSent();
         $this->assertDatabaseCount('dtr_entries', 0);
     }

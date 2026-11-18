@@ -374,6 +374,17 @@ export default function AgentsIndex({
                     </select>
                 </label>
                 <label className="grid gap-1 text-xs font-medium text-[#607069]">
+                    Account status
+                    <select aria-label="Account status" className={control} value={draft.account_state || ""}
+                        onChange={event => setDraft({ ...draft, account_state: event.target.value, agent_id: "" })}>
+                        <option value="">All current accounts</option>
+                        <option value="active">Active</option>
+                        <option value="awaiting_signatures">Awaiting signatures</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="archived">Archived</option>
+                    </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-[#607069]">
                     From
                     <input
                         type="date"
@@ -478,6 +489,7 @@ export default function AgentsIndex({
                                 {[
                                     "Affiliate partner",
                                     "Contact",
+                                    "Account status",
                                     "Location",
                                     "Leads",
                                     "Converted",
@@ -539,6 +551,9 @@ export default function AgentsIndex({
                                             <span className="block">
                                                 {agent.phone || "—"}
                                             </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-[#607069]">
+                                            <span className="capitalize">{agent.account_state?.replace("_", " ") || "—"}</span>
                                         </td>
                                         <td className="px-4 py-3 text-[#607069]">
                                             {agent.location || "—"}
@@ -610,7 +625,7 @@ export default function AgentsIndex({
                             ) : (
                                 <tr>
                                     <td
-                                        colSpan={9}
+                                        colSpan={10}
                                         className="p-10 text-center text-[#607069]"
                                     >
                                         No affiliate partners match your

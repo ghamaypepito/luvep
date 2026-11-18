@@ -1,8 +1,9 @@
-import { ArrowLeft, ChartNoAxesCombined, FileSignature, Users } from 'lucide-react';
+import { ArrowLeft, ChartNoAxesCombined, ClipboardList, FileSignature, Users } from 'lucide-react';
 import AffiliateWorkspaceLayout from './AffiliateWorkspaceLayout';
 
 const nav = [
     { name: 'Affiliate Overview', href: '/admin/agents', icon: <ChartNoAxesCombined size={19} /> },
+    { name: 'Applications', href: '/admin/agents/applications', icon: <ClipboardList size={19} /> },
     { name: 'All Leads', href: '/admin/leads', icon: <Users size={19} /> },
     { name: 'Affiliate Agreements', href: '/admin/agents/agreements', icon: <FileSignature size={19} /> },
 ];
