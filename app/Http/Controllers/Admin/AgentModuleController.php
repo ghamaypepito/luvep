@@ -19,25 +19,7 @@ class AgentModuleController extends Controller
 {
     public function index(Request $request)
     {
-        $agents = User::where('role', 'agent')
-            ->withCount('agentLeads')
-            ->orderBy('name')
-            ->get(['id', 'name', 'email', 'phone', 'location', 'avatar_path', 'referral_code'])
-            ->map(fn (User $a) => [
-                'id' => $a->id,
-                'name' => $a->name,
-                'email' => $a->email,
-                'phone' => $a->phone,
-                'location' => $a->location,
-                'avatar_url' => $a->avatar_url,
-                'referral_code' => $a->referral_code,
-                'leads_count' => $a->agent_leads_count,
-                'has_agreement' => AgentAgreement::where('agent_id', $a->id)->exists(),
-            ]);
-
-        return inertia('admin/agents/Index', [
-            'agents' => $agents,
-        ]);
+        return inertia('admin/agents/Index', app(\App\Services\AffiliatePerformance::class)->report($request));
     }
 
     public function show(Request $request, User $agent, AgentAgreementService $service)
