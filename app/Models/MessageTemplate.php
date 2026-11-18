@@ -65,6 +65,16 @@ class MessageTemplate extends Model
         return $query->where('is_active', true);
     }
 
+    /** External recruiting accounts may only use the Affiliate library. */
+    public function scopeAvailableTo(Builder $query, User $user): Builder
+    {
+        if (in_array($user->role, ['agent', User::ROLE_SUB_AGENT], true)) {
+            return $query->where('department', 'agent');
+        }
+
+        return $user->isLead() ? $query->whereRaw('1 = 0') : $query;
+    }
+
     /** Scope to a department's own templates ('' / null = the shared set). */
     public function scopeForDepartment(Builder $query, ?string $department): Builder
     {

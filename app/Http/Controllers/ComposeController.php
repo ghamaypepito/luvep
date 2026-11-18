@@ -7,6 +7,7 @@ use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\CommunicationService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -25,8 +26,8 @@ class ComposeController extends Controller
 
         return inertia($ctx['component'], [
             'basePath' => $ctx['basePath'],
-            'sent' => $this->sentList(),
-            'templates' => MessageTemplate::active()
+            'sent' => $this->sentList($request),
+            'templates' => MessageTemplate::active()->availableTo($request->user())
                 ->whereJsonContains('channels', 'email')
                 ->whereNotNull('email_body')->where('email_body', '!=', '')
                 ->orderBy('name')
@@ -63,6 +64,9 @@ class ComposeController extends Controller
             return back()->withErrors(['error' => 'Add at least one recipient.']);
         }
 
+        $leads = $this->recipientLeads($request)->whereIn('id', $leadIds)->get();
+        abort_unless($leads->count() === count(array_unique($leadIds)), 403, 'You do not have access to one or more recipients.');
+
         $subject = $data['subject'] ?? '';
         $body = $data['body'];
         // A visual-builder body is a complete HTML document → send self-contained.
@@ -78,7 +82,7 @@ class ComposeController extends Controller
         $count = 0;
 
         // Lead recipients — substitute {{variables}} against each lead.
-        foreach (Lead::whereIn('id', $leadIds)->get() as $lead) {
+        foreach ($leads as $lead) {
             if (empty($lead->email)) {
                 continue;
             }
@@ -132,7 +136,7 @@ class ComposeController extends Controller
             return response()->json(['leads' => []]);
         }
 
-        $leads = Lead::whereNotNull('email')->where('email', '!=', '')
+        $leads = $this->recipientLeads($request)->whereNotNull('email')->where('email', '!=', '')
             ->where(function ($w) use ($q) {
                 $w->where('first_name', 'like', "%{$q}%")
                     ->orWhere('last_name', 'like', "%{$q}%")
@@ -151,11 +155,28 @@ class ComposeController extends Controller
         return response()->json(['leads' => $leads]);
     }
 
-    /** Recent Compose-sent emails (shared history) for the left panel. */
-    private function sentList()
+    private function recipientLeads(Request $request): Builder
+    {
+        $user = $request->user();
+        $query = Lead::query();
+        if (in_array($user->role, ['agent', User::ROLE_SUB_AGENT], true)) {
+            $ownerId = $user->role === 'agent' ? $user->id : $user->parent_agent_id;
+            $query->where('agent_id', $ownerId ?? 0);
+        }
+
+        return $query;
+    }
+
+    /** External partners see their own sends, with current lead access enforced. */
+    private function sentList(Request $request)
     {
         return MessageLog::where('channel', MessageLog::CHANNEL_EMAIL)
             ->where('source', 'compose')
+            ->when(in_array($request->user()->role, ['agent', User::ROLE_SUB_AGENT], true), fn ($query) => $query
+                ->where('triggered_by_user_id', $request->user()->id)
+                ->where(fn ($recipients) => $recipients->where('recipient_type', 'raw')
+                    ->orWhere(fn ($leads) => $leads->where('recipient_type', 'lead')
+                        ->whereIn('recipient_id', $this->recipientLeads($request)->select('id')))))
             ->with(['lead:id,first_name,last_name', 'triggeredBy:id,name'])
             ->latest()
             ->limit(100)
