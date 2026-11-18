@@ -1,4 +1,7 @@
 /* Approved interactive preview: same composition, with live HR controls and records. */
+/* Reserve footer space for the assistant instead of covering HR records and actions. */
+.hr-app ~ button[aria-controls="ep-assistant-panel"],.hr-app ~ .ep-dock > .ep-dock-trigger { position:static;display:flex;margin:0 24px 24px auto; }
+.hr-app ~ button[aria-controls="ep-assistant-panel"] { width:fit-content; }
 body:has(.hr-app) { background: #e9eee5; }
 .hr-preview-toolbar { min-height:52px;display:flex;align-items:center;justify-content:space-between;padding:9px 26px;gap:16px;background:#253f32;color:white;font:13px var(--font-urbanist),sans-serif; }
 .hr-preview-toolbar>span { display:flex;align-items:center;gap:10px;font-weight:600; }
@@ -176,8 +179,6 @@ body:has(.hr-app) { background: #e9eee5; }
     .hr-topbar>span { font-size:12px; }
 }
 @media(max-width:760px) {
-    .hr-app ~ button[aria-controls="ep-assistant-panel"],.hr-app ~ .ep-dock > .ep-dock-trigger { position:static;display:flex;margin:0 24px 24px auto; }
-    .hr-app ~ button[aria-controls="ep-assistant-panel"] { width:fit-content; }
     .hr-preview-toolbar { flex-wrap:wrap;padding:10px 16px;gap:10px; }
     .hr-preview-toolbar>span { font-size:12px;width:100%; }
     .hr-preview-toolbar small { font-size:10px; }
