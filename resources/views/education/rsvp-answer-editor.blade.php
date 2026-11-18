@@ -19,6 +19,10 @@ $answerValue = fn($field) => $editingAnswers ? old($field) : $r->{$field};
                 @if($r->visit->kind === 'partnership' || $r->role)<label>Role / organisation<input name="role" maxlength="100" value="{{ $answerValue('role') }}"></label>@else<input type="hidden" name="role" value="">@endif
             </div>
             <fieldset class="rsvp-answer-choices"><legend>Recorded email choices</legend>
+                @if($r->legacy_event_follow_up !== null)
+                    <input type="hidden" name="legacy_event_follow_up" value="0">
+                    <label><input type="checkbox" name="legacy_event_follow_up" value="1" @checked($answerValue('legacy_event_follow_up'))><span>Follow-ups about this event (original contact agreement)</span></label>
+                @endif
                 @foreach(['email_reminders'=>'Event reminders','future_invites'=>'Future event invitations','email_follow_up'=>'Study tips and adviser follow-ups','email_newsletter'=>'Luvep Education newsletter'] as $choice=>$choiceLabel)
                     <input type="hidden" name="{{ $choice }}" value="0">
                     <label><input type="checkbox" name="{{ $choice }}" value="1" @checked($answerValue($choice))><span>{{ $choiceLabel }}</span></label>

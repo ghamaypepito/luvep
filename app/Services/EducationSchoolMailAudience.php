@@ -36,7 +36,7 @@ class EducationSchoolMailAudience
                 continue;
             }
             $rows->push($this->row('rsvp', $r->id, $r->full_name, $r->email, $r->education_visit_id,
-                $r->consented_at && $r->{$filters['purpose']} && ($followUp || $r->verified_at),
+                $r->consented_at && ($followUp ? ($r->legacy_event_follow_up ?? $r->email_follow_up) : $r->email_newsletter) && ($followUp || $r->verified_at),
                 $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id], $r->created_at));
         }
         // Programme registrations and RSVPs are independent. Never manufacture Lead links.
@@ -55,8 +55,9 @@ class EducationSchoolMailAudience
                 $subscription = $subscriptions->get($r->id);
                 $confirmed = $subscription && $subscription->lead_id === $r->lead_id && strtolower(trim($subscription->email)) === $email;
                 $matchedRsvp = $r->{$filters['purpose']} && $eligibleRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
+                $permission = $followUp ? ($r->legacy_event_follow_up ?? ($confirmed || $r->email_follow_up || $matchedRsvp)) : ($confirmed || $matchedRsvp);
                 $rows->push($this->row('registration', $r->id, $name, $email, $r->education_visit_id,
-                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || ($followUp && $r->email_follow_up) || $matchedRsvp), 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
+                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && $permission, 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
             }
         }
 
@@ -82,6 +83,7 @@ class EducationSchoolMailAudience
 
             return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : ($filters['purpose'] === 'email_follow_up' ? 'Missing follow-up permission, identity mismatch, invalid address, unsubscribe or prior bounce.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.')),
+                'conflicting_names' => $sameName ? [] : $group->map(fn ($r) => ['source' => $r['ref']['type'], 'id' => $r['ref']['id'], 'name' => $r['name']])->values()->all(),
                 'schools' => $matches->pluck('school')->unique()->values()->all(),
                 'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
                 'source_refs' => $group->pluck('ref')->values()->all(), 'member_refs' => $matches->pluck('ref')->values()->all(), 'context' => $first['context']];

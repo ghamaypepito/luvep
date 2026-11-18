@@ -104,6 +104,7 @@ class EducationRsvpAdminController extends Controller
             'phone' => 'nullable|string|max:40', 'role' => 'nullable|string|max:100',
             'email_reminders' => 'required|boolean', 'future_invites' => 'required|boolean',
             'email_follow_up' => 'required|boolean', 'email_newsletter' => 'required|boolean',
+            'legacy_event_follow_up' => 'sometimes|boolean',
         ]);
         $revision = $data['revision'];
         unset($data['revision']);
@@ -122,10 +123,13 @@ class EducationRsvpAdminController extends Controller
                 if (! hash_equals($current->answersRevision(), $revision)) {
                     throw ValidationException::withMessages(['revision' => 'This RSVP changed while you were editing. Reload the page and review the latest answers before saving.']);
                 }
+                if (array_key_exists('legacy_event_follow_up', $data) && $current->legacy_event_follow_up === null) {
+                    throw ValidationException::withMessages(['legacy_event_follow_up' => 'This RSVP has no recorded legacy event-contact permission.']);
+                }
                 if (EducationRsvp::where('education_visit_id', $current->education_visit_id)->whereRaw('LOWER(TRIM(email)) = ?', [$data['email']])->whereKeyNot($current->id)->exists()) {
                     throw ValidationException::withMessages(['email' => 'This email already has an RSVP for this event. Edit that RSVP instead.']);
                 }
-                $before = $current->only(array_keys($data));
+                $before = $current->only([...array_keys($data), 'legacy_event_follow_up']);
                 $identityChanged = $data['email'] !== strtolower(trim($current->email)) || $data['name_key'] !== EducationRsvpWorkflow::nameKey($current->full_name);
                 $current->fill($data);
                 if (! $current->isDirty()) {
@@ -134,13 +138,16 @@ class EducationRsvpAdminController extends Controller
                 if ($identityChanged) {
                     // A signed link for the original identity must not verify the corrected address.
                     $current->fill(['public_id' => (string) Str::uuid(), 'verified_at' => null, 'lead_id' => null, 'linked_at' => null]);
+                    if ($current->legacy_event_follow_up !== null) {
+                        $current->legacy_event_follow_up = null;
+                    }
                     EducationOutreach::where('education_rsvp_id', $current->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['cancelled_at' => now()]);
                 }
                 $current->save();
                 ActivityLog::record('education.rsvp.answers_updated', [
                     'portal' => 'education', 'entity_type' => EducationRsvp::class, 'entity_id' => $current->id,
                     'description' => 'Corrected RSVP answers',
-                    'changes' => ['before' => $before, 'after' => $current->only(array_keys($data))],
+                    'changes' => ['before' => $before, 'after' => $current->only(array_keys($before))],
                     'properties' => ['rsvp_id' => $current->id, 'identity_changed' => $identityChanged],
                 ]);
             });
