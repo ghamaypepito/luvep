@@ -47,6 +47,7 @@ jobs:
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/agreement-custom-description.cjs
           node tests/Frontend/offer-of-place-inbox.cjs
+          node tests/Frontend/affiliate-performance.cjs
           node tests/Frontend/engagement-email-review.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs

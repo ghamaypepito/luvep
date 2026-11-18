@@ -588,7 +588,7 @@ export default function AgentsIndex({
                                         <td className="px-4 py-3">
                                             {agent.has_agreement ? (
                                                 <span className="rounded-full bg-[#e3efe5] px-2 py-1 text-[11px] font-semibold text-[#236143]">
-                                                    On file
+                                                    {agent.agreement_status || "On file"}
                                                 </span>
                                             ) : (
                                                 <span className="text-[#607069]">

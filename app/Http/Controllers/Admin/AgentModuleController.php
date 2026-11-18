@@ -29,11 +29,10 @@ class AgentModuleController extends Controller
     {
         abort_unless($agent->role === 'agent', 404);
 
-        $leads = Lead::where('agent_id', $agent->id)
-            ->orderByDesc('created_at')
-            ->limit(200)
-            ->get(['id', 'lead_id', 'first_name', 'last_name', 'status', 'education_stage', 'english_stage', 'immigration_stage', 'is_student', 'is_english_student', 'is_immigration_case', 'email', 'phone', 'residence_city', 'residence_country', 'country', 'created_at'])
-            ->map(fn (Lead $l) => [
+        $leads = Lead::referredByAffiliate($agent->id)
+            ->orderByDesc('created_at')->orderByDesc('id')
+            ->paginate(25, ['id', 'lead_id', 'first_name', 'last_name', 'status', 'education_stage', 'english_stage', 'immigration_stage', 'is_student', 'is_english_student', 'is_immigration_case', 'email', 'phone', 'residence_city', 'residence_country', 'country', 'created_at'])->withQueryString()
+            ->through(fn (Lead $l) => [
                 'id' => $l->id,
                 'lead_id' => $l->lead_id,
                 'name' => trim("{$l->first_name} {$l->last_name}") ?: '—',
@@ -59,8 +58,8 @@ class AgentModuleController extends Controller
 
         // Count the agent's recruited leads by their effective stage (same
         // resolution the table/commission use), over ALL their leads — not just
-        // the capped 200 shown in the table — so the cards are accurate.
-        $statusCounts = Lead::where('agent_id', $agent->id)
+        // the current history page — so the cards are accurate.
+        $statusCounts = Lead::referredByAffiliate($agent->id)
             ->get(['status', 'education_stage', 'english_stage', 'immigration_stage', 'is_immigration_case'])
             ->map(fn (Lead $l) => $l->education_stage
                 ?: ($l->english_stage
@@ -73,7 +72,7 @@ class AgentModuleController extends Controller
             ->values();
 
         return inertia('admin/agents/Show', [
-            'commission' => $this->commissionSummary($agent, $agreement),
+            'commission' => $this->commissionSummary($agent, AgentAgreement::where('agent_id', $agent->id)->where('is_draft', false)->orderByDesc('version')->first()),
             'statusCounts' => $statusCounts,
             'agent' => [
                 'id' => $agent->id,
@@ -83,9 +82,13 @@ class AgentModuleController extends Controller
                 'location' => $agent->location,
                 'avatar_url' => $agent->avatar_url,
                 'referral_code' => $agent->referral_code,
+                'registered_at' => $agent->created_at?->toIso8601String(),
+                'referral' => ($code = $agent->ensureReferralCode()) ? ['code' => $code, 'url' => route('affiliate.registration', ['code' => $code])] : null,
             ],
-            'leads' => $leads,
-            'leadsCount' => $leads->count(),
+            'leads' => $leads->items(),
+            'leadsCount' => $leads->total(),
+            'leadPagination' => $leads->linkCollection(),
+            'convertedCount' => Lead::referredByAffiliate($agent->id)->where(fn ($q) => $q->where('status', 'Converted')->orWhere('is_student', true)->orWhere('is_english_student', true)->orWhere('is_immigration_case', true)->orWhere('is_accommodation_client', true))->count(),
             'agreements' => AgentAgreement::where('agent_id', $agent->id)->orderByDesc('version')->get()
                 ->map(fn ($version) => $version->historyPayload("/admin/agents/{$agent->id}/agreement")),
             'agreement' => $agreement ? [
@@ -131,7 +134,7 @@ class AgentModuleController extends Controller
     {
         // Qualifying students = the agent's referred leads who have started
         // their course. Each one counts as 1 toward the commission.
-        $qualifying = Lead::where('agent_id', $agent->id)
+        $qualifying = Lead::referredByAffiliate($agent->id)
             ->where('education_stage', 'Started Course')
             ->count();
 

@@ -7,11 +7,15 @@ import {
 } from "lucide-react";
 import AgreementSignModal from "@/components/AgreementSignModal";
 import PdfViewerModal from "@/components/PdfViewerModal";
+import Pagination from "@/components/ui/Pagination";
+import ReferralLinkCard from "@/components/affiliate/ReferralLinkCard";
 
 export default function AgentShow({
     agent = {},
     leads = [],
     leadsCount = 0,
+    leadPagination = [],
+    convertedCount = 0,
     agreement = null,
     agreements = [],
     agreementFieldGroups = [],
@@ -48,7 +52,7 @@ export default function AgentShow({
 
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
-            <Head title={`${agent.name} — Agent`} />
+            <Head title={`${agent.name} — Affiliate Partner`} />
 
             <Link href="/admin/agents" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800">
                 <ArrowLeft size={15} /> Back to Affiliate Partners
@@ -66,10 +70,13 @@ export default function AgentShow({
                         {agent.email && <span className="inline-flex items-center gap-1.5"><Mail size={13} /> {agent.email}</span>}
                         {agent.phone && <span className="inline-flex items-center gap-1.5"><Phone size={13} /> {agent.phone}</span>}
                         {agent.location && <span className="inline-flex items-center gap-1.5"><MapPin size={13} /> {agent.location}</span>}
+                        {agent.registered_at && <span>Registered {fmtDate(agent.registered_at)}</span>}
                         {agent.referral_code && <span className="font-mono text-gray-400">{agent.referral_code}</span>}
                     </div>
                 </div>
             </div>
+
+            <ReferralLinkCard referral={agent.referral} />
 
             {/* Stat cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -186,7 +193,7 @@ export default function AgentShow({
             {/* Leads */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-gray-700">Leads recruited</h3>
+                    <h3 className="text-sm font-bold text-gray-700">Lead history · {leadsCount} referrals · {convertedCount} converted</h3>
                 </div>
                 {leads.length === 0 ? (
                     <div className="p-12 text-center text-gray-400 text-sm">No leads recruited yet.</div>
@@ -227,6 +234,8 @@ export default function AgentShow({
                     </div>
                 )}
             </div>
+
+            <Pagination links={leadPagination} />
 
             {modalOpen && (
                 <AgreementModal

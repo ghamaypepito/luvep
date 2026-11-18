@@ -39,7 +39,7 @@ class AffiliatePerformance
             ->groupByRaw("{$partner}, {$status}")->get();
         $daily = (clone $query)->selectRaw('DATE(created_at) AS date, COUNT(*) AS total')->groupByRaw('DATE(created_at)')->orderBy('date')->get()
             ->map(fn ($row) => ['date' => $row->date, 'count' => (int) $row->total])->values();
-        $agreements = AgentAgreement::query()->select('agent_id')->distinct()->pluck('agent_id')->flip();
+        $agreements = AgentAgreement::whereIn('id', AgentAgreement::selectRaw('MAX(id)')->groupBy('agent_id'))->get()->keyBy('agent_id');
         $agents = User::where('role', 'agent')->orderBy('name')->get(['id', 'name', 'email', 'phone', 'location', 'avatar_path', 'referral_code'])
             ->map(function (User $agent) use ($totals, $breakdown, $agreements) {
                 $counts = $totals->get($agent->id);
@@ -50,6 +50,7 @@ class AffiliatePerformance
                     'leads_count' => (int) ($counts?->leads_count ?? 0), 'converted_count' => (int) ($counts?->converted_count ?? 0),
                     'status_counts' => $breakdown->where('affiliate_id', $agent->id)->map(fn ($row) => ['status' => $row->current_status, 'count' => (int) $row->total])->values(),
                     'has_agreement' => isset($agreements[$agent->id]),
+                    'agreement_status' => $agreements->get($agent->id)?->statusLabel(),
                 ];
             });
         $statusCounts = $breakdown->groupBy('current_status')->map(fn ($rows, $name) => ['status' => $name, 'count' => (int) $rows->sum('total')])->sortByDesc('count')->values();
