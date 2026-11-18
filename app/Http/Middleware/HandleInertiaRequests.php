@@ -133,7 +133,7 @@ class HandleInertiaRequests extends Middleware
         $labels = [
             'sales' => 'Sales', 'education' => 'Education', 'english' => 'English',
             'immigration' => 'Immigration', 'accommodation' => 'Accommodation',
-            'finance' => 'Finance', 'agent' => 'Agent', 'sub_agent' => 'Sub-Agent',
+            'finance' => 'Finance', 'agent' => 'Affiliate Partner', 'sub_agent' => 'Sub-Agent',
         ];
 
         $keys = $user->accessiblePortals();

@@ -23,7 +23,7 @@ const ROLE_STYLES = {
 };
 
 const roleStyle = (role) => ROLE_STYLES[role] || 'bg-gray-100 text-gray-600 border-gray-200';
-const ROLE_LABELS = { super_admin: 'Super Admin', sub_agent: 'Sub-agent' };
+const ROLE_LABELS = { super_admin: 'Super Admin', agent: 'Affiliate Partner', sub_agent: 'Sub-agent' };
 const roleLabel = (role) => (role ? ROLE_LABELS[role] || role.charAt(0).toUpperCase() + role.slice(1) : '—');
 
 const formatDate = (iso) => {
@@ -230,13 +230,13 @@ function UserModal({ open, onClose, editing, roles, agents = [] }) {
 
                         {data.role === 'sub_agent' && (
                             <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-2">
-                                <Label required>Works under agent</Label>
+                                <Label required>Works under Affiliate Partner</Label>
                                 <select
                                     value={data.parent_agent_id}
                                     onChange={e => setField('parent_agent_id', e.target.value)}
                                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition-all"
                                 >
-                                    <option value="">Select an agent…</option>
+                                    <option value="">Select an Affiliate Partner…</option>
                                     {agents.map(a => (
                                         <option key={a.id} value={a.id}>{a.name}{a.referral_code ? ` · ${a.referral_code}` : ''}</option>
                                     ))}

@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+
+.affiliate-portal { color: #192b22; font-family: 'DM Sans', sans-serif; }
+.affiliate-portal > .h-screen { background: #f6f7f3; font-family: inherit; }
+.affiliate-portal aside { background: #fbfcf9; }
+.affiliate-portal aside.lg\:flex { padding: 0; border-right: 1px solid #e4e9df; width: 240px; }
+.affiliate-portal aside.lg\:flex > div { border: 0; border-radius: 0; box-shadow: none; background: #fbfcf9; }
+.affiliate-portal .affiliate-brand { width: 102px; height: 64px; object-fit: contain; }
+.affiliate-portal .affiliate-nav-active { background: #d6ec9d; color: #1d3b28; box-shadow: none; }
+.affiliate-portal .affiliate-nav-active > div { color: #2c5638; }
+.affiliate-portal header { background: #fbfcf9; }
+.affiliate-portal main { padding-top: 24px; }
+.affiliate-page { max-width: 1450px; margin: auto; padding-bottom: 30px; }
+.affiliate-page h1, .affiliate-page h2, .affiliate-page h3 { font-family: 'Instrument Sans', sans-serif; letter-spacing: -.03em; }
+.affiliate-page h1 { font-weight: 600; }
+.affiliate-page > div > h1 { font-size: clamp(28px, 3vw, 40px); }
+.affiliate-portal .affiliate-referral-card { padding: 21px; border: 1px solid #e1e7dc; border-radius: 20px; background: white; }
+.affiliate-referral-card h2 { font-size: 17px; font-weight: 600; }
+.affiliate-referral-card p { margin-top: 3px; color: #57685e; font-size: 13px; }
+.affiliate-icon { display: inline-flex; align-items: center; justify-content: center; width: 39px; height: 39px; border-radius: 11px; background: #edf3da; color: #3c683b; }
+.affiliate-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 8px 12px; border: 1px solid #dce5d8; border-radius: 9px; background: #fff; font-size: 12px; font-weight: 700; color: #254d35; }
+.affiliate-button:hover { background: #f0f6e8; }
+.affiliate-button-primary { background: #194d42; border-color: #194d42; color: #fff; }
+.affiliate-button-primary:hover { background: #123c32; }
+.affiliate-button:focus-visible { outline: 2px solid #2b6d47; outline-offset: 3px; }
+.affiliate-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: 1px solid #e1e7dc; border-radius: 20px; background: white; padding: 20px 0; }
+.affiliate-summary-card { border-right: 1px solid #e4eade; padding: 0 21px; min-width: 0; }
+.affiliate-summary-card:last-child { border-right: 0; }
+.affiliate-summary-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: #526456; }
+.affiliate-summary-card:nth-child(2) .affiliate-icon { background: #e4eafb; color: #5a70a8; }
+.affiliate-summary-card:nth-child(3) .affiliate-icon { background: #f2dfec; color: #98587f; }
+.affiliate-summary-card:nth-child(4) .affiliate-icon { background: #f0f6cb; color: #6b7d35; }
+.affiliate-summary-value { margin-top: 10px; font-family: 'Instrument Sans',sans-serif; font-size: 34px; font-weight: 600; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.affiliate-tag { display: inline-flex; border-radius: 6px; background: #edf4e6; color: #2c603c; padding: 3px 7px; font-size: 10px; line-height: 1.5; font-weight: 600; }
+@media(max-width:900px) {
+    .affiliate-summary { grid-template-columns: repeat(2,minmax(0,1fr)); row-gap: 20px; }
+    .affiliate-summary-card:nth-child(2) { border-right: 0; }
+}
+@media(max-width:680px) {
+    .affiliate-summary-card { padding: 0 13px; }
+    .affiliate-summary-label { font-size: 12px; }
+    .affiliate-summary-label .affiliate-icon { width: 28px; height: 28px; padding: 6px; }
+    .affiliate-summary-value { font-size: 28px; }
+    .affiliate-portal .affiliate-referral-card { padding: 16px; }
+}
+@media print {
+    .affiliate-portal aside, .affiliate-portal header, .affiliate-print-hidden, .affiliate-referral-card { display: none !important; }
+    .affiliate-portal > .h-screen, .affiliate-portal > .h-screen > div, .affiliate-portal main { height: auto; overflow: visible; background: white; padding: 0; }
+    .affiliate-page { max-width: none; }
+    .affiliate-summary, .affiliate-tag { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

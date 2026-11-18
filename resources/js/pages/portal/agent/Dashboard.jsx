@@ -1,10 +1,10 @@
-import { useState } from "react";
 import { Head, Link, usePage } from "@inertiajs/react";
 import {
     Users as UsersIcon, CalendarDays, CalendarRange, CheckCircle2,
-    Plus, ArrowRight, Mail, Phone, Link as LinkIcon, Copy, Check,
+    Plus, ArrowRight, Mail, Phone,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
+import ReferralLinkCard from "@/components/affiliate/ReferralLinkCard";
 
 // ─── Recruiting Agent · Dashboard ────────────────────────────────────────
 // At-a-glance headline of the agent's own recruiting activity + a shortcut
@@ -17,27 +17,6 @@ const fmtDate = (iso) => {
 
 export default function AgentDashboard({ stats = {}, recent = [], referral = null }) {
     const user = usePage().props?.auth?.user;
-    const [copied, setCopied] = useState(false);
-
-    const copyReferral = async () => {
-        if (! referral?.url) return;
-        try {
-            await navigator.clipboard.writeText(referral.url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1800);
-        } catch (e) {
-            // Older browsers / http contexts — fall back to a selection copy.
-            const t = document.createElement('textarea');
-            t.value = referral.url;
-            document.body.appendChild(t);
-            t.select();
-            document.execCommand('copy');
-            document.body.removeChild(t);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1800);
-        }
-    };
-
     const cards = [
         { label: "Total Leads", value: stats.total ?? 0, icon: <UsersIcon className="w-5 h-5" />, dark: true },
         { label: "This Week", value: stats.this_week ?? 0, icon: <CalendarDays className="w-5 h-5" /> },
@@ -47,14 +26,14 @@ export default function AgentDashboard({ stats = {}, recent = [], referral = nul
 
     return (
         <div className="space-y-6 max-w-[1500px] mx-auto pb-12">
-            <Head title="Agent Dashboard" />
+            <Head title="Affiliate Partner Dashboard" />
 
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
                         Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}.
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">Here's how your recruiting is going.</p>
+                    <p className="text-sm text-gray-500 mt-1">Track your referrals and manage your affiliate agreement.</p>
                 </div>
                 <Link
                     href="/portal/agent/leads"
@@ -64,64 +43,15 @@ export default function AgentDashboard({ stats = {}, recent = [], referral = nul
                 </Link>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {cards.map((c, i) => (
-                    <div key={i} className={`p-5 rounded-2xl transition-all ${c.dark ? "bg-gray-900 text-white shadow-lg" : "bg-white text-gray-900 shadow-sm border border-gray-100"}`}>
-                        <div className="flex items-center justify-between mb-3">
-                            <span className={`text-sm font-medium ${c.dark ? "text-gray-300" : "text-gray-500"}`}>{c.label}</span>
-                            <span className={`p-1.5 rounded-lg ${c.dark ? "bg-white/10 text-white" : "bg-gray-100 text-gray-500"}`}>{c.icon}</span>
-                        </div>
-                        <p className="text-3xl font-bold tracking-tight">{c.value}</p>
+            <div className="affiliate-summary">
+                {cards.map(card => (
+                    <div key={card.label} className="affiliate-summary-card">
+                        <div className="affiliate-summary-label"><span>{card.label}</span><span className="affiliate-icon">{card.icon}</span></div>
+                        <p className="affiliate-summary-value">{card.value}</p>
                     </div>
                 ))}
             </div>
-
-            {/* Personal referral link — share this URL and every lead who
-                registers through it is auto-attributed to this agent, so
-                sales sees the source immediately. Solid dark card for
-                strong contrast against the pale dashboard background;
-                Tailwind v4's `bg-linear-*` gradient utility is used
-                explicitly (the old v3 `bg-gradient-*` name silently
-                drops in v4). */}
-            {referral?.url && (
-                <div className="rounded-2xl bg-gray-900 text-white shadow-lg overflow-hidden border border-gray-800">
-                    <div className="flex flex-col lg:flex-row lg:items-center gap-4 p-5">
-                        <div className="flex items-center gap-3 flex-shrink-0 min-w-0 lg:w-72">
-                            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-                                <LinkIcon size={18} className="text-white" />
-                            </div>
-                            <div className="min-w-0">
-                                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-300">Your referral link</div>
-                                <div className="text-[13px] font-semibold text-white mt-0.5 leading-snug">
-                                    Share it — new sign-ups are credited to you.
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex-1 flex items-center gap-2 min-w-0">
-                            <div className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 font-mono text-[12px] text-emerald-100 truncate" title={referral.url}>
-                                {referral.url}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={copyReferral}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-[12px] font-bold transition-colors flex-shrink-0 ${
-                                    copied
-                                        ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                                        : 'bg-white text-gray-900 hover:bg-gray-100'
-                                }`}
-                            >
-                                {copied ? <><Check size={13} strokeWidth={3} /> Copied</> : <><Copy size={13} /> Copy link</>}
-                            </button>
-                        </div>
-                    </div>
-                    {referral.code && (
-                        <div className="px-5 pb-3.5 -mt-1 text-[11px] text-gray-400 flex items-center gap-1.5 border-t border-white/5 pt-3">
-                            <span className="uppercase tracking-wider text-[10px] font-bold">Code</span>
-                            <span className="font-mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded">{referral.code}</span>
-                        </div>
-                    )}
-                </div>
-            )}
+            <ReferralLinkCard referral={referral} />
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
@@ -145,6 +75,7 @@ export default function AgentDashboard({ stats = {}, recent = [], referral = nul
                                 <Avatar name={l.name} colorKey={l.id} size={36} />
                                 <div className="min-w-0 flex-1">
                                     <div className="font-semibold text-gray-900 text-sm truncate">{l.name}</div>
+                                    {(l.tags || []).filter(tag => tag.startsWith('Affiliate partner:')).map(tag => <span key={tag} className="affiliate-tag my-1">{tag}</span>)}
                                     <div className="flex items-center gap-3 text-[12px] text-gray-500 truncate">
                                         {l.email && <span className="inline-flex items-center gap-1"><Mail size={11} />{l.email}</span>}
                                         {l.phone && <span className="inline-flex items-center gap-1"><Phone size={11} />{l.phone}</span>}

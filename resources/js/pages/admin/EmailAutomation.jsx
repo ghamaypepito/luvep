@@ -255,7 +255,7 @@ function EventCard({ ev, msgs, setMsgs, on, status, isOpen, onOpen, recipients, 
                                 </Field>
                                 <Field label="CC agent">
                                     <div className="inline-flex items-center gap-1.5 h-[34px]" title="Also CC this client's own recruiting agent (leads.agent_id)">
-                                        <Switch size="sm" on={!!m.cc_agent} onChange={(v) => patch(i, { cc_agent: v })} label="CC the client's agent" />
+                                        <Switch size="sm" on={!!m.cc_agent} onChange={(v) => patch(i, { cc_agent: v })} label="CC the client's Affiliate Partner" />
                                         <span className="text-[11.5px] text-gray-500">Client's agent</span>
                                     </div>
                                 </Field>

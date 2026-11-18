@@ -462,7 +462,7 @@ export default function DashboardLayout({
                         <div className="flex items-center gap-2.5">
                             <div className="text-right hidden sm:block leading-tight">
                                 <p className="text-sm font-semibold text-gray-900">{user?.name || "User"}</p>
-                                {user?.role && <p className="text-[11px] text-gray-500 capitalize">{user.role}</p>}
+                                {user?.role && <p className="text-[11px] text-gray-500 capitalize">{user.role === 'agent' ? 'Affiliate partner' : user.role}</p>}
                             </div>
                             {hr?.enabled && (hr?.employee || hr?.permissions?.preview) ? <ProfileMenu /> : (
                             <div

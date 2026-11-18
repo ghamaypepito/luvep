@@ -455,7 +455,7 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                                         : "text-gray-400 border-b-2 border-transparent hover:text-gray-700"
                                 }`}
                             >
-                                Agents
+                                Affiliate Partners
                                 <TabBadge count={agents.length} />
                             </button>
                         )}
@@ -568,7 +568,7 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                                 <SortableTh label="Stage" sortKey="status" current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <th className="px-3 py-3">Contact</th>
                                 <th className="px-3 py-3">Location</th>
-                                {showAgentColumn && <th className="px-3 py-3">Agent</th>}
+                                {showAgentColumn && <th className="px-3 py-3">Affiliate Partner</th>}
                                 <th className="px-3 py-3">Docs</th>
                                 <th className="px-3 py-3 w-[160px]">Visa</th>
                                 <SortableTh label="Updated" sortKey="updated_at" current={sortKey} dir={sortDir} onSort={toggleSort} />
@@ -660,6 +660,9 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                                                     <div className="font-semibold text-gray-900 text-xs truncate group-hover/lead:text-blue-600 transition-colors">
                                                         {l.name}
                                                     </div>
+                                                    {(l.tags || []).filter(tag => tag.startsWith('Affiliate partner:')).map(tag => (
+                                                        <span key={tag} title={tag} className="mt-1 inline-flex max-w-full rounded-md bg-[#edf4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#2c603c]">{tag}</span>
+                                                    ))}
                                                     {l.lead_id && (
                                                         <div className="text-[10px] text-gray-400 font-mono truncate">{l.lead_id}</div>
                                                     )}
@@ -1002,7 +1005,7 @@ function BulkAgentModal({ open, onClose, agents = [], count, busy, onApply }) {
                     </button>
                 </div>
                 <div className="p-5 space-y-3">
-                    <label className="block text-[11px] font-bold uppercase tracking-widest text-gray-500">Agent</label>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-gray-500">Affiliate Partner</label>
                     <select
                         value={agentId}
                         onChange={(e) => setAgentId(e.target.value)}
@@ -1086,8 +1089,8 @@ function AgentsTab({ agents = [], portalBase = '/portal/sales' }) {
         return (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-14 text-center">
                 <Users size={26} className="mx-auto mb-3 text-gray-300" />
-                <p className="font-semibold text-gray-700">No recruiting agents yet</p>
-                <p className="text-sm text-gray-400 mt-1">Create an account with the “Agent” role in User Management and they'll appear here.</p>
+                <p className="font-semibold text-gray-700">No affiliate partners yet</p>
+                <p className="text-sm text-gray-400 mt-1">Create an account with the “Affiliate Partner” role in User Management and they'll appear here.</p>
             </div>
         );
     }
@@ -1098,7 +1101,7 @@ function AgentsTab({ agents = [], portalBase = '/portal/sales' }) {
                 <table className="w-full text-left text-xs">
                     <thead>
                         <tr className="bg-gray-50/60 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                            <th className="px-4 py-3">Agent</th>
+                            <th className="px-4 py-3">Affiliate Partner</th>
                             <th className="px-3 py-3">Contact</th>
                             <th className="px-3 py-3">Location</th>
                             <th className="px-3 py-3 text-center">Leads added</th>
@@ -1196,7 +1199,7 @@ function EventsTab({ events = [], portalBase, statuses = [] }) {
                                 <th className="px-3 py-3">Date</th>
                                 <th className="px-3 py-3">Where</th>
                                 <th className="px-3 py-3">Type</th>
-                                <th className="px-3 py-3">Agent</th>
+                                <th className="px-3 py-3">Affiliate Partner</th>
                                 <th className="px-3 py-3 text-center">Registered</th>
                                 <th className="px-3 py-3 text-right pr-4">Actions</th>
                             </tr>
@@ -1432,7 +1435,7 @@ function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions 
                                     </select>
                                 </Field>
                                 {agents.length > 0 && (
-                                    <Field label="Agent">
+                                    <Field label="Affiliate Partner">
                                         <select value={form.agent_id} onChange={set("agent_id")} className={inputCls}>
                                             <option value="">— No agent —</option>
                                             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -2425,7 +2428,7 @@ function EditLeadModal({ lead, portalBase, statuses = [], staffOptions = [], age
             onSuccess: () => {
                 const picked = agents.find((a) => String(a.id) === String(agentId)) || null;
                 setData((d) => ({ ...d, agent: picked ? { id: picked.id, name: picked.name } : null }));
-                toast.success(agentId ? "Agent assigned." : "Agent removed.");
+                toast.success(agentId ? "Affiliate Partner assigned." : "Affiliate Partner removed.");
             },
             onError: (errs) => toast.error(Object.values(errs || {})[0] || "Could not update the agent."),
             onFinish: () => setAgentSaving(false),
@@ -2538,7 +2541,7 @@ function EditLeadModal({ lead, portalBase, statuses = [], staffOptions = [], age
                             />
                         </div>
                         <div className="flex items-center gap-1.5 ml-auto">
-                            <span className="text-[11px] font-medium text-gray-500">Agent</span>
+                            <span className="text-[11px] font-medium text-gray-500">Affiliate Partner</span>
                             {canPickAgent ? (
                                 <AgentPicker
                                     agent={data?.agent}
@@ -3003,7 +3006,7 @@ function AgentPicker({ agent, agents = [], open, onToggle, onClose, onSelect, is
                     className="z-[130] bg-white rounded-xl shadow-2xl border border-gray-100 py-1.5 w-[220px] max-h-[320px] overflow-y-auto"
                 >
                     <p className="px-3 pt-2 pb-1.5 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">
-                        Assign agent
+                        Assign Affiliate Partner
                     </p>
                     <button
                         type="button"
