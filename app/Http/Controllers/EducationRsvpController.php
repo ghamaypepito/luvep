@@ -62,11 +62,17 @@ class EducationRsvpController extends Controller
 
     public function verify(Request $request, EducationRsvp $rsvp, EducationRsvpWorkflow $workflow)
     {
-        $rsvp->update(['verified_at' => $rsvp->verified_at ?: now()]);
-        $request->session()->put('education_rsvp_verified_email', hash('sha256', $rsvp->email));
-        $workflow->matchVerified($rsvp);
+        $current = DB::transaction(function () use ($rsvp, $workflow) {
+            $current = EducationRsvp::whereKey($rsvp->id)->lockForUpdate()->firstOrFail();
+            abort_unless(hash_equals($current->public_id, $rsvp->public_id), 404);
+            $current->update(['verified_at' => $current->verified_at ?: now()]);
+            $workflow->matchVerified($current);
 
-        return redirect('/education/rsvp?verified=1&type='.$rsvp->visit->kind.'&school='.$rsvp->visit->slug);
+            return $current;
+        });
+        $request->session()->put('education_rsvp_verified_email', hash('sha256', $current->email));
+
+        return redirect('/education/rsvp?verified=1&type='.$current->visit->kind.'&school='.$current->visit->slug);
     }
 
     public function recognize(Request $request)
