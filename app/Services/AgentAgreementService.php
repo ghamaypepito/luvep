@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
+use App\Models\AffiliateApplication;
 use App\Models\AgentAgreement;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -323,6 +324,7 @@ class AgentAgreementService
             if (! $draft) {
                 $agreement->issued_file_path = $agreement->file_path;
                 $agreement->save();
+                app(AffiliateOnboarding::class)->issued($agreement);
             }
             ActivityLog::record($draft ? 'affiliate.agreement.draft_saved' : 'affiliate.agreement.generated', [
                 'properties' => ['agreement_id' => $agreement->id, 'partner_id' => $agent->id, 'version' => $agreement->version],
@@ -332,9 +334,9 @@ class AgentAgreementService
         });
     }
 
-    public function recordAgentSignature(AgentAgreement $agreement, string $signerName, string $signatureData, string $ip, ?string $userAgent, array $details = []): AgentAgreement
+    public function recordAgentSignature(AgentAgreement $agreement, string $signerName, string $signatureData, string $ip, ?string $userAgent, array $details = [], ?AffiliateApplication $privateApplication = null): AgentAgreement
     {
-        return $this->sign($agreement, 'agent', $signerName, $signatureData, $ip, $userAgent, $details);
+        return $this->sign($agreement, 'agent', $signerName, $signatureData, $ip, $userAgent, $details, $privateApplication);
     }
 
     public function recordCompanySignature(AgentAgreement $agreement, string $signerName, string $signatureData): AgentAgreement
@@ -342,18 +344,21 @@ class AgentAgreementService
         return $this->sign($agreement, 'company', $signerName, $signatureData);
     }
 
-    private function sign(AgentAgreement $agreement, string $side, string $signerName, string $signatureData, ?string $ip = null, ?string $userAgent = null, array $details = []): AgentAgreement
+    private function sign(AgentAgreement $agreement, string $side, string $signerName, string $signatureData, ?string $ip = null, ?string $userAgent = null, array $details = [], ?AffiliateApplication $privateApplication = null): AgentAgreement
     {
         if (! preg_match('~^data:image/(?:png|jpeg);base64,([a-zA-Z0-9+/=\r\n]+)$~D', $signatureData, $match)
-            || ! ($bytes = base64_decode($match[1], true)) || ! @getimagesizefromstring($bytes)) {
+            || ! ($bytes = base64_decode($match[1], true)) || ! ($image = @getimagesizefromstring($bytes)) || ! in_array($image[2], [IMAGETYPE_PNG, IMAGETYPE_JPEG], true)
+            || $image[0] > 4096 || $image[1] > 4096) {
             throw ValidationException::withMessages(['signature_data' => 'Use a valid PNG or JPEG signature image.']);
         }
 
-        return DB::transaction(function () use ($agreement, $side, $signerName, $signatureData, $ip, $userAgent, $details) {
-            User::whereKey($agreement->agent_id)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($agreement, $side, $signerName, $signatureData, $ip, $userAgent, $details, $privateApplication) {
+            $partner = User::whereKey($agreement->agent_id)->lockForUpdate()->firstOrFail();
             $locked = AgentAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
             abort_unless($locked->canSign(), 422, 'This version is read-only. Open the current generated agreement.');
             abort_if($locked->{$side.'_signed_at'} !== null, 422, 'This side of the agreement is already signed.');
+            $onboarding = app(AffiliateOnboarding::class);
+            $application = $onboarding->assertSigningAllowed($partner, $locked, $privateApplication);
             if ($side === 'agent') {
                 $this->applyDetails($locked, $details);
             }
@@ -370,6 +375,7 @@ class AgentAgreementService
             $locked->rendered_html = $this->replaceSlot($locked->rendered_html, 'signature:'.$side, $signatureHtml);
             $locked->rendered_html = $this->replaceSlot($locked->rendered_html, 'date:'.$side, e(now()->format('j M Y')));
             $this->writeDocument($locked);
+            $onboarding->activateWhenSigned($partner, $locked, $application);
             ActivityLog::record('affiliate.agreement.'.$side.'_signed', ['properties' => ['agreement_id' => $locked->id, 'version' => $locked->version]]);
 
             return $locked;

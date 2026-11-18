@@ -22,7 +22,7 @@ return [
     | key (`dtr.reports`). `admin_default: true` marks a module admins + super
     | admins always see (it was historically an admin surface); such a module is
     | additionally grantable to non-admin staff. Without it, only super admins
-    | see the module until granted (agents, program_verification).
+    | see the module until granted.
     |
     */
     'restricted' => [
@@ -37,6 +37,7 @@ return [
             'features' => array_combine(config('hr.abilities'), array_map(fn ($ability) => ['label' => ucfirst(str_replace('.', ' ', $ability)), 'description' => 'Explicit HR permission'], config('hr.abilities'))),
         ],
         'agents' => [
+            'admin_default' => true,
             'label' => 'Affiliate Partners',
             'description' => 'Manage Affiliate Partners, their referrals, performance, and agreements.',
         ],

@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\AffiliateOnboarding;
 use App\Support\UploadValidation;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -242,33 +244,43 @@ class UserController extends Controller
     /** Restore a soft-deleted user. */
     public function restore(Request $request, $id)
     {
-        $user = User::onlyTrashed()->findOrFail($id);
-        $user->restore();
-        ActivityLog::record('user.restored', [
-            'description' => "Restored user {$user->name} ({$user->email})",
-            'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
-        ]);
+        return DB::transaction(function () use ($id) {
+            $user = User::onlyTrashed()->lockForUpdate()->findOrFail($id);
+            if ($user->role === 'agent' || \App\Models\AffiliateApplication::where('user_id', $user->id)->exists()) {
+                $user->is_active = false;
+            }
+            $user->restore();
+            ActivityLog::record('user.restored', [
+                'description' => "Restored user {$user->name} ({$user->email})",
+                'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
+            ]);
 
-        return back()->with('success', 'User restored successfully.');
+            return back()->with('success', 'User restored successfully.');
+        });
     }
 
     /** Activate / deactivate a user account (reversible suspension). */
     public function toggleActive(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        if ($user->is($request->user())) {
-            return back()->withErrors(['user' => 'You cannot deactivate your own account.']);
-        }
+        return DB::transaction(function () use ($id, $request) {
+            $user = User::findOrFail($id);
+            if ($user->is($request->user())) {
+                return back()->withErrors(['user' => 'You cannot deactivate your own account.']);
+            }
 
-        $user->is_active = ! $user->is_active;
-        $user->save();
+            if (! $user->is_active) {
+                app(AffiliateOnboarding::class)->assertCanActivate($user);
+            }
+            $user->is_active = ! $user->is_active;
+            $user->save();
 
-        ActivityLog::record($user->is_active ? 'user.activated' : 'user.deactivated', [
-            'description' => ($user->is_active ? 'Activated' : 'Deactivated')." user {$user->name} ({$user->email})",
-            'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
-        ]);
+            ActivityLog::record($user->is_active ? 'user.activated' : 'user.deactivated', [
+                'description' => ($user->is_active ? 'Activated' : 'Deactivated')." user {$user->name} ({$user->email})",
+                'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
+            ]);
 
-        return back()->with('success', $user->is_active ? 'User activated.' : 'User deactivated.');
+            return back()->with('success', $user->is_active ? 'User activated.' : 'User deactivated.');
+        });
     }
 
     /**

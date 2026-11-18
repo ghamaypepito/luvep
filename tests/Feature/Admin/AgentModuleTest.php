@@ -19,11 +19,12 @@ class AgentModuleTest extends TestCase
             ->assertOk();
     }
 
-    public function test_ungranted_admin_is_blocked_from_agents(): void
+    public function test_admin_has_default_access_and_staff_grants_do_not_allow_affiliate_management(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->get('/admin/agents')
-            ->assertForbidden();
+            ->get('/admin/agents')->assertOk();
+        $this->actingAs(User::factory()->create(['role' => 'sales', 'module_permissions' => ['agents'], 'portal_access' => ['admin']]))
+            ->get('/admin/agents')->assertForbidden();
     }
 
     public function test_granted_admin_can_view_agents(): void

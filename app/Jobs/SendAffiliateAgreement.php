@@ -4,7 +4,10 @@ namespace App\Jobs;
 
 use App\Mail\AffiliateAgreementInvitation;
 use App\Models\ActivityLog;
+use App\Models\AffiliateApplication;
 use App\Models\AgentAgreement;
+use App\Models\User;
+use App\Services\AffiliateOnboarding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -25,14 +28,16 @@ class SendAffiliateAgreement implements ShouldQueue
 
     public function handle(): void
     {
-        $agreement = DB::transaction(function () {
+        $partnerId = AgentAgreement::whereKey($this->agreementId)->value('agent_id');
+        $invitation = DB::transaction(function () use ($partnerId) {
+            $partner = User::whereKey($partnerId)->lockForUpdate()->first();
             $agreement = AgentAgreement::whereKey($this->agreementId)->lockForUpdate()->first();
             if (! $agreement || $agreement->sent_at || $agreement->send_error || ! $agreement->send_requested_at) {
                 return null;
             }
-            if (! $agreement->canSign() || ! $agreement->agent->is_active
-                || ! $agreement->agent->canAccessPortal('agent')
-                || mb_strtolower(trim((string) $agreement->agent->email)) !== mb_strtolower(trim($this->email))) {
+            $application = AffiliateApplication::where('user_id', $partnerId)->first();
+            if (! $partner || ! $agreement->canSign() || ! app(AffiliateOnboarding::class)->invitationAllowed($partner, $agreement, $application)
+                || mb_strtolower(trim((string) $partner->email)) !== mb_strtolower(trim($this->email))) {
                 $agreement->update(['send_error' => 'The agreement or recipient changed. Review before sending again.']);
 
                 return null;
@@ -40,13 +45,16 @@ class SendAffiliateAgreement implements ShouldQueue
             // A durable claim holds an uncertain transport result for review instead of resending.
             $agreement->update(['send_error' => 'Delivery is in progress or uncertain. Review before sending again.']);
 
-            return $agreement;
+            $agreement->setRelation('agent', $partner);
+
+            return [$agreement, $application && ! $application->activated_at ? $application->signedUrl('status', $agreement->id) : null];
         });
-        if (! $agreement) {
+        if (! $invitation) {
             return;
         }
+        [$agreement, $privateUrl] = $invitation;
         try {
-            Mail::to($this->email)->send(new AffiliateAgreementInvitation($agreement));
+            Mail::to($this->email)->send(new AffiliateAgreementInvitation($agreement, $privateUrl));
             $agreement->update(['sent_at' => now(), 'send_error' => null]);
             ActivityLog::record('affiliate.agreement.sent', ['portal' => 'admin', 'user_id' => $agreement->generated_by,
                 'properties' => ['agreement_id' => $agreement->id, 'version' => $agreement->version]]);

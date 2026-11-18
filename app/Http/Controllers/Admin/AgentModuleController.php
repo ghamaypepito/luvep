@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendAffiliateAgreement;
 use App\Models\ActivityLog;
+use App\Models\AffiliateApplication;
 use App\Models\AgentAgreement;
 use App\Models\Lead;
 use App\Models\User;
+use App\Services\AffiliateOnboarding;
 use App\Services\AgentAgreementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +31,9 @@ class AgentModuleController extends Controller
     {
         abort_unless($agent->role === 'agent', 404);
 
+        $application = AffiliateApplication::where('user_id', $agent->id)->first();
+        $onboarding = app(AffiliateOnboarding::class);
+        $state = $onboarding->accountState($agent, $application);
         $leads = Lead::referredByAffiliate($agent->id)
             ->orderByDesc('created_at')->orderByDesc('id')
             ->paginate(25, ['id', 'lead_id', 'first_name', 'last_name', 'status', 'education_stage', 'english_stage', 'immigration_stage', 'is_student', 'is_english_student', 'is_immigration_case', 'email', 'phone', 'residence_city', 'residence_country', 'country', 'created_at'])->withQueryString()
@@ -54,7 +59,8 @@ class AgentModuleController extends Controller
                 'created_at' => optional($l->created_at)?->toIso8601String(),
             ]);
 
-        $agreement = AgentAgreement::where('agent_id', $agent->id)->orderByDesc('version')->first();
+        $agreement = $request->filled('agreement') ? $this->selectedAgreement($request, $agent)
+            : AgentAgreement::where('agent_id', $agent->id)->orderByDesc('version')->first();
 
         // Count the agent's recruited leads by their effective stage (same
         // resolution the table/commission use), over ALL their leads — not just
@@ -82,6 +88,10 @@ class AgentModuleController extends Controller
                 'location' => $agent->location,
                 'avatar_url' => $agent->avatar_url,
                 'referral_code' => $agent->referral_code,
+                'account_state' => $state,
+                'account_actions' => $onboarding->accountActions($state),
+                'lifecycle_url' => route('admin.agents.lifecycle', $agent),
+                'application_url' => $application ? route('admin.agents.applications.show', $application) : null,
                 'registered_at' => $agent->created_at?->toIso8601String(),
                 'referral' => ($code = $agent->ensureReferralCode()) ? ['code' => $code, 'url' => route('affiliate.registration', ['code' => $code])] : null,
             ],
@@ -95,8 +105,8 @@ class AgentModuleController extends Controller
                 'version' => $agreement->version,
                 'status' => $agreement->statusLabel(),
                 'is_draft' => $agreement->is_draft,
-                'can_sign' => $agreement->canSign(),
-                'can_send' => $agreement->canSign() && ! $agreement->sent_at && ! $agreement->send_requested_at,
+                'can_sign' => ! $agent->trashed() && $agreement->canSign(),
+                'can_send' => $onboarding->invitationAllowed($agent, $agreement, $application) && $agreement->canSign() && ! $agreement->sent_at && ! $agreement->send_requested_at,
                 'legacy' => $agreement->rendered_html === null,
                 'expires_on' => $agreement->expires_on?->toDateString(),
                 'send_requested_at' => $agreement->send_requested_at?->toIso8601String(),
@@ -261,10 +271,12 @@ class AgentModuleController extends Controller
         abort_unless($agent->role === 'agent', 404);
         $agreement = $this->selectedAgreement($request, $agent, true);
         $email = trim((string) $agent->email);
-        abort_unless($agent->is_active && filter_var($email, FILTER_VALIDATE_EMAIL), 422, 'The affiliate account needs an active email address.');
+        abort_unless(filter_var($email, FILTER_VALIDATE_EMAIL), 422, 'The affiliate account needs an active email address.');
         DB::transaction(function () use ($agreement, $email, $agent) {
-            User::whereKey($agent->id)->lockForUpdate()->firstOrFail();
+            $partner = User::whereKey($agent->id)->lockForUpdate()->firstOrFail();
             $locked = AgentAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            $application = AffiliateApplication::where('user_id', $partner->id)->first();
+            abort_unless(app(AffiliateOnboarding::class)->invitationAllowed($partner, $locked, $application) && $partner->email === $email, 422, 'This partner cannot receive a signing invitation.');
             abort_unless($locked->canSign(), 422, 'Choose a current generated agreement.');
             abort_if($locked->send_requested_at || $locked->sent_at, 422, 'An invitation was already queued. Check its delivery result.');
             $locked->update(['send_requested_at' => now()]);
@@ -273,6 +285,14 @@ class AgentModuleController extends Controller
         });
 
         return back()->with('success', 'Agreement invitation queued. Delivery status updates after the mail worker runs.');
+    }
+
+    public function lifecycle(Request $request, User $agent, AffiliateOnboarding $onboarding)
+    {
+        $data = $request->validate(['action' => 'required|in:activate,disable,archive,restore', 'expected' => 'required|in:active,disabled,archived,awaiting_signatures']);
+        $onboarding->changeAccount($agent, $data['action'], $data['expected']);
+
+        return back()->with('success', 'Affiliate account updated.');
     }
 
     public function downloadAgreement(Request $request, User $agent)
