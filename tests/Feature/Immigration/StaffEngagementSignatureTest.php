@@ -198,6 +198,23 @@ class StaffEngagementSignatureTest extends TestCase
         }
     }
 
+    public function test_delivery_audit_does_not_overwrite_notes_added_during_notification(): void
+    {
+        $doc = $this->document();
+        $this->mock(CommunicationService::class)->shouldReceive('sendComposedEmail')->once()->andReturnUsing(function () use ($doc) {
+            $fresh = $doc->fresh();
+            $notes = $fresh->notes;
+            $notes['concurrent_staff_note'] = 'Retain this unrelated update';
+            $fresh->update(['notes' => $notes]);
+
+            return new \App\Models\MessageLog(['status' => 'queued']);
+        });
+        $this->postJson($this->url($doc), $this->data(true))->assertOk();
+        $notes = $doc->fresh()->notes;
+        $this->assertSame('Retain this unrelated update', $notes['concurrent_staff_note']);
+        $this->assertSame('queued', $notes['staff_signature_upload']['notification_result']['client']);
+    }
+
     public function test_notification_failure_does_not_undo_saved_signature_or_allow_a_second_upload(): void
     {
         $doc = $this->document();

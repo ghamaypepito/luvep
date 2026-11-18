@@ -138,9 +138,12 @@ class StaffEngagementSignature
                 }
             }
             try {
-                $notes = $signed->notes;
-                $notes['staff_signature_upload']['notification_result'] = $delivery;
-                $signed->forceFill(['notes' => $notes])->save();
+                DB::transaction(function () use ($signed, $delivery) {
+                    $fresh = LeadDocument::whereKey($signed->id)->lockForUpdate()->firstOrFail();
+                    $notes = $fresh->notes;
+                    $notes['staff_signature_upload']['notification_result'] = $delivery;
+                    $fresh->forceFill(['notes' => $notes])->save();
+                });
             } catch (\Throwable $e) {
                 Log::warning('Staff signature notification audit update failed', ['document_id' => $signed->id]);
             }
