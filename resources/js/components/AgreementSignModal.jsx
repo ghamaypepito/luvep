@@ -103,10 +103,10 @@ export default function AgreementSignModal({
     }, [extra, previewUrl]);
     const previewSrc = useMemo(() => {
         if (! previewUrl) return null;
-        const params = new URLSearchParams();
+        const params = new URLSearchParams(previewUrl.split("?")[1] || "");
         Object.entries(previewFields).forEach(([k, v]) => params.set(k, v ?? ""));
         const q = params.toString();
-        return q ? `${previewUrl}?${q}` : previewUrl;
+        return q ? `${previewUrl.split("?")[0]}?${q}` : previewUrl;
     }, [previewUrl, previewFields]);
     useEffect(() => { if (previewSrc) setPreviewLoading(true); }, [previewSrc]);
 

@@ -21,7 +21,7 @@ const ROLE_LABEL = {
     super_admin: "Super admin", admin: "Admin", sales: "Sales", education: "Education",
     english: "English", immigration: "Immigration", immigration_manager: "Immigration manager",
     immigration_adviser: "Licensed adviser", accommodation: "Accommodation", finance: "Finance",
-    agent: "Agent", sub_agent: "Sub-agent",
+    agent: "Affiliate Partner", sub_agent: "Sub-agent",
 };
 const roleLabel = (r) => ROLE_LABEL[r] || (r ? r.replace(/_/g, " ") : "Staff");
 const portalLabel = (d) => `${ROLE_LABEL[d] || (d ? d.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Task")} Portal`;

@@ -56,6 +56,9 @@
 .edu-events .brand { gap: 18px; }
 .edu-events .brand span { padding-left: 18px; border-left: 1px solid var(--edu-line); }
 .edu-events .story { height: clamp(210px, 24vw, 290px); }
+.edu-events .story.story-full { height: auto; background: var(--edu-ground); }
+.edu-events .story-full .scene { width: 100%; object-fit: contain; object-position: center; }
+.edu-events .story-full .scene.active { position: relative; height: auto; display: block; }
 .edu-events .panel { padding-top: 42px; }
 .edu-events .section-intro { gap: 40px; margin-bottom: 32px; }
 .edu-events .section-intro h1 { font-size: clamp(38px, 5vw, 62px); }

@@ -37,8 +37,8 @@ return [
             'features' => array_combine(config('hr.abilities'), array_map(fn ($ability) => ['label' => ucfirst(str_replace('.', ' ', $ability)), 'description' => 'Explicit HR permission'], config('hr.abilities'))),
         ],
         'agents' => [
-            'label' => 'Agents',
-            'description' => 'Manage referral agents — their leads, profiles, and agreements.',
+            'label' => 'Affiliate Partners',
+            'description' => 'Manage Affiliate Partners, their referrals, performance, and agreements.',
         ],
         // Historically "Program Verification"; the key is kept so existing grants
         // keep working. Now a two-part "Verification" module: the Proposal queue

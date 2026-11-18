@@ -10,7 +10,7 @@ const KNOWN_TEAMS = Object.keys(TEAM_TZ);
 const ROLE_LABEL = {
     super_admin: "Super Admin", admin: "Admin", sales: "Sales", education: "Education",
     english: "English", immigration: "Immigration", accommodation: "Accommodation",
-    finance: "Finance", agent: "Agent", immigration_manager: "Immigration Mgr",
+    finance: "Finance", agent: "Affiliate Partner", immigration_manager: "Immigration Mgr",
     immigration_adviser: "Immigration Adviser",
 };
 const roleName = (r) => ROLE_LABEL[r] || r;

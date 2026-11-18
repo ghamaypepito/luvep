@@ -27,6 +27,7 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await page.getByLabel('Sample designs / references').setInputFiles({ name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('Reference layout: clear headline and approved logo.') });
     await page.locator('.cw-steps button').nth(5).click();
     await page.getByLabel('Final approver').fill('Marketing lead');
+    await expect(page.getByRole('button', { name: 'Submit creative request', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Submit creative request', exact: true }).click();
     await page.waitForURL(/creative-requests\/\d+$/);
     const requestUrl = page.url();
@@ -49,4 +50,35 @@ test('caption and private references reach the task and DTR, preserving a Manila
         await page.setViewportSize({ width, height: 1000 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
     }
+    await page.goto(`${origin}/admin/system-tickets?type=digital`);
+    const row = page.locator('.cw-request-row').filter({ has: page.getByText(title, { exact: true }) });
+    for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await expect(row.getByRole('button', { name: 'Mark delivered', exact: true })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await row.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(row.getByRole('button', { name: 'Delete', exact: true })).toBeFocused();
+    await row.getByRole('button', { name: 'Mark delivered', exact: true }).click();
+    await expect(row.locator('.cw-status')).toHaveText('Delivered');
+    await page.goto(`${origin}/portal/hr/dtr`);
+    await expect(page.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+    await page.goto(`${origin}/admin/system-tickets?type=digital`);
+    await row.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete request', exact: true }).click();
+    await expect(row).toHaveCount(0);
+    expect((await page.request.get(requestUrl)).status()).toBe(404);
+    await page.getByRole('link', { name: 'Deleted requests', exact: true }).click();
+    await expect(row.locator('.cw-status')).toHaveText('Delivered');
+    await expect(row.getByRole('link')).toHaveCount(0);
+    await row.getByRole('button', { name: 'Restore', exact: true }).click();
+    await expect(row).toHaveCount(0);
+    await page.goto(requestUrl);
+    await expect(page.getByText('Plan your next chapter. #StudyInNZ', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Download reference.txt' })).toBeVisible();
+    await expect(page.locator('header .cw-status')).toHaveText('Delivered');
 });

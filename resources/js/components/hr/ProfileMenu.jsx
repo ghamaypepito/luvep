@@ -21,7 +21,7 @@ export default function ProfileMenu() {
             </summary>
             <div className="hr-dropdown">
                 <a href={`${hr.url}profile`}>
-                    <UserRound size={16} /> View profile
+                    <UserRound size={16} /> My Info
                 </a>
                 {hr.permissions?.preview && (
                     <a href={`${hr.url}preview`}>
