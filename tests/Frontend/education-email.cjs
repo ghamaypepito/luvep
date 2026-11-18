@@ -223,6 +223,15 @@ const chooseFiles = async files => {
         url: "/portal/education/school-mail",
         data: { visit_ids: [8], audience: "registered", purpose: "email_follow_up" },
     }, "Education visits open their exact mailing audience without colliding with general event IDs");
+    for (const props of [
+        { basePath: "/portal/sales/bulk-email", channel: "email" },
+        { basePath: "/portal/immigration/bulk-email", channel: "email" },
+        { basePath: "/portal/education/sms", channel: "sms" },
+    ]) {
+        await act(async () => root.render(React.createElement(BulkEmail, { ...props, key: props.basePath, templates: [{ id: 1, name: "Fixture" }], recipients: [] })));
+        assert.equal(document.querySelector('#education-bulk-send-help'), null, "Education email help stays out of other portals/SMS");
+        assert.equal(document.querySelector('input[placeholder="June re-engagement"]').required, false);
+    }
     await act(async () => root.unmount());
     console.log("Education Compose templates, consecutive attachments, removal, retry and New Leads recipients verified");
 })().catch(error => { console.error(error); process.exitCode = 1; });
