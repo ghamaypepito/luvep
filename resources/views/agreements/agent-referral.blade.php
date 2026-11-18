@@ -10,7 +10,9 @@
     // Render an editable value, or a grey placeholder guide when it's blank.
     $fld = function ($key, $guide) use ($fields) {
         $v = trim((string) ($fields[$key] ?? ''));
-        return $v !== '' ? e($v) : '<span class="ph">'.e($guide).'</span>';
+        $value = $v !== '' ? e($v) : '<span class="ph">'.e($guide).'</span>';
+
+        return '<!--affiliate-field:'.$key.'-->'.$value.'<!--/affiliate-field:'.$key.'-->';
     };
 
     $preview = $preview ?? false;
@@ -248,16 +250,20 @@
     <tbody>
         <tr>
             <td class="exec-cell" style="height:64px;">
+                <!--affiliate-signature:company-->
                 @if (! empty($signer_signature))
                     <img src="{{ $signer_signature }}" alt="Signature" style="max-height:46px; max-width:150px; margin:0 auto 2px auto; display:block;">
                 @endif
+                <!--/affiliate-signature:company-->
                 <div class="sig-name" style="margin-top:{{ ! empty($signer_signature) ? '0' : '20px' }};">{!! $fld('company_signatory', 'Dinah Suarin') !!}</div>
                 <div class="sig-label">FULL NAME</div>
             </td>
             <td class="exec-cell" style="height:64px;">
+                <!--affiliate-signature:agent-->
                 @if (! empty($agent_signature))
                     <img src="{{ $agent_signature }}" alt="Affiliate signature" style="max-height:46px; max-width:150px; margin:0 auto 2px auto; display:block;">
                 @endif
+                <!--/affiliate-signature:agent-->
                 <div class="sig-name" style="margin-top:{{ ! empty($agent_signature) ? '0' : '20px' }};">{!! $fld('agent_full_name', 'Affiliate Partner Name') !!}</div>
                 <div class="sig-label">FULL NAME</div>
             </td>
@@ -267,8 +273,8 @@
             <td class="exec-cell"><div class="exec-val">{!! $fld('agent_title', 'Affiliate Partner') !!}</div><div class="sig-label">TITLE</div></td>
         </tr>
         <tr>
-            <td class="exec-cell"><div class="exec-val">{!! ! empty($company_signed_date) ? e($company_signed_date) : $fld('company_date', '____________') !!}</div><div class="sig-label">DATE</div></td>
-            <td class="exec-cell"><div class="exec-val">{!! ! empty($agent_signed_date) ? e($agent_signed_date) : $fld('agent_date', '____________') !!}</div><div class="sig-label">DATE</div></td>
+            <td class="exec-cell"><div class="exec-val"><!--affiliate-date:company-->{!! ! empty($company_signed_date) ? e($company_signed_date) : $fld('company_date', '____________') !!}<!--/affiliate-date:company--></div><div class="sig-label">DATE</div></td>
+            <td class="exec-cell"><div class="exec-val"><!--affiliate-date:agent-->{!! ! empty($agent_signed_date) ? e($agent_signed_date) : $fld('agent_date', '____________') !!}<!--/affiliate-date:agent--></div><div class="sig-label">DATE</div></td>
         </tr>
         <tr>
             <td class="exec-cell"><div class="exec-val">15 Mercari Way, Albany, Auckland 0632, New Zealand</div><div class="sig-label">BUSINESS ADDRESS</div></td>

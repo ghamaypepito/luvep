@@ -182,11 +182,26 @@ class AgentController extends Controller
         ]);
     }
 
+    private function selectedAgreement(Request $request, bool $mutation = false): AgentAgreement
+    {
+        $query = AgentAgreement::where('agent_id', Auth::id())->where('is_draft', false);
+        if ($request->filled('agreement')) {
+            $request->validate(['agreement' => 'integer']);
+
+            return $query->findOrFail($request->integer('agreement'));
+        }
+        abort_if($mutation && $query->count() > 1, 422, 'Refresh the agreement before editing or signing.');
+
+        return $query->orderByDesc('version')->firstOrFail();
+    }
+
     /** The agent's own Referral Agent Agreement — view, sign, and download.
      *  Staff generate it from the Agents module; the agent signs it here. */
-    public function agreement()
+    public function agreement(Request $request)
     {
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->first();
+        $agreement = $request->filled('agreement')
+            ? $this->selectedAgreement($request)
+            : AgentAgreement::where('agent_id', Auth::id())->where('is_draft', false)->orderByDesc('version')->first();
 
         // Current values of the Affiliate-Partner-filled fields (Schedule B bank
         // + contact) so the agent's sign step is pre-seeded with anything staff
@@ -198,12 +213,22 @@ class AgentController extends Controller
             ->all();
 
         return inertia('portal/agent/Agreement', [
+            'agreements' => AgentAgreement::where('agent_id', Auth::id())->where('is_draft', false)->orderByDesc('version')->get()
+                ->map(fn ($version) => $version->historyPayload('/portal/agent/agreement')),
             'agreement' => $agreement ? [
+                'id' => $agreement->id,
+                'version' => $agreement->version,
+                'status' => $agreement->statusLabel(),
+                'can_edit' => $agreement->canEditDetails(),
+                'can_sign' => $agreement->canSign(),
+                'legacy' => $agreement->rendered_html === null,
                 'original_name' => $agreement->original_name,
                 'size' => $agreement->size,
                 'created_at' => optional($agreement->created_at)?->toIso8601String(),
-                'download_url' => '/portal/agent/agreement/download',
-                'view_url' => '/portal/agent/agreement/view',
+                'download_url' => '/portal/agent/agreement/download?agreement='.$agreement->id,
+                'view_url' => '/portal/agent/agreement/view?agreement='.$agreement->id,
+                'sign_url' => '/portal/agent/agreement/sign?agreement='.$agreement->id,
+                'preview_url' => '/portal/agent/agreement/preview?agreement='.$agreement->id,
                 'signed' => $agreement->isSignedByAgent(),
                 'signer_name' => $agreement->agent_signer_name,
                 'signed_at' => optional($agreement->agent_signed_at)?->toIso8601String(),
@@ -218,7 +243,7 @@ class AgentController extends Controller
      *  Schedule B / contact edits (query params) over the stored fields. */
     public function previewAgreement(Request $request, AgentAgreementService $service)
     {
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->firstOrFail();
+        $agreement = $this->selectedAgreement($request);
 
         $keys = collect(AgentAgreementService::affiliateFields())->pluck('key')->all();
         $override = collect($keys)
@@ -232,16 +257,18 @@ class AgentController extends Controller
     }
 
     /** Stream the agent's own agreement PDF inline (viewable in the browser). */
-    public function viewAgreement()
+    public function viewAgreement(Request $request)
     {
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->firstOrFail();
+        $agreement = $this->selectedAgreement($request);
 
         abort_unless(Storage::disk('local')->exists($agreement->file_path), 404);
 
         return response()->file(Storage::disk('local')->path($agreement->file_path), [
             'Content-Type' => 'application/pdf',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
             'Content-Disposition' => 'inline; filename="'.$agreement->original_name.'"',
-        ]);
+        ])->setPrivate();
     }
 
     /** Affiliate Partner fills their own Schedule B bank + contact details.
@@ -256,7 +283,7 @@ class AgentController extends Controller
         }
         $request->validate($rules);
 
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->firstOrFail();
+        $agreement = $this->selectedAgreement($request, true);
         $service->updateFields($agreement, $request->only($keys));
 
         return back()->with('success', 'Your details were saved.');
@@ -279,21 +306,7 @@ class AgentController extends Controller
         }
         $validated = $request->validate($rules);
 
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->firstOrFail();
-
-        // Already signed — don't overwrite an existing signature.
-        abort_if($agreement->isSignedByAgent(), 422, 'This agreement is already signed.');
-
-        // Merge the agent's Schedule B + contact details into the stored fields
-        // so the re-rendered PDF (done inside recordAgentSignature) includes them.
-        $fields = is_array($agreement->fields) ? $agreement->fields : [];
-        foreach ($affiliateKeys as $key) {
-            if ($request->has($key)) {
-                $fields[$key] = mb_substr(trim((string) $request->input($key)), 0, 500);
-            }
-        }
-        $agreement->fields = $fields;
-        $agreement->save();
+        $agreement = $this->selectedAgreement($request, true);
 
         $service->recordAgentSignature(
             $agreement,
@@ -301,19 +314,20 @@ class AgentController extends Controller
             $validated['signature_data'],
             $request->ip(),
             $request->userAgent(),
+            $request->only($affiliateKeys),
         );
 
         return back()->with('success', 'Agreement signed. Thank you!');
     }
 
     /** Stream the agent's own agreement PDF (scoped to Auth::id()). */
-    public function downloadAgreement()
+    public function downloadAgreement(Request $request)
     {
-        $agreement = AgentAgreement::where('agent_id', Auth::id())->latest()->firstOrFail();
+        $agreement = $this->selectedAgreement($request);
 
         abort_unless(Storage::disk('local')->exists($agreement->file_path), 404);
 
-        return Storage::disk('local')->download($agreement->file_path, $agreement->original_name);
+        return Storage::disk('local')->download($agreement->file_path, $agreement->original_name, ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
     }
 
     /**

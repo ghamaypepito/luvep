@@ -617,6 +617,10 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['portal:admin', 'module:agents'])->group(function () {
         Route::get('/admin/agents', [\App\Http\Controllers\Admin\AgentModuleController::class, 'index'])
             ->name('admin.agents.index');
+        Route::get('/admin/agents/agreements', [\App\Http\Controllers\Admin\AgentModuleController::class, 'agreements'])
+            ->name('admin.agents.agreements');
+        Route::post('/admin/agents/{agent}/agreement/send', [\App\Http\Controllers\Admin\AgentModuleController::class, 'sendAgreement'])
+            ->name('admin.agents.agreement.send');
         Route::get('/admin/agents/{agent}', [\App\Http\Controllers\Admin\AgentModuleController::class, 'show'])
             ->name('admin.agents.show');
         Route::get('/admin/agents/{agent}/agreement/preview', [\App\Http\Controllers\Admin\AgentModuleController::class, 'previewAgreement'])

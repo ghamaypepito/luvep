@@ -54,7 +54,7 @@ class AgentModuleTest extends TestCase
         Storage::disk('local')->assertExists($agreement->file_path);
     }
 
-    public function test_regenerating_replaces_the_previous_agreement(): void
+    public function test_regenerating_retains_the_previous_agreement(): void
     {
         Storage::fake('local');
         $super = User::factory()->create(['role' => 'super_admin']);
@@ -63,8 +63,13 @@ class AgentModuleTest extends TestCase
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_passport' => 'A1']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_passport' => 'B2']);
 
-        $this->assertSame(1, AgentAgreement::where('agent_id', $agent->id)->count());
-        $this->assertSame('B2', AgentAgreement::where('agent_id', $agent->id)->first()->fields['agent_passport']);
+        $this->assertSame(2, AgentAgreement::where('agent_id', $agent->id)->count());
+        $this->assertSame('A1', AgentAgreement::where('agent_id', $agent->id)->orderBy('version')->first()->fields['agent_passport']);
+        $this->assertSame('B2', AgentAgreement::where('agent_id', $agent->id)->orderByDesc('version')->first()->fields['agent_passport']);
+        foreach (AgentAgreement::where('agent_id', $agent->id)->get() as $version) {
+            Storage::disk('local')->assertExists($version->file_path);
+            Storage::disk('local')->assertExists($version->issued_file_path);
+        }
     }
 
     public function test_show_404s_for_a_non_agent_user(): void
