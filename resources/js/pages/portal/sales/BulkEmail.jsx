@@ -177,6 +177,10 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         ...(selectionFollowsFilters ? [] : prev), ...filtered.map((r) => r.id),
     ]));
     const clearAll = () => setSelected(new Set());
+    const resetList = () => {
+        setSelected(new Set(visibleSelection));
+        setListId(""); setListName("");
+    };
 
     const applyList = (id) => {
         const list = recipientLists.find(item => String(item.id) === id);
@@ -199,7 +203,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
             ...(listMode === "custom" ? { lead_ids: [...visibleSelection] } : {}),
         }, {
             preserveScroll: true,
-            onSuccess: () => { setListId(""); setListName(""); },
+            onSuccess: resetList,
             onError: setListErrors,
             onFinish: () => setSavingList(false),
         });
@@ -307,7 +311,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                                 <p className="text-xs text-gray-500">Smart lists include new matching leads when opened. Custom lists keep the selected leads. Your lists are private to your account.</p>
                                 {Object.keys(listErrors).length > 0 && <p role="alert" className="text-xs text-rose-700">{Object.values(listErrors).join(" ")}</p>}
                                 <div className="flex gap-3"><button type="button" onClick={saveList} disabled={!listName.trim() || savingList || (listMode === "custom" && !visibleSelection.size)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{savingList ? "Saving…" : "Save list"}</button>
-                                    {listId && <button type="button" onClick={() => { setListId(""); setListName(""); }} className="text-xs text-gray-600">Save as a new list</button>}
+                                    {listId && <button type="button" onClick={resetList} className="text-xs text-gray-600">Save as a new list</button>}
                                 </div>
                             </div>
                         </details>

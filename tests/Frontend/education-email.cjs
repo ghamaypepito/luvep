@@ -165,6 +165,15 @@ const chooseFiles = async files => {
     assert.equal(posts.at(-1).data.list_id, "10");
     assert.equal("lead_ids" in posts.at(-1).data, false, "Smart lists save rules without submitting discarded member IDs");
     assert.equal(posts.at(-1).data.filters.registered_from, "2026-11-18");
+    await act(async () => { posts.at(-1).options.onSuccess(); posts.at(-1).options.onFinish(); });
+    await click(button("Send · 1 lead"));
+    assert.deepEqual(posts.at(-1).data.recipient_lead_ids, [4], "Saving narrowed smart rules keeps the send selection narrowed");
+    await act(async () => posts.at(-1).options.onFinish());
+    await change(document.querySelector('[aria-label="Saved recipient list"]'), "10");
+    await change(document.querySelector('[aria-label="Lead registered from"]'), "2026-11-18");
+    await click(button("Save as a new list"));
+    await click(button("Send · 1 lead"));
+    assert.deepEqual(posts.at(-1).data.recipient_lead_ids, [4], "Starting a new list keeps the narrowed selection");
     await act(async () => posts.at(-1).options.onFinish());
     await change(document.querySelector('[aria-label="Saved recipient list"]'), "11");
     assert.match(document.body.textContent, /1 selected · 4 shown/);
