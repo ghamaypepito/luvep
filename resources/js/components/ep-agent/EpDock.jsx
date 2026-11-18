@@ -51,7 +51,7 @@ export default function EpDock({ portals, fullPage = false }) {
     };
     if (fullPage) return null;
     return <div className="ep-shell ep-dock">
-        <button ref={trigger} type="button" className="ep-dock-trigger" aria-expanded={open} aria-controls="ep-agent-panel" onClick={() => { setOpen(value => !value); setMounted(true); }}><MessageSquare size={18} /> Ep Agent</button>
+        <button ref={trigger} type="button" className="ep-dock-trigger" aria-label="Ep Agent" title="Ep Agent" aria-expanded={open} aria-controls="ep-agent-panel" onClick={() => { setOpen(value => !value); setMounted(true); }}><MessageSquare size={20} aria-hidden="true" /></button>
         <section ref={dialog} id="ep-agent-panel" className="ep-dock-panel" role="dialog" aria-label="Ep Agent private chat" tabIndex={-1} hidden={!open} onKeyDown={keyboard}>
             <header className="ep-dock-bar"><strong>Ep Agent</strong><div><a href={full} aria-label="Expand Ep Agent" aria-disabled={busy || loading} onClick={event => { if (busy || loading) { event.preventDefault(); setError('Save or clear your draft and wait for saving before opening the full page.'); } }}><Maximize2 size={16} /></a><button type="button" aria-label="Minimize Ep Agent" onClick={close}><Minus size={17} /></button><button type="button" aria-label="Close Ep Agent" onClick={close}><X size={17} /></button></div></header>
             {error && <p className="ep-error" role="alert">{error}</p>}{loading && <p className="ep-notice" role="status">Opening record…</p>}
