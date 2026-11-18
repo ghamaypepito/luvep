@@ -138,6 +138,48 @@ class AffiliateAgreementHistoryTest extends TestCase
         $this->assertNotNull($agreement->fresh()->send_error);
     }
 
+    public function test_signing_uses_the_frozen_rendering_even_if_the_live_template_changes(): void
+    {
+        [$staff, $agent, $agreement] = $this->setupAgreement(['payment_timing' => 'Frozen agreed timing']);
+        $original = $agreement->rendered_html;
+        $directory = storage_path('framework/testing/changed-agreement-template');
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($directory.'/agreements');
+        \Illuminate\Support\Facades\File::put($directory.'/agreements/agent-referral.blade.php', '<html><body>Different terms from a later template.</body></html>');
+        $finder = app('view')->getFinder();
+        $paths = $finder->getPaths();
+        $finder->setPaths([$directory]);
+        $finder->flush();
+        try {
+            $this->actingAs($agent)->post('/portal/agent/agreement/sign?agreement='.$agreement->id, [
+                'signer_name' => $agent->name, 'signature_data' => self::SIGNATURE, 'terms_accepted' => 1,
+            ])->assertRedirect();
+            $signed = $agreement->fresh()->rendered_html;
+            $this->assertStringContainsString('Frozen agreed timing', $signed);
+            $this->assertStringNotContainsString('Different terms from a later template', $signed);
+            $stripSignature = fn ($html) => preg_replace('~<!--affiliate-(signature|date):agent-->.*?<!--/affiliate-\\1:agent-->~s', '', $html);
+            $this->assertSame($stripSignature($original), $stripSignature($signed));
+        } finally {
+            $finder->setPaths($paths);
+            $finder->flush();
+            \Illuminate\Support\Facades\File::deleteDirectory($directory);
+        }
+    }
+
+    public function test_issuing_an_older_draft_gets_a_new_current_version(): void
+    {
+        [$staff, $agent, $first] = $this->setupAgreement();
+        $this->post("/admin/agents/{$agent->id}/agreement/generate", ['intent' => 'draft'])->assertRedirect();
+        $draft = AgentAgreement::latest('id')->firstOrFail();
+        $this->post("/admin/agents/{$agent->id}/agreement/generate")->assertRedirect();
+        $issued = AgentAgreement::latest('id')->firstOrFail();
+        $this->post("/admin/agents/{$agent->id}/agreement/generate", ['draft_id' => $draft->id])->assertRedirect();
+        $this->assertGreaterThan($issued->version, $draft->fresh()->version);
+        $this->assertTrue($draft->fresh()->canSign());
+        $this->assertFalse($issued->fresh()->canSign());
+        Storage::disk('local')->assertExists($first->file_path);
+        Storage::disk('local')->assertExists($issued->file_path);
+    }
+
     public function test_invalid_signature_content_is_rejected(): void
     {
         [$staff, $agent, $agreement] = $this->setupAgreement();
