@@ -51,11 +51,11 @@ class CreativeRequestController extends Controller
     {
         $user = $this->staff($request);
         $rules = [
-            'project' => ['required', 'string', 'max:160'], 'deadline' => ['required', 'date_format:Y-m-d'],
+            'project' => ['required', 'string', 'max:160'], 'deadline' => ['nullable', 'date_format:Y-m-d'],
             'overview' => ['required', 'string', 'max:5000'], 'types' => ['required', 'array', 'min:1', 'max:4'],
-            'types.*' => ['required', 'distinct', Rule::in(CreativeRequest::DESIGN_TYPES)],
+            'types.*' => ['required', 'distinct', Rule::in([...CreativeRequest::DESIGN_TYPES, ...CreativeRequest::LEGACY_DESIGN_TYPES])],
             'other' => ['nullable', 'string', 'max:200'],
-            'approver' => ['required', 'string', 'max:160'],
+            'approver' => ['nullable', 'string', 'max:160'],
             'final_due' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:deadline'],
         ];
         foreach (['goal', 'audience', 'message', 'copy', 'caption', 'cta', 'style', 'references', 'include', 'avoid', 'assets', 'missing', 'budget', 'notes'] as $field) {
@@ -77,7 +77,7 @@ class CreativeRequestController extends Controller
             throw ValidationException::withMessages(['assignee' => 'Sharry’s active Luvep account could not be found. Contact an administrator before submitting.']);
         }
         unset($data['attachments']);
-        $data['final_due'] = $data['final_due'] ?? $data['deadline'];
+        $data['final_due'] = $data['final_due'] ?? ($data['deadline'] ?? null);
         if (! filter_var(config('creative.notification_email'), FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages(['notification' => 'The creative request email alert is not configured. Contact an administrator before submitting.']);
         }
@@ -88,7 +88,7 @@ class CreativeRequestController extends Controller
                 $task = LeadTask::create(['created_by' => $user->id, 'assignee_id' => $owner->id,
                     'title' => $data['project'], 'description' => Str::limit($data['overview'], 1500), 'type' => 'internal', 'department' => 'admin',
                     'category' => 'Creative request', 'priority' => 'normal', 'status' => 'not_started',
-                    'due_at' => \Illuminate\Support\Carbon::parse($data['deadline'].' 23:59:59', $data['timezone'])->utc()]);
+                    'due_at' => ! empty($data['deadline']) ? \Illuminate\Support\Carbon::parse($data['deadline'].' 23:59:59', $data['timezone'])->utc() : null]);
                 $creative = CreativeRequest::create(['request_ref' => 'CR-'.strtoupper(Str::random(8)), 'lead_task_id' => $task->id, 'brief' => $data]);
                 $stored = TicketAttachments::store($request->file('attachments', []), "creative-requests/{$creative->id}");
                 $creative->update(['attachments' => $stored ?: null]);

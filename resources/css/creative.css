@@ -51,14 +51,14 @@
 .cw-brief{max-width:1050px;margin:24px auto 0;padding:28px}
 .creative-workspace label{display:grid;gap:7px;font-weight:600;min-width:0}
 .creative-workspace label small{font-size:12px;font-weight:400;color:var(--cw-muted)}
-.cw-project-fields{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:18px;padding:0 0 24px;border-bottom:1px solid var(--cw-line)}
-.cw-steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:24px 0}
+.cw-project-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:0 0 24px;border-bottom:1px solid var(--cw-line)}
+.cw-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:24px 0}
 .cw-steps button{display:grid;gap:4px;text-align:left;border:0;border-bottom:2px solid var(--cw-line);padding:9px 1px;background:transparent;color:var(--cw-muted);font-size:12px;cursor:pointer;font-family:inherit}
 .cw-steps button span{font-variant-numeric:tabular-nums}
 .cw-steps button[aria-current]{border-color:var(--cw-green);color:var(--cw-green);font-weight:700}
 .cw-form-title{font-size:19px!important;margin-bottom:17px!important}
 .cw-fields{display:grid;gap:18px}
-.cw-caption-field,.cw-caption-read{padding:16px;border-radius:10px;background:#f2f7ec}
+.cw-copy-field,.cw-caption-read{padding:16px;border-radius:10px;background:#f2f7ec}
 .cw-fields fieldset{margin:0;padding:0;border:0}
 .cw-fields legend{margin-bottom:12px;font-weight:600}
 .cw-design-types{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -112,3 +112,5 @@
 .cw-brief-dialog .cw-brief{margin:0;border:0}
 .cw-assigned-actions{display:flex;flex-direction:column;gap:8px;align-items:stretch}
 @media(max-width:1100px){.cw-assigned-actions{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}}
+
+.cw-design-types small{display:block;margin-top:4px;line-height:1.5}
