@@ -114,13 +114,6 @@ class AffiliateOnboarding
         };
     }
 
-    public function assertCanActivate(User $user): void
-    {
-        if (AffiliateApplication::where('user_id', $user->id)->whereNull('activated_at')->exists()) {
-            throw ValidationException::withMessages(['user' => 'This affiliate needs approval and both signatures before activation.']);
-        }
-    }
-
     public function accountActions(string $state): array
     {
         return match ($state) {
@@ -136,22 +129,37 @@ class AffiliateOnboarding
     {
         DB::transaction(function () use ($partner, $action, $expected) {
             $partner = User::withTrashed()->whereKey($partner->id)->where('role', 'agent')->lockForUpdate()->firstOrFail();
-            $application = AffiliateApplication::where('user_id', $partner->id)->first();
-            $state = $this->accountState($partner, $application);
-            if ($expected !== $state || ! in_array($action, $this->accountActions($state), true)) {
-                throw ValidationException::withMessages(['user' => 'This action is unavailable in the current account state. Refresh the partner profile.']);
-            }
-            if ($action === 'activate') {
-                $this->assertCanActivate($partner);
-            }
-            $partner->update(['is_active' => $action === 'activate']);
-            if ($action === 'archive') {
-                $partner->delete();
-            } elseif ($action === 'restore') {
-                $partner->restore();
-            }
+            $transition = $this->applyToLockedAccount($partner, $action, $expected);
             ActivityLog::record('affiliate.partner.'.$action, ['entity_type' => User::class, 'entity_id' => $partner->id,
-                'properties' => ['before' => $state, 'after' => $this->accountState($partner, $application)]]);
+                'properties' => $transition]);
         });
+    }
+
+    /** Both administrative surfaces must lock the user before checking or changing its account state. */
+    public function applyToLockedAccount(User $user, string $action, string $expected): array
+    {
+        $application = AffiliateApplication::where('user_id', $user->id)->lockForUpdate()->first();
+        $before = $this->accountState($user, $application);
+        if ($expected !== $before || ! in_array($action, $this->accountActions($before), true)) {
+            throw ValidationException::withMessages(['user' => 'The account state has changed or this action is unavailable. Refresh the directory and try again.']);
+        }
+        if ($action === 'archive') {
+            if ($application && ! $application->activated_at) {
+                $application->update(['agreement_id' => null]);
+            }
+            if ($application || $user->role === 'agent') {
+                $user->update(['is_active' => false]);
+            }
+            $user->delete();
+        } elseif ($action === 'restore') {
+            if ($application || $user->role === 'agent') {
+                $user->is_active = false;
+            }
+            $user->restore();
+        } else {
+            $user->update(['is_active' => $action === 'activate']);
+        }
+
+        return ['before' => $before, 'after' => $this->accountState($user, $application)];
     }
 }

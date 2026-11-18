@@ -637,7 +637,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Only Admin and Super Admin manage partners, irrespective of staff portal grants.
-    Route::middleware(['portal:admin', 'can:manage-affiliate-partners', 'module:agents'])->group(function () {
+    Route::middleware(['portal:admin', 'can:administer-accounts', 'module:agents'])->group(function () {
         Route::get('/admin/agents', [\App\Http\Controllers\Admin\AgentModuleController::class, 'index'])
             ->name('admin.agents.index');
         Route::get('/admin/agents/agreements', [\App\Http\Controllers\Admin\AgentModuleController::class, 'agreements'])
@@ -753,12 +753,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/admin/availability/{id}', [AvailabilityController::class, 'update']);
         Route::delete('/admin/availability/{id}', [AvailabilityController::class, 'destroy']);
 
-        Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users');
-        Route::post('/admin/users', [UserController::class, 'store']);
-        Route::post('/admin/users/{id}', [UserController::class, 'update']);
-        Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
-        Route::post('/admin/users/{id}/restore', [UserController::class, 'restore']);
-        Route::post('/admin/users/{id}/toggle-active', [UserController::class, 'toggleActive']);
+        Route::middleware('can:administer-accounts')->group(function () {
+            Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users');
+            Route::post('/admin/users', [UserController::class, 'store']);
+            Route::post('/admin/users/{id}', [UserController::class, 'update']);
+            Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
+            Route::post('/admin/users/{id}/restore', [UserController::class, 'restore']);
+            Route::post('/admin/users/{id}/toggle-active', [UserController::class, 'toggleActive']);
+        });
 
         Route::get('/admin/activity-logs', [ActivityLogController::class, 'index'])->name('admin.activity-logs');
 

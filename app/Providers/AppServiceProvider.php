@@ -73,7 +73,7 @@ class AppServiceProvider extends ServiceProvider
         // password is set — reset, admin user CRUD, lead-portal setup.
         Password::defaults(fn () => Password::min(8)->letters()->mixedCase()->numbers());
 
-        Gate::define('manage-affiliate-partners', fn (\App\Models\User $user) => $user->isAdmin());
+        Gate::define('administer-accounts', fn (\App\Models\User $user) => $user->isAdmin());
         RateLimiter::for('affiliate-applications', fn (Request $request) => [
             Limit::perMinute(10)->by('ip:'.$request->ip()),
             Limit::perHour(6)->by('email:'.hash('sha256', mb_strtolower(trim(is_string($request->email) ? $request->email : '')))),

@@ -13,7 +13,10 @@ const React = require('react');
 const { createRoot } = require('react-dom/client');
 const { act } = React;
 const requests = [];
-const router = { post: (url, data, options) => requests.push({ url, data, options }) };
+const router = {
+    post: (url, data, options) => requests.push({ url, data, options }),
+    delete: (url, options) => requests.push({ url, data: options.data, options }),
+};
 function useForm(initial) {
     const [data, set] = React.useState(initial);
     const [errors, setErrors] = React.useState({});
@@ -26,23 +29,25 @@ function useForm(initial) {
     };
     return form;
 }
-const inertia = { router, useForm, Head: () => null, Link: props => React.createElement('a', props, props.children) };
+const inertia = { router, useForm, usePage: () => ({ props: { auth: { user: { id: 1 } } } }), Head: () => null, Link: props => React.createElement('a', props, props.children) };
 const compiled = buildSync({
     stdin: { contents: `
         export {default as Apply} from './resources/js/pages/affiliate/Apply';
         export {default as Progress} from './resources/js/pages/affiliate/Progress';
         export {default as Application} from './resources/js/pages/admin/agents/Application';
         export {default as AccountActions} from './resources/js/components/affiliate/AccountActions';
+        export {default as Directory} from './resources/js/pages/admin/Users';
         export {ConfirmHost} from './resources/js/components/ui/ConfirmDialog';
     `, resolveDir: process.cwd() },
     bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', loader: { '.css': 'empty' },
+    alias: { '@': require('node:path').resolve('resources/js') },
     external: ['react', 'react-dom', '@inertiajs/react', 'react-signature-canvas'],
 }).outputFiles[0].text;
 const loaded = new Module(__filename, module);
 loaded.paths = module.paths;
 loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
 loaded._compile(compiled, __filename);
-const { Apply, Progress, AccountActions, Application, ConfirmHost } = loaded.exports;
+const { Apply, Progress, AccountActions, Application, Directory, ConfirmHost } = loaded.exports;
 const root = createRoot(document.getElementById('root'));
 const render = (Component, props, key) => act(async () => root.render(React.createElement(React.Fragment, null,
     React.createElement(Component, { ...props, key }), React.createElement(ConfirmHost))));
@@ -113,6 +118,29 @@ const input = async (selector, value) => act(async () => {
     const archive = requests.pop();
     assert.equal(archive.url, '/change');
     assert.deepEqual(archive.data, { action: 'archive', expected: 'awaiting_signatures' });
+    const partner = { id: 10, name: 'Example Partner', email: 'test@example.test', role: 'agent', is_active: true, account_state: 'active' };
+    await render(Directory, { users: [partner], deletedUsers: [{ ...partner, id: 17 }] });
+    await click(button('Actions'));
+    await click(button('Deactivate'));
+    const deactivate = requests.pop();
+    assert.equal(deactivate.url, '/admin/users/10/toggle-active');
+    assert.deepEqual(deactivate.data, { action: 'disable', expected: 'active' });
+    await act(async () => deactivate.options.onError({ user: 'Refresh the directory.' }));
+    assert.equal(document.querySelector('[role=alert]').textContent, 'Refresh the directory.');
+    await render(Directory, { users: [{ ...partner, is_active: false, account_state: 'awaiting_signatures' }], deletedUsers: [{ ...partner, id: 17 }] });
+    await click(button('Actions'));
+    assert.equal(button('Activate').disabled, true);
+    await click(button('Delete'));
+    await click(button('Delete User'));
+    const deletion = requests.pop();
+    assert.deepEqual(deletion.data, { expected: 'awaiting_signatures' });
+    await act(async () => deletion.options.onFinish());
+    await click(button('Deleted (1)'));
+    await click(button('Actions'));
+    await click(button('Restore user'));
+    const restored = requests.pop();
+    assert.equal(restored.url, '/admin/users/17/restore');
+    assert.deepEqual(restored.data, { expected: 'archived' });
     console.log('Affiliate onboarding: application, renewal, verification, exact-version signing, review, archive and validation passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; })
     .finally(async () => { await act(async () => root.unmount()); dom.window.close(); });

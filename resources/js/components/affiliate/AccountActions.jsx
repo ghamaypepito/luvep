@@ -14,7 +14,10 @@ export default function AccountActions({ agent }) {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const act = async action => {
-        if (busy || !await confirmDialog({ title: labels[action], message: descriptions[action], confirmText: labels[action] })) return;
+        const message = action === "archive" && agent.account_state === "awaiting_signatures"
+            ? "Close the current signing invitation and archive this partner. After restore, issue a new agreement for both parties to sign."
+            : descriptions[action];
+        if (busy || !await confirmDialog({ title: labels[action], message, confirmText: labels[action] })) return;
         setBusy(true);
         setError("");
         router.post(agent.lifecycle_url, { action, expected: agent.account_state }, {

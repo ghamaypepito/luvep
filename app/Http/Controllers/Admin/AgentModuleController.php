@@ -105,7 +105,8 @@ class AgentModuleController extends Controller
                 'version' => $agreement->version,
                 'status' => $agreement->statusLabel(),
                 'is_draft' => $agreement->is_draft,
-                'can_sign' => ! $agent->trashed() && $agreement->canSign(),
+                'can_sign' => ! $agent->trashed() && $agreement->canSign()
+                    && (! $application || $application->activated_at || ($application->matchesPartner($agent) && $application->agreement_id === $agreement->id)),
                 'can_send' => $onboarding->invitationAllowed($agent, $agreement, $application) && $agreement->canSign() && ! $agreement->sent_at && ! $agreement->send_requested_at,
                 'legacy' => $agreement->rendered_html === null,
                 'expires_on' => $agreement->expires_on?->toDateString(),

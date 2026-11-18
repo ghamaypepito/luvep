@@ -75,7 +75,7 @@ class AffiliateOnboardingTest extends TestCase
         Auth::logout();
         $this->post('/login', ['email' => $user->email, 'password' => 'SyntheticPassword8'])->assertSessionHasErrors('email');
         $this->assertGuest();
-        $this->actingAs($admin)->post("/admin/users/{$user->id}/toggle-active")->assertSessionHasErrors('user');
+        $this->actingAs($admin)->post("/admin/users/{$user->id}/toggle-active", ['action' => 'activate', 'expected' => 'awaiting_signatures'])->assertSessionHasErrors('user');
         $this->post("/admin/agents/{$user->id}/lifecycle", ['action' => 'disable', 'expected' => 'awaiting_signatures'])->assertSessionHasErrors('user');
         $this->post("/admin/agents/{$user->id}/agreement/generate")->assertRedirect();
         $agreement = AgentAgreement::sole();
@@ -183,15 +183,15 @@ class AffiliateOnboardingTest extends TestCase
         $user->update(['email' => 'changed@example.test']);
         $this->get($this->signed($app, 'document', $current))->assertNotFound();
         $user->update(['email' => $app->email]);
-        $this->delete("/admin/users/{$user->id}")->assertRedirect();
+        $this->delete("/admin/users/{$user->id}", ['expected' => 'awaiting_signatures'])->assertRedirect()->assertSessionHasNoErrors();
         $this->get($this->signed($app, 'document', $current))->assertNotFound();
         $current->update(['send_requested_at' => now()]);
         (new \App\Jobs\SendAffiliateAgreement($current->id, $app->email))->handle();
         Mail::assertNotSent(AffiliateAgreementInvitation::class);
         $this->assertNotNull($current->fresh()->send_error);
-        $this->post("/admin/users/{$user->id}/restore")->assertRedirect();
+        $this->post("/admin/users/{$user->id}/restore", ['expected' => 'archived'])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertFalse($user->fresh()->is_active);
-        $this->post("/admin/users/{$user->id}/toggle-active")->assertSessionHasErrors('user');
+        $this->post("/admin/users/{$user->id}/toggle-active", ['action' => 'activate', 'expected' => 'awaiting_signatures'])->assertSessionHasErrors('user');
         $this->assertNull($user->fresh()->ensureReferralCode());
     }
 
@@ -268,11 +268,140 @@ class AffiliateOnboardingTest extends TestCase
         $staff = User::factory()->create(['role' => 'sales', 'portal_access' => ['admin'], 'module_permissions' => ['agents']]);
         $partner = User::factory()->create(['role' => 'agent']);
         $this->actingAs($staff)->get('/admin/agents/applications')->assertForbidden();
+        $this->get('/admin/users')->assertForbidden();
+        $this->post('/admin/users')->assertForbidden();
+        $this->post("/admin/users/{$partner->id}")->assertForbidden();
+        $this->delete("/admin/users/{$partner->id}", ['expected' => 'active'])->assertForbidden();
+        $this->post("/admin/users/{$partner->id}/restore", ['expected' => 'archived'])->assertForbidden();
+        $this->post("/admin/users/{$partner->id}/toggle-active", ['action' => 'disable', 'expected' => 'active'])->assertForbidden();
         $this->post("/admin/agents/applications/{$app->id}/approve")->assertForbidden();
         $this->post("/admin/agents/{$partner->id}/lifecycle", ['action' => 'archive', 'expected' => 'active'])->assertForbidden();
         $this->actingAs(User::factory()->create(['role' => 'admin']))
             ->post("/admin/agents/{$staff->id}/lifecycle", ['action' => 'disable', 'expected' => 'active'])->assertNotFound();
         $this->assertNull($partner->fresh()->deleted_at);
         $this->assertTrue($staff->fresh()->is_active);
+    }
+
+    public function test_user_management_rejects_empty_and_replayed_transitions_across_both_surfaces(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $super = User::factory()->create(['role' => 'super_admin']);
+        $partner = User::factory()->create(['role' => 'agent']);
+        $code = $partner->ensureReferralCode();
+        $toggle = "/admin/users/{$partner->id}/toggle-active";
+        $workspace = "/admin/agents/{$partner->id}/lifecycle";
+        $disable = ['action' => 'disable', 'expected' => 'active'];
+        $activate = ['action' => 'activate', 'expected' => 'disabled'];
+        $this->actingAs($admin)->get('/admin/users')->assertOk();
+        $this->post($toggle)->assertSessionHasErrors('action');
+        $this->post($toggle, ['action' => 'disable'])->assertSessionHasErrors('expected');
+        $this->assertTrue($partner->fresh()->is_active);
+        $this->post($toggle, $disable)->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($super)->get('/admin/users')->assertOk();
+        $this->post($toggle, $disable)->assertSessionHasErrors('user');
+        $this->post($workspace, $disable)->assertSessionHasErrors('user');
+        $this->get("/affiliate/register/{$code}")->assertNotFound();
+        $this->assertSame(1, ActivityLog::where('action', 'user.deactivated')->count());
+        $this->assertSame(0, ActivityLog::where('action', 'user.activated')->count());
+        $this->post($workspace, $activate)->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($toggle, $activate)->assertSessionHasErrors('user');
+        $this->get("/affiliate/register/{$code}")->assertOk();
+        $this->delete("/admin/users/{$partner->id}", ['expected' => 'disabled'])->assertSessionHasErrors('user');
+        $this->assertFalse($partner->fresh()->trashed());
+        $this->assertSame(0, ActivityLog::where('action', 'user.deleted')->count());
+    }
+
+    public static function administratorRoles(): array
+    {
+        return [['admin'], ['super_admin']];
+    }
+
+    #[DataProvider('administratorRoles')]
+    public function test_both_admin_roles_retain_staff_directory_management(string $role): void
+    {
+        $this->actingAs(User::factory()->create(['role' => $role]))->get('/admin/users')->assertOk();
+        $staffData = ['name' => 'Example Staff', 'email' => 'staff@example.test', 'role' => 'sales', 'password' => 'TestStaffPassword8'];
+        $this->post('/admin/users', $staffData)->assertRedirect()->assertSessionHasNoErrors();
+        $staff = User::where('email', $staffData['email'])->firstOrFail();
+        $url = "/admin/users/{$staff->id}";
+        $this->post($url, ['name' => 'Updated Staff'] + $staffData)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Updated Staff', $staff->fresh()->name);
+        $this->post($url.'/toggle-active', ['action' => 'disable', 'expected' => 'active'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->delete($url, ['expected' => 'disabled'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertTrue($staff->fresh()->trashed());
+        $this->post($url.'/restore', ['expected' => 'archived'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertFalse($staff->fresh()->trashed());
+        $this->assertFalse($staff->fresh()->is_active);
+    }
+
+    public static function archiveSurfaces(): array
+    {
+        return [['workspace', 'company'], ['directory', 'agent']];
+    }
+
+    #[DataProvider('archiveSurfaces')]
+    public function test_archiving_pending_onboarding_requires_a_fresh_invitation(string $surface, string $firstSigner): void
+    {
+        $app = $this->application();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $partner = $this->approve($app, $admin);
+        $workspace = "/admin/agents/{$partner->id}/lifecycle";
+        $directory = "/admin/users/{$partner->id}";
+        $agreements = "/admin/agents/{$partner->id}/agreement";
+        $this->get('/admin/users')->assertInertia(fn ($page) => $page->where('users', fn ($users) => collect($users)->firstWhere('id', $partner->id)['account_state'] === 'awaiting_signatures'));
+        $this->post($agreements.'/generate')->assertRedirect();
+        $old = AgentAgreement::sole();
+        $payload = ['signer_name' => 'Demo', 'signature_data' => self::PNG, 'terms_accepted' => 1];
+        $this->post($agreements.'/send?agreement='.$old->id)->assertRedirect();
+        $oldLink = Mail::sent(AffiliateAgreementInvitation::class)->last()->privateUrl;
+        $oldSign = $this->get($oldLink)->viewData('page')['props']['agreement']['sign_url'];
+        if ($firstSigner === 'company') {
+            $this->post($agreements.'/sign?agreement='.$old->id, $payload)->assertRedirect();
+        } else {
+            Auth::logout();
+            $this->post($oldSign, $payload + ['agreement_id' => $old->id])->assertRedirect();
+            $this->actingAs($admin);
+        }
+        $old->refresh();
+        $archivedPdf = Storage::disk('local')->get($old->file_path);
+        if ($surface === 'workspace') {
+            $this->post($workspace, ['action' => 'archive', 'expected' => 'awaiting_signatures'])->assertRedirect()->assertSessionHasNoErrors();
+            $this->post($workspace, ['action' => 'restore', 'expected' => 'archived'])->assertRedirect()->assertSessionHasNoErrors();
+        } else {
+            $this->delete($directory, ['expected' => 'awaiting_signatures'])->assertRedirect()->assertSessionHasNoErrors();
+            $this->post($directory.'/restore', ['expected' => 'archived'])->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $this->assertFalse($partner->fresh()->is_active);
+        $this->assertNull($app->fresh()->agreement_id);
+        $this->get($oldLink)->assertNotFound();
+        $this->post($oldSign, $payload + ['agreement_id' => $old->id])->assertNotFound();
+        $this->post($agreements.'/sign?agreement='.$old->id, $payload)->assertUnprocessable();
+        $this->post($agreements.'/send?agreement='.$old->id)->assertUnprocessable();
+        $this->get($agreements.'/download?agreement='.$old->id)->assertOk();
+        $this->assertSame($archivedPdf, Storage::disk('local')->get($old->fresh()->file_path));
+        $this->assertNotNull($old->fresh()->{$firstSigner.'_signed_at'});
+        $this->assertNull($app->fresh()->activated_at);
+
+        $this->post($agreements.'/generate')->assertRedirect();
+        $issued = $app->fresh()->agreement;
+        $this->assertGreaterThan($old->version, $issued->version);
+        $this->assertNull($issued->agent_signed_at);
+        $this->assertNull($issued->company_signed_at);
+        $this->post($agreements.'/send?agreement='.$issued->id)->assertRedirect();
+        $newLink = Mail::sent(AffiliateAgreementInvitation::class)->last()->privateUrl;
+        $this->assertNotSame($oldLink, $newLink);
+        $this->post($agreements.'/sign?agreement='.$issued->id, $payload)->assertRedirect();
+        Auth::logout();
+        $sign = $this->get($newLink)->viewData('page')['props']['agreement']['sign_url'];
+        $this->post($sign, $payload + ['agreement_id' => $issued->id])->assertRedirect();
+        $this->assertTrue($partner->fresh()->is_active);
+        $this->actingAs($admin)->delete($directory, ['expected' => 'awaiting_signatures'])->assertSessionHasErrors('user');
+        $this->assertFalse($partner->fresh()->trashed());
+        $this->delete($directory, ['expected' => 'active'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($directory.'/restore', ['expected' => 'archived'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($issued->id, $app->fresh()->agreement_id);
+        $this->assertNotNull($app->fresh()->activated_at);
+        $this->assertFalse($partner->fresh()->is_active);
+        $this->assertSame(1, ActivityLog::where('action', 'affiliate.application.activated')->count());
     }
 }
