@@ -7,7 +7,7 @@ const password = process.env.CREATIVE_E2E_PASSWORD;
 test.use({ timezoneId: 'Asia/Manila' });
 test.skip(!origin || !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin) || !email || !password, 'Requires the seeded local Creative Requests preview.');
 
-test('caption and private references reach the task and DTR, preserving a Manila deadline', async ({ page }) => {
+test('updated short brief and private references reach the task and DTR without inventing a deadline', async ({ page }) => {
     const title = `Creative browser workflow ${Date.now()}`;
     let dtrWrites = 0;
     page.on('request', request => {
@@ -20,7 +20,7 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await page.waitForURL(/admin/);
     await page.goto(`${origin}/admin/system-tickets?type=digital`);
     await page.getByRole('button', { name: 'New creative request', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'New creative request', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Creative brief ticket', exact: true })).toBeVisible();
     await expect(page.getByLabel('Project name')).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'New creative request', exact: true })).toBeFocused();
@@ -33,16 +33,18 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await page.setViewportSize({ width: 1440, height: 1080 });
     await page.getByLabel('Project name').fill(title);
     await page.screenshot({ path: test.info().outputPath('creative-request-popup.png') });
-    await page.getByLabel('Deadline', { exact: false }).first().fill('2026-11-27');
-    await page.getByLabel('What do you need designed?').fill('Create a consultation campaign graphic.');
+    await expect(page.locator('[name=deadline]')).toHaveCount(0);
+    await expect(page.locator('[name=approver]')).toHaveCount(0);
+    await page.getByRole('textbox', { name: 'Project overview', exact: false }).fill('Create a consultation campaign graphic.');
     await page.locator('.cw-steps button').nth(1).click();
-    await page.getByLabel('Caption', { exact: false }).fill('Plan your next chapter. #StudyInNZ');
+    await page.getByLabel('Required copy', { exact: false }).fill('Plan your next chapter. #StudyInNZ');
     await page.locator('.cw-steps button').nth(2).click();
-    await page.getByLabel('Social media graphic', { exact: true }).check();
+    await page.getByLabel('Digital media', { exact: false }).check();
     await page.locator('.cw-steps button').nth(3).click();
     await page.getByLabel('Sample designs / references').setInputFiles({ name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('Reference layout: clear headline and approved logo.') });
-    await page.locator('.cw-steps button').nth(5).click();
-    await page.getByLabel('Final approver').fill('Marketing lead');
+    await page.locator('.cw-steps button').nth(4).click();
+    await page.getByRole('textbox', { name: 'Curated assets', exact: true }).fill('https://example.test/approved-assets');
+    await page.getByLabel('Additional notes', { exact: true }).fill('Use the approved logo.');
     await expect(page.getByRole('button', { name: 'Submit creative request', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Submit creative request', exact: true }).click();
     await page.waitForURL(/creative-requests\/\d+$/);
@@ -81,9 +83,10 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await expect(page.getByRole('dialog', { name: 'Task details' })).toBeHidden();
     await page.reload();
     const dueAfter = await page.evaluate((project) => JSON.parse(document.querySelector('#app')!.getAttribute('data-page')!).props.all_tasks.find((task: { title: string }) => task.title === project).due_at, title);
+    expect(dueBefore).toBeNull();
     expect(dueAfter).toBe(dueBefore);
     await page.goto(requestUrl);
-    await expect(page.getByText('Project deadline: 2026-11-27', { exact: true })).toBeVisible();
+    await expect(page.getByText('No deadline', { exact: true })).toBeVisible();
     for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();

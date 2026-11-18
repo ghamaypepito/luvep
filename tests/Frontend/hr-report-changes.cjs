@@ -18,7 +18,21 @@ const entry={id:7,work_date:'2026-11-18',hr_version:4,hr_status:'reviewed',can_c
 const button=t=>[...document.querySelectorAll('button')].find(e=>e.textContent.trim()===t);
 const render=props=>act(async()=>root.render(React.createElement(Page,props)));
 (async()=>{
- await render({mode:'mine',entries:[entry],departmentHead:{id:2,name:'Assigned Head'},acknowledgements:[]});
+ const future={...entry,id:8,work_date:'2026-11-19',can_change_report:false,work_location:'Home'};
+ await render({mode:'mine',entries:[entry,future],departmentHead:{id:2,name:'Assigned Head'},acknowledgements:[]});
+ const selector=()=>document.querySelector('.hr-select-label select');
+ const selectDate=async id=>act(async()=>{
+  const input=selector();
+  assert.ok(input,'Work date remains selectable');
+  input.value=String(id);
+  input.dispatchEvent(new Event('change',{bubbles:true}));
+ });
+ await selectDate(future.id);
+ assert.equal(selector().value,String(future.id));
+ assert.match(document.querySelector('.hr-profile-grid').textContent,/Home/);
+ assert.equal(button('Save changes'),undefined,'Future report is read-only');
+ await selectDate(entry.id);
+ assert.equal(selector().value,String(entry.id));
  assert.ok(button('Save changes'),'A reviewed report can have content edited');
  assert.equal(document.querySelector('input[name="time_in"]'),null,'Clock-in is never editable');
  assert.match(document.querySelector('[aria-label="Report change summary"]').textContent,/Original note.*Updated client report/s,'The sidebar shows actual before/after values');

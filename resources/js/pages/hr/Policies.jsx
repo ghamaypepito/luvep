@@ -3,7 +3,6 @@ import { Head, Link, useForm, usePage } from "@inertiajs/react";
 import { useState, useRef } from "react";
 import axios from "axios";
 import { Errors } from "./Dtr";
-import MyInfoTabs from "@/components/hr/MyInfoTabs";
 import PersonalDocumentUpload, { hrDocumentAccept } from "@/components/hr/PersonalDocumentUpload";
 function Draft({ policy }) {
     const fileInput = useRef(null);
@@ -253,7 +252,6 @@ export default function Policies({ policies, manage, scope }) {
     return (
         <>
             <Head title="Policies & guide · Luvep" />
-            {scope === "mine" && <MyInfoTabs />}
             <div className="hr-page-heading">
                 <h1>Policies & guide</h1>
                 <p>
