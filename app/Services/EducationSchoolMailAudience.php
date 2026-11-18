@@ -36,7 +36,7 @@ class EducationSchoolMailAudience
             }
             $rows->push($this->row('rsvp', $r->id, $r->full_name, $r->email, $r->education_visit_id,
                 $r->consented_at && $r->verified_at && $r->{$filters['purpose']},
-                $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id]));
+                $r->attendance_status === 'attended' ? ($r->attendance_source === 'automatic' ? 'Recorded attended (automatic)' : 'Recorded attended') : 'Registered', $visits[$r->education_visit_id], $r->created_at));
         }
         // Programme registrations and RSVPs are independent. Never manufacture Lead links.
         // Recorded-attendance mode uses RSVP evidence only.
@@ -53,33 +53,48 @@ class EducationSchoolMailAudience
                 $nameKey = EducationRsvpWorkflow::nameKey($name);
                 $subscription = $subscriptions->get($r->id);
                 $confirmed = $subscription && $subscription->lead_id === $r->lead_id && strtolower(trim($subscription->email)) === $email;
-                $verified = $r->{$filters['purpose']} && $verifiedRsvps->get($email)?->contains(fn ($rsvp) =>
-                    $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
+                $verified = $r->{$filters['purpose']} && $verifiedRsvps->get($email)?->contains(fn ($rsvp) => $rsvp['ref']['visit_id'] === $r->education_visit_id && EducationRsvpWorkflow::nameKey($rsvp['name']) === $nameKey);
                 $rows->push($this->row('registration', $r->id, $name, $email, $r->education_visit_id,
-                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || $verified), 'Programme registration', $visits[$r->education_visit_id]));
+                    $r->consented_at && $email === strtolower(trim((string) $r->lead?->email)) && ($confirmed || $verified), 'Programme registration', $visits[$r->education_visit_id], $r->created_at));
             }
         }
 
-        return $rows->groupBy('email')->map(function ($group, $email) use ($suppressed) {
-            $first = $group->first();
+        $usesRsvpList = ! empty($filters['list_id']) || ! empty($filters['folder_id']) || ! empty($filters['rsvp_filters']);
+        $matchingRsvpIds = ! $usesRsvpList ? null : app(EducationAttendance::class)->query($filters['rsvp_filters'] ?? [])
+            ->when($onlyEmail, fn ($query) => $query->whereRaw('LOWER(TRIM(email)) = ?', [$onlyEmail]))
+            ->whereIn('education_visit_id', $visits->keys())->pluck('id')->flip();
+
+        $memberRefs = collect($filters['member_refs'] ?? [])->map(fn ($ref) => $ref['type'].':'.$ref['id'])->flip();
+
+        // Keep all consent evidence, but personalise from a registration matching the requested audience.
+        return $rows->groupBy('email')->map(function ($group, $email) use ($suppressed, $matchingRsvpIds, $filters, $memberRefs) {
+            $matches = $group->filter(fn ($row) => ($matchingRsvpIds === null || ($row['ref']['type'] === 'rsvp' && $matchingRsvpIds->has($row['ref']['id'])))
+                && (! isset($filters['member_refs']) || $memberRefs->has($row['ref']['type'].':'.$row['ref']['id']))
+                && (empty($filters['registered_from']) || ($row['registered_on'] && $row['registered_on'] >= $filters['registered_from']))
+                && (empty($filters['registered_to']) || ($row['registered_on'] && $row['registered_on'] <= $filters['registered_to'])));
+            if ($matches->isEmpty()) {
+                return null;
+            }
+            $first = $matches->first();
             $sameName = $group->map(fn ($r) => EducationRsvpWorkflow::nameKey($r['name']))->unique()->count() === 1;
             $eligible = ! isset($suppressed[$email]) && filter_var($email, FILTER_VALIDATE_EMAIL) && $sameName && $group->every(fn ($r) => $r['eligible']);
 
             return ['id' => hash('sha256', json_encode([$email, $first['name'], $group->pluck('ref')->values()->all(), $first['context'], (bool) $eligible], JSON_UNESCAPED_UNICODE)), 'email' => $email, 'name' => $first['name'],
                 'eligible' => (bool) $eligible, 'reason' => $eligible ? null : (! $sameName ? 'Shared address has different names. Review separately.' : 'Missing email permission/verification, invalid address, unsubscribe or prior bounce.'),
-                'schools' => $group->pluck('school')->unique()->values()->all(),
-                'attendance' => $group->pluck('attendance')->unique()->implode(', '),
-                'source_refs' => $group->pluck('ref')->values()->all(), 'context' => $first['context']];
-        })->sortBy('name')->values();
+                'schools' => $matches->pluck('school')->unique()->values()->all(),
+                'attendance' => $matches->pluck('attendance')->unique()->implode(', '),
+                'source_refs' => $group->pluck('ref')->values()->all(), 'member_refs' => $matches->pluck('ref')->values()->all(), 'context' => $first['context']];
+        })->filter()->sortBy('name')->values();
     }
 
-    private function row($type, $id, $name, $email, $visitId, $eligible, $attendance, EducationVisit $v): array
+    private function row($type, $id, $name, $email, $visitId, $eligible, $attendance, EducationVisit $v, $registeredAt): array
     {
         $name = preg_replace('/\s+/u', ' ', trim($name));
         $parts = explode(' ', $name, 2);
 
         return ['email' => strtolower(trim($email)), 'name' => $name, 'eligible' => (bool) $eligible && $name !== '',
-            'school' => $v->school, 'attendance' => $attendance, 'ref' => ['type' => $type, 'id' => $id, 'visit_id' => $visitId],
+            'school' => $v->school, 'attendance' => $attendance, 'registered_on' => $registeredAt?->timezone('Asia/Manila')->toDateString(),
+            'ref' => ['type' => $type, 'id' => $id, 'visit_id' => $visitId],
             'context' => ['full_name' => $name, 'first_name' => $parts[0], 'last_name' => $parts[1] ?? '', 'email' => strtolower(trim($email)),
                 'school' => $v->school, 'event_name' => $v->activity, 'event_date' => $v->schedule_confirmed ? $v->event_date?->format('j F Y') ?? 'Date to be confirmed' : 'Date to be confirmed',
                 'event_time' => $v->schedule_confirmed ? $v->event_time ?? 'Time to be confirmed' : 'Time to be confirmed',

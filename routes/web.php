@@ -1750,6 +1750,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/email-series', \App\Http\Controllers\EducationEventEmailSeriesController::class)->name('email-series');
             Route::get('/school-mail', [\App\Http\Controllers\EducationSchoolMailController::class, 'index'])->name('school-mail');
             Route::post('/school-mail', [\App\Http\Controllers\EducationSchoolMailController::class, 'store'])->middleware('throttle:10,1')->name('school-mail.store');
+            Route::post('/school-mail/recipient-lists', [\App\Http\Controllers\EducationSchoolMailController::class, 'saveRecipientList'])->name('school-mail.recipient-lists.save');
+            Route::post('/bulk-email/recipient-lists', [\App\Http\Controllers\BulkEmailController::class, 'saveRecipientList'])->name('bulk-email.recipient-lists.save');
             Route::get('/bulk-email', [\App\Http\Controllers\BulkEmailController::class, 'index'])->name('bulk-email');
             Route::post('/bulk-email', [\App\Http\Controllers\BulkEmailController::class, 'store'])->name('bulk-email.store');
             Route::get('/bulk-email/{id}', [\App\Http\Controllers\BulkEmailController::class, 'show'])->name('bulk-email.show');

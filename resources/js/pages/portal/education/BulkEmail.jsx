@@ -9,6 +9,7 @@ export default function EducationBulkEmail(props) {
             <strong>School visit bulk email</strong><br />
             Choose Education school visits, including Jose Maria College and Tagum, and review registered or recorded-attended recipients.
         </a>
+        <a href="/portal/education/rsvps#attendance" className="inline-block mb-5 text-sm font-semibold text-teal-800 underline">Manage event smart lists and custom attendee groups</a>
         <BulkEmailView {...props} />
     </>;
 }

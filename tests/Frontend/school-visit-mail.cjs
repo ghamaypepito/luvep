@@ -46,6 +46,7 @@ const change=(node,value)=>act(async()=>{
 (async()=>{
     const props={visits:[{id:11,school:'Jose Maria College',activity:'Visit',summary:'Date TBC'},{id:12,school:'Tagum',activity:'Visit',summary:'Date TBC'}],
         filters:{visit_ids:[11],audience:'registered',purpose:'email_follow_up'},
+        audienceLists:[{id:21,name:'Recent attendees',folder:{name:'Events'},filters:{visit_id:12}}],audienceGroups:[{id:31,name:'Chosen attendees'}],
         recipients:[{id:'a'.repeat(64),name:'<Alex> Taylor',email:'alex@example.test',eligible:true,schools:['Jose Maria College'],attendance:'Registered',context:{full_name:'<Alex> Taylor',email:'alex@example.test',school:'Jose Maria College'}},
             {id:'b'.repeat(64),name:'Excluded',email:'excluded@example.test',eligible:false,reason:'Missing permission',schools:['Jose Maria College'],attendance:'Registered'}],
         templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p><img src="https://tracker.example.test/{{email}}"><style>@import "https://tracker.example.test/sample.css";</style>',review:'c'.repeat(64),
@@ -89,5 +90,29 @@ const change=(node,value)=>act(async()=>{
     await change(document.querySelector('[aria-label="Audience"]'),'attended');
     assert.match(document.body.textContent,/Filters changed/);assert.equal(button('Queue 1 emails'),undefined);
     await click(button('Load recipients'));assert.equal(posts[1].method,'get');assert.equal(posts[1].data.audience,'attended');
+    await change(document.querySelector('[aria-label="Saved RSVP smart list"]'),'21');
+    await change(document.querySelector('[aria-label="School registered from"]'),'2026-11-17');
+    await change(document.querySelector('[aria-label="School registered through"]'),'2026-11-18');
+    await click(button('Load recipients'));
+    assert.equal(posts.at(-1).data.list_id,'21');assert.deepEqual(posts.at(-1).data.visit_ids,['12']);
+    assert.equal(posts.at(-1).data.registered_from,'2026-11-17');assert.equal(posts.at(-1).data.registered_to,'2026-11-18');
+    await change(document.querySelector('[aria-label="Custom attendee group"]'),'31');
+    assert.equal(document.querySelector('[aria-label="Saved RSVP smart list"]').value,'');
+    await click(button('Load recipients'));assert.equal(posts.at(-1).data.folder_id,'31');assert.equal(posts.at(-1).data.list_id,'');
+    await act(async()=>root.render(React.createElement(SchoolMail,{...props,key:'private-event-lists',recipientLists:[{id:41,name:'Programme follow ups',mode:'smart'}]})));
+    await click(button('Select eligible matches'));
+    await change(document.querySelector('[aria-label="Event recipient list name"]'),'Chosen programme registrants');
+    await change(document.querySelector('[aria-label="Event recipient list type"]'),'custom');
+    await click(button('Save event list'));
+    assert.equal(posts.at(-1).url,'/portal/education/school-mail/recipient-lists');
+    assert.deepEqual(posts.at(-1).data.recipient_keys,['a'.repeat(64)]);
+    assert.equal(posts.at(-1).data.mode,'custom');
+    await act(async()=>posts.at(-1).options.onFinish());
+    await change(document.querySelector('[aria-label="Event recipient list type"]'),'smart');
+    await click(button('Save event list'));
+    assert.equal('recipient_keys' in posts.at(-1).data,false,'Event smart lists save rules without member snapshots');
+    await change(document.querySelector('[aria-label="My event recipient lists"]'),'41');
+    assert.equal(posts.at(-1).method,'get');assert.equal(posts.at(-1).data.recipient_list_id,'41');
+    assert.equal(new URLSearchParams(posts.at(-1).data).get('load_saved_list'),'1','The query flag must pass Laravel boolean validation');
     await act(async()=>root.unmount());console.log('School visit audience, consent exclusions, review, payload and stale-filter behaviour verified');
 })().catch(e=>{console.error(e);process.exitCode=1;});
