@@ -138,6 +138,7 @@ class AffiliateComposePrivacyTest extends TestCase
     {
         $migration = require database_path('migrations/2026_11_18_210000_add_affiliate_follow_up_template.php');
         $template = MessageTemplate::where('key', 'affiliate_client_follow_up')->firstOrFail();
+        $this->assertSame('first_name', $template->variables_documented[0]['name']);
         $template->update(['email_body' => '<p>Staff personalised</p>']);
         $migration->up();
         $this->assertSame('<p>Staff personalised</p>', $template->fresh()->email_body);

@@ -15,7 +15,7 @@ return new class extends Migration
                 'channels' => ['email'],
                 'email_subject' => 'Checking in, {{first_name}}',
                 'email_body' => '<p>Kia ora {{first_name}},</p><p>I am checking in on your enquiry with EP. Please let me know if your plans have changed or if you would like help with your next step.</p><p>If you have a question for the EP team, reply to this email and I will help connect you with the right person.</p><p>Kind regards,<br>Your EP Affiliate Partner</p>',
-                'variables_documented' => ['first_name'],
+                'variables_documented' => [['name' => 'first_name', 'description' => 'The client’s first name']],
                 'is_active' => true,
             ],
         );
