@@ -118,7 +118,9 @@ function SchoolMailForm({visits=[],filters,recipients=[],templates=[],mailings=[
                 <ul className="max-h-80 overflow-y-auto divide-y">{rows.map(r=><li key={r.id} className="py-3"><label className="flex gap-3">
                     <input type="checkbox" disabled={!r.eligible} checked={selected.has(r.id)} onChange={()=>toggle(r.id)} />
                     <span>{r.name} · {r.email}<small className="block text-gray-600">{r.schools.join(', ')} · {r.attendance}</small>
-                        {!r.eligible&&<small className="block text-amber-800">{r.reason}</small>}</span>
+                        {!r.eligible&&<small className="block text-amber-800">{r.reason}</small>}
+                        {r.conflicting_names?.map(record=><small key={`${record.source}:${record.id}`} className="block text-gray-600">{record.source==='rsvp'?'RSVP':'Programme registration'} #{record.id}: {record.name}</small>)}
+                    </span>
                 </label></li>)}</ul>
                 {!rows.length&&<p>No registrations match these visits and filters. Do not select a general event as a substitute.</p>}
                 <details className="rounded-lg border p-3">

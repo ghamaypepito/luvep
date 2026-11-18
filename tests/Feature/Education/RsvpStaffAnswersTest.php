@@ -182,6 +182,24 @@ class RsvpStaffAnswersTest extends TestCase
         $this->assertNull($rsvp->fresh()->phone);
     }
 
+    public function test_event_contact_permission_can_be_withdrawn_but_not_manufactured_for_other_rsvps(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $ordinary = $this->rsvp();
+        $this->putJson(route('education.rsvps.answers', $ordinary), $this->answers($ordinary, ['legacy_event_follow_up' => true]))->assertUnprocessable()->assertJsonValidationErrors('legacy_event_follow_up');
+        $legacy = $this->rsvp(['legacy_event_follow_up' => true]);
+        $this->put(route('education.rsvps.answers', $legacy), $this->answers($legacy, ['legacy_event_follow_up' => false, 'email_follow_up' => false]))->assertSessionHasNoErrors();
+        $this->assertFalse($legacy->fresh()->legacy_event_follow_up);
+        $this->assertFalse($legacy->fresh()->email_follow_up);
+        $legacy->update(['legacy_event_follow_up' => true]);
+        $legacy->refresh();
+        $this->put(route('education.rsvps.answers', $legacy), $this->answers($legacy, ['email' => 'changed@example.test']))->assertSessionHasNoErrors();
+        $this->assertNull($legacy->fresh()->legacy_event_follow_up);
+        $this->assertNull(ActivityLog::where('action', 'education.rsvp.answers_updated')->latest('id')->first()->changes['after']['legacy_event_follow_up']);
+        $legacy->refresh();
+        $this->putJson(route('education.rsvps.answers', $legacy), $this->answers($legacy, ['legacy_event_follow_up' => true]))->assertUnprocessable()->assertJsonValidationErrors('legacy_event_follow_up');
+    }
+
     public function test_guests_and_other_departments_cannot_change_answers(): void
     {
         $rsvp = $this->rsvp();

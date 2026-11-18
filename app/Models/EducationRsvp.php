@@ -8,11 +8,11 @@ class EducationRsvp extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'linked_at' => 'datetime', 'email_reminders' => 'boolean', 'future_invites' => 'boolean', 'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean'];
+    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'linked_at' => 'datetime', 'email_reminders' => 'boolean', 'future_invites' => 'boolean', 'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean', 'legacy_event_follow_up' => 'boolean'];
 
     public function answersRevision(): string
     {
-        return hash('sha256', json_encode($this->only(['full_name', 'email', 'phone', 'role', 'email_reminders', 'future_invites', 'email_follow_up', 'email_newsletter', 'public_id', 'verified_at', 'lead_id'])));
+        return hash('sha256', json_encode($this->only(['full_name', 'email', 'phone', 'role', 'email_reminders', 'future_invites', 'email_follow_up', 'email_newsletter', 'legacy_event_follow_up', 'public_id', 'verified_at', 'lead_id'])));
     }
 
     public function folders()

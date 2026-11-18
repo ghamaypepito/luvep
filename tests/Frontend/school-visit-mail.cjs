@@ -48,7 +48,7 @@ const change=(node,value)=>act(async()=>{
         filters:{visit_ids:[11],audience:'registered',purpose:'email_follow_up'},
         audienceLists:[{id:21,name:'Recent attendees',folder:{name:'Events'},filters:{visit_id:12}}],audienceGroups:[{id:31,name:'Chosen attendees'}],
         recipients:[{id:'a'.repeat(64),name:'<Alex> Taylor',email:'alex@example.test',eligible:true,schools:['Jose Maria College'],attendance:'Registered',context:{full_name:'<Alex> Taylor',email:'alex@example.test',school:'Jose Maria College'}},
-            {id:'b'.repeat(64),name:'Excluded',email:'excluded@example.test',eligible:false,reason:'Missing permission',schools:['Jose Maria College'],attendance:'Registered'}],
+            {id:'b'.repeat(64),name:'Excluded',email:'excluded@example.test',eligible:false,reason:'Missing permission',conflicting_names:[{source:'rsvp',id:8,name:'Taylor, <Alex>'},{source:'registration',id:9,name:'<Alex> Taylor'}],schools:['Jose Maria College'],attendance:'Registered'}],
         templates:[{id:7,name:'Follow up',subject:'Hello {{full_name}}',body:'<p>{{full_name}} {{school}}</p><img src="https://tracker.example.test/{{email}}"><style>@import "https://tracker.example.test/sample.css";</style>',review:'c'.repeat(64),
             from_email:'staff@example.test',from_name:'Education',reply_to_email:'replies@example.test',reply_to_name:'Education Replies',
             shell:'<title>&lt;!-- school-mail-subject --&gt;</title><header>Branding</header><!-- school-mail-body -->'}],mailings:[]};
@@ -57,6 +57,9 @@ const change=(node,value)=>act(async()=>{
     assert.equal(button('Queue 0 emails').disabled,true);
     const excluded=[...document.querySelectorAll('li label')].find(n=>n.textContent.includes('excluded@example.test')).querySelector('input');
     assert.equal(excluded.disabled,true);
+    assert.match(document.body.textContent,/RSVP #8: Taylor, <Alex>/);
+    assert.match(document.body.textContent,/Programme registration #9: <Alex> Taylor/);
+    assert.equal(document.querySelector('alex'),null);
     await click(button('Select eligible matches'));
     await change(document.querySelector('[aria-label="Mailing name"]'),'Synthetic follow up');
     await change(document.querySelector('[aria-label="Template"]'),'7');
