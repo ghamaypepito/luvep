@@ -803,9 +803,9 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                 <SortableTh label="Status"    sortKey="status"       current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Programme & School" sortKey="program" current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Intake"    sortKey="intake"       current={sortKey} dir={sortDir} onSort={toggleSort} />
+                                <SortableTh label="Updated"   sortKey="updated_at"   current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Engaged"   sortKey="date_engaged" current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <th className="px-3 py-3">Docs</th>
-                                <SortableTh label="Updated"   sortKey="updated_at"   current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <th className="px-3 py-3 text-right pr-4">Actions</th>
                             </tr>
                         </thead>
@@ -981,6 +981,30 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                 {s.intake ? <span className="text-gray-700">{fmtIntake(s.intake)}</span> : <span className="text-gray-300">—</span>}
                                             </td>
 
+                                            {/* Updated — last staff activity on this record:
+                                                when, who, and what they changed. */}
+                                            <td className="px-3 py-2.5 whitespace-nowrap">
+                                                {s.updated_at ? (
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs text-gray-700 tabular-nums">
+                                                            {fmtDate(s.updated_at)}
+                                                        </span>
+                                                        {s.updated_by && (
+                                                            <span className="text-[10px] text-gray-400 truncate max-w-[160px]">
+                                                                by {s.updated_by}
+                                                            </span>
+                                                        )}
+                                                        {s.updated_desc && (
+                                                            <span className="text-[10px] text-gray-500 truncate max-w-[160px]" title={s.updated_desc}>
+                                                                {s.updated_desc}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-300">—</span>
+                                                )}
+                                            </td>
+
                                             {/* Engaged */}
                                             <td className="px-3 py-2.5 whitespace-nowrap">
                                                 {s.date_engaged ? (
@@ -1001,30 +1025,6 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                         <span className="text-xs font-semibold tabular-nums whitespace-nowrap text-emerald-600">
                                                             {pct}%
                                                         </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-300">—</span>
-                                                )}
-                                            </td>
-
-                                            {/* Updated — last staff activity on this record:
-                                                when, who, and what they changed. */}
-                                            <td className="px-3 py-2.5 whitespace-nowrap">
-                                                {s.updated_at ? (
-                                                    <div className="flex flex-col">
-                                                        <span className="text-xs text-gray-700 tabular-nums">
-                                                            {fmtDate(s.updated_at)}
-                                                        </span>
-                                                        {s.updated_by && (
-                                                            <span className="text-[10px] text-gray-400 truncate max-w-[160px]">
-                                                                by {s.updated_by}
-                                                            </span>
-                                                        )}
-                                                        {s.updated_desc && (
-                                                            <span className="text-[10px] text-gray-500 truncate max-w-[160px]" title={s.updated_desc}>
-                                                                {s.updated_desc}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-300">—</span>
