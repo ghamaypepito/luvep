@@ -77,8 +77,8 @@ export default function WorkInsights({ data }) {
         </dl>
         <p className="hr-work-context">Task Board counts. Current workload is a live snapshot; completions use the recorded completion date. Shared tasks count once overall and once for each assigned team member.</p>
         {data.undated_completions > 0 && <p className="hr-notice">{data.undated_completions} completed task(s) have no completion date and are excluded from the period completion count.</p>}
-        {team && <>
-            <h3 className="hr-work-subheading">Progress by team member</h3>
+        {team && <details className="hr-work-detail">
+            <summary>Progress by team member <span>{data.members.total} people</span></summary>
             <div className="hr-table-wrap"><table className="hr-work-team">
                 <caption className="sr-only">Current workload and completions during {periodLabel.toLowerCase()}</caption>
                 <thead><tr><th>Team member</th><th>Not started</th><th>In progress</th><th>In review</th><th>Completed in period</th><th>Overdue now</th></tr></thead>
@@ -90,7 +90,9 @@ export default function WorkInsights({ data }) {
                 <span>Page {data.members.current_page} of {data.members.last_page} · {data.members.total} people</span>
                 <button type="button" className="hr-button-secondary" disabled={busy || data.members.current_page >= data.members.last_page} onClick={() => load(data.period, data.members.current_page + 1)}>Next team members</button>
             </nav>}
-        </>}
+        </details>}
+        <details className="hr-work-detail">
+        <summary>Recent task and report activity</summary>
         <div className="hr-work-feeds">
             <div>
                 <h3 className="hr-work-subheading">Recent task updates</h3>
@@ -115,5 +117,6 @@ export default function WorkInsights({ data }) {
                 {!hr.preview && (hr.can_view_dtr_changes || hr.employee) && <a className="hr-text-link" href={hrPath(hr.can_view_dtr_changes ? "/dtr/changes" : "/dtr")}>View {hr.can_view_dtr_changes ? "DTR changes" : "your time records"}</a>}
             </div>
         </div>
+        </details>
     </section>;
 }

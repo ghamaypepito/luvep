@@ -6,6 +6,9 @@ import {
     CalendarDays,
     ClipboardCheck,
     UserRound,
+    Clock3,
+    FileText,
+    History,
 } from "lucide-react";
 import AbsenceCalendar from "../../components/hr/AbsenceCalendar";
 export default function Dashboard({
@@ -25,7 +28,6 @@ export default function Dashboard({
         <>
             <Head title="Your workplace · Luvep" />
             <div className="hr-page-heading">
-                <span className="hr-eyebrow">LUV, EP. · PEOPLE & CULTURE</span>
                 <h1>Hello, {firstName}.</h1>
                 <p>
                     {hr.employee
@@ -72,8 +74,7 @@ export default function Dashboard({
             {reviewer && (
                 <section className="hr-panel hr-review-summary">
                     <div>
-                        <span className="hr-eyebrow">YOUR REVIEW QUEUE</span>
-                        <h2>Keep your team moving</h2>
+                        <h2>Needs your review</h2>
                         <p>
                             {reviews.overdue_leave
                                 ? `${reviews.overdue_leave} leave request(s) are past the three-working-day response target.`
@@ -101,6 +102,22 @@ export default function Dashboard({
                     </div>
                 </section>
             )}
+            <section className="hr-panel hr-shortcuts-panel" aria-labelledby="hr-shortcuts-title">
+                <h2 id="hr-shortcuts-title">Reports & records</h2>
+                <p>Go straight to the records you need.</p>
+                <div className="hr-shortcuts">
+                    {[
+                        ["Attendance report", "Daily time records by employee and date", "/reports?type=attendance", Clock3],
+                        ["Leave history", "Recorded decisions, approvers and dates", "/reports?type=leave", CalendarDays],
+                        ["Approved hours", "Reviewed time records for reporting", "/reports?type=approved_hours", FileText],
+                        ...(hr.can_view_dtr_changes ? [["DTR changes", "See what changed in daily reports", "/dtr/changes", History]] : []),
+                    ].map(([title, detail, path, Icon]) => <Link key={path} href={hrPath(path)} className="hr-shortcut">
+                        <Icon size={20} aria-hidden="true" />
+                        <span><strong>{title}</strong><small>{detail}</small></span>
+                        <ArrowRight size={17} aria-hidden="true" />
+                    </Link>)}
+                </div>
+            </section>
             <WorkInsights data={workInsights} />
             <section className="hr-panel">
                 <div className="hr-section-bar">
@@ -119,13 +136,9 @@ export default function Dashboard({
                 </div>
             </section>
             <div className="hr-dashboard-grid">
-                <section className="hr-panel">
+                {hr.employee && <section className="hr-panel">
                     <div className="hr-section-bar">
-                        <h2>
-                            {hr.employee
-                                ? "Your workplace"
-                                : "People workspace"}
-                        </h2>
+                        <h2>Your workplace</h2>
                         <UserRound size={20} />
                     </div>
                     <dl className="hr-detail-list">
@@ -154,7 +167,7 @@ export default function Dashboard({
                             Manage employee records <ArrowRight size={16} />
                         </Link>
                     )}
-                </section>
+                </section>}
                 {hr.employee && (
                     <section className="hr-panel">
                         <div className="hr-section-bar">

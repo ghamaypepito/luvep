@@ -1,6 +1,7 @@
 import { UserViewButton } from '../admin/UserViewControls';
 import { hrPath } from "@/lib/hrPath";
 import { Link, router, usePage } from "@inertiajs/react";
+import { useEffect, useState } from "react";
 import {
     LayoutDashboard,
     UserRound,
@@ -14,6 +15,8 @@ import {
     MessageSquareLock,
     ListChecks,
     Laptop,
+    Menu,
+    X,
 } from "lucide-react";
 import NotificationBell from "../NotificationBell";
 import ClockWidget from "../hr/ClockWidget";
@@ -25,52 +28,70 @@ import "../../../css/hr.css";
 export default function HrLayout({ children }) {
     const { hr, flash, errors } = usePage().props;
     const path = usePage().url.split("?")[0];
-    const links = [
+    const [menuOpen, setMenuOpen] = useState(false);
+    useEffect(() => setMenuOpen(false), [path]);
+    const overview = [
         [hrPath("/dashboard"), "Overview", LayoutDashboard],
         [hrPath("/calendar"), "Calendar", CalendarDays],
+        [hrPath("/reports"), "Reports", ClipboardCheck],
+    ];
+    const personal = [
         [hrPath("/profile"), "My profile", UserRound],
     ];
-    if (hr?.employee) links.push([hrPath("/leave"), "My leave", CalendarDays]);
+    const team = [];
+    const workplace = [];
+    const administration = [];
+    if (hr?.employee) personal.push([hrPath("/leave"), "My leave", CalendarDays]);
     if (hr?.permissions?.["leave.review"])
-        links.push([hrPath("/leave/review"), "Leave decisions", ClipboardCheck]);
-    if (hr?.employee) links.push([hrPath("/dtr"), "My time records", Clock3]);
+        team.push([hrPath("/leave/review"), "Leave decisions", ClipboardCheck]);
+    if (hr?.employee) personal.push([hrPath("/dtr"), "My time records", Clock3]);
     if (hr?.permissions?.["dtr.review"])
-        links.push([hrPath("/dtr/review"), "Time reviews", ClipboardCheck]);
+        team.push([hrPath("/dtr/review"), "Time reviews", ClipboardCheck]);
     if (hr?.can_view_dtr_changes)
-        links.push([hrPath("/dtr/changes"), "DTR changes", ClipboardCheck]);
+        team.push([hrPath("/dtr/changes"), "DTR changes", ClipboardCheck]);
     if (hr?.permissions?.["dtr.correct"])
-        links.push([hrPath("/dtr/corrections"), "Time corrections", Clock3]);
-    links.push([hrPath("/checklists"), "Onboarding & exits", ListChecks]);
-    links.push([hrPath("/reports"), "Reports", ClipboardCheck]);
-    links.push([hrPath("/milestones"), "Milestones", CalendarDays]);
-    links.push([hrPath("/equipment"), "Equipment", Laptop]);
-    links.push([hrPath("/requests"), "HR support", MessageSquareLock]);
-    links.push([hrPath("/policies"), "Policies", BookOpen]);
-    links.push([hrPath("/documents"), "Documents", FolderLock]);
-    links.push(["https://luvep.com/media-drive", "Client Media Drive", FolderLock]);
-    if (hr?.permissions?.people) links.push([hrPath("/people"), "People", UsersRound]);
+        team.push([hrPath("/dtr/corrections"), "Time corrections", Clock3]);
+    team.push([hrPath("/checklists"), "Onboarding & exits", ListChecks]);
+    team.push([hrPath("/milestones"), "Milestones", CalendarDays]);
+    workplace.push([hrPath("/equipment"), "Equipment", Laptop]);
+    workplace.push([hrPath("/requests"), "HR support", MessageSquareLock]);
+    workplace.push([hrPath("/policies"), "Policies", BookOpen]);
+    workplace.push([hrPath("/documents"), "Documents", FolderLock]);
+    workplace.push(["https://luvep.com/media-drive", "Client Media Drive", FolderLock]);
+    if (hr?.permissions?.people) team.unshift([hrPath("/people"), "People", UsersRound]);
     if (hr?.permissions?.["access.manage"])
-        links.push([hrPath("/access"), "Access", UsersRound]);
+        administration.push([hrPath("/access"), "Access", UsersRound]);
     if (hr?.permissions?.audit)
-        links.push([hrPath("/audit"), "Activity & delivery", ClipboardCheck]);
+        administration.push([hrPath("/audit"), "Activity & delivery", ClipboardCheck]);
+    const groups = [["Workspace", overview], ["Team management", team], ["My workspace", personal], ["Resources & support", workplace], ["Administration", administration]];
+    const current = groups.flatMap(([, links]) => links).filter(([href]) => path === href || path.startsWith(`${href}/`)).sort(([a], [b]) => b.length - a.length)[0];
     return (
         <div className="hr-app">
+            <a href="#hr-main" className="hr-skip-link">Skip to content</a>
             <aside className="hr-sidebar">
                 <a href={hrPath("/dashboard")} aria-label="Luvep HR home" className="hr-logo">
                     <img src="/images/luvep-hr-logo.png" alt="Luv, eP." />
                     <span>People & culture</span>
                 </a>
+                <button type="button" className="hr-menu-toggle" aria-expanded={menuOpen} aria-controls="hr-navigation" onClick={() => setMenuOpen(!menuOpen)}>
+                    {menuOpen ? <X size={20} /> : <Menu size={20} />} Menu
+                    <span>{current?.[1] || "People & culture"}</span>
+                </button>
+                <div id="hr-navigation" className={`hr-nav-content${menuOpen ? " is-open" : ""}`}>
                 <nav aria-label="HR navigation">
-                    {links.map(([href, label, Icon]) => (
+                    {groups.filter(([, links]) => links.length).map(([title, links]) => <div className="hr-nav-group" key={title}>
+                        <p>{title}</p>
+                        {links.map(([href, label, Icon]) => (
                         <Link
                             href={href}
                             key={href}
-                            aria-current={path === href ? "page" : undefined}
+                            onClick={() => setMenuOpen(false)}
+                            aria-current={current?.[0] === href ? "page" : undefined}
                         >
-                            <Icon size={19} />
+                            <Icon size={18} aria-hidden="true" />
                             {label}
                         </Link>
-                    ))}
+                    ))}</div>)}
                 </nav>
                 <div className="hr-sidebar-footer">
                     <HrReturnLink hr={hr} />
@@ -79,10 +100,11 @@ export default function HrLayout({ children }) {
                         Sign out
                     </button>
                 </div>
+                </div>
             </aside>
             <div className="hr-workspace">
                 <header className="hr-topbar">
-                    <span>Employee portal</span>
+                    <span><span className="hr-topbar-label">People & culture</span> <span className="hr-breadcrumb-separator">/</span> <strong>{current?.[1] || "HR Portal"}</strong></span>
                     <div className="hr-actions">
                         <UserViewButton />
                         <NotificationBell />
@@ -90,7 +112,7 @@ export default function HrLayout({ children }) {
                     </div>
                 </header>
                 <PreviewBanner />
-                <main id="hr-main">
+                <main id="hr-main" tabIndex={-1}>
                     {flash?.success && (
                         <p className="hr-feedback" role="status">
                             {flash.success}
