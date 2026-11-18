@@ -1,13 +1,17 @@
 import { hrPath } from "@/lib/hrPath";
-import { Head, useForm, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { Head, Link, useForm, usePage } from "@inertiajs/react";
+import { useState, useRef } from "react";
 import axios from "axios";
 import { Errors } from "./Dtr";
+import MyInfoTabs from "@/components/hr/MyInfoTabs";
+import PersonalDocumentUpload, { hrDocumentAccept } from "@/components/hr/PersonalDocumentUpload";
 function Draft({ policy }) {
+    const fileInput = useRef(null);
     const form = useForm({
         title: policy?.draft_title || "",
         body: policy?.draft_body || "",
         version: policy?.revision || 0,
+        file: null,
     });
     return (
         <details className="hr-panel">
@@ -15,7 +19,7 @@ function Draft({ policy }) {
                 <strong>
                     {policy
                         ? `Edit draft · ${policy.draft_title}`
-                        : "Create a policy draft"}
+                        : "Add a policy or guide"}
                 </strong>
             </summary>
             <form
@@ -26,13 +30,17 @@ function Draft({ policy }) {
                         policy ? hrPath(`/policies/${policy.id}/draft`) : hrPath("/policies"),
                         {
                             preserveScroll: true,
+                            forceFormData: true,
                             onSuccess: () => {
                                 if (!policy) form.reset();
+                                else form.reset("file");
+                                if (fileInput.current) fileInput.current.value = "";
                             },
                         },
                     );
                 }}
             >
+                <fieldset className="hr-report-editor-fields" disabled={form.processing}>
                 <Errors errors={form.errors} />
                 <label>
                     Policy title
@@ -40,11 +48,12 @@ function Draft({ policy }) {
                         required
                         value={form.data.title}
                         maxLength={200}
+                        placeholder="For example, Leave Policy and Guide"
                         onChange={(e) => form.setData("title", e.target.value)}
                     />
                 </label>
                 <label>
-                    Policy text
+                    Policy / guide text
                     <textarea
                         required
                         rows={14}
@@ -57,6 +66,10 @@ function Draft({ policy }) {
                         permanent version.
                     </span>
                 </label>
+                <label>Supporting file · PDF, Word, PNG or JPEG, up to 10 MiB
+                    <input ref={fileInput} type="file" accept={hrDocumentAccept} disabled={form.processing} onChange={e => form.setData('file', e.target.files[0] || null)} />
+                </label>
+                {policy?.draft_attachment && <p>Current draft file: <a className="hr-text-link" href={policy.draft_attachment.url}>{policy.draft_attachment.name}</a></p>}
                 <div className="hr-actions">
                     <button
                         className="hr-button-secondary"
@@ -81,7 +94,7 @@ function Draft({ policy }) {
                                 )
                                     form.post(
                                         hrPath(`/policies/${policy.id}/publish`),
-                                        { preserveScroll: true },
+                                        { preserveScroll: true, forceFormData: true, onSuccess: () => { form.reset("file"); if (fileInput.current) fileInput.current.value = ""; } },
                                     );
                             }}
                         >
@@ -89,6 +102,7 @@ function Draft({ policy }) {
                         </button>
                     )}
                 </div>
+                </fieldset>
             </form>
         </details>
     );
@@ -141,6 +155,7 @@ function Published({ policy, manage }) {
                 </p>
             )}
             <div className="hr-policy-body">{version.body}</div>
+            {version.attachment && <p><a className="hr-button-secondary" href={version.attachment.url}>Download {version.attachment.name}</a></p>}
             {version.acknowledged_at ? (
                 <p className="hr-feedback">
                     Acknowledged{" "}
@@ -233,17 +248,21 @@ function Published({ policy, manage }) {
         </section>
     );
 }
-export default function Policies({ policies, manage }) {
+export default function Policies({ policies, manage, scope }) {
+    const { hr } = usePage().props;
     return (
         <>
-            <Head title="Policies · Luvep" />
+            <Head title="Policies & guide · Luvep" />
+            {scope === "mine" && <MyInfoTabs />}
             <div className="hr-page-heading">
-                <h1>Policies</h1>
+                <h1>Policies & guide</h1>
                 <p>
                     Read published workplace policies and record your
                     acknowledgement of the exact version.
                 </p>
             </div>
+            {scope === 'mine' && hr.permissions?.['policies.publish'] && <p><Link className="hr-text-link" href={hrPath('/policies')}>Manage official policies and guide</Link></p>}
+            {hr.employee && !hr.preview && <PersonalDocumentUpload employeeId={hr.employee.id} policy />}
             {manage && <Draft />}
             {policies.map((p) => (
                 <div key={p.id}>

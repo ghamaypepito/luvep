@@ -20,16 +20,26 @@ class EquipmentController extends Controller
         $context = app(HrContext::class);
         $preview = $context->isPreview($request);
         $subject = $preview ? $context->subject($request) : app(HrAccess::class)->employee($actor);
-        $manage = ! $preview && app(HrAccess::class)->allows($actor, 'operations.manage');
+        $mine = $request->query('scope') === 'mine';
+        $manage = ! $mine && ! $preview && app(EquipmentService::class)->canManage($actor);
         $service = app(EquipmentService::class);
-        $scope = $preview ? [] : $service->scopedEmployees($actor);
+        $scope = $preview || $mine ? [] : $service->scopedEmployees($actor);
         $ids = array_values(array_unique([...$scope, ...($subject ? [$subject->id] : [])]));
-        $items = HrEquipment::with('employee.user')->when(! $manage, fn ($q) => $q->whereIn('hr_employee_id', $ids))->latest('id')->limit(200)->get()->map(fn ($i) => [...$i->only(['id', 'asset_tag', 'description', 'status', 'version', 'issued_at', 'returned_at', 'condition']), 'employee_name' => $i->employee->user?->name, 'can_return' => ! $preview && $service->canHandle($actor, $i->employee, 'equipment_return')]);
+        $items = HrEquipment::with('employee.user')->when(! $manage, fn ($q) => $q->whereIn('hr_employee_id', $ids))->latest('id')->limit(200)->get()->map(fn ($i) => [...$i->only(['id', 'asset_tag', 'description', 'status', 'version', 'source', 'issued_at', 'returned_at', 'condition']), 'employee_name' => $i->employee->user?->name, 'can_return' => ! $preview && $service->canReturn($actor, $i)]);
         $history = HrEquipmentEvent::when(! $manage, fn ($q) => $q->whereIn('hr_employee_id', $ids))->latest('id')->limit(200)->get()->map(fn ($e) => $e->only(['id', 'asset_tag', 'description', 'action', 'condition', 'created_at']));
-        $issueIds = $preview ? [] : $service->scopedEmployees($actor, 'equipment_issue');
-        $employees = $preview ? [] : HrEmployee::with('user')->where('status', '!=', 'archived')->when(! $manage, fn ($q) => $q->whereIn('id', $issueIds))->get()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name]);
+        $issueIds = $preview || $mine ? [] : $service->scopedEmployees($actor, 'equipment_issue');
+        $employees = $preview || $mine ? [] : HrEmployee::with('user')->where('status', '!=', 'archived')->when(! $manage, fn ($q) => $q->whereIn('id', $issueIds))->get()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name]);
 
-        return Inertia::render('hr/Equipment', compact('items', 'history', 'employees'));
+        return Inertia::render('hr/Equipment', [...compact('items', 'history', 'employees'), 'scope' => $mine ? 'mine' : 'manage', 'canAddOwn' => ! $preview && $subject !== null, 'canManageEquipment' => ! $preview && $service->canManage($actor)]);
+    }
+
+    public function recordOwn(Request $request)
+    {
+        abort_if(app(HrContext::class)->isPreview($request), 403);
+        $data = $request->validate(['description' => 'required|string|max:500', 'employee_id' => 'prohibited', 'asset_tag' => 'prohibited', 'source' => 'prohibited']);
+        $item = app(EquipmentService::class)->recordOwn($request->user(), $data['description']);
+
+        return $request->expectsJson() ? response()->json(['id' => $item->id], 201) : back()->with('success', 'Your equipment was added.');
     }
 
     public function store(Request $request)
@@ -45,6 +55,6 @@ class EquipmentController extends Controller
         $d = $request->validate(['condition' => 'required|string|max:2000', 'version' => 'required|integer|min:0']);
         $item = app(EquipmentService::class)->recordReturn($request->user(), $item, $d['condition'], (int) $d['version']);
 
-        return $request->expectsJson() ? response()->json(['status' => $item->status]) : back()->with('success','Equipment return recorded.');
+        return $request->expectsJson() ? response()->json(['status' => $item->status]) : back()->with('success', 'Equipment return recorded.');
     }
 }

@@ -10,7 +10,9 @@ class HrPolicyVersion extends Model
 
     protected $guarded = ['id'];
 
-    protected $casts = ['version' => 'integer', 'published_at' => 'datetime'];
+    protected $hidden = ['attachment'];
+
+    protected $casts = ['version' => 'integer', 'published_at' => 'datetime', 'attachment' => 'array'];
 
     public function policy()
     {

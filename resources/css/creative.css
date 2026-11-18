@@ -91,3 +91,18 @@
 .cw-assigned-due{display:grid;gap:6px}
 @media(max-width:1100px){.cw-queue-grid,.cw-detail-grid{grid-template-columns:minmax(0,1fr)}.cw-side-rail{grid-template-columns:1fr 1fr}.cw-page-heading{align-items:start}.cw-routing{align-content:start}.cw-assigned-row{grid-template-columns:minmax(0,1fr) 120px}.cw-assigned-row>a{grid-column:1/-1;justify-self:start}}
 @media(max-width:640px){.cw-page-heading,.cw-form-footer{align-items:stretch;flex-direction:column}.creative-workspace h1{font-size:24px}.cw-panel,.cw-brief,.creative-assigned{padding:18px;border-radius:14px}.cw-side-rail,.cw-project-fields,.cw-design-types{grid-template-columns:1fr}.cw-steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.cw-list-heading{display:none}.cw-request-row{grid-template-columns:minmax(0,1fr) auto;gap:12px}.cw-request-row time{grid-column:1/-1;color:var(--cw-muted)}.cw-request-row time:before{content:'Due '}.cw-request-row:first-of-type{border-top:0}.cw-project-link{font-size:15px}.cw-assigned-row{grid-template-columns:1fr}.cw-assigned-due{display:flex;align-items:center;gap:12px}.cw-button,.cw-text-button,.cw-steps button{min-height:44px}.creative-workspace input,.creative-workspace textarea,.creative-workspace select{font-size:16px!important}.cw-filter{width:100%}.cw-queue-heading{gap:12px}.cw-reference-upload{padding:14px}.cw-routing{padding:8px}.cw-brief-section dl{gap:17px}}
+
+.cw-request-actions{margin-top:10px}
+.cw-request-actions>.cw-actions{gap:18px}
+.cw-request-actions .cw-text-button{font-size:12px;min-height:44px}
+.cw-text-button:disabled{opacity:.55;cursor:not-allowed}
+.cw-danger-text{color:#a43229}
+.cw-danger-button{background:#a43229;border-color:#a43229}
+.cw-delete-dialog{color:var(--cw-ink);background:#fff;border:1px solid var(--cw-line);border-radius:16px;padding:24px;width:min(460px,calc(100% - 32px));max-height:calc(100% - 32px);margin:auto;overflow:auto}
+.cw-delete-dialog::backdrop{background:rgba(15,30,23,.45)}
+.cw-delete-dialog p{margin:14px 0;line-height:1.6;overflow-wrap:anywhere}
+.cw-delete-dialog>.cw-actions{justify-content:flex-end;margin-top:22px}
+.cw-queue-views{display:flex;gap:20px;margin:0 0 16px;flex-wrap:wrap}
+.cw-queue-views a{min-height:44px;display:inline-flex;align-items:center;color:var(--cw-muted);border-bottom:2px solid transparent}
+.cw-queue-views a[aria-current]{color:var(--cw-green);border-color:var(--cw-green);font-weight:600}
+.cw-queue-deleted{grid-template-columns:minmax(0,1fr)}
