@@ -19,6 +19,7 @@ export default function EmployeeSetup({
                   position: employee.position || "",
                   office: employee.office || "",
                   employment_type: employee.employment_type || "",
+                  employment_details: employee.employment_details || "",
                   employment_start:
                       employee.employment_start?.slice(0, 10) || "",
                   employment_end: employee.employment_end?.slice(0, 10) || "",
@@ -134,6 +135,20 @@ export default function EmployeeSetup({
                                     "date",
                                 )}
                             </div>
+                            <label>
+                                Employment Details
+                                <textarea
+                                    value={form.data.employment_details}
+                                    onChange={(e) =>
+                                        form.setData("employment_details", e.target.value)
+                                    }
+                                    maxLength={20000}
+                                    rows={6}
+                                />
+                                <span>
+                                    Visible to this employee and authorized HR profile managers.
+                                </span>
+                            </label>
                             {[
                                 ["manager_user_id", "Department Head"],
                                 [

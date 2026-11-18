@@ -9,11 +9,11 @@ use Illuminate\Validation\ValidationException;
 
 class HrEmployee extends Model
 {
-    protected $fillable = ['user_id', 'employee_number', 'status', 'department', 'position', 'office', 'employment_type', 'employment_start', 'employment_end', 'manager_user_id', 'reviewer_user_id', 'emergency_contact', 'version'];
+    protected $fillable = ['user_id', 'employee_number', 'status', 'department', 'position', 'office', 'employment_type', 'employment_start', 'employment_end', 'manager_user_id', 'reviewer_user_id', 'emergency_contact', 'employment_details', 'version'];
 
-    protected $hidden = ['emergency_contact'];
+    protected $hidden = ['emergency_contact', 'employment_details'];
 
-    protected $casts = ['emergency_contact' => 'encrypted', 'employment_start' => 'date', 'employment_end' => 'date', 'version' => 'integer'];
+    protected $casts = ['emergency_contact' => 'encrypted', 'employment_details' => 'encrypted', 'employment_start' => 'date', 'employment_end' => 'date', 'version' => 'integer'];
 
     protected static function booted(): void
     {
