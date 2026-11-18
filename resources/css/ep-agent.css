@@ -589,11 +589,13 @@
     z-index:40;
     display:flex;
     align-items:center;
-    gap:9px;
-    padding:13px 20px;
+    justify-content:center;
+    width:48px;
+    height:48px;
+    padding:0;
     background:var(--ep-green);
     border:0;
-    border-radius:28px;
+    border-radius:50%;
     color:white;
     box-shadow:0 5px 18px #20342c25;
     font-weight:600

@@ -89,14 +89,15 @@ export function RecordDetails({ entry }) {
         </>
     );
 }
-function Editor({ entry, locked }) {
-    const [editing, setEditing] = useState(false);
+export function Editor({ entry, locked, reportChanges = false, sidebar }) {
+    const [editing, setEditing] = useState(reportChanges);
     const form = useForm({
         work_date: entry.work_date,
         expected_version: entry.hr_version,
         work_location: entry.work_location || "",
         tasks: (entry.tasks || []).map((t) => ({
-            task: t.task || "",
+            ...t,
+            task: t.task || t.description || "",
             start: t.start || "",
             end: t.end || "",
             category: t.category || "other",
@@ -113,7 +114,7 @@ function Editor({ entry, locked }) {
         version: entry.hr_version,
         declaration: false,
     });
-    const editable = !locked && ["draft", "returned"].includes(entry.hr_status);
+    const editable = !locked && (reportChanges ? entry.can_change_report : ["draft", "returned"].includes(entry.hr_status));
     const updateTask = (index, key, value) =>
         form.setData(
             "tasks",
@@ -123,7 +124,7 @@ function Editor({ entry, locked }) {
         );
     if (!editable) return <RecordDetails entry={entry} />;
     return (
-        <>
+        <div className={reportChanges ? "hr-dtr-edit-grid" : undefined}><div>
             {entry.review_comment && (
                 <p role="status">
                     <strong>Reviewer feedback:</strong> {entry.review_comment}
@@ -140,9 +141,10 @@ function Editor({ entry, locked }) {
                 className="hr-form hr-form-wide"
                 onSubmit={(e) => {
                     e.preventDefault();
-                    form.post(hrPath("/dtr"), { preserveScroll: true });
+                    form.post(hrPath(reportChanges ? `/dtr/${entry.id}/report` : "/dtr"), { preserveScroll: true });
                 }}
             >
+                <fieldset className="hr-report-editor-fields" disabled={form.processing}>
                 <Errors errors={form.errors} />
                 <label>
                     Work location
@@ -154,8 +156,9 @@ function Editor({ entry, locked }) {
                         }
                     />
                 </label>
-                <fieldset disabled={form.processing}>
+                <fieldset disabled={form.processing || (reportChanges && entry.can_change_tasks === false)}>
                     <legend>Tasks</legend>
+                    {reportChanges && entry.can_change_tasks === false && <p>Historical task details are read-only here. Your notes, location and counters can still be updated.</p>}
                     {form.data.tasks.map((task, index) => (
                         <div className="hr-task-editor" key={index}>
                             <label>
@@ -229,6 +232,7 @@ function Editor({ entry, locked }) {
                                     >
                                         {[
                                             "todo",
+                                            ...(task.status === "carry" ? ["carry"] : []),
                                             "in_progress",
                                             "done",
                                             "carried_over",
@@ -325,16 +329,17 @@ function Editor({ entry, locked }) {
                 ))}
                 <div>
                     <button className="hr-button" disabled={form.processing}>
-                        {form.processing ? "Saving…" : "Save draft"}
+                        {form.processing ? "Saving…" : reportChanges ? "Save changes" : "Save draft"}
                     </button>
                 </div>
-                <button type="button" className="hr-button-secondary" disabled={form.processing} onClick={() => { form.reset(); form.clearErrors(); setEditing(false); }}>Cancel editing</button>
+                <button type="button" className="hr-button-secondary" disabled={form.processing} onClick={() => { form.reset(); form.clearErrors(); if (!reportChanges) setEditing(false); }}>{reportChanges ? "Reset unsaved changes" : "Cancel editing"}</button>
+                </fieldset>
             </form>
             </> : <>
                 <RecordDetails entry={entry} />
                 <button type="button" className="hr-button-secondary" onClick={() => setEditing(true)}>{entry.hr_status === "returned" ? "Edit returned report" : "Edit draft"}</button>
             </>}
-            <form
+            {!reportChanges && <form
                 className="hr-form"
                 onSubmit={(e) => {
                     e.preventDefault();
@@ -371,8 +376,8 @@ function Editor({ entry, locked }) {
                         Submit daily report
                     </button>
                 </div>
-            </form>
-        </>
+            </form>}
+        </div>{sidebar?.(form.data, form.isDirty, form.processing)}</div>
     );
 }
 export default function Dtr({ entries, weeks, today, date_filter }) {

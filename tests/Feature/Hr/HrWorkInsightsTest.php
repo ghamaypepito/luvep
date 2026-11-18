@@ -96,10 +96,9 @@ class HrWorkInsightsTest extends TestCase
         $this->task($other->user, ['title' => 'HIDDEN OTHER TASK']);
         $admin = User::factory()->create(['role' => 'super_admin']);
         $this->actingAs($employee->user)->get('https://hr.luvep.com/?work_period=today')->assertOk()
-            ->assertInertia(fn (Assert $p) => $p->where('workInsights.scope', 'self')->where('workInsights.summary.in_progress', 1));
+            ->assertInertia(fn (Assert $p) => $p->missing('workInsights'));
         $this->actingAs($admin)->withSession(['hr_preview_employee_id' => $employee->id])->get('https://hr.luvep.com/?work_period=week')->assertOk()
-            ->assertInertia(fn (Assert $p) => $p->where('workInsights.scope', 'self')->where('workInsights.summary.in_progress', 1)
-                ->has('workInsights.members.data', 1)->where('workInsights.recent_updates.0.url', null))
+            ->assertInertia(fn (Assert $p) => $p->missing('workInsights'))
             ->assertDontSee('HIDDEN OTHER TASK');
     }
 
@@ -191,7 +190,7 @@ class HrWorkInsightsTest extends TestCase
         $this->assertLessThanOrEqual(20, $queries, 'Overview queries must not grow with task rows.');
     }
 
-    public function test_member_pagination_preserves_totals_and_http_filters_are_validated(): void
+    public function test_member_pagination_preserves_totals(): void
     {
         $admin = User::factory()->create(['role' => 'super_admin']);
         foreach (range(1, 23) as $i) {
@@ -201,7 +200,5 @@ class HrWorkInsightsTest extends TestCase
         $this->assertSame(24, $data['members']['total']);
         $this->assertCount(4, $data['members']['data']);
         $this->assertSame(2, $data['members']['current_page']);
-        $this->actingAs($admin)->getJson('https://hr.luvep.com/?work_period=invalid')->assertUnprocessable();
-        $this->getJson('https://hr.luvep.com/?team_page=0')->assertUnprocessable();
     }
 }

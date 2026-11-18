@@ -1,4 +1,3 @@
-import WorkInsights from "@/components/hr/WorkInsights";
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, usePage } from "@inertiajs/react";
 import {
@@ -10,20 +9,14 @@ import {
     FileText,
     History,
 } from "lucide-react";
-import AbsenceCalendar from "../../components/hr/AbsenceCalendar";
 export default function Dashboard({
     profile,
     ownSummary = {},
     upcomingLeave = [],
-    reviews = {},
-    absences = [],
     dueMilestones = 0,
-    workInsights,
 }) {
     const { hr } = usePage().props;
     const firstName = profile.user?.name?.split(" ")[0] || "there";
-    const reviewer =
-        hr.permissions["leave.review"] || hr.permissions["dtr.review"];
     return (
         <>
             <Head title="Your workplace · Luvep" />
@@ -32,7 +25,7 @@ export default function Dashboard({
                 <p>
                     {hr.employee
                         ? "A clear view of your working day, your time away and your next steps."
-                        : "Your people, their working day and the decisions that need your attention."}
+                        : "Your personal HR records and next steps, together."}
                 </p>
             </div>
             {hr.employee && (
@@ -71,54 +64,22 @@ export default function Dashboard({
                     ))}
                 </div>
             )}
-            {reviewer && (
-                <section className="hr-panel hr-review-summary">
-                    <div>
-                        <h2>Needs your review</h2>
-                        <p>
-                            {reviews.overdue_leave
-                                ? `${reviews.overdue_leave} leave request(s) are past the three-working-day response target.`
-                                : "Review requests and give your team a clear next step."}
-                        </p>
-                    </div>
-                    <div className="hr-actions">
-                        {hr.permissions["leave.review"] && (
-                            <Link
-                                href={hrPath("/leave/review")}
-                                className="hr-button-secondary"
-                            >
-                                Leave decisions{" "}
-                                <strong>{reviews.leave || 0}</strong>
-                            </Link>
-                        )}
-                        {hr.permissions["dtr.review"] && (
-                            <Link
-                                href={hrPath("/dtr/review")}
-                                className="hr-button-secondary"
-                            >
-                                Time reviews <strong>{reviews.dtr || 0}</strong>
-                            </Link>
-                        )}
-                    </div>
-                </section>
-            )}
-            <section className="hr-panel hr-shortcuts-panel" aria-labelledby="hr-shortcuts-title">
-                <h2 id="hr-shortcuts-title">Reports & records</h2>
-                <p>Go straight to the records you need.</p>
+            {hr.employee && <section className="hr-panel hr-shortcuts-panel" aria-labelledby="hr-shortcuts-title">
+                <h2 id="hr-shortcuts-title">My workspace</h2>
+                <p>Your time records, report changes and leave, together.</p>
                 <div className="hr-shortcuts">
                     {[
-                        ["Attendance report", "Daily time records by employee and date", "/reports?type=attendance", Clock3],
-                        ["Leave history", "Recorded decisions, approvers and dates", "/reports?type=leave", CalendarDays],
-                        ["Approved hours", "Reviewed time records for reporting", "/reports?type=approved_hours", FileText],
-                        ...(hr.can_view_dtr_changes ? [["DTR changes", "See what changed in daily reports", "/dtr/changes", History]] : []),
+                        ["My time records", "Review your daily records and reports", "/dtr", Clock3],
+                        ["My DTR changes", "Saved report changes and Head acknowledgements", "/dtr/changes?scope=mine", History],
+                        ["My leave", "Plan time away and follow your requests", "/leave", CalendarDays],
+                        ["My reports", "Attendance and leave for your employee record", `/reports?employee_id=${hr.employee.id}`, FileText],
                     ].map(([title, detail, path, Icon]) => <Link key={path} href={hrPath(path)} className="hr-shortcut">
                         <Icon size={20} aria-hidden="true" />
                         <span><strong>{title}</strong><small>{detail}</small></span>
                         <ArrowRight size={17} aria-hidden="true" />
                     </Link>)}
                 </div>
-            </section>
-            <WorkInsights data={workInsights} />
+            </section>}
             <section className="hr-panel">
                 <div className="hr-section-bar">
                     <h2>Next steps</h2>
@@ -162,11 +123,6 @@ export default function Dashboard({
                     <Link className="hr-text-link" href={hrPath("/profile")}>
                         View your profile <ArrowRight size={16} />
                     </Link>
-                    {hr.permissions.people && (
-                        <Link className="hr-text-link" href={hrPath("/people")}>
-                            Manage employee records <ArrowRight size={16} />
-                        </Link>
-                    )}
                 </section>}
                 {hr.employee && (
                     <section className="hr-panel">
@@ -209,9 +165,10 @@ export default function Dashboard({
                     </section>
                 )}
             </div>
-            {hr.permissions["leave.review"] && (
-                <AbsenceCalendar absences={absences} />
-            )}
+            {hr.can_view_staff_status && <section className="hr-panel hr-team-invitation">
+                <div><h2>Team workspace</h2><p>Staff clock states, team reviews and reporting.</p></div>
+                <Link href={hrPath("/team")} className="hr-button-secondary">Open team workspace <ArrowRight size={16} /></Link>
+            </section>}
         </>
     );
 }
