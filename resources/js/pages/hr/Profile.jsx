@@ -1,5 +1,4 @@
 import { hrPath } from "@/lib/hrPath";
-import MyInfoTabs from "@/components/hr/MyInfoTabs";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 
 export default function Profile({ profile, readOnly = false }) {
@@ -20,10 +19,21 @@ export default function Profile({ profile, readOnly = false }) {
             <Head
                 title={readOnly ? "Employee profile · Luvep" : "My Info · Luvep"}
             />
-            {!readOnly && <MyInfoTabs />}
-            <div className="hr-page-heading">
-                <h1>{readOnly ? "Employee profile" : "My Info"}</h1>
-                <p>Your details, securely held in one place.</p>
+            <section className="hr-panel">
+                <div className="hr-section-heading">
+                <div className="hr-person-heading">
+                    <span className="hr-avatar hr-avatar-large">
+                        {profile.user.avatar_url ? (
+                            <img src={profile.user.avatar_url} alt="" />
+                        ) : (
+                            profile.user.name?.slice(0, 1)
+                        )}
+                    </span>
+                    <div>
+                        <h2>{profile.user.name}</h2>
+                        <p>{profile.user.email}</p>
+                    </div>
+                </div>
                 {!locked && (
                     <a className="hr-button-secondary" href="#edit-profile">
                         Edit profile
@@ -39,20 +49,6 @@ export default function Profile({ profile, readOnly = false }) {
                             Edit employee setup
                         </Link>
                     )}
-            </div>
-            <section className="hr-panel">
-                <div className="hr-person-heading">
-                    <span className="hr-avatar hr-avatar-large">
-                        {profile.user.avatar_url ? (
-                            <img src={profile.user.avatar_url} alt="" />
-                        ) : (
-                            profile.user.name?.slice(0, 1)
-                        )}
-                    </span>
-                    <div>
-                        <h2>{profile.user.name}</h2>
-                        <p>{profile.user.email}</p>
-                    </div>
                 </div>
                 <dl className="hr-profile-grid">
                     {[
