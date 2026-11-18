@@ -215,7 +215,9 @@ class SchoolVisitMailTest extends TestCase
         $this->assertSame('newsletter@example.test', $this->rows($this->filters($v, ['purpose' => 'email_newsletter']))->firstWhere('eligible', true)['email']);
         $w = $this->visit();
         $this->rsvp($w, ['full_name' => 'Another Person']);
-        $this->assertFalse($this->rows($this->filters($v, ['visit_ids' => [$v->id, $w->id]]))->firstWhere('email', 'alex@example.test')['eligible']);
+        $conflict = $this->rows($this->filters($v, ['visit_ids' => [$v->id, $w->id]]))->firstWhere('email', 'alex@example.test');
+        $this->assertFalse($conflict['eligible']);
+        $this->assertSame(['Alex Taylor', 'Another Person'], array_column($conflict['conflicting_names'], 'name'));
     }
 
     public function test_attended_filter_uses_recorded_rsvp_status_and_labels_automatic_records(): void
@@ -271,6 +273,26 @@ class SchoolVisitMailTest extends TestCase
         $this->assertNull($rsvp->fresh()->verified_at);
         $this->assertNull($rsvp->fresh()->lead_id);
         $this->assertDatabaseCount('education_event_email_subscriptions', 0);
+    }
+
+    public function test_event_specific_withdrawal_overrides_broad_and_confirmed_follow_up_choices(): void
+    {
+        Mail::fake();
+        $visit = $this->visit();
+        $rsvp = $this->rsvp($visit, ['legacy_event_follow_up' => true]);
+        $item = $this->mailing($visit);
+        $rsvp->update(['legacy_event_follow_up' => false]);
+        $this->assertFalse($this->rows($this->filters($visit))->sole()['eligible']);
+        (new SendEducationSchoolMail($item->id))->handle(app(EducationSchoolMailAudience::class));
+        $this->assertSame('skipped', $item->fresh()->status);
+        Mail::assertNothingSent();
+
+        $other = $this->visit();
+        $registration = $this->registration($other, ['legacy_event_follow_up' => false]);
+        EducationEventEmailSubscription::create(['lead_id' => $registration->lead_id, 'registration_id' => $registration->id,
+            'email' => 'alex@example.test', 'follow_up_confirmed_at' => now(), 'newsletter_confirmed_at' => now()]);
+        $this->assertFalse($this->rows($this->filters($other))->sole()['eligible']);
+        $this->assertTrue($this->rows($this->filters($other, ['purpose' => 'email_newsletter']))->sole()['eligible']);
     }
 
     public function test_newsletters_still_need_verification_or_a_confirmed_subscription(): void
