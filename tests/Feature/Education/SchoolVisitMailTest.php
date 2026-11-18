@@ -437,10 +437,7 @@ class SchoolVisitMailTest extends TestCase
         $template = MessageTemplate::findOrFail($data['template_id']);
         $this->actingAs($this->staff());
         $this->get('/portal/education/school-mail?'.http_build_query($this->filters($v)))
-            ->assertInertia(function ($page) use (&$data) {
-                $page->where('templates.0.review', $data['template_review']);
-                $data['template_review'] = $page->toArray()['props']['templates'][0]['review'];
-            });
+            ->assertInertia(fn ($page) => $page->where('templates', fn ($templates) => (collect($templates)->firstWhere('id', $data['template_id'])['review'] ?? null) === $data['template_review']));
 
         foreach (['email_subject' => 'Changed subject', 'email_body' => '<p>Changed body</p>', 'from_email' => 'changed@example.test', 'reply_to_email' => 'replies@example.test', 'branding' => 'immigration', 'banner_image' => 'new-banner.png', 'footer_image' => 'new-footer.png'] as $field => $value) {
             $original = $template->{$field};
@@ -492,7 +489,11 @@ class SchoolVisitMailTest extends TestCase
         $incomplete = collect([['email_subject' => null], ['email_body' => null], ['email_subject' => '   '], ['email_body' => "\n   "], ['email_body' => '<p>&nbsp;<br></p>']])
             ->map(fn ($attributes) => $this->template($attributes));
         $this->actingAs($this->staff())->get('/portal/education/school-mail')
-            ->assertInertia(fn ($p) => $p->has('templates', 1)->where('templates.0.id', $data['template_id']));
+            ->assertInertia(fn ($p) => $p->where('templates', function ($templates) use ($data, $incomplete) {
+                $ids = collect($templates)->pluck('id');
+
+                return $ids->contains($data['template_id']) && $ids->intersect($incomplete->pluck('id'))->isEmpty();
+            }));
         foreach ($incomplete as $template) {
             $this->post('/portal/education/school-mail', array_replace($data, ['template_id' => $template->id, 'template_review' => str_repeat('a', 64)]))
                 ->assertSessionHasErrors('template_id');
