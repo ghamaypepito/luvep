@@ -44,6 +44,17 @@ test('updated short brief and private references reach the task and DTR without 
     await page.getByLabel('Sample designs / references').setInputFiles({ name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('Reference layout: clear headline and approved logo.') });
     await page.locator('.cw-steps button').nth(4).click();
     await page.getByRole('textbox', { name: 'Curated assets', exact: true }).fill('https://example.test/approved-assets');
+    await page.getByLabel('Curated asset files', { exact: false }).setInputFiles([
+        { name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') },
+        { name: 'brand-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Approved campaign asset notes.') },
+    ]);
+    await expect(page.getByRole('img', { name: 'logo.png', exact: true })).toBeVisible();
+    for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.screenshot({ path: test.info().outputPath('curated-assets-upload.png') });
     await page.getByLabel('Additional notes', { exact: true }).fill('Use the approved logo.');
     await expect(page.getByRole('button', { name: 'Submit creative request', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Submit creative request', exact: true }).click();
@@ -53,9 +64,18 @@ test('updated short brief and private references reach the task and DTR without 
     const requestRef = (await page.locator('header .cw-eyebrow').innerText()).match(/CR-[A-Z0-9]+/)![0];
     await expect(page.getByText('Plan your next chapter. #StudyInNZ', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Download reference.txt' })).toBeVisible();
+    const assetSection = page.locator('.cw-brief-section').filter({ has: page.getByRole('heading', { name: 'Curated assets', exact: true }) });
+    const referenceSection = page.locator('.cw-brief-section').filter({ has: page.getByRole('heading', { name: 'References & inspiration', exact: true }) });
+    await expect(assetSection.getByRole('link', { name: 'Download logo.png', exact: true })).toBeVisible();
+    await expect(assetSection.getByRole('link', { name: 'Download brand-notes.txt', exact: true })).toBeVisible();
+    await expect(referenceSection.getByRole('link', { name: 'Download logo.png', exact: true })).toHaveCount(0);
+    const logoDownload = await assetSection.getByRole('link', { name: 'Download logo.png', exact: true }).getAttribute('href');
+    expect((await page.request.get(logoDownload!)).status()).toBe(200);
     await page.goto(`${origin}/portal/hr/dtr`);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     const assigned = page.locator('.cw-assigned-row').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+    await expect(assigned).toContainText('1 reference file');
+    await expect(assigned).toContainText('2 curated assets');
     await assigned.getByRole('button', { name: 'Add to daily record', exact: true }).click();
     const added = page.locator('.hr-task-editor').filter({ has: page.locator('textarea').filter({ hasText: title }) });
     await expect(added.locator('textarea')).toBeFocused();
@@ -113,6 +133,7 @@ test('updated short brief and private references reach the task and DTR without 
     await page.getByRole('button', { name: 'Delete request', exact: true }).click();
     await expect(row).toHaveCount(0);
     expect((await page.request.get(requestUrl)).status()).toBe(404);
+    expect((await page.request.get(logoDownload!)).status()).toBe(404);
     await page.getByRole('link', { name: 'Deleted requests', exact: true }).click();
     await expect(row.locator('.cw-status')).toHaveText('Delivered');
     await expect(row.getByRole('link')).toHaveCount(0);
@@ -122,4 +143,6 @@ test('updated short brief and private references reach the task and DTR without 
     await expect(page.getByText('Plan your next chapter. #StudyInNZ', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Download reference.txt' })).toBeVisible();
     await expect(page.locator('header .cw-status')).toHaveText('Delivered');
+    await expect(page.getByRole('link', { name: 'Download logo.png', exact: true })).toBeVisible();
+    expect((await page.request.get(logoDownload!)).status()).toBe(200);
 });

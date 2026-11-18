@@ -3,7 +3,7 @@ export const briefSections = [
     { title: "Key message & content", short: "Content", fields: [["message", "Main message", "The most important thing the audience should understand."], ["copy", "Required copy", "Include headlines, captions, contact details, or a link to the approved text."], ["cta", "Call to action", "What should the audience do next?"]] },
     { title: "Design type", short: "Design type", fields: [] },
     { title: "References & inspiration", short: "References", fields: [["references", "Reference or inspiration links", "Paste reference or inspiration links, one per line."]] },
-    { title: "Curated assets", short: "Assets", fields: [["assets", "Curated assets", "Link to logos, photos, images, footage, copy, and other files."], ["notes", "Additional notes", "Anything else the creative team should know."]] },
+    { title: "Curated assets", short: "Assets", fields: [["assets", "Curated assets", "Paste shared asset links or attach logos, photos, images, footage, copy and other files below."], ["notes", "Additional notes", "Anything else the creative team should know."]] },
 ];
 
 export const legacyBriefFields = [
