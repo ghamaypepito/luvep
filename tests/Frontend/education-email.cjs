@@ -14,7 +14,11 @@ const { act } = React;
 const { createRoot } = require("react-dom/client");
 const root = createRoot(document.getElementById("root"));
 const posts = [];
-const inertia = { Head: () => null, router: { post: (url, data, options) => posts.push({ url, data, options }) } };
+const gets = [];
+const inertia = { Head: () => null, router: {
+    post: (url, data, options) => posts.push({ url, data, options }),
+    get: (url, data) => gets.push({ url, data }),
+} };
 
 function load(entryPoint) {
     const output = buildSync({
@@ -138,6 +142,7 @@ const chooseFiles = async files => {
     const listProps = {
         basePath: "/portal/education/bulk-email", filterNewLeads: true,
         templates: [{ id: 1, name: "Welcome" }], events: [{ id: 8, name: "Open evening" }],
+        educationVisits: [{ id: 8, name: "Recent school visit" }],
         recipientLists: [
             { id: 10, name: "November event", mode: "smart", filters: { event_id: 8, registered_from: "2026-11-17", registered_to: "2026-11-18" }, lead_ids: [] },
             { id: 11, name: "Chosen people", mode: "custom", filters: [], lead_ids: [2, 99] },
@@ -195,6 +200,13 @@ const chooseFiles = async files => {
     await change(document.querySelector('input[placeholder="June re-engagement"]'), "Manual selections");
     await click(button("Send · 2 leads"));
     assert.deepEqual(posts.at(-1).data.recipient_lead_ids, [1, 2], "Ordinary campaigns preserve manual selections across searches");
+    await change(document.querySelector('[aria-label="Filter recipients by event"]'), "8");
+    assert.equal(gets.length, 0, "General event IDs still filter leads in place");
+    await change(document.querySelector('[aria-label="Filter recipients by event"]'), "visit:8");
+    assert.deepEqual(gets.at(-1), {
+        url: "/portal/education/school-mail",
+        data: { visit_ids: [8], audience: "registered", purpose: "email_follow_up" },
+    }, "Education visits open their exact mailing audience without colliding with general event IDs");
     await act(async () => root.unmount());
     console.log("Education Compose templates, consecutive attachments, removal, retry and New Leads recipients verified");
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -35,6 +35,8 @@ class BulkEmailController extends Controller
             'templates' => $this->availableTemplates($department, $channel),
             'recipients' => $this->recipientPool($channel, $filterNewLeads),
             'filterNewLeads' => $filterNewLeads,
+            'educationVisits' => $filterNewLeads ? \App\Models\EducationVisit::where('status', '!=', 'cancelled')->latest('id')->get()
+                ->map(fn ($visit) => ['id' => $visit->id, 'name' => $visit->school.' · '.$visit->activity.' · '.$visit->summary()])->values() : [],
             'recipientLists' => $filterNewLeads ? EducationRecipientList::where('created_by', $request->user()->id)->where('source', 'leads')
                 ->orderBy('name')->get(['id', 'name', 'mode', 'filters', 'lead_ids']) : [],
             'events' => \App\Models\Event::orderBy('name')

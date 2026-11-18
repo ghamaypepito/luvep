@@ -68,7 +68,7 @@ function fillPreview(text, lead, selectedEvent, escapeValues = false) {
     });
 }
 
-export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [], filterNewLeads = false, recipientLists = [] }) {
+export default function SalesBulkEmail({ templates = [], recipients = [], campaigns = [], basePath = "/portal/sales/bulk-email", channel = "email", events = [], filterNewLeads = false, recipientLists = [], educationVisits = [] }) {
     const [tab, setTab] = useState("compose");
     const isSms = channel === "sms";
 
@@ -108,14 +108,14 @@ export default function SalesBulkEmail({ templates = [], recipients = [], campai
                 ))}
             </div>
 
-            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} filterNewLeads={filterNewLeads} recipientLists={recipientLists} />}
+            {tab === "compose" && <Compose templates={templates} recipients={recipients} basePath={basePath} isSms={isSms} events={events} filterNewLeads={filterNewLeads} recipientLists={recipientLists} educationVisits={educationVisits} />}
             {tab === "scheduled" && <CampaignTable rows={scheduled} empty="No scheduled campaigns." showCancel basePath={basePath} />}
             {tab === "history" && <CampaignTable rows={history} empty="No campaigns sent yet." basePath={basePath} />}
         </div>
     );
 }
 
-function Compose({ templates, recipients, basePath, isSms = false, events = [], filterNewLeads, recipientLists }) {
+function Compose({ templates, recipients, basePath, isSms = false, events = [], filterNewLeads, recipientLists, educationVisits }) {
     const [name, setName] = useState("");
     const [templateId, setTemplateId] = useState(templates[0]?.id ? String(templates[0].id) : "");
     const [selected, setSelected] = useState(() => new Set());
@@ -177,6 +177,16 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         ...(selectionFollowsFilters ? [] : prev), ...filtered.map((r) => r.id),
     ]));
     const clearAll = () => setSelected(new Set());
+    const selectEvent = (value) => {
+        const visit = educationVisits.find(item => `visit:${item.id}` === value);
+        if (visit) {
+            router.get('/portal/education/school-mail', {
+                visit_ids: [visit.id], audience: 'registered', purpose: 'email_follow_up',
+            });
+            return;
+        }
+        setEventId(value);
+    };
     const resetList = () => {
         setSelected(new Set(visibleSelection));
         setListId(""); setListName("");
@@ -286,8 +296,11 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                             <option value="">All stages</option>
                             {stages.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <select aria-label="Filter recipients by event" value={eventId} onChange={(e) => setEventId(e.target.value)} className={`${inp} min-w-0`}>
+                        <select aria-label="Filter recipients by event" value={eventId} onChange={(e) => selectEvent(e.target.value)} className={`${inp} min-w-0`}>
                             <option value="">All events</option>
+                            {educationVisits.length > 0 && <optgroup label="Education events — opens event mailing">
+                                {educationVisits.map(visit => <option key={visit.id} value={`visit:${visit.id}`}>{visit.name}</option>)}
+                            </optgroup>}
                             {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
                         </select>
                     </div>

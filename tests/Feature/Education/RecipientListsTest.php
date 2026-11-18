@@ -13,6 +13,19 @@ class RecipientListsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_education_event_picker_includes_recent_school_visits_in_newest_first_order(): void
+    {
+        $old = \App\Models\EducationVisit::create(['slug' => 'older-college', 'school' => 'Older College', 'kind' => 'school', 'activity' => 'Visit', 'status' => 'open']);
+        $recent = \App\Models\EducationVisit::create(['slug' => 'recent-college', 'school' => 'Recent College', 'kind' => 'school', 'activity' => 'Seminar', 'status' => 'closed']);
+        \App\Models\EducationVisit::create(['slug' => 'cancelled-college', 'school' => 'Cancelled College', 'kind' => 'school', 'activity' => 'Visit', 'status' => 'cancelled']);
+        $this->actingAs(User::factory()->create(['role' => 'education']))->get('/portal/education/bulk-email')
+            ->assertOk()->assertInertia(fn ($page) => $page->has('educationVisits', 2)
+            ->where('educationVisits.0.id', $recent->id)->where('educationVisits.1.id', $old->id)
+            ->where('educationVisits.0.name', fn ($name) => str_contains($name, 'Recent College') && str_contains($name, 'Seminar')));
+        $this->actingAs(User::factory()->create(['role' => 'sales']))->get('/portal/sales/bulk-email')
+            ->assertOk()->assertInertia(fn ($page) => $page->has('educationVisits', 0));
+    }
+
     public function test_staff_can_save_filter_rules_and_manual_members_without_sending_mail(): void
     {
         Queue::fake();
