@@ -32,7 +32,7 @@ const Dtr = loaded.exports.default, root = createRoot(document.getElementById('r
 const task = { task: 'Client coordination', status: 'done', category: 'client', start: '08:00', end: '09:00', reference: 'Synthetic', seconds: 3600 };
 const old = { id: 17, hr_version: 5, work_date: '2026-11-02', hr_status: 'draft', can_edit: true, time_in: '08:00', time_out: '16:00', tasks: [task], work_location: 'Office', working_seconds: 27000, break_seconds: 1800 };
 const today = { ...old, id: 19, work_date: '2026-11-04', hr_version: 2 };
-const creativeRequests = [{ id: 9, request_ref: 'CR-SAMPLE', title: 'Creative project', types: ['Poster / flyer'], attachment_count: 1, status: 'not_started', deadline: '2026-11-06', url: '/creative-requests/9' }];
+const creativeRequests = [{ id: 9, request_ref: 'CR-SAMPLE', title: 'Creative project', types: ['Poster / flyer'], attachment_count: 1, status: 'not_started', deadline: null, url: '/creative-requests/9' }];
 const render = async entries => act(async () => root.render(React.createElement(Dtr, { entries, weeks: [], today: '2026-11-04', creativeRequests })));
 const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
 const click = async node => { assert.ok(node, 'Control exists'); await act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true }))); };
@@ -40,6 +40,7 @@ const input = async (node, value) => act(async () => { const prototype = node.ta
 const toggleHistory = async () => act(async () => { const details = document.querySelector('.hr-dtr-history'); details.open = !details.open; details.dispatchEvent(new Event('toggle')); });
 (async () => {
     await render([today, old]);
+    assert.match(document.querySelector('[aria-label="Assigned creative requests"]').textContent, /No deadline/);
     await click(button('Add to daily record'));
     assert.equal(requests.length, 0, 'Adding a creative request never saves a record or clocks time');
     assert.equal(document.querySelectorAll('.hr-task-editor').length, 2, 'Existing report tasks are preserved');
