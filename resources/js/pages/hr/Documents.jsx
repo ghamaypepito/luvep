@@ -1,7 +1,6 @@
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm, router, usePage } from "@inertiajs/react";
 import { Errors } from "./Dtr";
-import MyInfoTabs from "@/components/hr/MyInfoTabs";
 import PersonalDocumentUpload, { hrDocumentAccept } from "@/components/hr/PersonalDocumentUpload";
 const label = (value) => value.replaceAll("_", " ");
 export default function Documents({ documents, employees, classifications, scope, selfUpload = false, selfEmployeeId }) {
@@ -18,7 +17,6 @@ export default function Documents({ documents, employees, classifications, scope
     return (
         <>
             <Head title="Documents · Luvep" />
-            {scope === "mine" && <MyInfoTabs />}
             <div className="hr-page-heading">
                 <h1>{scope === "mine" ? "My documents" : "Documents"}</h1>
                 <p>
@@ -26,7 +24,7 @@ export default function Documents({ documents, employees, classifications, scope
                     you.
                 </p>
             </div>
-            {scope === "mine" && (['admin', 'super_admin'].includes(auth?.user?.role) || Object.entries(hr.permissions || {}).some(([key, value]) => key.startsWith('documents.') && value)) && <p><Link className="hr-text-link" href={hrPath('/documents')}>Manage employee documents</Link></p>}
+            {scope === "mine" && !hr.preview && (['admin', 'super_admin'].includes(auth?.user?.role) || Object.entries(hr.permissions || {}).some(([key, value]) => key.startsWith('documents.') && value)) && <p><Link className="hr-text-link" href={hrPath('/documents')}>Manage employee documents</Link></p>}
             {selfUpload && (scope === 'mine' || !classifications.length) && !hr.preview && <PersonalDocumentUpload employeeId={selfEmployeeId} documents={documents} />}
             {classifications.length > 0 && scope !== 'mine' && !hr.preview && (
                 <details className="hr-panel">

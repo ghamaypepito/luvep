@@ -55,6 +55,8 @@ jobs:
           node tests/Frontend/hr-report-changes.cjs
           node tests/Frontend/hr-team.cjs
           node tests/Frontend/hr-my-info.cjs
+          node tests/Frontend/hr-navigation.cjs
+          node tests/Frontend/hr-overview.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
           node scripts/test-education-theme.mjs
