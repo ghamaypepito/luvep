@@ -130,6 +130,7 @@ function AssessmentEditor({ assessment }) {
 
     const save = () => {
         setSaving(true);
+        setFieldErrors({});
         router.post(assessment.save_url, { field_values: values }, {
             preserveScroll: true,
             onSuccess: () => toast.success("Saved — your Visa Information Form has been updated"),

@@ -73,7 +73,7 @@ export function VifSupplementEditor({ type, values, saveUrl, csrfHeaders, onSave
         finally { setSaving(false); }
     };
     return <section className="space-y-4"><h2 className="text-base font-bold">Additional visa information</h2>
-        <VifSupplementFields type={type} values={draft} onChange={(key, value) => setDraft(previous => ({ ...previous, [key]: value }))} errors={errors} />
+        <fieldset disabled={saving}><VifSupplementFields type={type} values={draft} onChange={(key, value) => setDraft(previous => ({ ...previous, [key]: value }))} errors={errors} /></fieldset>
         <button type="button" disabled={saving} onClick={save} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save additional answers'}</button>
         {message && <p role="status" className="text-sm">{message}</p>}
     </section>;
