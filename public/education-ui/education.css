@@ -309,12 +309,12 @@ html[data-education-theme="dark"] #ep-education .ep-brand-mark { filter: brightn
   background-image: linear-gradient(light-dark(transparent, rgb(23 24 25 / 94%)), light-dark(transparent, rgb(23 24 25 / 94%))), url("/education-rsvp/assets/ep-event-collage.webp");
 }
 .edu-events {
-  --event-row-bg: light-dark(#21583a, #2c2e30);
+  --event-row-bg: light-dark(#21583a, #24563b);
   --event-row-ink: #f2f6f1;
-  --event-row-muted: light-dark(#d2e4d8, #b8bdc1);
-  --event-row-hover-bg: light-dark(#dce8d5, #35433b);
-  --event-row-hover-ink: light-dark(#193629, #f2f6f1);
-  --event-row-hover-muted: light-dark(#3f5948, #cee2d4);
+  --event-row-muted: #d2e4d8;
+  --event-row-hover-bg: light-dark(#dce8d5, #bfd7c1);
+  --event-row-hover-ink: #193629;
+  --event-row-hover-muted: #3f5948;
 }
 .edu-design :is(.head, .manager-head, .ep-head) { gap: 16px; }
 .edu-design :is(.brand, .ep-brand) { margin-right: auto; }
