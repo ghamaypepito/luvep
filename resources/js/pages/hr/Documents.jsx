@@ -208,7 +208,7 @@ export default function Documents({ documents, employees, classifications, scope
                                                 v.created_at,
                                             ).toLocaleDateString()}{" "}
                                             ·{" "}
-                                            {v.released_at
+                                            {v.owner_uploaded ? "Uploaded by employee · available in My Info" : v.released_at
                                                 ? "Shared with employee"
                                                 : "Private"}
                                         </p>
@@ -220,7 +220,7 @@ export default function Documents({ documents, employees, classifications, scope
                                         >
                                             Download
                                         </a>
-                                        {d.can_manage && !d.archived && (
+                                        {d.can_manage && !d.archived && !v.owner_uploaded && (
                                             <button
                                                 className="hr-button-secondary"
                                                 onClick={() =>

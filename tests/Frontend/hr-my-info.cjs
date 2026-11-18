@@ -19,6 +19,8 @@ const render=(Component,props)=>act(async()=>root.render(React.createElement(Com
  assert.match(document.querySelector('input[type=file]').accept,/\.docx/);
  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(requests.at(-1).target,'/portal/hr/documents');assert.equal(requests.at(-1).data.employee_id,7);assert.equal(requests.at(-1).data.classification,'employee_shared');
+ await render(Documents,{documents:[{id:1,title:'Staff file',classification:'employee_shared',submitted_by:7,can_manage:true,archived:false,versions:[{id:5,version:1,original_filename:'copy.pdf',owner_uploaded:true,size:100,created_at:'2026-11-18T00:00:00Z'}]}],employees:[],classifications:['employee_shared'],scope:'manage'});
+ assert.match(document.body.textContent,/available in My Info/);assert.equal(document.body.textContent.includes('Release to employee'),false,'Owner-uploaded files already belong to the employee');
  hr={...hr,preview:true};await render(Documents,{documents:[],employees:[],classifications:[],scope:'mine',selfUpload:true,selfEmployeeId:7});assert.equal(document.querySelector('input[type=file]'),null,'Read-only preview has no upload control');
  hr={...hr,preview:false};url='/portal/hr/policies?scope=mine';
  await render(Policies,{policies:[{id:1,revision:1,versions:[{id:12,version:1,title:'Leave policy and guide',body:'Published text',attachment:{name:'leave-guide.pdf',url:'/portal/hr/policies/versions/12/attachment'}}]}],manage:false,scope:'mine'});

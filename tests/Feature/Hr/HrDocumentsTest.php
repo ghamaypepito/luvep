@@ -138,7 +138,7 @@ class HrDocumentsTest extends TestCase
         $service = app(DocumentService::class);
         $own = $service->upload($employee->user, $employee, $this->pdf(), ['title' => 'Supporting file', 'classification' => 'employee_shared']);
         $hrVersion = $service->upload($hr, $employee, $this->pdf(), ['document_id' => $own->hr_document_id, 'title' => 'Supporting file', 'classification' => 'employee_shared']);
-        $this->actingAs($employee->user)->get('https://hr.luvep.com/documents?scope=mine')->assertOk()->assertInertia(fn (Assert $p) => $p->has('documents.0.versions', 1)->where('documents.0.versions.0.id', $own->id));
+        $this->actingAs($employee->user)->get('https://hr.luvep.com/documents?scope=mine')->assertOk()->assertInertia(fn (Assert $p) => $p->has('documents.0.versions', 1)->where('documents.0.versions.0.id', $own->id)->where('documents.0.versions.0.owner_uploaded', true));
         $this->get('https://hr.luvep.com/documents/versions/'.$hrVersion->id)->assertNotFound();
         $this->actingAs($hr)->withSession(['hr_preview_employee_id' => $employee->id])->get('https://hr.luvep.com/documents?scope=mine')->assertOk()->assertInertia(fn (Assert $p) => $p->where('selfUpload', false)->where('documents.0.can_upload', false)->where('documents.0.can_manage', false));
         $this->postJson('https://hr.luvep.com/documents', ['employee_id' => $employee->id, 'title' => 'No', 'classification' => 'employee_shared', 'file' => $this->pdf()])->assertForbidden();

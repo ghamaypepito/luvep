@@ -51,7 +51,7 @@ class DocumentController extends Controller
             $versions = $doc->versions()->when(! $manage, fn ($q) => $q->where(fn ($q) => $q->whereNotNull('released_at')
                 ->when($doc->classification === 'employee_shared' && $doc->submitted_by === $doc->employee->user_id,
                     fn ($q) => $q->orWhere('created_by', $doc->employee->user_id))))
-                ->orderByDesc('version')->get()->map(fn ($v) => $v->only(['id', 'version', 'original_filename', 'mime', 'size', 'created_at', 'released_at']));
+                ->orderByDesc('version')->get()->map(fn ($v) => [...$v->only(['id', 'version', 'original_filename', 'mime', 'size', 'created_at', 'released_at']), 'owner_uploaded' => $doc->submitted_by !== null && $doc->submitted_by === $v->created_by]);
 
             return ['id' => $doc->id, 'employee_id' => $doc->hr_employee_id, 'employee_name' => $doc->employee->user?->name, 'title' => $doc->title, 'classification' => $doc->classification, 'submitted_by' => $doc->submitted_by, 'archived' => (bool) $doc->archived_at, 'can_manage' => $manage,
                 'can_upload' => ! $preview && ($manage || ($policy->selfUpload($actor, $doc->employee) && $doc->submitted_by === $actor->id && $doc->classification === 'employee_shared' && ! $doc->archived_at)), 'versions' => $versions];
