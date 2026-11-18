@@ -48,6 +48,19 @@ class HrAccess
         return $permissions;
     }
 
+    /** Navigation may reuse its fresh subject-free permission and employee snapshot. */
+    public function canViewStaffStatus(User $actor, ?array $permissions = null, ?bool $hasEmployee = null): bool
+    {
+        $permissions ??= $this->menuPermissions($actor);
+        if ($permissions['dtr.review'] || $permissions['reports']) {
+            return true;
+        }
+
+        return ($hasEmployee ?? $this->employee($actor) !== null) && HrEmployee::where('status', 'active')
+            ->where('user_id', '!=', $actor->id)
+            ->where(fn ($q) => $q->where('manager_user_id', $actor->id)->orWhere('reviewer_user_id', $actor->id))->exists();
+    }
+
     private function allowsInternal(User $actor, string $ability, ?HrEmployee $subject = null): bool
     {
         if (in_array($ability, ['leave.review', 'leave.fallback', 'leave.emergency', 'dtr.review'], true) && $subject?->user_id === $actor->id) {

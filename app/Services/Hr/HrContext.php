@@ -66,6 +66,7 @@ class HrContext
             ? $access->menuPermissions($actor)
             : array_fill_keys(config('hr.abilities'), false);
 
+        $canViewStaffStatus = ! $preview && $actor && $access->canViewStaffStatus($actor, $abilities, $employee !== null);
         $managesTeam = false;
         if (! $preview && $actor && ($employee || $actor->isAdmin())) {
             $canReviewLeave = $abilities['leave.review'] || $abilities['leave.fallback'] || $abilities['leave.emergency'];
@@ -78,6 +79,7 @@ class HrContext
 
         return ['enabled' => (bool) config('hr.enabled'), 'url' => config('hr.portal_mode') ? rtrim(config('hr.main_url'), '/').'/portal/hr/' : $this->url(), 'portal_mode' => (bool) config('hr.portal_mode'), 'main_url' => config('hr.main_url'), 'employee' => $employee ? ['id' => $employee->id, 'name' => $employee->user->name] : null,
             'permissions' => $abilities, 'can_view_dtr_changes' => $canViewDtrChanges,
+            'can_view_staff_status' => $canViewStaffStatus,
             'admin_return_url' => $actor?->isAdmin() ? rtrim(config('hr.main_url'), '/').'/admin/dashboard' : null,
             'preview' => $preview ? ['employee_id' => $employee->id, 'employee_name' => $employee->user->name, 'read_only' => true] : null];
     }

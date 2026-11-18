@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Models\DtrEntry;
+use App\Models\HrDtrAcknowledgement;
 use App\Models\HrDtrRevision;
 use App\Models\HrEmployee;
 use App\Models\User;
@@ -28,6 +29,69 @@ class DtrHistory
         }
         HrDtrRevision::create(['dtr_entry_id' => $entry->id, 'actor_id' => $actor->id,
             'version' => $entry->hr_version, 'action' => $action, 'changes' => $changes, 'created_at' => now()]);
+    }
+
+    public function reportSnapshot(DtrEntry $entry): array
+    {
+        return array_intersect_key($this->snapshot($entry), array_flip(['tasks', 'work_location', 'meetings', 'people_assisted', 'blockers', 'tomorrow', 'remarks']));
+    }
+
+    public function reportBaseline(DtrEntry $entry): array
+    {
+        $acknowledged = HrDtrAcknowledgement::where('dtr_entry_id', $entry->id)->where('status', 'acknowledged')->latest('id')->first();
+        if ($acknowledged) {
+            return $acknowledged->snapshot;
+        }
+        $baseline = $this->reportSnapshot($entry);
+        $firstEdit = HrDtrRevision::where('dtr_entry_id', $entry->id)->where('action', 'dtr.report_saved')->min('version');
+        if ($firstEdit !== null) {
+            // Rewind subsequent content changes to the report before its first immediate edit.
+            foreach (HrDtrRevision::where('dtr_entry_id', $entry->id)->where('version', '>=', $firstEdit)->orderByDesc('version')->get() as $revision) {
+                foreach ($revision->changes as $field => $change) {
+                    if (array_key_exists($field, $baseline)) {
+                        $baseline[$field] = $change['before'];
+                    }
+                }
+            }
+        }
+
+        return $baseline;
+    }
+
+    public function reportChanges(DtrEntry $entry): array
+    {
+        $baseline = $this->reportBaseline($entry);
+        $changes = [];
+        foreach ($this->reportSnapshot($entry) as $field => $after) {
+            if (($baseline[$field] ?? null) !== $after) {
+                $changes[$field] = ['before' => $baseline[$field] ?? null, 'after' => $after];
+            }
+        }
+
+        return $changes;
+    }
+
+    public function departmentHead(HrEmployee $employee): ?User
+    {
+        $head = $employee->manager;
+        $access = app(HrAccess::class);
+
+        return $head && $head->id !== $employee->user_id && $access->internal($head) && ($access->employee($head) || $head->isAdmin()) ? $head : null;
+    }
+
+    public function canDecide(User $actor, HrDtrAcknowledgement $acknowledgement, ?HrEmployee $employee = null): bool
+    {
+        $employee ??= HrEmployee::where('user_id', $acknowledgement->entry->user_id)->first();
+
+        return $employee && $this->departmentHead($employee)?->id === $actor->id && $acknowledgement->head_user_id === $actor->id;
+    }
+
+    public function acknowledgementRow(HrDtrAcknowledgement $acknowledgement, User $actor): array
+    {
+        return [...$acknowledgement->only(['id', 'dtr_entry_id', 'report_version', 'version', 'status', 'reason', 'snapshot', 'changes', 'submitted_at', 'decided_at', 'comment']),
+            'head_name' => $acknowledgement->head?->name ?? 'Former team member', 'employee_name' => $acknowledgement->entry?->user?->name ?? 'Former team member',
+            'work_date' => $acknowledgement->entry?->work_date->toDateString(),
+            'can_decide' => $acknowledgement->status === 'pending' && $this->reportSnapshot($acknowledgement->entry) === $acknowledgement->snapshot && $this->canDecide($actor, $acknowledgement)];
     }
 
     /** Team scope excludes self; employees read their own history from My time records. */
