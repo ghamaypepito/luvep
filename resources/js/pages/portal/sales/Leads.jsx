@@ -659,10 +659,10 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                                                 <div className="min-w-0">
                                                     <div className="font-semibold text-gray-900 text-xs truncate group-hover/lead:text-blue-600 transition-colors">
                                                         {l.name}
-                                                        {(l.tags || []).filter(tag => tag.startsWith('Affiliate partner:')).map(tag => (
-                                                            <span key={tag} className="ml-1 inline-flex rounded-md bg-[#edf4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#2c603c]">{tag}</span>
-                                                        ))}
                                                     </div>
+                                                    {(l.tags || []).filter(tag => tag.startsWith('Affiliate partner:')).map(tag => (
+                                                        <span key={tag} title={tag} className="mt-1 inline-flex max-w-full rounded-md bg-[#edf4e6] px-1.5 py-0.5 text-[10px] font-semibold text-[#2c603c]">{tag}</span>
+                                                    ))}
                                                     {l.lead_id && (
                                                         <div className="text-[10px] text-gray-400 font-mono truncate">{l.lead_id}</div>
                                                     )}
