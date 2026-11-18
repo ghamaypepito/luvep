@@ -6,6 +6,7 @@
    <button type="button" data-screen-open="contact">Contact an adviser</button>
    <a class="ep-link-button ep-header-login" href="{{ url('/login') }}"><span>Applicant login</span><svg class="ep-external-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
   </nav>
+  @include('education.theme-switch')
  </header>
  <p class="ep-intro">Your New Zealand chapter starts here.</p>
  <section id="ep-landing">
