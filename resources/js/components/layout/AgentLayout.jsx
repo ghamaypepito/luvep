@@ -1,6 +1,6 @@
-import DashboardLayout from "./DashboardLayout";
+import AffiliateWorkspaceLayout from "./AffiliateWorkspaceLayout";
 import { usePage } from "@inertiajs/react";
-import { LayoutDashboard, Users, UserCircle, Mail, FileSignature, GraduationCap, Briefcase } from "lucide-react";
+import { LayoutDashboard, Users, UserCircle, Mail, FileSignature, GraduationCap, Briefcase, Link as LinkIcon } from "lucide-react";
 
 // Hide a nav item whose `module` hasn't been granted to this user. `modules` is
 // auth.modules — the granted-key list from User::grantedModules(); super admins
@@ -41,12 +41,13 @@ export default function AgentLayout({ children }) {
 
         { name: "Account", section: true },
         { name: "My Profile", href: "/portal/agent/profile", icon: <UserCircle size={20} /> },
-        { name: "My Agreement", href: "/portal/agent/agreement", icon: <FileSignature size={20} /> },
+        { name: "My Affiliate Link", href: "/portal/agent/profile#affiliate-link", icon: <LinkIcon size={20} /> },
+        { name: "My Affiliate Agreement", href: "/portal/agent/agreement", icon: <FileSignature size={20} /> },
     ];
 
     return (
-        <DashboardLayout brand="EP." subtitle="Agent Portal" accent="bg-teal-600" nav={gateNav(AGENT_NAV, modules)}>
+        <AffiliateWorkspaceLayout subtitle="Affiliate Partner Portal" nav={gateNav(AGENT_NAV, modules)}>
             {children}
-        </DashboardLayout>
+        </AffiliateWorkspaceLayout>
     );
 }

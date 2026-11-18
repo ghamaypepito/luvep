@@ -56,7 +56,7 @@ return [
         'footer' => 'images/email/branding/finance-cta.png',
     ],
     'agent' => [
-        'label' => 'Agent',
+        'label' => 'Affiliate Partner',
         'banner' => 'images/email/branding/agent-banner.png',
         'footer' => 'images/email/branding/agent-cta.png',
     ],
