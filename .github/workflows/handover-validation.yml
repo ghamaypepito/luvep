@@ -55,6 +55,7 @@ jobs:
           node tests/Frontend/hr-team.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
+          node scripts/test-education-theme.mjs
           node tests/Frontend/education-email.cjs
           node tests/Frontend/school-visit-mail.cjs
           node tests/Frontend/ticket-attachments.cjs

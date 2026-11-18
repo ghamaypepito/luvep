@@ -2,7 +2,7 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
 <meta name="description" content="Meet the ePathways Education team at your school. Register your interest and explore your study journey in New Zealand.">
-<meta name="color-scheme" content="light dark"><title>Your New Zealand chapter · EP Education</title>
+<meta name="color-scheme" content="light dark"><script src="/education-ui/theme.js?v={{ filemtime(public_path('education-ui/theme.js')) }}"></script><title>Your New Zealand chapter · EP Education</title>
 <link rel="icon" href="/education-landing/ep-logo.png"><link rel="stylesheet" href="/education-landing/landing.css?v={{ filemtime(public_path('education-landing/landing.css')) }}">
 <script src="/education-landing/landing.js?v={{ filemtime(public_path('education-landing/landing.js')) }}" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/education-ui/education.css?v={{ filemtime(public_path('education-ui/education.css')) }}"></head><body class="edu-design edu-registration">

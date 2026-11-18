@@ -1,15 +1,15 @@
 /* The Education public pages and event workspace share the same visual language. */
 .edu-design {
-  --edu-canvas: light-dark(#e9eee5, #101b16);
-  --edu-paper: light-dark(#ffffff, #1c2a23);
-  --edu-ground: light-dark(#f5f6f1, #17241d);
-  --edu-ink: light-dark(#203b30, #edf3e9);
-  --edu-muted: light-dark(#596c60, #b3c4b7);
-  --edu-line: light-dark(#dfe6dc, #374b3d);
-  --edu-green: light-dark(#21583f, #c6e5ae);
-  --edu-green-ink: light-dark(#ffffff, #183824);
-  --edu-selected: light-dark(#d2eaa1, #344c2c);
-  --edu-selected-ink: light-dark(#24452d, #e3f1d4);
+  --edu-canvas: light-dark(#e9eee5, #171819);
+  --edu-paper: light-dark(#ffffff, #252628);
+  --edu-ground: light-dark(#f5f6f1, #1e1f21);
+  --edu-ink: light-dark(#203b30, #f1f2f3);
+  --edu-muted: light-dark(#596c60, #b8bdc1);
+  --edu-line: light-dark(#dfe6dc, #414448);
+  --edu-green: light-dark(#21583f, #99d2ad);
+  --edu-green-ink: light-dark(#ffffff, #17291e);
+  --edu-selected: light-dark(#d2eaa1, #31483b);
+  --edu-selected-ink: light-dark(#24452d, #dcefe1);
   --edu-shadow: 0 20px 64px light-dark(rgb(34 65 42 / 9%), rgb(0 0 0 / 22%));
   color: var(--edu-ink);
   background-color: var(--edu-canvas);
@@ -298,3 +298,44 @@
   .workspace-sidebar { display: none; }
   .edu-manager .manager { border: 0; }
 }
+
+/* An explicit choice overrides the system scheme, including the legacy form root. */
+.edu-registration #ep-education[data-theme] { color-scheme: inherit; }
+html[data-education-theme="light"] .edu-design :is(.brand img, footer img),
+html[data-education-theme="light"] #ep-education .ep-brand-mark { filter: none; }
+html[data-education-theme="dark"] .edu-design :is(.brand img, footer img),
+html[data-education-theme="dark"] #ep-education .ep-brand-mark { filter: brightness(0) invert(1); }
+.edu-design.edu-events::before {
+  background-image: linear-gradient(light-dark(transparent, rgb(23 24 25 / 94%)), light-dark(transparent, rgb(23 24 25 / 94%))), url("/education-rsvp/assets/ep-event-collage.webp");
+}
+.edu-events {
+  --event-row-bg: light-dark(#21583a, #2c2e30);
+  --event-row-ink: #f2f6f1;
+  --event-row-muted: light-dark(#d2e4d8, #b8bdc1);
+  --event-row-hover-bg: light-dark(#dce8d5, #35433b);
+  --event-row-hover-ink: light-dark(#193629, #f2f6f1);
+  --event-row-hover-muted: light-dark(#3f5948, #cee2d4);
+}
+.edu-design :is(.head, .manager-head, .ep-head) { gap: 16px; }
+.edu-design :is(.brand, .ep-brand) { margin-right: auto; }
+.edu-design .edu-theme-switch,
+.edu-registration #ep-education .edu-theme-switch {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  flex-shrink: 0; min-height: 44px; width: auto; padding: 8px 12px;
+  border: 1px solid var(--edu-line); border-radius: 20px;
+  background: var(--edu-ground); color: var(--edu-ink);
+  font-size: 12px; line-height: 1.4; cursor: pointer; white-space: nowrap;
+}
+.edu-theme-track { display: inline-flex; align-items: center; width: 32px; height: 20px; padding: 3px; border-radius: 20px; background: var(--edu-muted); box-sizing: border-box; }
+.edu-theme-track::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--edu-paper); }
+.edu-theme-switch[aria-checked="true"] .edu-theme-track { background: var(--edu-green); }
+.edu-theme-switch[aria-checked="true"] .edu-theme-track::before { transform: translateX(12px); }
+@media (max-width: 760px) {
+  .edu-design :is(.head, .manager-head),
+  .edu-registration #ep-education .ep-head { display: flex; flex-wrap: wrap; }
+  .edu-events .head nav { order: 3; width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .edu-registration #ep-education .ep-header-actions { display: flex; order: 3; width: 100%; justify-content: flex-end; }
+  .edu-registration #ep-education .ep-header-actions > :is(button, .ep-header-login) { width: auto; }
+  .edu-manager .manager-head .quiet-link { order: 3; max-width: none; width: 100%; }
+}
+@media print { .edu-theme-switch { display: none !important; } }

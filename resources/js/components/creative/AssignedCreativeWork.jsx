@@ -1,5 +1,4 @@
 import { ArrowUpRight, Palette } from "lucide-react";
-import "../../../css/creative.css";
 
 export const creativeStatuses = { not_started: "Submitted", in_progress: "In design", in_review: "For review", completed: "Delivered" };
 

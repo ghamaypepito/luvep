@@ -6,7 +6,6 @@ import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
 import CreativeBriefForm from "@/components/creative/CreativeBriefForm";
 import { creativeStatuses } from "@/components/creative/AssignedCreativeWork";
 import Pagination from "@/components/ui/Pagination";
-import "../../../css/creative.css";
 
 export default function CreativeRequests({ requests, filters = {}, owner, designTypes, isAdmin }) {
     const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).has("new"));
