@@ -8,6 +8,7 @@ import {
 import AgreementSignModal from "@/components/AgreementSignModal";
 import PdfViewerModal from "@/components/PdfViewerModal";
 import Pagination from "@/components/ui/Pagination";
+import AccountActions from "@/components/affiliate/AccountActions";
 import ReferralLinkCard from "@/components/affiliate/ReferralLinkCard";
 
 export default function AgentShow({
@@ -76,6 +77,7 @@ export default function AgentShow({
                 </div>
             </div>
 
+            <AccountActions agent={agent} />
             <ReferralLinkCard referral={agent.referral} />
 
             {/* Stat cards */}
@@ -148,12 +150,12 @@ export default function AgentShow({
                                         <PenTool size={14} /> Sign (ePathways)
                                     </button>
                                 )}
-                                <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
+                                {agent.account_state !== "archived" && <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
                                     <RefreshCw size={14} /> {agreement.is_draft ? "Edit draft" : "New version"}
-                                </button>
+                                </button>}
                             </>
                         )}
-                        {! agreement && (
+                        {! agreement && agent.account_state !== "archived" && (
                             <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black transition-colors">
                                 <Wand2 size={14} /> Generate Affiliate Partner Agreement
                             </button>
@@ -180,7 +182,7 @@ export default function AgentShow({
                 <div className="overflow-x-auto mt-4"><table className="w-full text-left text-sm">
                     <thead><tr className="text-gray-500">{["Version", "Status", "Created", "Partner signed", "EP signed", "Expires", "Documents"].map(label => <th className="py-2 pr-4" key={label}>{label}</th>)}</tr></thead>
                     <tbody>{agreements.map(version => <tr key={version.id} className="border-t border-gray-100">
-                        <td className="py-3">{version.version}</td><td>{version.status}</td><td>{fmtDate(version.created_at)}</td><td>{fmtDate(version.agent_signed_at)}</td><td>{fmtDate(version.company_signed_at)}</td><td>{version.expires_on || "—"}</td>
+                        <td className="py-3"><Link href={`/admin/agents/${agent.id}?agreement=${version.id}`} className="text-emerald-800 underline">Version {version.version}</Link></td><td>{version.status}</td><td>{fmtDate(version.created_at)}</td><td>{fmtDate(version.agent_signed_at)}</td><td>{fmtDate(version.company_signed_at)}</td><td>{version.expires_on || "—"}</td>
                         <td><a className="text-emerald-800 underline mr-3" href={version.view_url} target="_blank" rel="noreferrer">View</a><a className="text-emerald-800 underline" href={version.download_url}>Download</a></td>
                     </tr>)}</tbody>
                 </table></div>

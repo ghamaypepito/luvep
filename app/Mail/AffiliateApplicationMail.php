@@ -17,6 +17,6 @@ class AffiliateApplicationMail extends Mailable implements ShouldQueue
 
     public function build(): self
     {
-        return $this->subject($this->heading)->html('<p>'.e($this->messageText).'</p><p><a href="'.e($this->link).'">Open your private application</a></p><p>This private link expires in two days. Request a fresh link on the EP affiliate application page.</p><p>The EP team</p>');
+        return $this->subject($this->heading)->html('<p>'.e($this->messageText).'</p><p><a href="'.e($this->link).'">Open your private application</a></p><p>This private link expires in two days. <a href="'.e(rtrim(config('app.url'), '/').'/affiliate/apply').'">Request a fresh link</a> on the affiliate application page.</p><p>The EP team</p>');
     }
 }

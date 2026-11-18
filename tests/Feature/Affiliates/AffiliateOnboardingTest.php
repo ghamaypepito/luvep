@@ -46,7 +46,10 @@ class AffiliateOnboardingTest extends TestCase
 
     private function approve(AffiliateApplication $app, User $admin): User
     {
-        $this->post($this->signed($app, 'verify'))->assertRedirect();
+        $link = Mail::queued(AffiliateApplicationMail::class)->first()->link;
+        $page = $this->get($link)->assertOk()->viewData('page')['props'];
+        $this->assertNull($page['agreement']);
+        $this->post($page['verifyUrl'])->assertRedirect();
         $this->assertDatabaseMissing('users', ['email' => $app->email]);
         $this->actingAs($admin)->post("/admin/agents/applications/{$app->id}/approve")->assertRedirect();
         $user = $app->refresh()->user;
@@ -68,7 +71,11 @@ class AffiliateOnboardingTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($admin)->post("/admin/agents/applications/{$app->id}/approve")->assertSessionHasErrors('application');
         $user = $this->approve($app, $admin);
-        $this->post("/admin/users/{$user->id}/toggle-active")->assertSessionHasErrors('user');
+        $user->update(['password' => 'SyntheticPassword8']);
+        Auth::logout();
+        $this->post('/login', ['email' => $user->email, 'password' => 'SyntheticPassword8'])->assertSessionHasErrors('email');
+        $this->assertGuest();
+        $this->actingAs($admin)->post("/admin/users/{$user->id}/toggle-active")->assertSessionHasErrors('user');
         $this->post("/admin/agents/{$user->id}/lifecycle", ['action' => 'disable', 'expected' => 'awaiting_signatures'])->assertSessionHasErrors('user');
         $this->post("/admin/agents/{$user->id}/agreement/generate")->assertRedirect();
         $agreement = AgentAgreement::sole();
