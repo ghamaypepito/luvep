@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 const bundle = await build({ stdin: { contents: `import React,{act}from'react';import{createRoot}from'react-dom/client';import Page from'./resources/js/pages/portal/lead/VisaAssessment.jsx';window.IS_REACT_ACT_ENVIRONMENT=true;window.act=act;const root=createRoot(document.getElementById('root'));window.renderProps=assessment=>root.render(<Page vif={{available:true,generated:false}} assessment={assessment}/>);window.renderClient=assessment=>act(()=>window.renderProps(assessment));window.unmount=()=>act(()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', alias: { '@': resolve('resources/js') }, plugins: [{ name: 'fresh-client-response', setup(builder) {
     builder.onResolve({ filter: /^@inertiajs\/react$/ }, () => ({ path: 'inertia', namespace: 'fresh-test' }));
     builder.onResolve({ filter: /^sonner$/ }, () => ({ path: 'sonner', namespace: 'fresh-test' }));
-    builder.onLoad({ filter: /.*/, namespace: 'fresh-test' }, args => ({ resolveDir: process.cwd(), contents: args.path === 'sonner' ? `export const toast={error(){},success(){}};` : `import React from'react';export const Head=()=>null;export const Link=({children,...props})=>React.createElement('a',props,children);export const usePage=()=>({props:{}});export const router={post(url,payload,options){(window.posts??=[]).push(payload);window.posted=payload;window.renderProps(window.freshPage.props.assessment);options.onSuccess(window.freshPage);options.onFinish();}};` }));
+    builder.onLoad({ filter: /.*/, namespace: 'fresh-test' }, args => ({ resolveDir: process.cwd(), contents: args.path === 'sonner' ? `export const toast={error(){},success(){}};` : `import React from'react';export const Head=()=>null;export const Link=({children,...props})=>React.createElement('a',props,children);export const usePage=()=>({props:{}});export const router={post(url,payload,options){(window.posts??=[]).push(payload);window.posted=payload;if(window.deferPost){window.pending=options;return;}window.renderProps(window.freshPage.props.assessment);options.onSuccess(window.freshPage);options.onFinish();}};` }));
 } }] });
 
 async function mount(assessment) {
@@ -93,5 +93,33 @@ test('actual client unchanged and reverted changes do not post or resubmit famil
         w.freshPage = { props: { assessment: assessment('family', { applying_as: 'Partner', visa_type: 'Residence class visa', vif_answers: {} }) } };
         await save(w);
         assert.equal(JSON.stringify(w.posted.field_values), JSON.stringify({ vif_answers: { middle_name: 'Updated' } }));
+    } finally { await close(dom); }
+});
+
+
+test('actual client freezes controls during deferred save and keeps the draft editable after a failed response', async () => {
+    const dom = await mount(assessment('work', { vif_answers: { work_visa_category: 'Accredited Employer Work Visa', middle_name: 'Old name' } }));
+    try {
+        const w = dom.window; w.deferPost = true;
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Submitted name');
+        await save(w);
+        assert.equal(w.posts.length, 1);
+        const controls = [...w.document.querySelectorAll('input,select,textarea')];
+        assert.ok(controls.length > 0);
+        assert.ok(controls.every(element => element.matches(':disabled')), 'All editable controls must freeze until the response arrives');
+        await w.act(() => { w.pending.onError({ 'field_values.vif_answers.middle_name': 'Synthetic save failed' }); w.pending.onFinish(); });
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').value, 'Submitted name');
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').matches(':disabled'), false);
+        await save(w);
+        assert.equal(w.posts.length, 2);
+        assert.equal(JSON.stringify(w.posts[1]), JSON.stringify(w.posts[0]), 'Failure retains the same changed draft for retry');
+        await w.act(() => {
+            const page = { props: { assessment: assessment('work', { vif_answers: { work_visa_category: 'Post-Study Work Visa', middle_name: 'Submitted name' } }) } };
+            w.renderProps(page.props.assessment); w.pending.onSuccess(page); w.pending.onFinish();
+        });
+        assert.equal(input(w, 'Which work visa is this information for?').value, 'Post-Study Work Visa');
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').matches(':disabled'), false);
+        await save(w);
+        assert.equal(w.posts.length, 2, 'Fresh canonical response resets the retry baseline');
     } finally { await close(dom); }
 });

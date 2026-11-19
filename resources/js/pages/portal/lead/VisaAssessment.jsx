@@ -186,21 +186,24 @@ function AssessmentEditor({ assessment }) {
                 </div>
             </div>
 
-            {/* Fields, grouped by section */}
-            <div className="p-6 space-y-7">
-                {sections.map((sec) => (
-                    <section key={sec.title}>
-                        <h3 className="text-[13px] font-bold text-gray-900 mb-3 pb-2 border-b border-gray-100">{sec.title}</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                            {sec.fields.map(([key, label]) => (
-                                <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} readOnly={readOnly.includes(key)} onChange={(v) => setField(key, v)} />
-                            ))}
-                        </div>
-                    </section>
-                ))}
-            </div>
+            {/* Keep the submitted draft stable until the canonical response arrives. */}
+            <fieldset disabled={saving} className="min-w-0">
+                {/* Fields, grouped by section */}
+                <div className="p-6 space-y-7">
+                    {sections.map((sec) => (
+                        <section key={sec.title}>
+                            <h3 className="text-[13px] font-bold text-gray-900 mb-3 pb-2 border-b border-gray-100">{sec.title}</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                                {sec.fields.map(([key, label]) => (
+                                    <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} readOnly={readOnly.includes(key)} onChange={(v) => setField(key, v)} />
+                                ))}
+                            </div>
+                        </section>
+                    ))}
+                </div>
 
-            <div className="p-6"><VifSupplementFields type={assessment.type} values={values} onChange={setField} errors={fieldErrors} /></div>
+                <div className="p-6"><VifSupplementFields type={assessment.type} values={values} onChange={setField} errors={fieldErrors} /></div>
+            </fieldset>
 
             {/* Save (again, at the bottom for long forms) */}
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end bg-gray-50/50">
