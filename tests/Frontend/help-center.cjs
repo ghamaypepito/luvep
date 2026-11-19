@@ -8,6 +8,7 @@ const { act } = React;
 
 const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/help-center' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const { createRoot } = require('react-dom/client');
 const output = buildSync({ entryPoints: ['resources/js/pages/help/Index.jsx'], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom', '@/*', '@inertiajs/react', 'lucide-react'] }).outputFiles[0].text;
