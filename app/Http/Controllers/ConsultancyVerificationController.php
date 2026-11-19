@@ -227,8 +227,7 @@ class ConsultancyVerificationController extends Controller
         }
 
         $review['items'] = $meta;
-        $lead->consultancy_review = $review;
-        $lead->save();
+        $this->saveReview($lead, $review);
 
         return back()->with('success', 'Updated.');
     }
@@ -269,8 +268,7 @@ class ConsultancyVerificationController extends Controller
         }
 
         $review['items'] = $meta;
-        $lead->consultancy_review = $review;
-        $lead->save();
+        $this->saveReview($lead, $review);
 
         return back()->with('success', 'Changes requested — the submitter has been flagged.');
     }
@@ -285,8 +283,7 @@ class ConsultancyVerificationController extends Controller
         $review['verified_at'] = now()->toIso8601String();
         $review['verified_by'] = $request->user()->id;
         unset($review['changes_requested']);
-        $lead->consultancy_review = $review;
-        $lead->save();
+        $this->saveReview($lead, $review);
 
         return back()->with('success', 'Agreement verified — approve it to send to the client.');
     }
@@ -303,8 +300,7 @@ class ConsultancyVerificationController extends Controller
 
         $review['status'] = 'pending';
         unset($review['verified_at'], $review['verified_by'], $review['changes_requested']);
-        $lead->consultancy_review = $review;
-        $lead->save();
+        $this->saveReview($lead, $review);
 
         return back()->with('success', 'Saved as draft.');
     }
@@ -480,6 +476,17 @@ class ConsultancyVerificationController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private function saveReview(Lead $lead, array $review): void
+    {
+        DB::transaction(function () use ($lead, $review) {
+            $current = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            if ($current->consultancy_review !== $lead->getOriginal('consultancy_review')) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['review' => 'This review changed. Refresh before saving.']);
+            }
+            $current->forceFill(['consultancy_review' => $review])->saveOrFail();
+        });
+    }
+
     private function guardUnderReview(Lead $lead): void
     {
         $review = is_array($lead->consultancy_review) ? $lead->consultancy_review : [];
@@ -499,8 +506,7 @@ class ConsultancyVerificationController extends Controller
         $meta[$item] = $entry;
 
         $review['items'] = $meta;
-        $lead->consultancy_review = $review;
-        $lead->save();
+        $this->saveReview($lead, $review);
     }
 
     private function noteEntry(User $u, string $body, string $tag): array

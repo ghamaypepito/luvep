@@ -88,4 +88,31 @@ class ConsultancyDraftDeleteTest extends TestCase
         $this->deleteJson("/consultancy-verification/{$lead->id}/draft", ['delete_token' => $this->token($lead)])->assertUnprocessable();
         $this->get('/consultancy-verification')->assertInertia(fn ($page) => $page->where('proposals.0.delete_token', null));
     }
+
+    public function test_in_flight_review_mutations_cannot_restore_a_deleted_draft(): void
+    {
+        $user = User::factory()->create(['role' => 'super_admin']);
+        $this->actingAs($user);
+        foreach (['updateMeta', 'verify', 'requestChanges', 'draft', 'addNote', 'replyNote', 'toggleActioned'] as $method) {
+            $lead = $this->draft();
+            $bound = Lead::findOrFail($lead->id);
+            $this->delete("/consultancy-verification/{$lead->id}/draft", ['delete_token' => $this->token($lead)])->assertRedirect();
+            $request = \Illuminate\Http\Request::create('/', 'POST', ['review_note' => 'In flight', 'message' => 'Update', 'body' => 'Note']);
+            $request->setUserResolver(fn () => $user);
+            $args = [$request, $bound];
+            if (in_array($method, ['addNote', 'replyNote', 'toggleActioned'])) {
+                $args[] = 'english_review';
+            }
+            if (in_array($method, ['replyNote', 'toggleActioned'])) {
+                $args[] = 'old-note';
+            }
+            try {
+                app(\App\Http\Controllers\ConsultancyVerificationController::class)->$method(...$args);
+                $this->fail($method.' restored a deleted review.');
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $this->assertArrayHasKey('review', $exception->errors());
+            }
+            $this->assertNull($lead->fresh()->consultancy_review, $method);
+        }
+    }
 }
