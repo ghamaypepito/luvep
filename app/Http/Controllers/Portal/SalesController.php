@@ -660,12 +660,13 @@ class SalesController extends Controller
 
         $review = is_array($l->consultancy_review) ? $l->consultancy_review : [];
         if (($review['scenario'] ?? null) === $type && is_array($review['items'] ?? null)) {
-            return array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $review['items']));
+            return \App\Services\ConsultancyReviewService::totalAmount($review);
         }
 
-        $items = \App\Services\ConsultancyReviewService::feeItems($type, []);
-
-        return array_sum(array_map(fn ($it) => (int) ($it['amount'] ?? 0), $items));
+        return \App\Services\ConsultancyReviewService::totalAmount([
+            'scenario' => $type,
+            'items' => array_column(\App\Services\ConsultancyReviewService::feeItems($type), null, 'key'),
+        ]);
     }
 
     /**
@@ -803,7 +804,6 @@ class SalesController extends Controller
                 ->reject(fn (Lead $l) => $shownIds->contains($l->id))
                 ->map(function (Lead $l) {
                     $review = is_array($l->consultancy_review) ? $l->consultancy_review : [];
-                    $items = is_array($review['items'] ?? null) ? $review['items'] : [];
                     $scenario = $review['scenario'] ?? null;
                     // English agreements now go through this queue too — reflect
                     // their real document bucket + type, not "Consultancy".
@@ -835,7 +835,7 @@ class SalesController extends Controller
                             // status instead of a download / lifecycle badge.
                             'pending_verification' => true,
                             'verification_status' => $review['status'] ?? 'pending', // pending | verified
-                            'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+                            'total_amount' => \App\Services\ConsultancyReviewService::totalAmount($review),
                             'currency_symbol' => ($review['currency'] ?? 'php') === 'nzd' ? 'NZ$' : 'Php',
                         ]],
                         'documents_count' => 1,

@@ -106,6 +106,17 @@ class ConsultancyReviewService
         };
     }
 
+    /** The PTE exam is paid separately in USD and is never part of the review-fee total. */
+    public static function totalAmount(array $review): int
+    {
+        $items = is_array($review['items'] ?? null) ? $review['items'] : [];
+        if (($review['scenario'] ?? null) === 'english_engagement') {
+            return (int) ($items['english_review']['amount'] ?? 0);
+        }
+
+        return array_sum(array_map(fn ($item) => (int) ($item['amount'] ?? 0), $items));
+    }
+
     /**
      * Snapshot the fee items onto the lead and move the consultancy agreement
      * into the verification queue as PENDING. Called when staff generate a

@@ -693,10 +693,9 @@ class LeadDocumentController extends Controller
                 // Notify via the Education "Consultancy agreement submitted for
                 // verification" automation (a no-op unless an admin enabled it).
                 $review = is_array($lead->fresh()->consultancy_review) ? $lead->fresh()->consultancy_review : [];
-                $items = is_array($review['items'] ?? null) ? $review['items'] : [];
                 app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.submitted', $lead->fresh(), [
                     'agreement_type' => \App\Services\ConsultancyReviewService::scenarioLabel($type),
-                    'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+                    'total_amount' => \App\Services\ConsultancyReviewService::totalAmount($review),
                 ]);
 
                 $label = $isEnglishAgreement ? 'English agreement' : 'Consultancy Agreement';
@@ -756,10 +755,9 @@ class LeadDocumentController extends Controller
         \App\Services\ConsultancyReviewService::submit($lead, $type, $overrides, optional($request->user())->id);
 
         $fresh = is_array($lead->fresh()->consultancy_review) ? $lead->fresh()->consultancy_review : [];
-        $items = is_array($fresh['items'] ?? null) ? $fresh['items'] : [];
         app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.submitted', $lead->fresh(), [
             'agreement_type' => \App\Services\ConsultancyReviewService::scenarioLabel($type),
-            'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+            'total_amount' => \App\Services\ConsultancyReviewService::totalAmount($fresh),
         ]);
 
         return back()->with('success', "English agreement sent for verification — {$lead->first_name} {$lead->last_name}.");
