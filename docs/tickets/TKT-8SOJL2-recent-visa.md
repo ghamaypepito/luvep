@@ -1,53 +1,23 @@
-# TKT-8SOJL2 — Recent visa document categorisation
+# TKT-8SOJL2 — Recent visa / eVisa upload category
 
-Priority: High. Status: In review, pending validation, review, staging and requester acceptance.
+Staff can choose **Add Recent visa / eVisa category** on a case’s Documents tab when the checklist has no such row. The control explains that the category is optional and visible to this client. It creates an empty upload target on that case only, without selecting or moving an existing file. The authenticated client Documents screen can then accept an upload against that row. Public Immigration tracking codes continue to deny case data and uploads.
 
-## Corrected requirement
+The existing **Move to Recent visa / eVisa** action remains available when staff have separately identified a file’s purpose. Creating the requested category does not require guessing which file belongs there. Use Recent visa / eVisa rather than the superseded Visa History label.
 
-Nova withdrew TKT-KQBOQ8: the reported document is a recent visa, not Visa History. The old feature commit was reverted on `codex/kqboq8-visa-history` and that branch carries a superseded notice. Do not cherry-pick its original feature commit. The replacement branch is `codex/8sojl2-recent-visa-documents`, based directly on main `9b797d271e44a1a4277a92e704d536f0da0c0a7f`; it does not depend on the old proposal.
+## Behavior and access
 
-## Findings
+The action is shown only for explicit Immigration cases (`is_immigration_case=true`), matching the existing client upload gate. Legacy stage-only case profiles do not offer it; their flags and access remain unchanged.
 
-The screenshot shows the file still present under Other (no checklist match), with StaffShared status and no completed review. This establishes a categorisation complaint, not file loss. The resolver joins a document's checklist_key to the case override or visa-type checklist; blank/unrecognised keys render under Other. The exact live metadata and file contents were not inspected. No production document has been moved by this work.
+The category action uses the same active internal Immigration role guard and locked case record as classification. Creation and its `case.document.category_added` audit event are idempotent. Existing rows, including hidden rows, are unchanged on retry. Existing checklist planning notes and resolved catalogue items are retained. The action changes only the case checklist; other cases, the global visa catalogue and required-document progress are unchanged. No email or notification is sent by category creation.
 
-Current main has no file-menu action for assigning an unmatched upload to a recent-visa row. Some visa templates contain current-visa copy requirements, but they are not universal. The replacement provides an explicit case-specific category; it does not infer a file's purpose from its filename.
+Creation shares its row-building logic with Move. Move retains its original hidden-by-default behavior and existing hidden-file visibility guard. The explicit empty-category action creates a visible row. If a missing category already has `recent_visa` files or a hidden visibility setting, staff review is required before adding the visible target, so existing files are not inadvertently published. Document approvals, filenames, paths, notes and review metadata are untouched.
 
-## Proposed correction
+## Verification
 
-- In the Immigration Documents tab, authorised staff choose the unmatched file's menu, then Move to Recent visa / eVisa, and confirm its purpose.
-- Add an optional `recent_visa` row under Visa applications & decisions to this case's existing checklist override when absent. Preserve all resolved checklist items; do not update the global visa catalogue or other cases.
-- Change only the selected document's checklist key. Preserve its ID, file path/bytes, filename, source variant, case association, original upload date/uploader, status, reviewer and notes. No re-upload, duplicate document, automatic approval or case-stage change occurs.
-- Add an audit event; retries do not duplicate rows or events. The service locks the case and selected document within a transaction.
-- Reject cross-case document IDs, non-case leads, dependent/request/generated/payment/RFI documents and files already matched to another checklist item. Existing workflows remain responsible for those documents.
-- The optional row starts hidden from the authenticated client. Staff may enable it using the existing visibility checkbox when appropriate. If the selected file is already hidden and the destination row is visible, staff must hide the row first. Categorisation does not grant public or unrelated-account access. Subsequent uploads use the existing checklist upload flow.
-- The new menu action appears only on Immigration portal routes, not other portals sharing the component. Existing role and case permissions are retained, with no database changes. The existing visibility toggle uses the same case lock as categorisation so concurrent edits cannot lose visibility settings.
+`RecentVisaCategoryTest` exercises the empty row, authenticated client visibility/upload, unchanged files/catalogue/other cases/required progress, audit idempotence, hidden-row retry, existing-file/visibility safeguards and denied roles. The focused category, classification, visa-progress, alias and client-upload suites pass **41 tests /750 assertions**. The original classification privacy tests remain required.
 
-## Validation and acceptance
+`tests/Frontend/recent-visa-category.cjs` exercises both the action component and the real Documents tab wiring: clear visibility copy, empty request, duplicate-submit guard, error/retry, refreshing/removing the control, empty checklists and opening the new category. `tests/Frontend/recent-visa.cjs` protects the existing Move dialog. The Vite production build, PHP syntax, new PHP-file style and diff checks pass. Test databases/files and email are synthetic; no production record was modified by implementation.
 
-Local backend checks passed: **40 tests, 783 assertions**, covering RecentVisaDocumentTest, CaseDocumentsTabTest, PartnerVisaChecklistAliasTest, client UploadChecklistTest, EducationChecklistTest and LeadPortalSharedDocumentsTest. The dialog test `node tests/Frontend/recent-visa.cjs` passed confirmation, keyboard cancel and focus return, duplicate-submit prevention, and error/retry checks. The Vite production asset build, PHP syntax checks and `git diff --check` passed. Test databases and files are synthetic; no live client record was used.
+## Release and ticket disposition
 
-Published as draft PR https://github.com/ghamaypepito/luvep/pull/71. The old branch's feature revert and superseded notice were also pushed. GitHub reported no CI checks when queried. GitHub CI, staging verification and Nova's acceptance are still required before merge/deployment. The synthetic tests exercised the authenticated client download and upload routes and denied an unrelated account. Do not equate a pushed branch with a production resolution.
-
-Before deployment, verify with synthetic data that classification preserves file/review/upload metadata, existing checklist requirements and other cases; repeat requests remain idempotent; and cross-case IDs/external accounts are denied. Test existing Immigration Documents and client checklist upload/shared-document paths, including Education regression coverage. Confirm cancel, busy state, error/retry and refresh behavior in the dialog.
-
-On staging, Nova confirms the row label/purpose. Move a synthetic recent visa using the menu, open it, upload another file to the row, and test staff-managed client visibility. Verify an unrelated account cannot download it. Then an authorised staff member must identify the exact live record/document and explicitly perform the approved classification. Do not guess from a similarly named file or client. Mark Done only after deployment and Nova's confirmation.
-
-## Resolution report draft — not yet resolved in production
-
-**Issue summary:** A recent visa document appears under Other (no checklist match). Nova corrected the earlier request: it must not be Visa History.
-
-**Root cause:** The document has no matching checklist category in the displayed case. Exact live metadata remains to be checked; the existing file-menu workflow lacks a recent-visa classification action.
-
-**Resolution:** Proposed replacement branch adds explicit case-specific Recent visa / eVisa classification under Visa applications & decisions while preserving the original document and review information. The superseded Visa History proposal was reverted separately. Pending review, validation and deployment.
-
-**Verification:** Use the automated-test results and staging checklist above. No live document was modified and requester acceptance is outstanding.
-
-**References:** TKT-8SOJL2 supersedes TKT-KQBOQ8; replacement branch `codex/8sojl2-recent-visa-documents`. Keep the actual client URL and file evidence in the restricted ticket.
-
-**Follow-up:** Sir Ghamay reviews the replacement branch, completes CI/staging checks and approves deployment. Nova verifies the correct file/category before closure.
-
-**Documentation summary:** Recent visa evidence is categorised separately from historical visas; classification preserves the file and does not approve it or change the visa stage.
-
-## Suggested update to Sir Ghamay
-
-Sir, Nova's correction TKT-8SOJL2 supersedes the Visa History request. Please hold the old branch; its feature was reverted. The document is a recent visa, so the replacement branch `codex/8sojl2-recent-visa-documents` provides a case-specific Recent visa / eVisa row under Visa applications & decisions, with an explicit move action that preserves the original file and review details. This is High priority. Please review the replacement and complete staging/requester verification before merge and deployment. No production files were changed.
+Independent testing and review, required CI and deployed UI verification must pass before closure. For the reported case, authorised staff can create and reopen the empty Recent visa / eVisa category through the normal Documents control. Verify it is the optional client upload target and that existing document metadata and visibility remain unchanged. Category creation alone does not classify an existing file or confirm its content. Record the actual deployed revision and observed category result in the private ticket resolution; keep client links and file evidence there.

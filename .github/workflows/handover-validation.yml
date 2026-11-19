@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Verify PDF worker build compatibility
-        run: node --test tests/js/pdf-worker-build.test.mjs tests/js/critical-dependencies.test.mjs tests/js/vif-supplement.test.mjs
+        run: node --test tests/js/pdf-worker-build.test.mjs tests/js/critical-dependencies.test.mjs tests/js/vif-supplement.test.mjs tests/js/vif-supplement-editing.test.mjs
       - name: Configure isolated test environment
         run: |
           cp .env.example .env
@@ -56,6 +56,7 @@ jobs:
           node tests/Frontend/engagement-email-review.cjs
           node tests/Frontend/staff-engagement-signature.cjs
           node tests/Frontend/engagement-search.cjs
+          node tests/Frontend/reception-doorbell.cjs
           node tests/Frontend/engagement-service-gst.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
@@ -89,6 +90,7 @@ jobs:
           node tests/Frontend/recent-visa.cjs
           node tests/Frontend/resident-english-exception.cjs
           node tests/Frontend/other-case-documents.cjs
+          node tests/Frontend/recent-visa-category.cjs
           node tests/Frontend/education-personal-report.cjs
           node tests/Frontend/education-dated-notes.cjs
           node tests/Frontend/education-intake-monitoring.cjs

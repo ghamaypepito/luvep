@@ -1,6 +1,7 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
 import RecentVisaDialog from "./RecentVisaDialog";
 import OtherDocumentsUpload from "./OtherDocumentsUpload";
+import AddRecentVisaCategory from "./AddRecentVisaCategory";
 import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -177,6 +178,10 @@ export default function DocumentsTab({
     // Orphans (no matching checklist entry) get collected separately.
     const items = checklist.items || [];
     const knownKeys = new Set(items.flatMap((i) => [i.key, ...(i.aliases || [])]));
+    const recentVisaCategory = lead.is_immigration_case ? <AddRecentVisaCategory leadId={lead.id} exists={knownKeys.has('recent_visa')} onAdded={() => {
+        setFilter('all');
+        setExpandedCats(prev => new Set([...prev, 'Visa applications & decisions']));
+    }} /> : null;
 
     // A checklist key can hold several files (the client can "Upload another"
     // without replacing the first), so keep the full list per key, oldest first.
@@ -395,6 +400,7 @@ export default function DocumentsTab({
                             : "No documents on file and no checklist available."}
                     </p>
                 </div>
+                {recentVisaCategory}
             </div>
         );
     }
@@ -455,6 +461,8 @@ export default function DocumentsTab({
                     </button>
                 </div>
             </div>
+
+            {recentVisaCategory}
 
             {(reqTotal > 0 || allRows.length > 0) && (
                 <div className="flex h-2 rounded-full overflow-hidden bg-gray-100">
