@@ -6,9 +6,10 @@ import { chromium } from '@playwright/test';
 
 const assets=path.resolve('resources/social-workspace');
 const sample={headline:'Your next chapter starts here.',supporting_copy:'Explore study planning with EP.',cta:'Talk to our team',caption:'Start with a conversation.',layout:'photo-top'};
-async function withStudio(run,{mp4Supported=true}={}){
+async function withStudio(run,{mp4Supported=true,posts=[],driveAssets=[]}={}){
     const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
     try{
+        const driveWrites=[];
         const page=await browser.newPage({viewport:{width:1440,height:1100}}),writes=[],errors=[];
         if(!mp4Supported)await page.addInitScript(()=>{MediaRecorder.isTypeSupported=()=>false;});
         page.setDefaultTimeout(6000);page.on('pageerror',error=>errors.push(error.message));
@@ -19,8 +20,10 @@ async function withStudio(run,{mp4Supported=true}={}){
                 const data=request.postDataJSON();writes.push(data);
                 await route.fulfill({json:{design:{...sample,captions:Object.fromEntries(data.channels.map(channel=>[channel,`${channel}: Explore your next step with EP. Talk to our team.`]))},draft:true}});return;
             }
-            if(url.pathname==='/social/marketing/posts'){assert.equal(request.method(),'GET');await route.fulfill({json:{posts:[],can_approve:true,ghl_user_configured:true}});return;}
+            if(url.pathname==='/social/marketing/posts'){assert.equal(request.method(),'GET');await route.fulfill({json:{posts,can_approve:true,ghl_user_configured:true}});return;}
             if(url.pathname==='/social/ghl/accounts'){await route.fulfill({json:{publishing_enabled:true,accounts:[{selected:true,name:'Luv, Ep',platform:'facebook',active:true}]}});return;}
+            if(url.pathname.startsWith('/social/drive/posts/')){driveWrites.push(request.postDataJSON());await route.fulfill({json:{asset:{id:'asset-1'}}});return;}
+            if(url.pathname==='/social/drive/assets'){await route.fulfill({json:{assets:{data:driveAssets,current_page:1,last_page:1,total:driveAssets.length}}});return;}
             if(url.pathname.startsWith('/social/ghl/')){await route.fulfill({json:{posts:[],page:1,has_more:false,total:0}});return;}
             if(url.pathname==='/'){
                 await route.fulfill({contentType:'text/html',body:readFileSync(path.join(assets,'index.html'),'utf8').replace('<head>','<head><meta name="csrf-token" content="test-only">')});return;
@@ -31,7 +34,7 @@ async function withStudio(run,{mp4Supported=true}={}){
             await route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:readFileSync(file)});
         });
         await page.goto('http://studio.test/');await page.locator('#marketing-workflow-loading').waitFor({state:'detached'});
-        await run(page,writes);assert.deepEqual(errors,[]);
+        await run(page,writes,driveWrites);assert.deepEqual(errors,[]);
     }finally{await browser.close();}
 }
 
@@ -128,4 +131,27 @@ test('unsupported MP4 export has a clear message and keeps graphic exports worki
         assert.equal(await page.locator('#ep-video-generate').isDisabled(),true);
         await page.locator('#ep-layout-output').selectOption('graphic');await page.locator('#ep-layout-png:enabled').waitFor();
     },{mp4Supported:false});
+});
+
+test('workflow navigation separates queues, groups external tools and saves approved snapshots to Social Drive',async()=>{
+    const posts=[['draft','Draft one'],['in_review','Review one'],['changes_requested','Revise one'],['approved','Ready one']].map(([status,campaign],i)=>({id:'post-'+i,version:2,campaign,status,caption:'Saved caption',brief:'Saved creative brief',service:'General'}));
+    await withStudio(async(page,writes,driveWrites)=>{
+        const nav=page.getByRole('navigation',{name:'Marketing'});
+        assert.deepEqual(await nav.locator('button[data-step]').allTextContents(),['1 Brief','2 Drafts','3 Approval1','4 Revisions','5 For posting','6 Social Drive','Settings']);
+        await nav.getByRole('button',{name:'2 Drafts',exact:true}).click();
+        const review=page.locator('#review-view');assert.equal(await review.locator('.ready-post').count(),1);await review.getByText('Draft one',{exact:true}).waitFor();
+        await nav.getByRole('button',{name:/3 Approval/}).click();await review.getByText('Review one',{exact:true}).waitFor();assert.equal(await review.getByText('Draft one',{exact:true}).count(),0);
+        await nav.getByRole('button',{name:'4 Revisions',exact:true}).click();await review.getByText('Revise one',{exact:true}).waitFor();
+        await nav.getByRole('button',{name:'5 For posting',exact:true}).click();await page.locator('#ready-view').getByText('Ready one',{exact:true}).waitFor();
+        await page.getByRole('button',{name:'Save to Social Drive',exact:true}).click();assert.deepEqual(driveWrites,[{version:2}]);await page.getByRole('button',{name:'Saved to Social Drive',exact:true}).waitFor();
+        await nav.getByRole('button',{name:'6 Social Drive',exact:true}).click();await page.getByText('Approved social asset',{exact:true}).waitFor();
+        assert.equal(await page.locator('#social-drive-view').isVisible(),true);assert.equal(await page.locator('#ready-view').isVisible(),false);
+        if(process.env.COMPOSE_PROOF_DIR)await page.screenshot({path:process.env.COMPOSE_PROOF_DIR+'/social-workflow-preview.png'});
+        await nav.getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('heading',{name:'Settings & resources',exact:true}).waitFor();
+        await nav.locator('summary').click();assert.equal(await nav.getByRole('link',{name:'GHL Social Planner ↗',exact:true}).isVisible(),true);
+        await nav.getByRole('button',{name:'1 Brief',exact:true}).click();
+        await page.locator('#compose-media').setInputFiles({name:'larger-reel.mp4',mimeType:'video/mp4',buffer:Buffer.alloc(11*1024*1024)});
+        assert.equal(await page.locator('#compose-media-name').textContent(),'larger-reel.mp4','MP4 uploads use the 50MB limit, not the image limit');
+        assert.equal(writes.length,0,'Navigation and archiving never generate or publish content');
+    },{posts,driveAssets:[{id:'asset-1',name:'Approved social asset',caption:'Saved caption',mime:'image/png',source_version:2}]});
 });

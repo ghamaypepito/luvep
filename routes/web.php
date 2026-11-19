@@ -849,35 +849,8 @@ Route::middleware(['auth'])->group(function () {
         // Inertia page under resources/js/pages/admin/social/. The bare /social
         // entry redirects to /social/compose so the sidebar link always lands
         // on a usable screen.
-        Route::prefix('admin/content-calendar')->name('admin.editorial.')->controller(\App\Http\Controllers\Admin\EditorialCalendarController::class)->group(function () {
-            Route::get('/', 'index')->name('calendar');
-            Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');
-            Route::post('/articles', 'store')->name('store');
-            Route::put('/articles/{article}', 'update')->whereNumber('article')->name('update');
-            Route::patch('/articles/{article}/planned-date', 'move')->whereNumber('article')->name('move');
-            Route::post('/articles/{article}/submit', 'submit')->whereNumber('article')->name('submit');
-            Route::post('/articles/{article}/approve', 'approve')->whereNumber('article')->name('approve');
-            Route::post('/articles/{article}/publish', 'publish')->whereNumber('article')->name('publish');
-        });
-
-        Route::get('/social', fn () => redirect('/social/compose'))->name('social');
         Route::get('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'index'])->middleware('throttle:15,1');
         Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');
-        Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
-        Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
-        Route::get('/social/marketing/posts/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'show'])->whereUuid('id')->middleware('throttle:60,1');
-        Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
-        Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/changes', [\App\Http\Controllers\Admin\MarketingPostController::class, 'changes'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/schedule', [\App\Http\Controllers\Admin\MarketingPostController::class, 'schedule'])->middleware('throttle:15,1');
-        Route::get('/social/ghl/accounts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'accounts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/posts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'posts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/insights', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'insights'])->middleware('throttle:30,1');
-        Route::get('/social/compose', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'index'])->name('social.compose');
-        Route::get('/social/workspace-test/v1/{path}', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'asset'])->where('path', '.*');
-        Route::post('/social/workspace-test/ai/caption', \App\Http\Controllers\Admin\SocialCaptionController::class)->middleware('throttle:5,1');
-        Route::post('/social/workspace-test/ai/layout', [\App\Http\Controllers\Admin\SocialCaptionController::class, 'layout'])->middleware('throttle:5,1');
         Route::get('/social/compose/legacy', fn () => inertia('admin/social/Compose'))->name('social.compose.legacy');
         Route::get('/social/scheduled', fn () => inertia('admin/social/Scheduled'))->name('social.scheduled');
         Route::get('/social/inbox', fn () => inertia('admin/social/Inbox'))->name('social.inbox');
@@ -2532,3 +2505,5 @@ Route::get('/social/marketing/media/{id}', [\App\Http\Controllers\Admin\Marketin
 require __DIR__.'/media-drive.php';
 
 require __DIR__.'/ep-agent.php';
+
+require __DIR__.'/social-marketing.php';

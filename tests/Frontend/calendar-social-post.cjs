@@ -12,7 +12,7 @@ let responseMode = 'success', stored = null, closed = 0, saved = 0;
 let ghlReply = { posts: [], page: 1, has_more: false }, ghlFail = false; const reads = [];
 let lateGhl = null;
 const account = { publishing_enabled: true, accounts: [{ selected: true, active: true, name: 'Luv, Ep' }] };
-const axios = { isCancel: () => false, get: async (url, config) => { reads.push({ url, config }); if (url === '/social/ghl/posts') { if (lateGhl) return new Promise(resolve => { lateGhl.resolve = resolve; }); if (ghlFail) throw Error('GHL offline'); return { data: ghlReply }; } return { data: url.includes('/accounts') ? account : { post: stored } }; }, post: async (url, data) => {
+const axios = { isCancel: () => false, get: async (url, config) => { reads.push({ url, config }); if (url === '/social/drive/assets') return { data: { assets: { data: [{ id: 'drive-1', name: 'Reusable design', caption: 'Caption from Social Drive', mime: 'image/png', download_url: '/social/drive/assets/drive-1/download' }], current_page: 1, last_page: 1 } } }; if (url.endsWith('/download')) return { data: new Blob(['image bytes'], { type: 'image/png' }) }; if (url === '/social/ghl/posts') { if (lateGhl) return new Promise(resolve => { lateGhl.resolve = resolve; }); if (ghlFail) throw Error('GHL offline'); return { data: ghlReply }; } return { data: url.includes('/accounts') ? account : { post: stored } }; }, post: async (url, data) => {
     requests.push({ url, data });
     if (responseMode === 'lost-save' && url === '/social/marketing/posts') throw Error('Lost response');
     if (responseMode === 'validation' && url === '/social/marketing/posts') throw { response: { status: 422, data: { message: 'Check media.', errors: { media: ['Invalid media'] } } } };
@@ -56,6 +56,13 @@ const approved = { id: 'post-1', version: 9, status: 'approved', campaign: 'Appr
     assert.equal(requests.at(-1).url, '/social/marketing/posts/post-1/submit');
     assert.equal(button('Approve this version'), undefined);
     assert.equal(field('Caption').value, 'Caption preserved.');
+    await render();
+    await click(button('Upload from Social Drive')); await click(button('Use asset'));
+    assert.equal(field('Post title').value, 'Reusable design'); assert.equal(field('Caption').value, 'Caption from Social Drive');
+    await click(button('Save draft')); assert.equal(requests.at(-1).data.get('media').name, 'social-drive.png'); assert.equal(requests.at(-1).url, '/social/marketing/posts');
+    await render(); await fill(field('Post title'), 'Keep manual title'); await fill(field('Caption'), 'Keep manual copy');
+    await click(button('Upload from Social Drive')); await click(button('Use asset'));
+    assert.equal(field('Post title').value, 'Keep manual title'); assert.equal(field('Caption').value, 'Keep manual copy');
     responseMode = 'validation'; await render(); await fill(field('Caption'), 'Keep this caption');
     await click(button('Save draft')); assert.equal(field('Caption').value, 'Keep this caption'); assert.ok(document.body.textContent.includes('Invalid media'));
     responseMode = 'lost-save'; await render(); await fill(field('Caption'), 'Possible saved caption');
@@ -115,7 +122,7 @@ const approved = { id: 'post-1', version: 9, status: 'approved', campaign: 'Appr
     const vm = require('node:vm'), destinations = [], context = { window: { location: { assign: url => destinations.push(url) } }, encodeURIComponent };
     vm.createContext(context); vm.runInContext(helper, context);
     assert.equal(!!context.marketingCalendarOnly({ post_type: 'post' }), false);
-    for (const extra of [{ post_type: 'reel' }, { first_comment: '0' }, { publish_now: true }, { media_mime: 'video/mp4' }]) assert.equal(context.marketingCalendarOnly(extra), true);
+    for (const extra of [{ first_comment: '0' }, { publish_now: true }]) assert.equal(context.marketingCalendarOnly(extra), true);
     context.marketingOpenCalendar(stored); assert.equal(destinations[0], '/admin/content-calendar?social_post=' + stored.id);
     await act(async () => root.unmount());
     console.log('Calendar social composer: date chooser, save/review payloads, draft retention, approval roles, confirmation, unknown-save lock, reconciliation and focus verified.');

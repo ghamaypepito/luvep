@@ -26,6 +26,11 @@ return [
     |
     */
     'restricted' => [
+        'social_marketing' => [
+            'label' => 'Social & Marketing — Digital team',
+            'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Approval and publishing remain Super Admin only.',
+            'admin_default' => true,
+        ],
         'client_pathways' => [
             'label' => 'Add client pathways',
             'description' => 'Allow lead-handling staff to add Student, Immigration, English or Accommodation pathways from List of Leads. Does not grant access to other department portals.',

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { X, ImagePlus, ExternalLink } from 'lucide-react';
+import SocialDrivePicker from './SocialDrivePicker';
 
 const api = '/social/marketing/posts';
 const headers = { Accept: 'application/json' };
@@ -15,6 +16,9 @@ export default function SocialPostDialog({ postId, initialDate = '', canPublish,
     const [connection, setConnection] = useState(null), [connectionError, setConnectionError] = useState(''), [connectionAttempt, setConnectionAttempt] = useState(0);
     const [media, setMedia] = useState(null), [previewUrl, setPreviewUrl] = useState(''), [removeMedia, setRemoveMedia] = useState(false);
     const [pending, setPending] = useState(''), [errors, setErrors] = useState({}), [message, setMessage] = useState(''), [reviewNote, setReviewNote] = useState(''), [confirmDelivery, setConfirmDelivery] = useState(false);
+    const [driveOpen, setDriveOpen] = useState(false);
+    const driveButton = useRef(null);
+    const closeDrive = () => { setDriveOpen(false); requestAnimationFrame(() => driveButton.current?.focus()); };
     const [mode, setMode] = useState('approval');
     const [unconfirmedSave, setUnconfirmedSave] = useState(false);
     const readOnly = unconfirmedSave || frozen.includes(post?.status);
@@ -114,6 +118,7 @@ export default function SocialPostDialog({ postId, initialDate = '', canPublish,
                         <label className="social-field">Service<select value={form.service} onChange={event => changed('service', event.target.value)}>{[...new Set(['General', 'Study', 'Immigration', 'Employment', 'Settlement', form.service])].map(value => <option key={value}>{value}</option>)}</select></label>
                         <label className="social-field">Facebook format<select value={form.post_type} onChange={event => changed('post_type', event.target.value)}><option value="post">Feed</option><option value="reel">Reel · one MP4 video</option><option value="story">Story · media only</option></select></label>
                         <label className="social-field">Caption<textarea aria-label="Caption" aria-invalid={!!errors.caption} rows={5} maxLength={12000} value={form.caption} onChange={event => changed('caption', event.target.value)} /><small>{form.caption.length.toLocaleString()} / 12,000{form.post_type === 'story' ? ' · Leave empty for Stories.' : ''}</small>{errors.caption && <span className="social-error">{errors.caption[0]}</span>}</label>
+                        <button ref={driveButton} type="button" className="calendar-button secondary" onClick={() => setDriveOpen(true)}>Upload from Social Drive</button>
                         <div className="social-field"><span>Photo, video or GIF</span><label className="social-upload"><ImagePlus size={22} aria-hidden="true" /><span>Choose your finished media</span><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,video/mp4" aria-label="Post media" onChange={event => selectMedia(event.target.files[0])} /><small>PNG, JPEG or GIF under 10MB · MP4 under 50MB</small>{media && <span>{media.name}</span>}</label>{mediaUrl && <button className="calendar-text-button" type="button" onClick={() => { setMedia(null); setRemoveMedia(true); setConfirmDelivery(false); if (fileInput.current) fileInput.current.value = ''; }}>Remove media</button>}{errors.media && <span className="social-error">{errors.media[0]}</span>}</div>
                         <label className="social-field">First comment · optional<textarea aria-label="First comment" aria-invalid={!!errors.first_comment} rows={2} maxLength={8000} value={form.first_comment} onChange={event => changed('first_comment', event.target.value)} />{errors.first_comment && <span className="social-error">{errors.first_comment[0]}</span>}</label>
                         <fieldset className="social-delivery"><legend>Delivery</legend>{[['draft', 'Save as draft'], ['approval', 'Send for approval'], ['schedule', 'Schedule post'], ['now', 'Post now']].map(([value, title]) => <label key={value}><input type="radio" name="social-delivery" value={value} checked={mode === value} onChange={() => { setMode(value); changed('publish_now', value === 'now'); }} />{title}</label>)}</fieldset>
@@ -136,5 +141,6 @@ export default function SocialPostDialog({ postId, initialDate = '', canPublish,
                 </>}
             </div></footer>
         </div>
+        {driveOpen && <SocialDrivePicker onClose={closeDrive} onSelect={(asset, file) => { if (file) selectMedia(file); setForm(previous => { const type = !post && !previous.campaign && previous.post_type === 'post' ? asset.post_type || 'post' : previous.post_type; return { ...previous, post_type: type, campaign: previous.campaign || asset.name, caption: previous.caption || (type === 'story' ? '' : asset.caption || '') }; }); closeDrive(); }} />}
     </dialog>;
 }
