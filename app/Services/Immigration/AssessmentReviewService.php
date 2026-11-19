@@ -42,7 +42,7 @@ class AssessmentReviewService
      */
     public function review(Model $intake, string $visaType, User $reviewer): AssessmentAiReview
     {
-        $fields = $this->serialize($intake);
+        $fields = $this->serialize($intake, $visaType);
 
         $reply = $this->ai->chat([
             ['role' => 'system', 'content' => $this->systemPrompt()],
@@ -80,11 +80,11 @@ class AssessmentReviewService
     }
 
     /** Human-readable "Label: value" dump of the applicant's answers. */
-    private function serialize(Model $intake): string
+    private function serialize(Model $intake, string $visaType): string
     {
         $lines = [];
         foreach ($intake->getAttributes() as $key => $value) {
-            if (in_array($key, self::SKIP, true)) {
+            if (in_array($key, array_merge(self::SKIP, ['vif_answers'], \App\Support\VifSupplement::rootKeys($visaType)), true)) {
                 continue;
             }
             $label = ucwords(str_replace('_', ' ', $key));
@@ -101,6 +101,15 @@ class AssessmentReviewService
                 $str = mb_substr($str, 0, 300).'…';
             }
             $lines[] = "{$label}: {$str}";
+        }
+
+        foreach (\App\Support\VifSupplement::sections($visaType, $intake->toArray()) as $section) {
+            foreach ($section['rows'] as $row) {
+                if (isset($row['q'])) {
+                    $answer = $row['a'] === '' ? '(not provided)' : $row['a'];
+                    $lines[] = $row['q'].': '.mb_substr($answer, 0, 300);
+                }
+            }
         }
 
         return implode("\n", $lines);

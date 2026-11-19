@@ -30,6 +30,10 @@ final class VifSupplement
         $fields = collect(self::schema($type))->flatMap(fn ($s) => $s['fields'])->all();
         $keys = self::answerKeys($type);
         $rules = [$prefix.'vif_answers' => ['nullable', 'array:'.implode(',', $keys)]];
+        if ($type === 'family') {
+            $rules[$prefix.'applying_as'] = ['sometimes', 'nullable', 'string', 'max:20'];
+            $rules[$prefix.'visa_type'] = ['sometimes', 'nullable', 'string', 'max:120'];
+        }
         foreach ($fields as $f) {
             $key = $prefix.(($f['storage'] ?? '') === 'root' ? '' : 'vif_answers.').$f['key'];
             self::fieldRules($rules, $key, $f);
@@ -64,13 +68,111 @@ final class VifSupplement
         }
     }
 
-    public static function values($intake, string $type): array
+    /** Normalize only catalogue-owned lists; leave unrelated fields and row columns intact. */
+    public static function normalizeInput(string $type, array $data, bool $read = false): array
     {
-        $out = ['vif_answers' => $intake->vif_answers ?? []];
         foreach (self::schema($type) as $section) {
             foreach ($section['fields'] as $field) {
+                if ($field['type'] !== 'list') {
+                    continue;
+                }
                 if (($field['storage'] ?? '') === 'root') {
-                    $out[$field['key']] = $intake->{$field['key']} ?? ($field['type'] === 'list' ? [] : '');
+                    if (array_key_exists($field['key'], $data)) {
+                        $data[$field['key']] = self::listRows($data[$field['key']], $field, $read);
+                    }
+                } elseif (is_array($data['vif_answers'] ?? null) && array_key_exists($field['key'], $data['vif_answers'])) {
+                    $data['vif_answers'][$field['key']] = self::listRows($data['vif_answers'][$field['key']], $field, $read);
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    private static function listRows($value, array $field, bool $read): mixed
+    {
+        if ($read && is_string($value)) {
+            $value = json_decode($value, true);
+        }
+        if (! is_array($value)) {
+            return $read ? [] : $value;
+        }
+        $keys = [];
+        foreach ($field['fields'] as $child) {
+            $keys = array_merge($keys, [$child['key']], $child['aliases'] ?? []);
+        }
+        $rows = array_intersect_key($value, array_flip($keys)) ? [$value] : array_values($value);
+        if ($read) {
+            $rows = array_values(array_filter($rows, 'is_array'));
+        }
+        foreach ($rows as &$row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            foreach ($field['fields'] as $child) {
+                if (! array_key_exists($child['key'], $row)) {
+                    foreach ($child['aliases'] ?? [] as $alias) {
+                        if (array_key_exists($alias, $row) && $row[$alias] !== null && $row[$alias] !== '') {
+                            $row[$child['key']] = $row[$alias];
+                            break;
+                        }
+                    }
+                }
+                foreach ($child['aliases'] ?? [] as $alias) {
+                    unset($row[$alias]);
+                }
+            }
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    private static function visibleSections(string $type, array $data): array
+    {
+        $answers = is_array($data['vif_answers'] ?? null) ? $data['vif_answers'] : [];
+
+        return array_values(array_filter(self::schema($type), function ($section) use ($answers, $data) {
+            if (($section['familyChildOnly'] ?? false) && (($data['applying_as'] ?? '') !== 'Dependent child'
+                || ! is_string($data['visa_type'] ?? null) || ! preg_match('/residen/i', $data['visa_type']))) {
+                return false;
+            }
+            $when = $section['when'] ?? null;
+            $value = $when ? ($answers[$when['key']] ?? '') : null;
+
+            return ! $when || (isset($when['equals']) ? $value === $when['equals'] : $value !== $when['not']);
+        }));
+    }
+
+    /** Remove inactive known answers on writes; do not rewrite unknown legacy siblings. */
+    public static function activeData(string $type, array $data, bool $read = false, ?array $context = null): array
+    {
+        $visible = collect(self::visibleSections($type, $context ?? $data))->flatMap(fn ($s) => $s['fields'])
+            ->filter(fn ($f) => ($f['storage'] ?? '') !== 'root')->pluck('key')->all();
+        if (is_array($data['vif_answers'] ?? null)) {
+            $data['vif_answers'] = $read
+                ? array_intersect_key($data['vif_answers'], array_flip($visible))
+                : array_diff_key($data['vif_answers'], array_flip(array_diff(self::answerKeys($type), $visible)));
+        } elseif ($read) {
+            $data['vif_answers'] = [];
+        }
+
+        return $data;
+    }
+
+    public static function readData(string $type, array $data): array
+    {
+        return self::activeData($type, self::normalizeInput($type, $data, read: true), read: true);
+    }
+
+    public static function values($intake, string $type): array
+    {
+        $data = self::readData($type, $intake->toArray());
+        $out = ['vif_answers' => $data['vif_answers']];
+        foreach (self::visibleSections($type, $data) as $section) {
+            foreach ($section['fields'] as $field) {
+                if (($field['storage'] ?? '') === 'root') {
+                    $out[$field['key']] = $data[$field['key']] ?? ($field['type'] === 'list' ? [] : '');
                 }
             }
         }
@@ -84,30 +186,15 @@ final class VifSupplement
 
     public static function sections(string $type, array $data): array
     {
+        $data = self::readData($type, $data);
         $sections = [];
-        foreach (self::schema($type) as $section) {
-            $answers = $data['vif_answers'] ?? [];
-            $when = $section['when'] ?? null;
-            if ($when) {
-                $value = $answers[$when['key']] ?? '';
-                if (isset($when['equals']) && $value !== $when['equals']) {
-                    continue;
-                }
-                if (isset($when['not']) && $value === $when['not']) {
-                    continue;
-                }
-            }
-            if (($section['familyChildOnly'] ?? false) && (($data['applying_as'] ?? '') !== 'Dependent child' || ! preg_match('/residen/i', $data['visa_type'] ?? ''))) {
-                continue;
-            }
+        foreach (self::visibleSections($type, $data) as $section) {
+            $answers = $data['vif_answers'];
             $rows = [];
             foreach ($section['fields'] as $f) {
                 $value = ($f['storage'] ?? '') === 'root' ? ($data[$f['key']] ?? null) : ($answers[$f['key']] ?? null);
                 if ($f['type'] === 'list') {
                     foreach (is_array($value) ? $value : [] as $i => $entry) {
-                        if (! is_array($entry)) {
-                            continue;
-                        }
                         $rows[] = ['t' => 'sub', 'label' => $f['label'].' '.($i + 1)];
                         foreach ($f['fields'] as $child) {
                             $rows[] = ['q' => $child['label'], 'a' => self::entryValue($entry, $child)];
@@ -129,7 +216,7 @@ final class VifSupplement
     private static function entryValue(array $entry, array $field): string
     {
         foreach ([$field['key'], ...($field['aliases'] ?? [])] as $key) {
-            if (isset($entry[$key]) && $entry[$key] !== '') {
+            if (array_key_exists($key, $entry)) {
                 return self::scalar($entry[$key]);
             }
         }

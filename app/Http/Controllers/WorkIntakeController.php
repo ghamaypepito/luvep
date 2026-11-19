@@ -68,10 +68,11 @@ class WorkIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('work', \App\Support\VifSupplement::normalizeInput('work', $request->all())));
         $validated = $request->validate($this->rules());
         $visaLabel = ($validated['vif_answers']['work_visa_category'] ?? '') === 'Post-Study Work Visa' ? 'Post-Study Work Visa' : 'Work Visa (AEWV)';
         if (($validated['vif_answers']['work_visa_category'] ?? '') === 'Post-Study Work Visa'
-            && ! \App\Models\VisaType::whereIn('code', ['POST_STUDY_WORK', 'PSWV'])->exists()) {
+            && ! IntakeVisaTypeMap::resolve(WorkIntake::class, 'Post-Study Work Visa')) {
             throw \Illuminate\Validation\ValidationException::withMessages(['vif_answers.work_visa_category' => 'The Post-Study Work Visa form is not configured yet. Please contact the Immigration team.']);
         }
 
@@ -97,9 +98,7 @@ class WorkIntakeController extends Controller
             // paired Assessment to hang journey state on. Pay/Book
             // redirect stays commented; payment intake is dormant until
             // Stripe is wired up in a future build.
-            $visaType = ($intake->vif_answers['work_visa_category'] ?? '') === 'Post-Study Work Visa'
-                ? \App\Models\VisaType::whereIn('code', ['POST_STUDY_WORK', 'PSWV'])->first()
-                : IntakeVisaTypeMap::resolve(WorkIntake::class);
+            $visaType = IntakeVisaTypeMap::resolve($intake);
             if (! $visaType) {
                 Log::warning('VisaType not found for Work intake; skipping Assessment creation.', [
                     'intake_id' => $intake->id,

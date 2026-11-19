@@ -2659,7 +2659,7 @@ class ImmigrationController extends Controller
                 ? \App\Models\VisaType::where('name', $subject->inz_visa_type)->first()
                 : null;
         } elseif ($subject) {
-            $visaType = \App\Support\IntakeVisaTypeMap::resolve($subject::class);
+            $visaType = \App\Support\IntakeVisaTypeMap::resolve($subject);
         }
 
         if (! $visaType) {
@@ -3389,10 +3389,13 @@ class ImmigrationController extends Controller
         ];
         abort_unless(isset($modelMap[$type]), 404, 'Unknown intake type.');
 
-        $request->validate(\App\Support\VifSupplement::rules($type, 'fields.'));
+        $data['fields'] = \App\Support\VifSupplement::normalizeInput($type, $data['fields']);
+        $request->merge(['fields' => $data['fields']]);
         DB::transaction(function () use ($request, $type, $id, $modelMap, $data) {
             $intake = $modelMap[$type]::whereKey($id)->lockForUpdate()->firstOrFail();
-            $beforeVif = \App\Support\VifSupplement::values($intake, $type);
+            $vif = app(\App\Http\Controllers\LeadPortalController::class);
+            $beforeVif = $vif->vifContent($type, $intake);
+            $workCategory = $intake->vif_answers['work_visa_category'] ?? null;
             $fields = $data['fields'];
             $beforeEnglish = null;
             if ($type === 'resident' && (array_key_exists('english_evidence', $fields) || array_key_exists('english_evidence_reason', $fields))) {
@@ -3434,15 +3437,22 @@ class ImmigrationController extends Controller
                     continue;
                 }
                 $intake->{$key} = $key === 'vif_answers' && is_array($val)
-                    ? array_replace($intake->vif_answers ?? [], $val)
+                    ? array_replace(is_array($intake->vif_answers) ? $intake->vif_answers : [], $val)
                     : (($val === '' || $val === null) ? null : $val);
             }
+            $request->merge(['fields' => \App\Support\VifSupplement::activeData($type, $data['fields'], context: $intake->toArray())]);
+            $request->validate(\App\Support\VifSupplement::rules($type, 'fields.'));
+            $active = \App\Support\VifSupplement::activeData($type, $intake->toArray());
+            $intake->vif_answers = $active['vif_answers'] ?? null;
             if ($intake->isDirty()) {
                 $intake->save();
             }
-            if (array_intersect(array_keys($data['fields']), array_merge(['vif_answers'], \App\Support\VifSupplement::rootKeys($type)))
-                && $beforeVif != \App\Support\VifSupplement::values($intake, $type)) {
-                app(\App\Http\Controllers\LeadPortalController::class)->refreshStoredVifForIntake($type, $intake);
+            if ($intake instanceof \App\Models\WorkIntake && ($workCategory !== ($intake->vif_answers['work_visa_category'] ?? null)
+                || array_key_exists('work_visa_category', is_array($fields['vif_answers'] ?? null) ? $fields['vif_answers'] : []))) {
+                \App\Support\IntakeVisaTypeMap::syncWorkCategory($intake, 'fields.vif_answers.work_visa_category');
+            }
+            if ($beforeVif != $vif->vifContent($type, $intake)) {
+                $vif->refreshStoredVifForIntake($type, $intake);
             }
             $afterEnglish = $type === 'resident' ? ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception] : null;
             if ($beforeEnglish !== null && $beforeEnglish !== $afterEnglish) {
@@ -3479,6 +3489,7 @@ class ImmigrationController extends Controller
         abort_unless(isset($modelMap[$type]), 404, 'Unknown intake type.');
 
         $intake = $modelMap[$type]::findOrFail($id);
+        $readData = \App\Support\VifSupplement::readData($type, $intake->toArray());
 
         // Internal / non-form columns never shown to the reviewer. Name, email
         // and phone live in the modal header, so they're skipped here too.
@@ -3505,7 +3516,7 @@ class ImmigrationController extends Controller
                     continue; // column not present on this model — skip defensively
                 }
                 $used[$col] = true;
-                $rawVal = $intake->{$col};
+                $rawVal = $readData[$col] ?? null;
                 $value = $this->formatIntakeValue($rawVal);
                 $provided = ! ($value === null || $value === '');
                 $fields[] = [
@@ -4101,6 +4112,7 @@ class ImmigrationController extends Controller
      */
     public function buildVifSections(string $type, array $data): array
     {
+        $data = \App\Support\VifSupplement::readData($type, $data);
         $schema = $this->intakeSectionSchema($type);
         $sections = [];
         $letterCode = ord('A');

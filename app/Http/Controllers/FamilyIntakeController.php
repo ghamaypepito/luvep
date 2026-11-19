@@ -34,6 +34,7 @@ class FamilyIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('family', \App\Support\VifSupplement::normalizeInput('family', $request->all())));
         $validated = $request->validate($this->rules());
 
         try {

@@ -120,6 +120,7 @@ class VifSupplementTest extends TestCase
         if ($type === 'resident') {
             $payload['vif_answers']['smc_employment_basis'] = 'A contract for services';
         } elseif ($type === 'family') {
+            $payload += ['applying_as' => 'Dependent child', 'visa_type' => 'Residence class visa'];
             $payload['vif_answers']['parent_nz_citizen_or_resident'] = 'Yes';
             $payload['vif_answers']['supporting_parent_nz_status'] = 'New Zealand citizen';
         }

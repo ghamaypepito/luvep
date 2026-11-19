@@ -385,21 +385,23 @@ class LeadPortalController extends Controller
         }
     }
 
+    /** Source content excludes generation time, so unchanged saves preserve approval. */
+    public function vifContent(string $type, $intake): array
+    {
+        return [
+            'applicant' => trim(($intake->first_name ?? '').' '.($intake->last_name ?? $intake->family_name ?? '')) ?: 'Applicant',
+            'intakeId' => $intake->intake_id ?? null,
+            'sections' => app(\App\Http\Controllers\Portal\ImmigrationController::class)->buildVifSections($type, $intake->toArray()),
+        ];
+    }
+
     /** Build the VIF PDF from an intake and store it as the lead's VIF document. */
     private function buildAndStoreVif(Lead $lead, string $type, $intake): void
     {
-        // Same flexible builder the staff export uses — the VIF contains every
-        // section the client actually filled, in the official format.
-        $sections = app(\App\Http\Controllers\Portal\ImmigrationController::class)
-            ->buildVifSections($type, $intake->toArray());
-        $applicant = trim(($intake->first_name ?? '').' '.($intake->last_name ?? $intake->family_name ?? '')) ?: 'Applicant';
-
-        $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.intake', [
-            'applicant' => $applicant,
-            'sections' => $sections,
-            'intakeId' => $intake->intake_id ?? null,
-            'generatedAt' => now()->format('d/m/Y'),
-            'mode' => 'pdf',
+        $content = $this->vifContent($type, $intake);
+        $applicant = $content['applicant'];
+        $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.intake', $content + [
+            'generatedAt' => now()->format('d/m/Y'), 'mode' => 'pdf',
         ])->setPaper('a4')->output();
 
         $name = trim(preg_replace('/[^A-Za-z0-9 \-]/', '', $applicant)) ?: 'Applicant';
@@ -442,8 +444,10 @@ class LeadPortalController extends Controller
         [$type, $intake] = $this->leadIntake($lead);
         abort_unless($type && $intake, 422, 'There is no assessment to edit on this case.');
 
+        if (is_array($request->input('field_values'))) {
+            $request->merge(['field_values' => \App\Support\VifSupplement::normalizeInput($type, $request->input('field_values'))]);
+        }
         $data = $request->validate([
-            ...\App\Support\VifSupplement::rules($type, 'field_values.'),
             'field_values' => 'present|array',
             'field_values.*' => 'nullable',
         ]);
@@ -455,8 +459,10 @@ class LeadPortalController extends Controller
             ]);
         }
 
-        $intake = \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data) {
+        [$intake, $vifChanged] = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $intake, $type, $data) {
             $current = $intake->newQuery()->whereKey($intake->id)->lockForUpdate()->firstOrFail();
+            $before = $this->vifContent($type, $current);
+            $workCategory = $current->vif_answers['work_visa_category'] ?? null;
             $values = $current instanceof \App\Models\ResidentIntake
                 ? \Illuminate\Support\Arr::except($data['field_values'], $current->applicantReadOnlyFields()) : $data['field_values'];
             $allowed = array_flip(array_merge(\App\Support\AssessmentFormSchema::fields($type), \App\Support\VifSupplement::rootKeys($type), ['vif_answers']));
@@ -474,13 +480,26 @@ class LeadPortalController extends Controller
                     $value = in_array(strtolower((string) $value), ['yes', '1', 'true', 'on'], true);
                 }
                 $current->{$key} = $key === 'vif_answers' && is_array($value)
-                    ? array_replace($current->vif_answers ?? [], $value) : $value;
+                    ? array_replace(is_array($current->vif_answers) ? $current->vif_answers : [], $value) : $value;
             }
-            $current->save();
+            $request->merge(['field_values' => \App\Support\VifSupplement::activeData($type, $values, context: $current->toArray())]);
+            $request->validate(\App\Support\VifSupplement::rules($type, 'field_values.'));
+            $active = \App\Support\VifSupplement::activeData($type, $current->toArray());
+            $current->vif_answers = $active['vif_answers'] ?? null;
+            if ($current->isDirty()) {
+                $current->save();
+            }
+            if ($current instanceof \App\Models\WorkIntake && ($workCategory !== ($current->vif_answers['work_visa_category'] ?? null)
+                || array_key_exists('work_visa_category', is_array($values['vif_answers'] ?? null) ? $values['vif_answers'] : []))) {
+                \App\Support\IntakeVisaTypeMap::syncWorkCategory($current, 'field_values.vif_answers.work_visa_category');
+            }
 
-            return $current;
+            return [$current, $before != $this->vifContent($type, $current)];
         });
 
+        if (! $vifChanged) {
+            return back()->with('success', 'Your assessment is up to date.');
+        }
         // The VIF is derived from the assessment — keep it in lockstep.
         $this->buildAndStoreVif($lead, $type, $intake);
 

@@ -135,7 +135,10 @@ function AssessmentEditor({ assessment }) {
         setFieldErrors({});
         router.post(assessment.save_url, { field_values: Object.fromEntries(Object.entries(values).filter(([key]) => !readOnly.includes(key))) }, {
             preserveScroll: true,
-            onSuccess: () => toast.success("Saved — your Visa Information Form has been updated"),
+            onSuccess: (page) => {
+                if (page?.props?.assessment?.values) setValues(page.props.assessment.values);
+                toast.success("Assessment saved");
+            },
             onError: (e) => { setFieldErrors(Object.fromEntries(Object.entries(e).map(([key, value]) => [key.replace(/^field_values\./, ""), value]))); toast.error(Object.values(e)[0] || "Could not save"); },
             onFinish: () => setSaving(false),
         });

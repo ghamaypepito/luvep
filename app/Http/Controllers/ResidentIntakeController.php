@@ -154,6 +154,7 @@ class ResidentIntakeController extends Controller
      */
     public function store(Request $request)
     {
+        $request->merge(\App\Support\VifSupplement::activeData('resident', \App\Support\VifSupplement::normalizeInput('resident', $request->all())));
         $validated = $request->validate($this->intakeRules());
 
         // Uploaded PDFs are handled manually; keep them out of mass-assignment.
@@ -245,7 +246,7 @@ class ResidentIntakeController extends Controller
         $intake = ResidentIntake::where('edit_token', $token)->firstOrFail();
 
         return inertia('visa/ResidentIntakePage', [
-            'editIntake' => $intake->makeHidden('english_evidence_exception'),
+            'editIntake' => \App\Support\VifSupplement::readData('resident', $intake->makeHidden('english_evidence_exception')->toArray()),
             'editToken' => $token,
         ]);
     }
@@ -266,13 +267,20 @@ class ResidentIntakeController extends Controller
             DB::beginTransaction();
 
             $intake = ResidentIntake::whereKey($intake->id)->where('edit_token', $token)->lockForUpdate()->firstOrFail();
+            $vif = app(\App\Http\Controllers\LeadPortalController::class);
+            $beforeVif = $vif->vifContent('resident', $intake);
             // Validation and field protection must use the same locked staff evidence state.
+            $request->merge(\App\Support\VifSupplement::activeData('resident', \App\Support\VifSupplement::normalizeInput('resident', $request->all())));
             $validated = $request->validate($this->intakeRules(
                 requireTerms: false, staffEvidenceRecorded: $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED,
             ));
             unset($validated['document_files'], $validated['terms_accepted']);
             // Applicant edits cannot replace a staff decision, including a stale form opened before it.
             $validated = \Illuminate\Support\Arr::except($validated, $intake->applicantReadOnlyFields());
+            if (is_array($validated['vif_answers'] ?? null)) {
+                $validated['vif_answers'] = array_replace(is_array($intake->vif_answers) ? $intake->vif_answers : [], $validated['vif_answers']);
+            }
+            $validated = \App\Support\VifSupplement::activeData('resident', $validated);
 
             $existingFiles = is_array($intake->document_files) ? $intake->document_files : [];
             [$mergedFiles, $documents] = $this->persistUploadedFiles($request, $intake->intake_id, $existingFiles, $documents);
@@ -281,6 +289,10 @@ class ResidentIntakeController extends Controller
                 'documents' => $documents ?: $intake->documents,
                 'document_files' => $mergedFiles ?: null,
             ]));
+
+            if ($beforeVif != $vif->vifContent('resident', $intake)) {
+                $vif->refreshStoredVifForIntake('resident', $intake);
+            }
 
             DB::commit();
 

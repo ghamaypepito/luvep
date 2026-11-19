@@ -33,6 +33,7 @@ class StudentIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('student', \App\Support\VifSupplement::normalizeInput('student', $request->all())));
         $validated = $request->validate($this->rules());
 
         try {

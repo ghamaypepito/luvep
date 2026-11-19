@@ -65,7 +65,8 @@ class IntakeTypeConverter
         // The new intake needs a paired Assessment to appear in the Visa
         // Assessment list, and that needs the target visa type to exist. Resolve
         // it up front so we never create an orphan intake with no assessment.
-        $visaType = IntakeVisaTypeMap::resolve($targetClass);
+        $visaType = IntakeVisaTypeMap::resolve($targetClass, $targetClass === WorkIntake::class && is_array($source->vif_answers)
+            ? ($source->vif_answers['work_visa_category'] ?? null) : null);
         if (! $visaType) {
             throw new \RuntimeException("The {$targetType} visa type isn't configured yet — add it under Visa Types first.");
         }
@@ -114,6 +115,7 @@ class IntakeTypeConverter
         // other forms don't collect. Seed those with safe placeholders so the
         // record saves; they're visa-specific and the client completes them.
         $this->fillRequiredDefaults($target, $attrs);
+        $attrs = VifSupplement::normalizeInput($targetType, $attrs);
 
         /** @var Model $new */
         $new = $targetClass::create($attrs);

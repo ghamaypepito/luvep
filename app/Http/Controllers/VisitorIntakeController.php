@@ -33,6 +33,7 @@ class VisitorIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('visitor', \App\Support\VifSupplement::normalizeInput('visitor', $request->all())));
         $validated = $request->validate($this->rules());
 
         try {
