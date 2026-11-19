@@ -235,4 +235,62 @@ class VifSupplementTest extends TestCase
         $this->assertFalse(Validator::make(['vif_answers' => ['supporting_parent_nz_status' => 'Resident']], VifSupplement::rules('work'))->passes());
         $this->assertStringNotContainsString('citizenship or residence status', json_encode(VifSupplement::sections('family', ['applying_as' => 'Partner', 'visa_type' => 'Residence class visa'])));
     }
+
+    public static function recreationTransitions(): array
+    {
+        return [
+            ['resident', 'work', 'smc_employment_basis', 'A contract for services'],
+            ['work', 'resident', 'employer_nzbn', 'Synthetic employer number'],
+            ['family', 'resident', 'parent_nz_citizen_or_resident', 'Yes'],
+            ['resident', 'family', 'smc_employment_basis', 'A contract for services'],
+        ];
+    }
+
+    #[DataProvider('recreationTransitions')]
+    public function test_recreated_intake_keeps_shared_supplemental_answers_and_can_save_its_target_form(string $from, string $to, string $specificKey, string $specificValue): void
+    {
+        $this->withoutVite();
+        Mail::fake();
+        Notification::fake();
+        Storage::fake('local');
+        foreach ([['SMC', 'Resident'], ['WORK_AEWV', 'Work'], ['FAMILY', 'Partnership']] as [$code, $category]) {
+            VisaType::create(['code' => $code, 'name' => 'Synthetic '.$code, 'category' => $category]);
+        }
+        $class = ['resident' => \App\Models\ResidentIntake::class, 'work' => \App\Models\WorkIntake::class, 'family' => \App\Models\FamilyIntake::class][$from];
+        $source = $class::create([
+            'intake_id' => 'SOURCE-SYNTHETIC', 'first_name' => 'Synthetic', 'last_name' => 'Applicant', 'family_name' => 'Applicant',
+            'email' => 'synthetic@example.test', 'phone' => '+64215550000', 'declaration_accepted' => true,
+            'vif_answers' => ['middle_name' => 'Common retained answer', $specificKey => $specificValue],
+        ])->fresh();
+        $before = $source->getRawOriginal();
+        $target = app(\App\Services\Immigration\IntakeTypeConverter::class)->recreateAs($source, $to);
+        $this->assertSame(['middle_name' => 'Common retained answer'], $target->vif_answers);
+        $this->assertSame('synthetic@example.test', $target->email);
+        $this->assertSame('+64215550000', $target->phone);
+        $this->assertFalse((bool) $target->declaration_accepted);
+        $this->assertSame('Submitted', $target->status);
+        $this->actingAs(User::factory()->create(['role' => 'immigration']))
+            ->patchJson("/portal/immigration/intakes/{$to}/{$target->id}", ['fields' => ['vif_answers' => $target->vif_answers]])
+            ->assertOk();
+        $this->assertTrue(Validator::make(['vif_answers' => $target->refresh()->vif_answers], VifSupplement::rules($to))->passes());
+        $this->assertSame($before, $source->fresh()->getRawOriginal());
+    }
+
+    public function test_recreated_target_accepts_absent_or_malformed_legacy_supplement_without_changing_source(): void
+    {
+        Mail::fake();
+        Notification::fake();
+        VisaType::create(['code' => 'WORK_AEWV', 'name' => 'Synthetic work', 'category' => 'Work']);
+        foreach ([null, 'legacy scalar'] as $answers) {
+            $source = \App\Models\ResidentIntake::create([
+                'intake_id' => 'SOURCE-'.uniqid(), 'first_name' => 'Synthetic', 'last_name' => 'Applicant',
+                'email' => 'synthetic@example.test', 'vif_answers' => $answers,
+            ])->fresh();
+            $before = $source->getRawOriginal();
+            $target = app(\App\Services\Immigration\IntakeTypeConverter::class)->recreateAs($source, 'work');
+            $this->assertNull($target->vif_answers);
+            $this->assertTrue(Validator::make(['vif_answers' => $target->vif_answers], VifSupplement::rules('work'))->passes());
+            $this->assertSame($before, $source->fresh()->getRawOriginal());
+        }
+    }
 }

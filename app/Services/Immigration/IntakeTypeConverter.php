@@ -9,6 +9,7 @@ use App\Models\StudentIntake;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Support\IntakeVisaTypeMap;
+use App\Support\VifSupplement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -77,6 +78,13 @@ class IntakeTypeConverter
         $attrs = [];
         foreach ($shared as $f) {
             $attrs[$f] = $source->{$f};
+        }
+
+        // Supplemental questions are visa-specific even though the JSON column is shared.
+        if (isset($attrs['vif_answers'])) {
+            $attrs['vif_answers'] = is_array($attrs['vif_answers'])
+                ? array_intersect_key($attrs['vif_answers'], array_flip(VifSupplement::answerKeys($targetType)))
+                : null;
         }
 
         // Carry the surname across the last_name <-> family_name naming split.

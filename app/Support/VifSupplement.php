@@ -19,10 +19,16 @@ final class VifSupplement
             ->filter(fn ($f) => ($f['storage'] ?? '') === 'root')->pluck('key')->unique()->values()->all();
     }
 
+    public static function answerKeys(string $type): array
+    {
+        return collect(self::schema($type))->flatMap(fn ($s) => $s['fields'])
+            ->filter(fn ($f) => ($f['storage'] ?? '') !== 'root')->pluck('key')->unique()->values()->all();
+    }
+
     public static function rules(string $type, string $prefix = ''): array
     {
         $fields = collect(self::schema($type))->flatMap(fn ($s) => $s['fields'])->all();
-        $keys = array_values(array_unique(array_column(array_filter($fields, fn ($f) => ($f['storage'] ?? '') !== 'root'), 'key')));
+        $keys = self::answerKeys($type);
         $rules = [$prefix.'vif_answers' => ['nullable', 'array:'.implode(',', $keys)]];
         foreach ($fields as $f) {
             $key = $prefix.(($f['storage'] ?? '') === 'root' ? '' : 'vif_answers.').$f['key'];
