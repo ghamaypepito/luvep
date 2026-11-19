@@ -1,5 +1,6 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
 import RecentVisaDialog from "./RecentVisaDialog";
+import OtherDocumentsUpload from "./OtherDocumentsUpload";
 import ProofReviewModal from '@/components/payments/ProofReviewModal';
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -613,6 +614,8 @@ export default function DocumentsTab({
                         </tbody>
                     </table>
             </div>
+
+            <OtherDocumentsUpload leadId={lead.id} onUploaded={() => { setFilter("all"); setExpandedCats(prev => new Set([...prev, "Other (no checklist match)"])); }} />
 
             {/* Request a document — an ad-hoc request for something not on the
                 checklist. Emails the client and logs a document request. Below

@@ -16,16 +16,25 @@ class MarketingPost extends Model
 
     protected function casts(): array
     {
-        return ['version' => 'integer', 'approved_version' => 'integer', 'scheduled_at' => 'immutable_datetime'];
+        return ['version' => 'integer', 'approved_version' => 'integer', 'scheduled_at' => 'immutable_datetime', 'publish_now' => 'boolean'];
     }
 
     public function fingerprint(): string
     {
-        return hash('sha256', json_encode([
+        $content = [
             $this->campaign, $this->service, $this->caption, $this->media_hash,
             $this->media_mime, $this->location_id, $this->account_id,
-            $this->scheduled_at?->utc()->toIso8601String(),
-        ], JSON_THROW_ON_ERROR));
+            $this->publish_now ? 'publish_now' : $this->scheduled_at?->utc()->toIso8601String(),
+        ];
+        // Empty optional fields preserve approvals created before the calendar composer.
+        if ($this->post_type && $this->post_type !== 'post') {
+            $content[] = ['post_type' => $this->post_type];
+        }
+        if ($this->first_comment !== null && $this->first_comment !== '') {
+            $content[] = ['first_comment' => $this->first_comment];
+        }
+
+        return hash('sha256', json_encode($content, JSON_THROW_ON_ERROR));
     }
 
     public function hasCurrentApproval(): bool

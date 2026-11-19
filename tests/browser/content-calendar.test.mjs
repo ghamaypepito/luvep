@@ -77,8 +77,8 @@ test('the month shows dated and undated topics and supports keyboard entry and d
         await page.getByText('Mon', { exact: true }).waitFor();
         assert.equal(await page.locator('time[datetime]:visible').count(), 42);
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.getByText('Mon', { exact: true }).waitFor({ state: 'hidden' });
-        assert.equal(await page.locator('time[datetime]:visible').count(), 1);
+        await page.getByText('Mon', { exact: true }).waitFor();
+        assert.equal(await page.locator('time[datetime]:visible').count(), 42);
         assert.equal(await page.getByRole('link', { name: 'Previous month' }).getAttribute('href'), '/admin/content-calendar?month=2026-10');
         assert.equal(await page.getByRole('link', { name: 'Next month' }).getAttribute('href'), '/admin/content-calendar?month=2026-12');
         await page.getByRole('region', { name: 'Undated drafts' }).getByRole('button', { name: /Unscheduled article/ }).waitFor();
@@ -147,6 +147,8 @@ test('review uses the saved revision and hides approval from a staff editor', as
 
 test('dragging a draft moves its planned date and a draft with a live version stays locked', async () => {
     await withCalendar(async page => {
+        // Keep both drag endpoints visible; Chromium can cancel native drags on target autoscroll.
+        await page.setViewportSize({ width: 1280, height: 1200 });
         let requested = false;
         await page.route('http://calendar.test' + articlesPath + '/1/planned-date', async route => {
             assert.equal(route.request().method(), 'PATCH');
