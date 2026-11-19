@@ -3359,6 +3359,7 @@ class ImmigrationController extends Controller
     public function updateIntakeFields(Request $request, string $type, int $id)
     {
         $data = $request->validate(['fields' => 'required|array']);
+        $request->validate(['fields.english_evidence_exception' => 'prohibited']);
 
         // Free assessment — a Lead, not an intake. Its editable Personal-detail
         // fields map 1:1 to Lead columns (whitelisted), so update those directly.
@@ -3388,39 +3389,78 @@ class ImmigrationController extends Controller
         ];
         abort_unless(isset($modelMap[$type]), 404, 'Unknown intake type.');
 
-        $intake = $modelMap[$type]::findOrFail($id);
         $request->validate(\App\Support\VifSupplement::rules($type, 'fields.'));
-
-        // Whitelist: only the real form fields for this visa type may be written.
-        $allowed = collect($this->intakeSectionSchema($type))->flatten()->filter()->all();
-        $allowed = array_merge($allowed, \App\Support\VifSupplement::rootKeys($type), ['vif_answers']);
-        $attrs = $intake->getAttributes();
-        $beforeVif = \App\Support\VifSupplement::values($intake, $type);
-
-        $changed = false;
-        foreach ((array) $data['fields'] as $key => $val) {
-            if (! in_array($key, $allowed, true) || ! array_key_exists($key, $attrs)) {
-                continue; // silently drop anything that isn't a whitelisted field
-            }
-            // A blank clears the field back to null.
-            $intake->{$key} = $key === 'vif_answers' && is_array($val)
-                ? array_replace($intake->vif_answers ?? [], $val)
-                : (($val === '' || $val === null) ? null : $val);
-            $changed = true;
-        }
-
-        if ($changed) {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data, $beforeVif) {
-                $intake->save();
-                $additionalKeys = array_merge(['vif_answers'], \App\Support\VifSupplement::rootKeys($type));
-                if (array_intersect(array_keys($data['fields']), $additionalKeys)
-                    && $beforeVif != \App\Support\VifSupplement::values($intake, $type)) {
-                    app(\App\Http\Controllers\LeadPortalController::class)->refreshStoredVifForIntake($type, $intake);
+        DB::transaction(function () use ($request, $type, $id, $modelMap, $data) {
+            $intake = $modelMap[$type]::whereKey($id)->lockForUpdate()->firstOrFail();
+            $beforeVif = \App\Support\VifSupplement::values($intake, $type);
+            $fields = $data['fields'];
+            $beforeEnglish = null;
+            if ($type === 'resident' && (array_key_exists('english_evidence', $fields) || array_key_exists('english_evidence_reason', $fields))) {
+                $beforeEnglish = ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception];
+                $isException = ($fields['english_evidence'] ?? null) === ResidentIntake::ENGLISH_NOT_REQUIRED;
+                if ($isException || $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED || array_key_exists('english_evidence_reason', $fields)) {
+                    abort_unless($this->canRecordResidentEnglishException(), 403);
                 }
-            });
-        }
+                $validated = $request->validate([
+                    'fields.english_evidence' => ['required', 'string', Rule::in([...ResidentIntake::ENGLISH_EVIDENCE, ResidentIntake::ENGLISH_NOT_REQUIRED])],
+                    'fields.english_evidence_reason' => [$isException ? 'required' : 'nullable', 'string', 'max:2000'],
+                ])['fields'];
+                $intake->english_evidence = $validated['english_evidence'];
+                if ($isException) {
+                    $reason = trim($validated['english_evidence_reason']);
+                    if ($beforeEnglish['evidence'] !== ResidentIntake::ENGLISH_NOT_REQUIRED || ($intake->english_evidence_exception['reason'] ?? null) !== $reason) {
+                        $actor = $request->attributes->get('user_view_actor') ?? $request->user();
+                        $intake->english_evidence_exception = [
+                            'reason' => $reason, 'actor_id' => $actor->id,
+                            'actor_name' => $actor->name, 'actor_role' => $actor->role,
+                            'recorded_at' => now()->toIso8601String(),
+                        ];
+                    }
+                    $intake->english_test_score = null;
+                    $intake->english_test_date = null;
+                } else {
+                    $intake->english_evidence_exception = null;
+                }
+                unset($fields['english_evidence'], $fields['english_evidence_reason']);
+            }
+            // Whitelist: only the real form fields for this visa type may be written.
+            $allowed = array_merge(collect($this->intakeSectionSchema($type))->flatten()->filter()->all(), \App\Support\VifSupplement::rootKeys($type), ['vif_answers']);
+            $attrs = $intake->getAttributes();
+            foreach ($fields as $key => $val) {
+                if (! in_array($key, $allowed, true) || ! array_key_exists($key, $attrs)) {
+                    continue;
+                }
+                if ($type === 'resident' && $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED && in_array($key, ['english_test_score', 'english_test_date'], true)) {
+                    continue;
+                }
+                $intake->{$key} = $key === 'vif_answers' && is_array($val)
+                    ? array_replace($intake->vif_answers ?? [], $val)
+                    : (($val === '' || $val === null) ? null : $val);
+            }
+            if ($intake->isDirty()) {
+                $intake->save();
+            }
+            if (array_intersect(array_keys($data['fields']), array_merge(['vif_answers'], \App\Support\VifSupplement::rootKeys($type)))
+                && $beforeVif != \App\Support\VifSupplement::values($intake, $type)) {
+                app(\App\Http\Controllers\LeadPortalController::class)->refreshStoredVifForIntake($type, $intake);
+            }
+            $afterEnglish = $type === 'resident' ? ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception] : null;
+            if ($beforeEnglish !== null && $beforeEnglish !== $afterEnglish) {
+                ActivityLog::record('resident_intake.english_evidence_updated', [
+                    'description' => 'Recorded Resident English evidence; this is not an exemption approval.',
+                    'properties' => ['subject_type' => 'ResidentIntake', 'subject_id' => $intake->id, 'old' => $beforeEnglish, 'new' => $afterEnglish],
+                ]);
+            }
+        });
 
         return $this->intakeData($type, $id);
+    }
+
+    private function canRecordResidentEnglishException(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ($user->isAdmin() || $user->isImmigrationManager() || $user->isImmigrationAdviser());
     }
 
     /**
@@ -3448,7 +3488,7 @@ class ImmigrationController extends Controller
             'user_agent', 'first_name', 'last_name', 'family_name', 'email', 'phone',
             'payment_status', 'payment_amount', 'payment_ref', 'paid', 'paid_at',
             'payment_session_id', 'payment_amount_cents', 'payment_currency', 'booking_id',
-            'terms_accepted', 'vif_answers',
+            'terms_accepted', 'vif_answers', 'english_evidence_exception',
         ];
 
         // Mirror the PUBLIC landing-page form for this visa type: identical
@@ -3474,7 +3514,9 @@ class ImmigrationController extends Controller
                     'value' => $provided ? $value : '—',
                     // Raw value + editability for inline "Edit section" in the modal.
                     'raw' => $this->rawIntakeValue($rawVal),
-                    'editable' => ! is_array($rawVal),
+                    'editable' => ! is_array($rawVal) && ! ($type === 'resident' && $col === 'english_evidence' && $rawVal === ResidentIntake::ENGLISH_NOT_REQUIRED && ! $this->canRecordResidentEnglishException()),
+                    'options' => $type === 'resident' && $col === 'english_evidence'
+                        ? [...ResidentIntake::ENGLISH_EVIDENCE, ...($this->canRecordResidentEnglishException() ? [ResidentIntake::ENGLISH_NOT_REQUIRED] : [])] : null,
                     'provided' => $provided,
                 ];
             }
@@ -3552,6 +3594,12 @@ class ImmigrationController extends Controller
                 : "/portal/immigration/intakes/{$type}/{$intake->id}",
             'vif_values' => \App\Support\VifSupplement::values($intake, $type),
             'sections' => $sections,
+            'english_evidence_exception' => $type === 'resident' ? $intake->english_evidence_exception : null,
+            'english_evidence_history' => $type === 'resident' ? ActivityLog::where('action', 'resident_intake.english_evidence_updated')
+                ->where('properties->subject_id', $intake->id)->latest('id')->get()->map(fn ($log) => [
+                    'actor' => $log->actor_name, 'at' => $log->created_at->toIso8601String(),
+                    'evidence' => $log->properties['new']['evidence'], 'reason' => $log->properties['new']['exception']['reason'] ?? null,
+                ]) : [],
             // Deterministic adviser-style checks on the actual data (passport /
             // visa expiry, English level…) — reliable, computed, not AI-guessed.
             'flags' => $flags,

@@ -618,6 +618,7 @@ export default function ResidentIntakePage({ editIntake = null, editToken = null
             current_visa_expiry:  dmyToIso(d.current_visa_expiry),
             nz_arrival_date:      dmyToIso(d.nz_arrival_date),
             employment_start:     dmyToIso(d.employment_start),
+            english_evidence:     d.english_evidence === 'Not Required' ? undefined : d.english_evidence,
             english_test_score:   hasEnglishTest ? d.english_test_score : '',
             english_test_date:    hasEnglishTest ? dmyToIso(d.english_test_date) : '',
             family_members: (d.family_members || []).map((m) => ({
@@ -1251,11 +1252,13 @@ function StepEnglishFamily({ data, setData, errors }) {
                     <p className="text-sm text-gray-500">Evidence you can rely on for the application.</p>
                 </div>
                 <Field label="English Language Evidence *" error={errors.english_evidence}>
-                    <div className="flex flex-wrap gap-3 mt-2">
+                    {data.english_evidence === 'Not Required' ? <p className="mt-2 text-sm text-gray-600">
+                        Not Required — recorded by staff. Contact your adviser to change this evidence record. This does not approve an exemption or waive document requirements.
+                    </p> : <div className="flex flex-wrap gap-3 mt-2">
                         {options.map(o => (
                             <PillRadio key={o} value={o} current={data.english_evidence} onClick={() => setData('english_evidence', o)}>{o}</PillRadio>
                         ))}
-                    </div>
+                    </div>}
                 </Field>
 
                 {ENGLISH_TEST_OPTIONS.includes(data.english_evidence) && (

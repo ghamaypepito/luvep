@@ -265,6 +265,7 @@ class LeadPortalController extends Controller
             $assessment = [
                 'type' => $type,
                 'values' => array_merge($this->assessmentValues($intake, $type), \App\Support\VifSupplement::values($intake, $type)),
+                'read_only_fields' => $intake instanceof \App\Models\ResidentIntake ? $intake->applicantReadOnlyFields() : [],
                 'stats' => \App\Support\AssessmentFormSchema::stats($intake, $type),
                 'save_url' => '/portal/lead/visa-assessment',
             ];
@@ -446,26 +447,39 @@ class LeadPortalController extends Controller
             'field_values' => 'present|array',
             'field_values.*' => 'nullable',
         ]);
-
-        $allowed = array_flip(array_merge(\App\Support\AssessmentFormSchema::fields($type), \App\Support\VifSupplement::rootKeys($type), ['vif_answers']));
-        $fillable = array_flip($intake->getFillable());
-        $casts = $intake->getCasts();
-
-        foreach ($data['field_values'] as $key => $value) {
-            // Only assessment fields the model itself allows may be written.
-            if (! isset($allowed[$key]) || ! isset($fillable[$key])) {
-                continue;
-            }
-            if ($value === '') {
-                $value = null;
-            }
-            if (in_array($casts[$key] ?? null, ['bool', 'boolean'], true)) {
-                $value = in_array(strtolower((string) $value), ['yes', '1', 'true', 'on'], true);
-            }
-            $intake->{$key} = $key === 'vif_answers' && is_array($value)
-                ? array_replace($intake->vif_answers ?? [], $value) : $value;
+        if ($intake instanceof \App\Models\ResidentIntake) {
+            $request->validate([
+                'field_values.english_evidence' => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Models\ResidentIntake::ENGLISH_EVIDENCE)],
+                'field_values.english_evidence_exception' => 'prohibited',
+                'field_values.english_evidence_reason' => 'prohibited',
+            ]);
         }
-        $intake->save();
+
+        $intake = \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data) {
+            $current = $intake->newQuery()->whereKey($intake->id)->lockForUpdate()->firstOrFail();
+            $values = $current instanceof \App\Models\ResidentIntake
+                ? \Illuminate\Support\Arr::except($data['field_values'], $current->applicantReadOnlyFields()) : $data['field_values'];
+            $allowed = array_flip(array_merge(\App\Support\AssessmentFormSchema::fields($type), \App\Support\VifSupplement::rootKeys($type), ['vif_answers']));
+            $fillable = array_flip($current->getFillable());
+            $casts = $current->getCasts();
+            foreach ($values as $key => $value) {
+                // Only assessment fields the model itself allows may be written.
+                if (! isset($allowed[$key]) || ! isset($fillable[$key])) {
+                    continue;
+                }
+                if ($value === '') {
+                    $value = null;
+                }
+                if (in_array($casts[$key] ?? null, ['bool', 'boolean'], true)) {
+                    $value = in_array(strtolower((string) $value), ['yes', '1', 'true', 'on'], true);
+                }
+                $current->{$key} = $key === 'vif_answers' && is_array($value)
+                    ? array_replace($current->vif_answers ?? [], $value) : $value;
+            }
+            $current->save();
+
+            return $current;
+        });
 
         // The VIF is derived from the assessment — keep it in lockstep.
         $this->buildAndStoreVif($lead, $type, $intake);

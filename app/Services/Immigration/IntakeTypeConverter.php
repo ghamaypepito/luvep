@@ -49,6 +49,7 @@ class IntakeTypeConverter
         'intake_id', 'status', 'edit_token', 'id', 'created_at', 'updated_at',
         'documents', 'document_files',
         'declaration_accepted', 'signature_name', 'signature_date',
+        'english_evidence_exception',
     ];
 
     /** Equivalent fields that are named differently between forms. */
@@ -78,6 +79,10 @@ class IntakeTypeConverter
         $attrs = [];
         foreach ($shared as $f) {
             $attrs[$f] = $source->{$f};
+        }
+        // A staff evidence decision belongs to its original intake, not a new assessment.
+        if (($attrs['english_evidence'] ?? null) === ResidentIntake::ENGLISH_NOT_REQUIRED) {
+            unset($attrs['english_evidence'], $attrs['english_test_score'], $attrs['english_test_date']);
         }
 
         // Supplemental questions are visa-specific even though the JSON column is shared.
