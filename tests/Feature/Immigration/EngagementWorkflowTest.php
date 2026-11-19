@@ -126,15 +126,15 @@ class EngagementWorkflowTest extends TestCase
     {
         $base = "/admin/leads/{$this->lead->id}";
 
-        foreach ([['initial_consultation', 'USD', '315.25', 315.25], ['oia', 'NZD', '620.10', 713.12]] as [$type, $currency, $fee, $total]) {
-            $settings = $this->settings($type) + ['service_fee' => $fee];
+        foreach ([['initial_consultation', 'USD', '315.25', true, 362.54], ['oia', 'NZD', '620.10', false, 620.10]] as [$type, $currency, $fee, $includeGst, $total]) {
+            $settings = $this->settings($type) + ['service_fee' => $fee, 'include_gst' => $includeGst];
             $query = http_build_query($settings + ['signer' => $this->adviser->id]);
             $this->get("{$base}/generate/engage_{$type}/preview?{$query}")->assertOk()->assertSee($fee);
             $this->get("{$base}/generate/engage_invoice/preview?{$query}")->assertOk()
                 ->assertSee(number_format($total, 2))->assertSee($currency);
 
             $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()
-                ->assertJsonPath('currency', $currency)->assertJsonPath('total', $total)->json();
+                ->assertJsonPath('currency', $currency)->assertJsonPath('total', fn ($value) => (float) $value === $total)->json();
             $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
             $documents = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
             $agreement = $documents->firstWhere('source_variant', 'engagement:'.$type);
@@ -159,6 +159,85 @@ class EngagementWorkflowTest extends TestCase
                 'invoice_document_id' => $invoice->id, 'currency' => $currency, 'amount' => $total,
             ]);
         }
+    }
+
+    public function test_each_service_honours_gst_selection_in_preview_saved_pdf_and_reopened_draft(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+        foreach (['initial_consultation' => 'USD', 'oia' => 'NZD'] as $type => $currency) {
+            foreach ([false, true] as $includeGst) {
+                foreach (['0.00', '123.45'] as $fee) {
+                    $gst = $includeGst ? round((float) $fee * 0.15, 2) : 0;
+                    $total = round((float) $fee + $gst, 2);
+                    $settings = $this->settings($type) + ['service_fee' => $fee, 'include_gst' => $includeGst];
+                    $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+                    foreach (["engage_{$type}", 'engage_invoice'] as $document) {
+                        $this->get("{$base}/generate/{$document}/preview?{$query}")->assertOk()
+                            ->assertSee(number_format($total, 2))->assertSee($currency);
+                    }
+                    $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()
+                        ->assertJsonPath('total', fn ($value) => (float) $value === $total)->json();
+                    $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+                    $documents = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+                    $agreement = $documents->firstWhere('source_variant', 'engagement:'.$type);
+                    $invoice = $documents->firstWhere('source_variant', 'invoice');
+                    $this->assertSame($includeGst, $agreement->notes['engagement_settings']['include_gst']);
+                    $this->assertSame($fee, $agreement->notes['engagement_settings']['service_fee']);
+                    $this->assertEquals($total, $invoice->invoice_total);
+                    $this->assertEquals($gst, $agreement->notes['engagement_payload']['service_pricing']['gst']);
+                    foreach ($documents as $document) {
+                        $text = (new Parser)->parseContent(Storage::disk('local')->get($document->file_path))->getText();
+                        $this->assertStringContainsString(number_format($total, 2), $text);
+                        $this->assertStringContainsString($currency, $text);
+                        if ($document->id === $invoice->id) {
+                            $this->assertSame($includeGst, str_contains($text, 'GST (15%)'));
+                        }
+                    }
+                    $this->get('/portal/immigration/cases/engagement')->assertOk()->assertInertia(fn ($page) => $page
+                        ->where('generated.0.pack_id', $saved['pack_id'])
+                        ->where('generated.0.include_gst', $includeGst)
+                        ->where('generated.0.engagement_settings.service_fee', $fee));
+                    $snapshot = $agreement->notes['engagement_payload'];
+                    $this->lead->update(['first_name' => 'Changed']);
+                    $html = app(EngagementDocumentGenerator::class)->renderHtml($this->lead, $type, array_merge($settings, [
+                        'service_fee' => '999.00', 'include_gst' => ! $includeGst, 'payload_snapshot' => $snapshot,
+                    ]));
+                    $this->assertStringContainsString(number_format($total, 2), $html);
+                    $this->assertStringNotContainsString('999.00', $html);
+                }
+            }
+        }
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_legacy_issued_service_snapshots_keep_their_original_fee_wording(): void
+    {
+        $generator = app(EngagementDocumentGenerator::class);
+        foreach (['initial_consultation', 'oia'] as $type) {
+            $snapshot = $generator->snapshot($this->lead, $type, $this->settings($type) + ['service_fee' => '1234.56']);
+            unset($snapshot['service_pricing']);
+            $html = $generator->renderHtml($this->lead, $type, ['payload_snapshot' => $snapshot]);
+            $this->assertStringContainsString('1,234.56', $html);
+            $this->assertStringNotContainsString('Professional fee (ex GST)', $html);
+            if ($type === 'oia') {
+                $this->assertStringContainsString('1,234.56 + GST', $html);
+            }
+        }
+    }
+
+    public function test_service_fee_rejects_unsupported_precision_and_invalid_amounts(): void
+    {
+        foreach (['initial_consultation', 'oia'] as $type) {
+            foreach (['12.345', '-1', '10000000'] as $fee) {
+                $settings = $this->settings($type) + ['service_fee' => $fee, 'include_gst' => true];
+                $this->postJson("/admin/leads/{$this->lead->id}/engagement/prepare", $settings)
+                    ->assertUnprocessable()->assertJsonValidationErrors('service_fee');
+                $this->getJson("/admin/leads/{$this->lead->id}/generate/engage_{$type}/preview?".http_build_query($settings))
+                    ->assertUnprocessable()->assertJsonValidationErrors('service_fee');
+            }
+        }
+        $this->assertDatabaseCount('lead_documents', 0);
+        Mail::assertNothingOutgoing();
     }
 
     public function test_templates_autofill_case_and_selected_adviser(): void
