@@ -28,14 +28,14 @@ class GhlSocialReaderController extends Controller
 
     public function posts(Request $request, GhlSocialReader $reader)
     {
-        $data = $request->validate(['from' => 'sometimes|required|date_format:Y-m-d', 'to' => 'sometimes|required|date_format:Y-m-d', 'page' => 'sometimes|integer|min:1|max:1000', 'type' => ['sometimes', Rule::in(['all', 'scheduled', 'published', 'draft', 'in_review', 'failed'])]]);
+        $data = $request->validate(['from' => 'sometimes|required|date_format:Y-m-d', 'to' => 'sometimes|required|date_format:Y-m-d', 'page' => 'sometimes|integer|min:1|max:1000', 'timezone' => ['sometimes', Rule::in(['Pacific/Auckland', 'Asia/Manila'])], 'type' => ['sometimes', Rule::in(['all', 'scheduled', 'published', 'draft', 'in_review', 'failed'])]]);
         $from = $data['from'] ?? CarbonImmutable::now('Pacific/Auckland')->startOfMonth()->toDateString();
         $to = $data['to'] ?? CarbonImmutable::now('Pacific/Auckland')->endOfMonth()->toDateString();
         $start = CarbonImmutable::parse($from);
         $end = CarbonImmutable::parse($to);
         abort_if($start > $end || $start->diffInDays($end) > 62, 422, 'Choose a date range of 63 days or fewer.');
 
-        return $this->respond($reader->posts($from, $to, (int) ($data['page'] ?? 1), $data['type'] ?? 'all'));
+        return $this->respond($reader->posts($from, $to, (int) ($data['page'] ?? 1), $data['type'] ?? 'all', $data['timezone'] ?? 'Pacific/Auckland'));
     }
 
     public function insights(Request $request, GhlSocialReader $reader)

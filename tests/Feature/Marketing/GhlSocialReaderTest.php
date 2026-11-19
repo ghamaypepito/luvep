@@ -103,4 +103,27 @@ class GhlSocialReaderTest extends TestCase
         $this->fake([['_id' => 'gallery', 'locationId' => self::LOCATION, 'accountIds' => [self::ACCOUNT], 'status' => 'published', 'media' => [['url' => 'https://cdn.example/one.jpg', 'type' => 'image/jpeg'], ['url' => 'https://cdn.example/two.png', 'type' => 'image/png'], ['url' => 'javascript:bad', 'type' => 'image/png']]]]);
         $this->getJson('/social/ghl/posts?from=2026-10-01&to=2026-10-31')->assertOk()->assertJsonCount(2, 'posts.0.media')->assertJsonPath('posts.0.media.1.url', 'https://cdn.example/two.png')->assertJsonPath('posts.0.image', 'https://cdn.example/one.jpg')->assertDontSee('javascript:bad');
     }
+
+    public function test_calendar_can_read_manila_month_and_actual_publication_time_without_changing_legacy_timezone(): void
+    {
+        $this->connect();
+        $this->fake([['_id' => 'published-child', 'parentPostId' => 'created-parent', 'locationId' => self::LOCATION, 'accountIds' => [self::ACCOUNT],
+            'status' => 'published', 'type' => 'reel', 'scheduleDate' => '2026-10-31T15:59:00Z', 'publishedAt' => '2026-10-31T16:01:00Z']]);
+        $this->getJson('/social/ghl/posts?from=2026-11-01&to=2026-11-30&timezone=Asia%2FManila')->assertOk()
+            ->assertJsonPath('timezone', 'Asia/Manila')->assertJsonPath('posts.0.date', '2026-10-31T16:01:00+00:00')
+            ->assertJsonPath('posts.0.parent_id', 'created-parent')->assertJsonPath('posts.0.post_type', 'reel');
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/posts/list') && $r['fromDate'] === '2026-10-31T16:00:00+00:00' && $r['toDate'] === '2026-11-30T15:59:59+00:00');
+        $this->getJson('/social/ghl/posts?from=2026-11-01&to=2026-11-30')->assertOk()->assertJsonPath('timezone', 'Pacific/Auckland');
+        $this->getJson('/social/ghl/posts?timezone=Invalid')->assertUnprocessable();
+        Http::assertNotSent(fn ($r) => ! str_ends_with($r->url(), '/accounts') && ! str_ends_with($r->url(), '/posts/list'));
+    }
+
+    public function test_scheduled_posts_keep_the_scheduled_time_and_pagination_is_not_hidden(): void
+    {
+        $this->connect();
+        $post = ['_id' => 'scheduled', 'locationId' => self::LOCATION, 'accountIds' => [self::ACCOUNT], 'status' => 'scheduled', 'scheduleDate' => '2026-11-20T01:00:00Z', 'displayDate' => '2026-11-19T01:00:00Z'];
+        $this->fake(array_fill(0, 100, $post));
+        $this->getJson('/social/ghl/posts?from=2026-11-01&to=2026-11-30&page=2')->assertOk()->assertJsonPath('posts.0.date', '2026-11-20T01:00:00+00:00')->assertJsonPath('page', 2);
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/posts/list') && $r['skip'] === '100');
+    }
 }
