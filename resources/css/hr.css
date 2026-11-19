@@ -1042,6 +1042,9 @@
 .hr-staff-table { width: 100%; min-width: 680px; }
 .hr-staff-table th, .hr-staff-table td { text-align: left; padding: 17px 12px; vertical-align: middle; font-size: 13px; border-bottom: 1px solid var(--hr-line); }
 .hr-staff-table thead th { font-size: 12px; color: var(--hr-muted); font-weight: 400; }
+.hr-staff-timers { display: grid; gap: 5px; white-space: nowrap; }
+.hr-staff-timers span { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--hr-muted); }
+.hr-staff-timers output { color: var(--hr-ink); font-variant-numeric: tabular-nums; }
 .hr-person-cell { display: flex; align-items: center; gap: 12px; }
 .hr-person-cell .hr-avatar { flex-shrink: 0; width: 32px; height: 32px; font-size: 11px; }
 .hr-staff-state { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
