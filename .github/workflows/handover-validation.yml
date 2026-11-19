@@ -90,6 +90,7 @@ jobs:
           node tests/Frontend/recent-visa.cjs
           node tests/Frontend/resident-english-exception.cjs
           node tests/Frontend/other-case-documents.cjs
+          node tests/Frontend/recent-visa-category.cjs
           node tests/Frontend/education-personal-report.cjs
           node tests/Frontend/education-dated-notes.cjs
           node tests/Frontend/education-intake-monitoring.cjs
