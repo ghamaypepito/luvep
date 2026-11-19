@@ -10,12 +10,13 @@ class EducationDatedNotes
     public static function forPeriod(ReportPeriod $period, User $user): array
     {
         $base = EducationDatedReportNote::where('user_id', $user->id)
-            ->where('occurred_on', '<=', $period->now->toDateString())
+            ->where('occurred_on', '<', $period->now->addDay()->toDateString())
             ->when(! $period->isAll(), fn ($q) => $q
                 ->where('occurred_on', '>=', $period->start->toDateString())
                 ->where('occurred_on', '<', $period->end->toDateString()));
         $counts = (clone $base)->selectRaw('occurred_on, COUNT(*) AS total')->groupBy('occurred_on')
-            ->pluck('total', 'occurred_on')->map(fn ($total) => (int) $total)->all();
+            ->orderBy('occurred_on')->get()
+            ->mapWithKeys(fn ($row) => [$row->occurred_on->toDateString() => (int) $row->total])->all();
         $query = (clone $base)->orderByDesc('occurred_on')->orderByDesc('id');
         $page = (clone $query)->paginate(30, ['*'], 'note_page')->withQueryString();
         if ($page->currentPage() > $page->lastPage()) {
