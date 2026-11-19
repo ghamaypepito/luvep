@@ -18,6 +18,25 @@ class BulkEmailTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_education_readiness_failures_return_flash_errors_without_creating_or_dispatching_campaigns(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $template = $this->tmpl(['department' => 'education', 'is_active' => false]);
+        $lead = $this->lead();
+        $payload = ['name' => 'Synthetic readiness check', 'template_id' => $template->id,
+            'recipient_lead_ids' => [$lead->id], 'action' => 'send_now'];
+        $this->from('/portal/education/bulk-email')->post('/portal/education/bulk-email', $payload)
+            ->assertRedirect('/portal/education/bulk-email')->assertSessionHas('error', 'Pick an active email template.');
+        $template->update(['is_active' => true]);
+        $lead->update(['email' => null]);
+        $this->post('/portal/education/bulk-email', $payload)->assertRedirect()->assertSessionHas('error');
+        $this->assertDatabaseCount('email_campaigns', 0);
+        Queue::assertNothingPushed();
+        Mail::assertNothingSent();
+    }
+
     private function sales(): User
     {
         return User::factory()->create(['role' => 'sales']);
