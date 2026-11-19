@@ -80,6 +80,7 @@ jobs:
           node tests/Frontend/education-report.cjs
           node tests/Frontend/education-weekly-notes.cjs
           node tests/Frontend/student-referral-name.cjs
+          node tests/Frontend/student-program-intakes.cjs
           node tests/Frontend/education-dispositions.cjs
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
