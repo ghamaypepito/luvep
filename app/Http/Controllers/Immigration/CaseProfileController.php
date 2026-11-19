@@ -157,6 +157,7 @@ class CaseProfileController extends Controller
             // Cases the dependant can be related to (defaults to this case).
             'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
             'caseOptions' => Lead::immigrationCase()
+                ->when($user->role === 'agent', fn ($query) => $query->where('agent_id', $user->id))
                 ->orderBy('first_name')->limit(500)
                 ->get(['id', 'lead_id', 'first_name', 'last_name'])
                 ->map(fn ($l) => [
