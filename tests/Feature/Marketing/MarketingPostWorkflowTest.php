@@ -314,7 +314,7 @@ class MarketingPostWorkflowTest extends TestCase
     public function test_new_delivery_fields_are_bound_to_approval_before_any_provider_read(): void
     {
         foreach ([['post_type' => 'reel'], ['first_comment' => 'Changed after approval'], ['publish_now' => true]] as $tamper) {
-            $p = $this->approve($this->draft());
+            $p = $this->approve($this->draft(['first_comment' => 'Approved original comment']));
             MarketingPost::whereKey($p['id'])->update($tamper);
             $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertConflict();
         }
