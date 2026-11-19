@@ -235,7 +235,11 @@
     {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
     <div class="appendix">@include('agreements.flatmate._terms')</div>
     <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-    <div class="appendix">@include('agreements.flatmate._declaration')</div>
+    {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
+    <div class="appendix">@include('agreements.flatmate._declaration', [
+        'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,
+        'signedMeta' => ($data['workflow_version'] ?? null) === 2 ? null : $signedMeta,
+    ])</div>
 
     {{-- ---------- Exalt Property Admin signatory (at the very end, after the Declaration) ---------- --}}
     <table class="sign">

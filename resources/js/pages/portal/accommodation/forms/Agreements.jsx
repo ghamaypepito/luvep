@@ -336,6 +336,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <StatusBadge status={a.status} />
                                 </div>
                                 <div className="flex items-center gap-1.5">
+                                    {a.can_resend_copy && <button onClick={() => resend(a)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700">Resend signed copy</button>}
                                     {a.signing_url && !a.signed && (
                                         <>
                                             <button onClick={() => copyLink(a)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">

@@ -15,20 +15,21 @@ class SignedAgreementTenant
         if (($agreement->data['workflow_version'] ?? null) !== 2) {
             return; // Historical issued documents and legacy signing retain their original behavior.
         }
-        abort_unless(\App\Models\Property::whereKey($agreement->property_id)->where('is_active', true)->exists(), 422, 'This property is no longer active. Ask staff to review the agreement.');
         $source = $agreement->eoi_submission_id
             ? EoiSubmission::whereKey($agreement->eoi_submission_id)->lockForUpdate()->firstOrFail()
             : PreTenancyForm::whereKey($agreement->pre_tenancy_form_id)->lockForUpdate()->firstOrFail();
+        abort_unless(\App\Models\Property::whereKey($agreement->property_id)->where('is_active', true)->lockForUpdate()->first(), 422, 'This property is no longer active. Ask staff to review the agreement.');
         $prior = AccommodationAgreement::whereNotNull('tenant_id')
             ->when($agreement->eoi_submission_id,
                 fn ($q) => $q->where('eoi_submission_id', $source->id),
-                fn ($q) => $q->where('pre_tenancy_form_id', $source->id))->first();
+                fn ($q) => $q->where('pre_tenancy_form_id', $source->id))->lockForUpdate()->first();
         $tenantId = $source instanceof EoiSubmission ? $source->converted_to_tenant_id : null;
         $tenantId ??= $prior?->tenant_id;
         if ($tenantId) {
             // Reuse only explicit source relationships. Never match confidential records by name/email.
-            $tenant = Tenant::withTrashed()->findOrFail($tenantId);
-            abort_if($tenant->trashed() || $tenant->property_id !== $agreement->property_id, 422, 'The source is linked to another tenancy. Ask staff to review it before signing.');
+            $tenant = Tenant::withTrashed()->whereKey($tenantId)->lockForUpdate()->firstOrFail();
+            abort_if($tenant->trashed() || $tenant->property_id !== $agreement->property_id
+                || ! in_array($tenant->current_status, [...Tenant::ACTIVE_STATUSES, 'pending_payment'], true), 422, 'The source is linked to another or inactive tenancy. Ask staff to review it before signing.');
         } else {
             $person = $agreement->data['subtenants'][0];
             $t = $agreement->data['tenancy'];

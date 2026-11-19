@@ -4,6 +4,7 @@ namespace App\Services\Accommodation;
 
 use App\Models\AccommodationAgreement;
 use App\Models\EoiSubmission;
+use App\Models\PreTenancyForm;
 use App\Services\OnboardingTransitionService;
 use App\Services\PdfGenerator;
 use App\Support\OnboardingPipeline;
@@ -31,8 +32,16 @@ class CompleteAgreement
             throw ValidationException::withMessages(['signature_data' => 'Provide a valid PNG or JPEG signature, up to 4000 pixels per side.']);
         }
         $path = null;
+        $target = AccommodationAgreement::where('signing_token', $token)->firstOrFail();
         try {
-            return DB::transaction(function () use ($token, $data, $request, $render, &$path) {
+            return DB::transaction(function () use ($target, $token, $data, $request, $render, &$path) {
+                // Use the same source-first lock order as paid onboarding. Two agreements
+                // for the same source must not hold different agreement locks while waiting.
+                if ($target->eoi_submission_id) {
+                    EoiSubmission::whereKey($target->eoi_submission_id)->lockForUpdate()->firstOrFail();
+                } else {
+                    PreTenancyForm::whereKey($target->pre_tenancy_form_id)->lockForUpdate()->firstOrFail();
+                }
                 $agreement = AccommodationAgreement::where('signing_token', $token)->lockForUpdate()->firstOrFail();
                 abort_unless(in_array($agreement->status, ['sent', 'viewed'], true), 409, 'This agreement has already been signed.');
                 $index = (int) ($data['signer_index'] ?? 0);

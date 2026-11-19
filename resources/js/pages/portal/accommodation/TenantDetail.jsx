@@ -108,7 +108,7 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
                 <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/portal/accommodation/purchase-invoices?tenant=${tenant.id}`} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><FileText size={15} /> Invoices &amp; Receipts</Link>
                     <Link href={`/portal/accommodation/tenants/${tenant.id}/edit`} className="inline-flex items-center gap-2 rounded-full bg-[#1F5A8B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#184A73]"><Pencil size={15} /> Edit</Link>
-                    {!isVacated && <>
+                    {!isVacated && tenant.current_status !== 'pending_payment' && <>
                         <button onClick={() => setModal("notice")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><BellRing size={15} /> Notice</button>
                         <button onClick={() => setModal("renew")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><RefreshCw size={15} /> Renew</button>
                         <button onClick={() => setModal("move")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><MoveRight size={15} /> Move</button>

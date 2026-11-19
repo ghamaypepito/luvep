@@ -46,6 +46,7 @@ class AccommodationAgreementController extends Controller
             'status' => $a->status,
             'signing_url' => $a->signingUrl(),
             'signed' => $a->status === AccommodationAgreement::STATUS_SIGNED,
+            'can_resend_copy' => $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
             'created_at' => optional($a->created_at)->toIso8601String(),
             'created_by' => optional($a->creator)->name,
         ]);
@@ -213,6 +214,12 @@ class AccommodationAgreementController extends Controller
     public function resend(AccommodationAgreement $agreement)
     {
         \App\Models\TenantDocument::authorizeStaff(request()->user());
+        if ($agreement->status === AccommodationAgreement::STATUS_SIGNED && ($agreement->data['workflow_version'] ?? null) === 2) {
+            abort_unless($agreement->signed_pdf_path && Storage::disk('local')->exists($agreement->signed_pdf_path), 404);
+            Mail::to($agreement->data['recipient_email'])->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
+
+            return back()->with('success', 'Signed agreement copy queued for the original client recipient.');
+        }
         $email = $agreement->eoiSubmission?->email
             ?? $agreement->preTenancyForm?->email;
 

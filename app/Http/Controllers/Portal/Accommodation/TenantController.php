@@ -130,6 +130,7 @@ class TenantController extends Controller
 
     public function markNoticeGiven(Tenant $tenant, Request $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validate(['reason' => 'required|string|max:1000']);
 
         $tenant->update([
@@ -180,6 +181,7 @@ class TenantController extends Controller
 
     public function moveToProperty(Tenant $tenant, MoveTenantRequest $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validated();
 
         // Close out the current tenancy. ended_at is non-fillable — set directly.

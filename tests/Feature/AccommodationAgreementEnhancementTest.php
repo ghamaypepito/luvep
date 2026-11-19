@@ -66,6 +66,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
                 $this->assertStringContainsString('Notes / Special Conditions', $html);
                 $this->assertStringContainsString(AgreementTerms::SIGNATORY, $html);
+                preg_match('/Declared at(.*?)Before me/s', $html, $declaration);
+                $this->assertStringNotContainsString('<img', $declaration[1]);
                 Storage::disk('local')->put($path, '%PDF-synthetic-signed');
 
                 return $path;
@@ -105,6 +107,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertNull($tenant->advance_paid_nzd);
         $this->assertSame(0, $property->fresh()->rooms_occupied);
         $this->assertSame(0, Tenant::active()->count());
+        $this->post('/portal/accommodation/tenants/'.$tenant->id.'/notice', ['reason' => 'Synthetic'])->assertUnprocessable();
+        $this->assertSame('pending_payment', $tenant->fresh()->current_status);
         Mail::assertQueued(AccommodationSignedCopy::class, fn ($mail) => $mail->hasTo('source@example.test') && $mail->pdfPath === $agreement->signed_pdf_path);
         $copy = new AccommodationSignedCopy('Synthetic Tenant', $agreement->signed_pdf_path);
         $copy->assertSeeInHtml('Exalt Property Management');
@@ -115,6 +119,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->sign($agreement)->assertStatus(409);
         $this->assertSame(1, Tenant::count());
         Mail::assertQueued(AccommodationSignedCopy::class, 1);
+        $this->post('/portal/accommodation/forms/agreements/'.$agreement->id.'/resend')->assertSessionHas('success');
+        Mail::assertQueued(AccommodationSignedCopy::class, 2);
         $this->delete('/portal/accommodation/forms/agreements/'.$agreement->id)->assertSessionHas('error');
         $this->assertDatabaseHas('accommodation_agreements', ['id' => $agreement->id]);
         $this->delete('/portal/accommodation/properties/'.$property->id)->assertSessionHas('error');
@@ -301,6 +307,24 @@ class AccommodationAgreementEnhancementTest extends TestCase
         ])->assertRedirect('/agreement/'.$agreement->signing_token.'/signed');
         $this->assertSame('signed', $agreement->fresh()->status);
         $this->assertCount(2, $agreement->fresh()->data['tenant_signatures']);
+        $this->assertSame(1, Tenant::count());
+        Mail::assertQueued(AccommodationSignedCopy::class, 1);
+    }
+
+    public function test_conflicting_link_rolls_back_the_last_signature_and_removes_its_pdf(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $this->fakeSignedPdf();
+        $first = $this->generate($source, $data);
+        $this->sign($first)->assertRedirect();
+        $data['property_id'] = Property::create(['name' => 'Different synthetic property', 'is_active' => true])->id;
+        $second = $this->generate($source, $data);
+        $files = Storage::disk('local')->allFiles();
+        $this->sign($second)->assertUnprocessable();
+        $this->assertSame('sent', $second->fresh()->status);
+        $this->assertNull($second->fresh()->tenant_id);
+        $this->assertSame([], $second->fresh()->data['tenant_signatures']);
+        $this->assertSame($files, Storage::disk('local')->allFiles());
         $this->assertSame(1, Tenant::count());
         Mail::assertQueued(AccommodationSignedCopy::class, 1);
     }
