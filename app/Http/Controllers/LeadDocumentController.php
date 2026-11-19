@@ -52,6 +52,10 @@ class LeadDocumentController extends Controller
     private function storeChecklistFile($file, Lead $lead, string $key): array
     {
         $dir = "lead-documents/{$lead->id}";
+        $driveName = app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, Auth::user());
+        if ($driveName !== null) {
+            return [$file->store($dir, self::DISK), $driveName];
+        }
         $desired = app(CaseChecklistService::class)
             ->uploadFileNameFor($lead, $key, $file->getClientOriginalName());
 
@@ -423,7 +427,8 @@ class LeadDocumentController extends Controller
         LeadDocument::create([
             'lead_id' => $lead->id,
             'request_id' => null,
-            'original_name' => $request->file('file')->getClientOriginalName(),
+            'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $request->file('file'), $request->user())
+                ?? $request->file('file')->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $request->file('file')->getMimeType(),
             'size' => $request->file('file')->getSize(),
@@ -586,7 +591,8 @@ class LeadDocumentController extends Controller
                 LeadDocument::create([
                     'lead_id' => $lead->id,
                     'request_id' => $docRequest->id,
-                    'original_name' => $file->getClientOriginalName(),
+                    'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                        ?? $file->getClientOriginalName(),
                     'file_path' => $path,
                     'mime' => $file->getMimeType(),
                     'size' => $file->getSize(),

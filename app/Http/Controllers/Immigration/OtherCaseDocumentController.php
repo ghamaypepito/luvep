@@ -39,7 +39,8 @@ class OtherCaseDocumentController extends Controller
                     $paths[] = $path;
                     LeadDocument::create([
                         'lead_id' => $lead->id, 'checklist_key' => null, 'request_id' => null,
-                        'original_name' => $file->getClientOriginalName(), 'file_path' => $path,
+                        'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $user)
+                            ?? $file->getClientOriginalName(), 'file_path' => $path,
                         'mime' => $file->getMimeType(), 'size' => $file->getSize(),
                         'status' => LeadDocument::STATUS_SUBMITTED, 'source' => LeadDocument::SOURCE_UPLOAD,
                         'uploaded_by' => $user->id,

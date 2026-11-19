@@ -711,7 +711,8 @@ class SubAgentController extends Controller
         LeadDocument::create([
             'lead_id' => $lead->id,
             'checklist_key' => $key,
-            'original_name' => $file->getClientOriginalName(),
+            'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, Auth::user())
+                ?? $file->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $file->getClientMimeType(),
             'size' => $file->getSize(),

@@ -716,7 +716,8 @@ class CaseProfileController extends Controller
             'lead_id' => $lead->id,
             'dependent_id' => $dependent->id,
             'checklist_key' => $data['checklist_key'] ?? null,
-            'original_name' => $file->getClientOriginalName(),
+            'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $user)
+                ?? $file->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $file->getClientMimeType(),
             'size' => $file->getSize(),
