@@ -54,7 +54,7 @@ class ReceptionDoorbellController extends Controller
         // One shared cooldown prevents concurrent scans from flooding every manager.
         $key = 'reception-doorbell:'.hash('sha256', $token);
         if (! Cache::add($key, true, 60)) {
-            return response()->json(['message' => 'Reception was recently notified. Please wait a minute before ringing again.'], 429);
+            return response()->json(['message' => 'Please wait a minute before ringing again.'], 429);
         }
 
         try {

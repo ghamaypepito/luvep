@@ -44,6 +44,11 @@ const click = async node => { assert.ok(node); await act(async () => node.click(
     assert.equal(button('Ring reception').disabled, false);
     status = 429; await click(button('Ring reception'));
     assert.match(document.querySelector('[role="alert"]').textContent, /wait a minute/);
+    assert.doesNotMatch(document.querySelector('[role="alert"]').textContent, /notified/i);
+    status = null; await click(button('Ring reception'));
+    await act(async () => pending({ data: { notified: false } }));
+    assert.equal(document.querySelector('[role="status"]'), null);
+    assert.match(document.querySelector('[role="alert"]').textContent, /could not be sent/);
     status = 500; await click(button('Ring reception'));
     assert.match(document.querySelector('[role="alert"]').textContent, /could not be sent/);
     await act(async () => root.render(React.createElement(Reception, { receptionUrl: null })));

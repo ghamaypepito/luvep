@@ -13,12 +13,13 @@ export default function Doorbell({ ringUrl }) {
         setSending(true);
         setError('');
         try {
-            await axios.post(ringUrl, {});
+            const response = await axios.post(ringUrl, {});
+            if (response.data?.notified !== true) throw new Error('Delivery was not confirmed');
             setSent(true);
         } catch (e) {
             const status = e.response?.status;
             setError(status === 429
-                ? 'Reception was recently notified. Please wait a minute before ringing again.'
+                ? 'Please wait a minute before ringing again.'
                 : status === 503
                     ? 'Reception alerts are unavailable. Please contact the office directly.'
                     : 'Your ring could not be sent. Please try again or contact the office directly.');

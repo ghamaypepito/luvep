@@ -101,6 +101,17 @@ class ReceptionDoorbellTest extends TestCase
         $this->assertSame('/portal/immigration/reception', $notification->data['link']);
     }
 
+    public function test_failed_rings_can_hit_ip_throttle_without_claiming_delivery(): void
+    {
+        Notification::fake();
+        $url = $this->enable();
+        for ($i = 0; $i < 3; $i++) {
+            $this->postJson($url)->assertStatus(503);
+        }
+        $this->postJson($url)->assertStatus(429);
+        Notification::assertNothingSent();
+    }
+
     public function test_failed_delivery_rolls_back_notifications_and_allows_a_retry(): void
     {
         $manager = User::factory()->create(['role' => 'immigration_manager']);
