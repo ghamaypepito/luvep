@@ -15,7 +15,7 @@ let epLayoutDraft=null, epLayoutRender=0, epLayoutBusy=false, epAppliedComposeIm
 const epLayoutDialog=document.createElement('dialog');
 epLayoutDialog.id='ep-layout-dialog';epLayoutDialog.setAttribute('aria-labelledby','ep-layout-title');
 epLayoutDialog.innerHTML=`<div class="dialog-heading"><div><span class="studio-eyebrow">AI copy · branded graphics</span><h2 id="ep-layout-title">Your suggested post set</h2></div><button type="button" class="close" id="ep-layout-close" aria-label="Close suggested post set">×</button></div>
-<p class="hint">Review the copy and each placement. These are static graphics; video platforms receive covers, not finished videos.</p><p id="ep-layout-status" role="status"></p>
+<p class="hint">Review the copy and each placement. Choose a graphic or animate your design into a Reel, Story or Short. Review each placement before using it.</p><p id="ep-layout-status" role="status"></p>
 <div id="ep-layout-result" hidden><div class="studio-result-grid"><section class="studio-art-preview"><label for="ep-layout-channel">Platform</label><select id="ep-layout-channel"></select><label for="ep-layout-format">Placement</label><select id="ep-layout-format"></select><canvas id="ep-layout-canvas" aria-label="Generated EP layout preview"></canvas><p id="ep-layout-dimensions" class="hint"></p></section>
 <section class="studio-result-editor"><label for="ep-layout-headline">Headline</label><input id="ep-layout-headline" maxlength="90"><label for="ep-layout-support">Supporting copy</label><textarea id="ep-layout-support" rows="2" maxlength="180"></textarea><label for="ep-layout-cta">Call to action</label><input id="ep-layout-cta" maxlength="60"><label for="ep-layout-composition">Photo position</label><select id="ep-layout-composition"><option value="photo-top">Photo above / left</option><option value="photo-bottom">Photo below / right</option></select><label for="ep-layout-caption">Platform caption</label><textarea id="ep-layout-caption" rows="5"></textarea><p id="ep-layout-caption-count" class="hint"></p></section></div>
 <div class="caption-suggestion-actions"><button type="button" class="secondary" id="ep-layout-png">Download this PNG</button><button type="button" class="secondary" id="ep-layout-source">Download layout source (JSON)</button><button type="button" class="secondary" id="ep-layout-pack">Download all sizes & captions</button><button type="button" class="primary" id="ep-layout-apply">Use as Facebook feed draft</button></div><p class="hint">Only Luv, Ep Facebook is connected for publishing. Other platforms are export-ready drafts. Applying does not save, approve or publish anything.</p></div>`;
@@ -33,6 +33,7 @@ function epResultValid(){return !!epLayoutDraft?.design?.captions && ['headline'
 function epResultButtons(disabled){
     ['#ep-layout-apply','#ep-layout-png','#ep-layout-source','#ep-layout-pack'].forEach(id=>$(id).disabled=disabled||epLayoutBusy||!!epLayoutDraft?.rendering||!epResultValid());
     $('#ep-layout-apply').disabled ||= !epLayoutDraft?.inputs.channels.includes('Facebook');
+    if(typeof epUpdateVideoControls==='function')epUpdateVideoControls();
 }
 function epSelectResultChannel(){
     const channel=$('#ep-layout-channel').value,select=$('#ep-layout-format');select.replaceChildren();
@@ -57,6 +58,7 @@ async function epGenerateLayout(context){
     const inputs=epLayoutInputs(context),photo=epCurrentPhoto(context),references=context==='compose'?epBriefCapture():[];
     if(!inputs.brief||!inputs.campaign||!inputs.channels.length){toast('Add a campaign name, a brief and at least one platform.');return;}
     const csrf=document.querySelector('meta[name="csrf-token"]')?.content;if(!csrf){toast('Use the signed-in Luvep workspace for generation.');return;}
+    if(typeof epResetVideo==='function')epResetVideo();
     epLayoutBusy=true;epLayoutDraft=null;epLayoutRender++;$('#ep-layout-result').hidden=true;$('#ep-layout-status').textContent='Preparing your suggested graphics and platform captions…';epLayoutDialog.showModal();
     ['#generate','#generate-campaign'].forEach(id=>$(id).disabled=true);
     const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),45000);

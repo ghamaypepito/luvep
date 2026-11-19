@@ -63,3 +63,7 @@ body[data-workspace-view="compose"] .test-release-banner,body[data-workspace-vie
 body[data-workspace-view="compose"] .shell{margin-left:236px}
 @media(max-width:780px){body[data-workspace-view="compose"] .shell{margin-left:0}body[data-workspace-view="compose"] .sidebar{width:100%;height:auto;margin:0;border-radius:0;box-shadow:none}}
 @media(max-height:800px){#ep-layout-canvas{max-height:220px}.studio-result-editor label{margin:10px 0 6px}#ep-layout-dialog .studio-result-editor textarea{height:65px}#ep-layout-dialog .studio-result-editor input,#ep-layout-dialog .studio-result-editor select{padding:8px 10px}}
+#ep-layout-dialog[data-output="video"] label[for="ep-layout-format"],#ep-layout-dialog[data-output="video"] #ep-layout-format,#ep-layout-dialog[data-output="video"] #ep-layout-png,#ep-layout-dialog[data-output="video"] #ep-layout-source,#ep-layout-dialog[data-output="video"] #ep-layout-pack,#ep-layout-dialog[data-output="video"] #ep-layout-apply{display:none}
+.studio-video-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.studio-video-actions button{font:inherit;font-size:12px}
+#ep-video-progress{width:100%;accent-color:#214f44;margin:10px 0}#ep-video-preview{display:block;width:100%;max-height:420px;object-fit:contain;margin:16px 0;background:#214f44;border-radius:12px}#ep-video-preview[hidden]{display:none}#ep-video-help{font-size:11px;margin:8px 0}
+@media(max-height:800px){#ep-video-preview{max-height:240px}}

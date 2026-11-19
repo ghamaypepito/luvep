@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from '@playwright/test';
 
 const assets=path.resolve('resources/social-workspace');
 const sample={headline:'Your next chapter starts here.',supporting_copy:'Explore study planning with EP.',cta:'Talk to our team',caption:'Start with a conversation.',layout:'photo-top'};
-async function withStudio(run){
+async function withStudio(run,{mp4Supported=true}={}){
     const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
     try{
         const page=await browser.newPage({viewport:{width:1440,height:1100}}),writes=[],errors=[];
+        if(!mp4Supported)await page.addInitScript(()=>{MediaRecorder.isTypeSupported=()=>false;});
         page.setDefaultTimeout(6000);page.on('pageerror',error=>errors.push(error.message));
         await page.route('**/*',async route=>{
             const request=route.request(),url=new URL(request.url());
@@ -85,4 +86,46 @@ test('a changed brief cannot apply a stale generated post',async()=>{
         await page.getByText('The brief, platform selection, references or source photo changed. Generate a fresh set before applying.',{exact:true}).waitFor();
         assert.equal(await page.locator('#compose-copy').inputValue(),'');
     });
+});
+
+test('animated branded video exports an actual MP4 and cancellation preserves the draft',async()=>{
+    await withStudio(async(page,writes)=>{
+        await page.locator('#campaign-name').fill('Animated study planning');await page.locator('#campaign-brief').fill('Invite prospective students to plan their next chapter with EP.');
+        await page.locator('#compose-media').setInputFiles(path.join(assets,'assets/new-zealand.png'));
+        await page.locator('#campaign-variants').selectOption('video');
+        await page.getByRole('button',{name:'Prepare video draft & captions',exact:true}).click();
+        await page.locator('#ep-video-generate:enabled').waitFor();
+        assert.equal(await page.locator('#ep-layout-output').inputValue(),'video');
+        assert.deepEqual(await page.locator('#ep-video-placement option').allTextContents(),['Reel','Story']);
+        assert.equal(await page.locator('#ep-layout-apply').isVisible(),false,'Video cannot enter the image-only approval flow');
+        await page.locator('#ep-video-generate').click();
+        await page.locator('#ep-video-cancel').waitFor();assert.equal(await page.locator('#ep-layout-headline').isDisabled(),true);
+        await page.locator('#ep-video-cancel').click();await page.getByText('Video generation cancelled. Your draft is unchanged.',{exact:true}).waitFor();
+        assert.equal(await page.locator('#ep-layout-headline').isDisabled(),false);
+        assert.equal(await page.locator('#ep-video-download').isDisabled(),true);
+        await page.locator('#ep-video-generate').click();
+        await page.locator('#ep-video-download:enabled').waitFor({timeout:30000});
+        await page.waitForFunction(()=>{const video=document.querySelector('#ep-video-preview');return video.videoWidth===1080&&video.videoHeight===1920&&Number.isFinite(video.duration);},{},{timeout:10000});
+        const metadata=await page.locator('#ep-video-preview').evaluate(video=>({width:video.videoWidth,height:video.videoHeight,duration:video.duration}));
+        assert.ok(metadata.duration>=14&&metadata.duration<=17,JSON.stringify(metadata));
+        const downloadPromise=page.waitForEvent('download');await page.locator('#ep-video-download').click();const download=await downloadPromise;
+        assert.ok(download.suggestedFilename().endsWith('-reel.mp4'));
+        await page.locator('#ep-video-preview').evaluate(video=>video.play());
+        await page.waitForFunction(()=>document.querySelector('#ep-video-preview').currentTime>.3);
+        await page.locator('#ep-video-preview').evaluate(video=>video.pause());
+        const file=await download.path(),bytes=readFileSync(file);assert.equal(bytes.subarray(4,8).toString(),'ftyp','A real MP4 container, not renamed WebM');
+        if(process.env.COMPOSE_PROOF_DIR){copyFileSync(file,process.env.COMPOSE_PROOF_DIR+'/animated-reel-sample.mp4');await page.screenshot({path:process.env.COMPOSE_PROOF_DIR+'/animated-video-preview.png'});}
+        assert.equal(writes.length,1,'Video generation makes no additional provider or publish requests');
+        await page.locator('#ep-video-duration').selectOption('30');assert.equal(await page.locator('#ep-video-download').isDisabled(),true,'Changing rendered content invalidates the old video');
+    });
+});
+
+test('unsupported MP4 export has a clear message and keeps graphic exports working',async()=>{
+    await withStudio(async(page)=>{
+        await page.locator('#campaign-name').fill('Draft');await page.locator('#campaign-brief').fill('Explain study planning.');
+        await page.locator('#campaign-variants').selectOption('video');await page.locator('#generate-campaign').click();
+        await page.getByText('MP4 export needs an up-to-date Chrome or Safari. Your graphic exports remain available.',{exact:true}).waitFor();
+        assert.equal(await page.locator('#ep-video-generate').isDisabled(),true);
+        await page.locator('#ep-layout-output').selectOption('graphic');await page.locator('#ep-layout-png:enabled').waitFor();
+    },{mp4Supported:false});
 });
