@@ -6,17 +6,31 @@ import { CalendarDays, Search, Download } from "lucide-react";
 // filed into the month they're set to start; anyone without a parseable date
 // lands in "Unscheduled". Read-only: cards open the lead.
 
-// Card-grouping categories (order + colour) used by the "Group by Stage" view
-// and the legend.
+// Intake-only presentation order. Never write these aliases back to a client.
 const CATEGORIES = [
-    { key: "needs_attention", label: "Needs attention", dot: "bg-rose-500",   text: "text-rose-700" },
-    { key: "immigration",     label: "Immigration",     dot: "bg-orange-500", text: "text-orange-700" },
-    { key: "offers",          label: "Offers",          dot: "bg-emerald-500", text: "text-emerald-700" },
-    { key: "english",         label: "English",         dot: "bg-blue-500",   text: "text-blue-700" },
-    { key: "lead_stages",     label: "Lead stages",     dot: "bg-purple-500", text: "text-purple-700" },
-    { key: "started",         label: "Started",         dot: "bg-[#14532d]",  text: "text-[#14532d]" },
+    { key: "Started Course", label: "Started Course", dot: "bg-[#14532d]" },
+    { key: "Approved Visa", label: "Approved Visa", dot: "bg-green-500" },
+    { key: "Visa Lodged", label: "Visa Lodged", dot: "bg-purple-500" },
+    { key: "Endorsed to Immigration", label: "Endorsed to Immigration", dot: "bg-indigo-500" },
+    { key: "Unconditional Offer", label: "Unconditional Offer", dot: "bg-emerald-500" },
+    { key: "Conditional Offer", label: "Conditional Offer", dot: "bg-amber-500" },
+    { key: "Declined Visa", label: "Declined Visa", dot: "bg-rose-500" },
+    { key: "other", label: "Other stages", dot: "bg-gray-400" },
 ];
-const CAT = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
+const TRACKED_STAGES = ["Started Course", "Approved Visa", "Visa Lodged", "Unconditional Offer"];
+const canonicalStage = value => {
+    const stage = String(value || "").trim();
+    if (/^(visa approved|approved visa)$/i.test(stage)) return "Approved Visa";
+    if (/^declin(ed|e) visa$/i.test(stage)) return "Declined Visa";
+    return CATEGORIES.find(item => item.key !== "other" && item.key.toLowerCase() === stage.toLowerCase())?.key || stage;
+};
+const stageRank = value => {
+    const rank = CATEGORIES.findIndex(item => item.key === canonicalStage(value));
+    return rank < 0 ? CATEGORIES.length - 1 : rank;
+};
+const compareRows = (a, b) => stageRank(a.status) - stageRank(b.status)
+    || (stageRank(a.status) === CATEGORIES.length - 1 ? canonicalStage(a.status).localeCompare(canonicalStage(b.status)) : 0)
+    || (a.name || "").localeCompare(b.name || "") || Number(a.id) - Number(b.id);
 
 const TRACKS = [
     { key: "all", label: "All" },
@@ -39,6 +53,9 @@ const STATUS_STYLES = {
     "Request for Information": "bg-orange-100 text-orange-800 border-orange-200",
     "For Relodgement": "bg-rose-100 text-rose-700 border-rose-200",
     "Approved Visa": "bg-green-100 text-green-800 border-green-200",
+    "Visa Approved": "bg-green-100 text-green-800 border-green-200",
+    "Declined Visa": "bg-rose-100 text-rose-800 border-rose-200",
+    "Decline Visa": "bg-rose-100 text-rose-800 border-rose-200",
     "Started Course": "bg-emerald-100 text-emerald-800 border-emerald-200",
     "Proposal Sent": "bg-sky-100 text-sky-800 border-sky-200",
     "Pre-Screening Done": "bg-cyan-100 text-cyan-800 border-cyan-200",
@@ -91,6 +108,7 @@ export default function IntakeMonitoring({ students = [] }) {
             map.get(key).rows.push(s);
         });
         const cols = [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+        cols.forEach(col => col.rows.sort(compareRows));
         // Unscheduled to the FRONT.
         const un = cols.filter((c) => c.key === "9999-99");
         const rest = cols.filter((c) => c.key !== "9999-99");
@@ -125,7 +143,7 @@ export default function IntakeMonitoring({ students = [] }) {
                         <Search size={14} className="text-gray-400 flex-shrink-0" />
                         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or school" className="flex-1 min-w-0 outline-none text-[13px] bg-transparent placeholder:text-gray-400" />
                     </div>
-                    <ExportButton rows={filtered} />
+                    <ExportButton rows={columns.flatMap(col => col.rows)} />
                     <Link href="/portal/education/students" className="text-sm font-semibold text-green-700 hover:text-green-900 whitespace-nowrap">All students →</Link>
                 </div>
             </div>
@@ -187,7 +205,7 @@ export default function IntakeMonitoring({ students = [] }) {
             )}
 
             <p className="mt-4 text-[11px] text-gray-400">
-                Read-only. Intake comes from each study plan's preferred intake field; cards open the lead. Unscheduled holds anyone without a parseable date. · Showing {filtered.length} of {students.length} students
+                Read-only. Intake comes from each study plan's preferred intake field; cards open the lead. Monthly ratios count students currently in Started Course, Approved Visa, Visa Lodged or Unconditional Offer out of all matching students shown in that month. Search and Track filters update both numbers. Other stages remain visible; Unscheduled is excluded from monthly ratios. · Showing {filtered.length} of {students.length} students
             </p>
         </div>
     );
@@ -197,7 +215,7 @@ function IntakeColumn({ col, groupBy }) {
     const meta = monthMeta(col.key);
     const unscheduled = col.key === "9999-99";
 
-    // Group the column's rows by category or school.
+    // Group by the requested individual stages, or retain alphabetical schools.
     const groups = useMemo(() => {
         if (groupBy === "school") {
             const m = new Map();
@@ -210,12 +228,16 @@ function IntakeColumn({ col, groupBy }) {
         }
         const m = new Map();
         col.rows.forEach((r) => {
-            const k = r.category || "lead_stages";
+            const stage = canonicalStage(r.status);
+            const k = CATEGORIES.some(c => c.key === stage) ? stage : "other";
             if (! m.has(k)) m.set(k, { key: k, rows: [] });
             m.get(k).rows.push(r);
         });
         return CATEGORIES.filter((c) => m.has(c.key)).map((c) => ({ key: c.key, label: c.label, dot: c.dot, rows: m.get(c.key).rows }));
     }, [col.rows, groupBy]);
+
+    const stageCounts = TRACKED_STAGES.map(stage => ({ stage, count: col.rows.filter(row => canonicalStage(row.status) === stage).length }));
+    const trackedCount = stageCounts.reduce((total, item) => total + item.count, 0);
 
     // School summary footer.
     const schoolFooter = useMemo(() => {
@@ -229,7 +251,7 @@ function IntakeColumn({ col, groupBy }) {
     }, [col.rows]);
 
     return (
-        <div className={`w-[280px] flex-shrink-0 rounded-2xl border ${unscheduled ? "border-amber-200 border-dashed bg-amber-50/30" : "border-gray-100 bg-white"} shadow-sm flex flex-col`}>
+        <section aria-label={col.label + " intake"} className={`w-[280px] flex-shrink-0 rounded-2xl border ${unscheduled ? "border-amber-200 border-dashed bg-amber-50/30" : "border-gray-100 bg-white"} shadow-sm flex flex-col`}>
             {/* Column header */}
             <div className="px-4 pt-3 pb-2 border-b border-gray-100">
                 <div className="flex items-center justify-between">
@@ -243,12 +265,18 @@ function IntakeColumn({ col, groupBy }) {
                     <span className="text-sm font-bold text-gray-900 tabular-nums">{col.rows.length}</span>
                 </div>
                 <div className={`mt-2 h-1 rounded-full ${unscheduled ? "bg-amber-300" : meta.past ? "bg-gray-300" : "bg-[#14532d]"}`} />
+                {!unscheduled && <div aria-label={"Monthly stage summary for " + col.label} className="mt-2 text-[11px]">
+                    <p className="font-semibold text-[#14532d]">{trackedCount}/{col.rows.length} in the four tracked stages</p>
+                    <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-gray-500">
+                        {stageCounts.map(({ stage, count }) => <div key={stage} className="flex justify-between gap-1"><dt>{stage}</dt><dd className="font-semibold tabular-nums">{count}</dd></div>)}
+                    </dl>
+                </div>}
             </div>
 
             {/* Groups + cards */}
             <div className="flex-1 overflow-y-auto max-h-[62vh] px-3 py-3 space-y-3">
                 {groups.map((g) => (
-                    <div key={g.key}>
+                    <div key={g.key} role="group" aria-label={g.label + " intake entries"}>
                         <div className="flex items-center gap-1.5 mb-1.5">
                             {g.dot && <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />}
                             <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 truncate">{g.label}</span>
@@ -266,7 +294,7 @@ function IntakeColumn({ col, groupBy }) {
             <div className="px-3 py-2.5 border-t border-gray-100 text-[10px] text-gray-400">
                 {unscheduled ? "None of these can be planned for until a date is set" : (schoolFooter || "—")}
             </div>
-        </div>
+        </section>
     );
 }
 
