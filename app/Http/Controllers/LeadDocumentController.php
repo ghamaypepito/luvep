@@ -1529,8 +1529,8 @@ class LeadDocumentController extends Controller
             if (in_array($request->query('fee_location'), \App\Models\VisaType::FEE_LOCATIONS, true)) {
                 $engOverrides['fee_location'] = $request->query('fee_location');
             }
-            if (filter_var($request->query('include_gst'), FILTER_VALIDATE_BOOLEAN)) {
-                $engOverrides['include_gst'] = true;
+            if ($request->query->has('include_gst')) {
+                $engOverrides['include_gst'] = $request->boolean('include_gst');
             }
             $profFee = $request->query('professional_fee');
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
@@ -1561,8 +1561,8 @@ class LeadDocumentController extends Controller
             if (in_array($location, \App\Models\VisaType::FEE_LOCATIONS, true)) {
                 $opts['fee_location'] = $location;
             }
-            if (filter_var($request->query('include_gst'), FILTER_VALIDATE_BOOLEAN)) {
-                $opts['include_gst'] = true;
+            if ($request->query->has('include_gst')) {
+                $opts['include_gst'] = $request->boolean('include_gst');
             }
             $profFee = $request->query('professional_fee');
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {

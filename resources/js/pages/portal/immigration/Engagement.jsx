@@ -382,7 +382,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <div className="text-[13px] font-bold text-gray-900 tabular-nums">
                                                         {c.currency || "NZD"} ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
-                                                    <div className="text-[10px] text-gray-400">{c.engagement_type === "immigration_advice" || !c.engagement_type ? "incl. fees & INZ" : c.engagement_type === "oia" ? "incl. GST" : "booking fee"}</div>
+                                                    <div className="text-[10px] text-gray-400">{c.engagement_type === "immigration_advice" || !c.engagement_type ? "incl. fees & INZ" : c.include_gst ? "incl. GST" : "excl. GST"}</div>
                                                 </>
                                             ) : (
                                                 <span className="text-[11px] text-gray-300">—</span>
@@ -618,7 +618,6 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const serviceFeeOverride = specialService && serviceFee != null && serviceFee !== "" ? String(serviceFee) : null;
     const serviceFeeValid = serviceFeeOverride === null || (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(serviceFeeOverride) && Number(serviceFeeOverride) <= 9999999);
     const baseServiceFee = Number(serviceFeeOverride ?? defaultServiceFee);
-    const serviceGst = consultation ? 0 : Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100;
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
@@ -664,7 +663,13 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [feeLocation, setFeeLocation] = useState(draft?.fee_location ?? "onshore");
     // Fees are stored excluding GST; this decides whether the agreement
     // quotes that figure or the GST-inclusive RRP.
-    const [includeGst, setIncludeGst] = useState(!! draft?.include_gst);
+    const [gstSelections, setGstSelections] = useState(() => ({
+        immigration_advice: false, initial_consultation: false, oia: true,
+        [engagementType]: draft?.engagement_settings?.include_gst ?? draft?.include_gst ?? (engagementType === "oia"),
+    }));
+    const includeGst = gstSelections[engagementType];
+    const setIncludeGst = (value) => setGstSelections((previous) => ({ ...previous, [engagementType]: value }));
+    const serviceGst = includeGst ? Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100 : 0;
     // Manual override for the (ex-GST) professional fee. "" = use the visa's fee.
     const [feeOverride, setFeeOverride] = useState(draft?.engagement_settings?.professional_fee ?? "");
     // Default the signing adviser to the draft's, else the practice's designated
@@ -1148,7 +1153,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
                                 <label className="block text-xs font-semibold">
-                                    {consultation ? "Booking fee (USD)" : "Service fee (NZD, ex GST)"}
+                                    {consultation ? "Booking fee (USD, ex GST)" : "Service fee (NZD, ex GST)"}
                                     <input type="text" inputMode="decimal" disabled={!!draft?.signed}
                                         value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
                                         onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
@@ -1158,9 +1163,21 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                 <p id="engagement-service-fee-note" className={`mt-1 text-xs ${serviceFeeValid ? "" : "text-red-700"}`}>
                                     {serviceFeeValid ? "Leave blank to use the standard fee." : "Enter an amount from 0 to 9,999,999 with up to two decimal places."}
                                 </p>
-                                {serviceFeeValid && <p className="mt-2 font-semibold tabular-nums">
-                                    {consultation ? `Total USD ${fmtFee(baseServiceFee)}` : `NZD ${fmtFee(baseServiceFee)} + ${fmtFee(serviceGst)} GST = NZD ${fmtFee(baseServiceFee + serviceGst)}`}
-                                </p>}
+                                <label className="mt-3 block text-xs font-semibold">
+                                    GST
+                                    <select value={includeGst ? "incl" : "excl"} disabled={!!draft?.signed}
+                                        onChange={(event) => setIncludeGst(event.target.value === "incl")}
+                                        className={`${ctrlCls} mt-1.5`}>
+                                        <option value="excl">Excluding GST</option>
+                                        <option value="incl">Including GST ({GST_PCT}%)</option>
+                                    </select>
+                                </label>
+                                {serviceFeeValid && <dl aria-label="Service fee summary" className="mt-3 space-y-1 text-xs tabular-nums">
+                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee)}</dd></div>
+                                    <div className="flex justify-between"><dt>GST ({GST_PCT}%)</dt><dd>{fmtFee(serviceGst)}</dd></div>
+                                    <div className="flex justify-between"><dt>Disbursements</dt><dd>{fmtFee(0)}</dd></div>
+                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
+                                </dl>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
                             </div>}

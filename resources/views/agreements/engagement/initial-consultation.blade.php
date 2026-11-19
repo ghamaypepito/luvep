@@ -1,5 +1,6 @@
 @extends('agreements.engagement.service-layout')
 @section('document')
+@php($booking_total = isset($service_pricing) ? number_format($service_pricing['grand_total'], 2) : $service_fee)
 <h1>INITIAL CONSULTATION AGREEMENT</h1>
 <p>This Initial Consultation Agreement ("Agreement") is entered into between the undersigned consultant ("Consultant") and the undersigned client ("Client") in connection with an initial visa consultation session, subject to the terms below.</p>
 <h2>1. Consultation Details</h2>
@@ -17,21 +18,29 @@
 <h2>2. Scope of Consultation</h2>
 <p>The initial consultation is intended to provide the Client with a general assessment of their visa options, eligibility, and next steps. It does not constitute the filing or processing of any visa application, and no representation, petition, or submission will be made to any government agency during this session.</p>
 <h2>3. Booking Fee</h2>
+@if(isset($service_pricing))
+<table class="details">
+<tr><td>Professional fee (ex GST)</td><td>{{ $service_pricing['currency'] }} ${{ $service_fee }}</td></tr>
+<tr><td>GST (15%)</td><td>{{ $service_pricing['currency'] }} ${{ number_format($service_pricing['gst'], 2) }}</td></tr>
+<tr><td>Disbursements</td><td>{{ $service_pricing['currency'] }} $0.00</td></tr>
+<tr><td><strong>Total amount</strong></td><td><strong>{{ $service_pricing['currency'] }} ${{ number_format($service_pricing['grand_total'], 2) }}</strong></td></tr>
+</table>
+@endif
 <ul>
-<li>A non-refundable booking fee of <strong>${{ $service_fee }} (USD)</strong> is required to reserve and confirm the consultation slot.</li>
+<li>A non-refundable booking fee of <strong>${{ $booking_total }} (USD)</strong> is required to reserve and confirm the consultation slot.</li>
 <li>The booking fee secures the date and time listed above via Google Meet.</li>
-<li>Should the Client decide to proceed with visa processing following the consultation, the ${{ $service_fee }} booking fee already paid will be credited/deducted in full toward the total consulting and service fee for the visa processing engagement.</li>
+<li>Should the Client decide to proceed with visa processing following the consultation, the ${{ $booking_total }} booking fee already paid will be credited/deducted in full toward the total consulting and service fee for the visa processing engagement.</li>
 <li>If the Client does not proceed with visa processing, the booking fee is retained by the Consultant as payment for the consultation session rendered and is non-refundable.</li>
 </ul>
 <h2>4. Visa Processing &amp; Service Fees</h2>
-<p>Should the Client engage the Consultant for visa processing services following this consultation, a separate Visa Processing / Service Agreement will be issued outlining the full scope of services, applicable government/filing fees, and the total consulting and service fee, less the ${{ $service_fee }} booking fee already collected.</p>
+<p>Should the Client engage the Consultant for visa processing services following this consultation, a separate Visa Processing / Service Agreement will be issued outlining the full scope of services, applicable government/filing fees, and the total consulting and service fee, less the ${{ $booking_total }} booking fee already collected.</p>
 <div class="page-break"></div>
 <h2>5. Cancellation &amp; Rescheduling</h2>
 <ul><li>Rescheduling requests must be made at least 24 hours before the scheduled consultation time.</li><li>No-shows or cancellations made less than 24 hours in advance may forfeit the booking fee.</li></ul>
 <h2>6. Confidentiality</h2>
 <p>Both parties agree that any information disclosed during the consultation shall be kept confidential and used solely for the purpose of assessing the Client's visa options.</p>
 <h2>7. Acknowledgment &amp; Agreement</h2>
-<p>By signing below, the Client acknowledges having read, understood, and agreed to the terms of this Initial Consultation Agreement, including the ${{ $service_fee }} booking fee and its conditions as stated above.</p>
+<p>By signing below, the Client acknowledges having read, understood, and agreed to the terms of this Initial Consultation Agreement, including the ${{ $booking_total }} booking fee and its conditions as stated above.</p>
 <table class="signatures"><tr><td>
 <div class="signature"><img id="applicant-signature" src="{{ $client['signature'] ?? '' }}" alt="Client signature" style="display:{{ empty($client['signature']) ? 'none' : 'inline' }}"></div>
 Client Signature<br>Printed Name: {{ $client['name'] }}<br>Date: {{ !empty($client['signature']) ? ($client_signed_date ?? '________________') : '________________' }}
