@@ -51,7 +51,7 @@ export default function StaffSignatureUpload({ record, internalReady = false, on
             {result ? <div role="status" className="space-y-2 rounded-lg bg-green-50 p-4 text-sm">
                 <p className="font-semibold">Signature saved. Do not upload it again to retry a notification.</p>
                 <p>Client email: {result.notifications.client === 'not_requested' ? 'not requested' : result.notifications.client}.</p>
-                <p>Internal portal notification: {result.notifications.internal === 'not_requested' ? 'not requested' : result.notifications.internal}.</p>
+                <p>Immigration management email: {result.notifications.internal === 'not_requested' ? 'not requested' : result.notifications.internal}.</p>
                 {Object.values(result.notifications).includes('failed') && <p role="alert">A notification failed. The signature is already saved; ask support to review notification delivery.</p>}
             </div> : <div className="grid gap-5 lg:grid-cols-2">
                 <div>{document && <iframe title="Issued agreement preview" src={document.view_url || document.download_url + '?inline=1'} className="h-[540px] w-full rounded-lg border" />}</div>
@@ -65,12 +65,12 @@ export default function StaffSignatureUpload({ record, internalReady = false, on
                         <label className="flex gap-2"><input type="checkbox" checked={!notifyClient} onChange={() => setNotifyClient(false)} />Do not send an email notification to the client.</label>
                         <label className="flex gap-2"><input type="checkbox" checked={notifyClient} onChange={() => setNotifyClient(true)} />Notify the client via email once the signature has been uploaded.</label>
                     </fieldset>
-                    <fieldset className="space-y-2 rounded-lg border p-3"><legend className="px-1 font-semibold">Internal portal notification</legend>
+                    <fieldset className="space-y-2 rounded-lg border p-3"><legend className="px-1 font-semibold">Immigration management email</legend>
                         <label className="flex gap-2"><input type="checkbox" checked={!notifyInternal} onChange={() => setNotifyInternal(false)} />Do not send an internal notification to our team.</label>
-                        <label className="flex gap-2"><input type="checkbox" disabled={!internalReady} checked={notifyInternal} onChange={() => setNotifyInternal(true)} />Send an internal notification to our team once the signature has been uploaded.</label>
-                        {!internalReady && <p className="text-xs text-amber-800">Internal recipients still need confirmation. This option becomes available after the approved team is configured.</p>}
+                        <label className="flex gap-2"><input type="checkbox" disabled={!internalReady} checked={notifyInternal} onChange={() => setNotifyInternal(true)} />Send an internal email notification to Immigration management once the signature has been uploaded.</label>
+                        {!internalReady && <p className="text-xs text-amber-800">No active Immigration management email recipients are available. Ask an administrator to review the management accounts.</p>}
                     </fieldset>
-                    <p className="text-xs text-gray-500">Notification choices are independent. The original agreement is retained. Only the selected agreement receives this signature.</p>
+                    <p className="text-xs text-gray-500">Notification choices are independent. Internal notices go by email only to active Immigration managers. The original agreement is retained. Only the selected agreement receives this signature.</p>
                 </fieldset>
             </div>}
             <footer className="flex justify-end gap-2 border-t pt-4">

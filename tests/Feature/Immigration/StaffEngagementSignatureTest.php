@@ -7,10 +7,10 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
 use App\Models\VisaType;
-use App\Notifications\EngagementSignatureUploaded;
 use App\Services\CommunicationService;
 use App\Services\EmailAutomationService;
 use App\Services\Immigration\EngagementDocumentGenerator;
+use App\Services\Immigration\StaffEngagementSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
@@ -40,7 +40,6 @@ class StaffEngagementSignatureTest extends TestCase
         $this->staff = User::factory()->create(['role' => 'immigration_manager', 'name' => 'Synthetic Uploader']);
         $this->adviser = User::factory()->create(['role' => 'immigration_adviser', 'iaa_licence_number' => 'TEST123', 'iaa_licence_expiry' => now()->addYear()]);
         $this->team = User::factory()->create(['role' => 'immigration_manager']);
-        config(['engagement-signature.internal_user_ids' => [$this->team->id]]);
         $this->actingAs($this->staff);
         $this->mock(EmailAutomationService::class)->shouldNotReceive('fire');
     }
@@ -93,13 +92,59 @@ class StaffEngagementSignatureTest extends TestCase
             $doc = $this->document();
             $this->postJson($this->url($doc), $this->data($client, $internal))->assertOk()
                 ->assertJsonPath('notifications.client', $client ? 'queued' : 'not_requested')
-                ->assertJsonPath('notifications.internal', $internal ? 'sent' : 'not_requested');
-            $client ? Mail::assertQueued(TemplatedMessage::class, 1) : Mail::assertNothingOutgoing();
-            $internal ? Notification::assertSentTo($this->team, EngagementSignatureUploaded::class) : Notification::assertNothingSent();
-            Notification::assertNotSentTo($this->staff, EngagementSignatureUploaded::class);
+                ->assertJsonPath('notifications.internal', $internal ? 'queued' : 'not_requested');
+            if (! $client && ! $internal) {
+                Mail::assertNothingOutgoing();
+            } else {
+                Mail::assertQueued(TemplatedMessage::class, ($client ? 1 : 0) + ($internal ? 2 : 0));
+                $client ? Mail::assertQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo('synthetic@example.test'))
+                    : Mail::assertNotQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo('synthetic@example.test'));
+                foreach ([$this->staff, $this->team] as $manager) {
+                    if ($internal) {
+                        Mail::assertQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo(strtolower($manager->email))
+                            && str_contains($mail->subjectLine, 'Immigration management'));
+                    } else {
+                        Mail::assertNotQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo($manager->email));
+                    }
+                }
+            }
+            Notification::assertNothingSent();
+            $this->assertSame('email', $doc->fresh()->notes['staff_signature_upload']['internal_notification_channel']);
             $this->assertNotNull($doc->fresh()->client_signed_at);
             $this->assertSame('Agreement Signed', $doc->lead->fresh()->immigration_stage);
         }
+    }
+
+    public function test_management_email_routing_excludes_advisers_admins_inactive_and_invalid_accounts(): void
+    {
+        User::factory()->create(['role' => 'admin']);
+        User::factory()->create(['role' => 'immigration_manager', 'is_active' => false]);
+        User::factory()->create(['role' => 'immigration_manager', 'email' => 'not-an-email']);
+        User::factory()->create(['role' => 'education', 'portal_access' => ['immigration']]);
+        $ids = app(StaffEngagementSignature::class)->internalRecipients()->pluck('id')->all();
+        $this->assertEqualsCanonicalizing([$this->staff->id, $this->team->id], $ids);
+        $doc = $this->document();
+        $this->postJson($this->url($doc), $this->data(false, true))->assertOk()->assertJsonPath('notifications.internal', 'queued');
+        Mail::assertQueued(TemplatedMessage::class, 2);
+        Mail::assertNotQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo($this->adviser->email));
+        Notification::assertNothingSent();
+        $this->assertSame([$this->staff->id, $this->team->id], $doc->fresh()->notes['staff_signature_upload']['internal_recipient_user_ids']);
+    }
+
+    public function test_partial_management_email_failure_keeps_signature_and_continues_other_recipients(): void
+    {
+        $doc = $this->document();
+        $this->mock(CommunicationService::class)->shouldReceive('sendComposedEmail')->twice()->andReturn(
+            new \App\Models\MessageLog(['status' => 'failed']), new \App\Models\MessageLog(['status' => 'queued'])
+        );
+        $this->postJson($this->url($doc), $this->data(false, true))->assertOk()
+            ->assertJsonPath('notifications.client', 'not_requested')->assertJsonPath('notifications.internal', 'failed');
+        $doc->refresh();
+        $this->assertNotNull($doc->client_signed_at);
+        $this->assertSame('failed', $doc->notes['staff_signature_upload']['internal_email_results'][$this->staff->id]);
+        $this->assertSame('queued', $doc->notes['staff_signature_upload']['internal_email_results'][$this->team->id]);
+        Notification::assertNothingSent();
+        $this->postJson($this->url($doc), $this->data(false, true))->assertConflict();
     }
 
     public function test_original_snapshot_pdf_and_staff_audit_are_preserved_and_duplicate_upload_is_rejected(): void
@@ -158,13 +203,14 @@ class StaffEngagementSignatureTest extends TestCase
         Notification::assertNothingSent();
     }
 
-    public function test_authorization_image_validation_and_unconfigured_notifications_fail_before_saving(): void
+    public function test_authorization_image_validation_and_missing_management_emails_fail_before_saving(): void
     {
         $doc = $this->document();
         foreach ([['authorized' => false], ['signature_image' => UploadedFile::fake()->create('not-image.pdf', 2)], ['signature_image' => UploadedFile::fake()->create('large.png', 2049)], ['signer_name' => '']] as $invalid) {
             $this->postJson($this->url($doc), array_replace($this->data(), $invalid))->assertUnprocessable();
         }
-        config(['engagement-signature.internal_user_ids' => []]);
+        $this->staff->update(['role' => 'immigration']);
+        $this->team->update(['is_active' => false]);
         $this->postJson($this->url($doc), $this->data(false, true))->assertUnprocessable()->assertJsonValidationErrors('notify_internal');
         $doc->lead->update(['email' => null]);
         $this->postJson($this->url($doc), $this->data(true))->assertUnprocessable()->assertJsonValidationErrors('notify_client');

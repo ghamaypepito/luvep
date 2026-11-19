@@ -11,7 +11,7 @@ HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
 URL.createObjectURL=()=> 'blob:synthetic-signature';URL.revokeObjectURL=()=>{};
 const React=require('react'),{act}=React,{createRoot}=require('react-dom/client');
 let requests=[],fail=false,reloads=0;
-const axios={post:async(url,data)=>{requests.push({url,data});if(fail)throw {response:{data:{errors:{signature_image:['Synthetic upload failure. Retry.']}}}};return {data:{notifications:{client:data.get('notify_client')==='1'?'queued':'not_requested',internal:data.get('notify_internal')==='1'?'sent':'not_requested'}}};}};
+const axios={post:async(url,data)=>{requests.push({url,data});if(fail)throw {response:{data:{errors:{signature_image:['Synthetic upload failure. Retry.']}}}};return {data:{notifications:{client:data.get('notify_client')==='1'?'queued':'not_requested',internal:data.get('notify_internal')==='1'?'queued':'not_requested'}}};}};
 const empty=()=>null;
 const inertia={Head:empty,Link:empty,router:{reload:()=>reloads++}};
 function load(entry,externals,mocks){const code=buildSync({entryPoints:[entry],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:externals}).outputFiles[0].text;const m=new Module(path.resolve(entry+'.test.cjs'),module);m.filename=path.resolve(entry+'.test.cjs');m.paths=module.paths;m.require=name=>mocks(name)??module.require(name);m._compile(code,m.filename);return m.exports.default;}
@@ -41,9 +41,9 @@ const file=async(type='image/png',size=8)=>{const input=document.querySelector('
  await file();await click(choice('I confirm'));
  for (const client of [false,true]) for (const internal of [false,true]) {
    await click(choice(client?'Notify the client':'Do not send an email'));
-   await click(choice(internal?'Send an internal notification':'Do not send an internal'));
+   await click(choice(internal?'Send an internal email notification':'Do not send an internal'));
    assert.equal(choice('Notify the client').checked,client);assert.equal(choice('Do not send an email').checked,!client);
-   assert.equal(choice('Send an internal notification').checked,internal);assert.equal(choice('Do not send an internal').checked,!internal);
+   assert.equal(choice('Send an internal email notification').checked,internal);assert.equal(choice('Do not send an internal').checked,!internal);
  }
  fail=true;await click(button('Upload signature'));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);
  assert.equal(choice('I confirm').checked,true);assert.ok(document.querySelector('img[alt="Selected client signature"]'));
@@ -52,7 +52,7 @@ const file=async(type='image/png',size=8)=>{const input=document.querySelector('
  assert.equal(requests.at(-1).data.get('authorized'),'1');assert.equal(requests.at(-1).data.get('notify_client'),'1');assert.equal(requests.at(-1).data.get('notify_internal'),'1');
  await click(button('Close'));assert.equal(document.querySelector('dialog'),null);
  await render({internalSignatureNotificationsReady:false});await click(button('Upload signature'));
- assert.equal(choice('Send an internal notification').disabled,true);assert.match(document.body.textContent,/recipients still need confirmation/);
+ assert.equal(choice('Send an internal email notification').disabled,true);assert.match(document.body.textContent,/No active Immigration management email recipients/);
  await click(button('Cancel'));
  await render({generated:[{...row,signed:true,signature_uploaded_by:'Synthetic Uploader'}]});assert.equal(button('Upload signature'),undefined);assert.match(document.body.textContent,/Uploaded by staff: Synthetic Uploader/);
  await act(async()=>root.unmount());console.log('Staff signature actual-page tests passed: authorized action, image validation, independent notification pairs, retry, saved state, pending-team gate and signed/draft isolation');

@@ -5,7 +5,6 @@ namespace App\Services\Immigration;
 use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
-use App\Notifications\EngagementSignatureUploaded;
 use App\Services\CommunicationService;
 use App\Services\MediaDrive\Access;
 use Illuminate\Http\Request;
@@ -25,8 +24,9 @@ class StaffEngagementSignature
 
     public function internalRecipients()
     {
-        return User::whereIn('id', config('engagement-signature.internal_user_ids', []))->where('is_active', true)
-            ->get()->filter(fn ($user) => self::permitted($user))->values();
+        return User::where('role', User::ROLE_IMMIGRATION_MANAGER)->where('is_active', true)->orderBy('id')->get()
+            ->filter(fn ($user) => filter_var(trim((string) $user->email), FILTER_VALIDATE_EMAIL))
+            ->unique(fn ($user) => strtolower(trim($user->email)))->values();
     }
 
     public function upload(Request $request, int $documentId): array
@@ -44,7 +44,7 @@ class StaffEngagementSignature
         ]);
         $internal = $this->internalRecipients();
         if ($data['notify_internal'] && $internal->isEmpty()) {
-            throw ValidationException::withMessages(['notify_internal' => 'Internal recipients must be confirmed and configured before notifying the team.']);
+            throw ValidationException::withMessages(['notify_internal' => 'No active Immigration management email recipients are available. Ask an administrator to review the management accounts.']);
         }
         if ($data['notify_client'] && ! filter_var($doc->lead->email, FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages(['notify_client' => 'This client has no valid email address. Correct it or select no client email.']);
@@ -53,7 +53,7 @@ class StaffEngagementSignature
         return Cache::lock('engagement:case:'.$doc->lead_id, 90)->block(5, function () use ($request, $doc, $data, $user, $internal) {
             $createdPaths = [];
             try {
-                $signed = DB::transaction(function () use ($request, $doc, $data, $user, &$createdPaths) {
+                $signed = DB::transaction(function () use ($request, $doc, $data, $user, $internal, &$createdPaths) {
                     $lead = Lead::whereKey($doc->lead_id)->lockForUpdate()->firstOrFail();
                     $document = LeadDocument::whereKey($doc->id)->lockForUpdate()->firstOrFail();
                     $type = str_replace('engagement:', '', (string) $document->source_variant);
@@ -91,6 +91,8 @@ class StaffEngagementSignature
                         'original_file_path' => $document->file_path, 'original_file_sha256' => $originalHash,
                         'signature_sha256' => hash('sha256', $bytes), 'notify_client' => (bool) $data['notify_client'],
                         'notify_internal' => (bool) $data['notify_internal'],
+                        'internal_notification_channel' => 'email',
+                        'internal_recipient_user_ids' => $data['notify_internal'] ? $internal->pluck('id')->all() : [],
                     ];
                     $document->forceFill(['notes' => $notes, 'file_path' => $signedPath, 'size' => strlen($pdf),
                         'client_signature_path' => $signaturePath, 'client_signed_at' => now(),
@@ -122,26 +124,35 @@ class StaffEngagementSignature
                     Log::warning('Staff signature client notification failed', ['document_id' => $signed->id, 'exception' => get_class($e)]);
                 }
             }
+            $internalDelivery = [];
             if ($data['notify_internal']) {
-                $delivery['internal'] = 'sent';
+                $delivery['internal'] = 'queued';
+                $clientName = e(trim($signed->lead->first_name.' '.$signed->lead->last_name));
+                $uploader = e($user->name);
+                $documentName = e($signed->original_name);
+                $caseUrl = e(url('/portal/immigration/cases/'.$signed->lead_id.'/profile?tab=documents'));
+                $body = '<p>A client-provided signature has been uploaded by '.$uploader.' for '.$clientName.'.</p>'
+                    .'<p>Agreement: '.$documentName.'.</p><p><a href="'.$caseUrl.'">View the case documents</a></p>';
                 foreach ($internal as $recipient) {
                     try {
-                        $recipient->notify(new EngagementSignatureUploaded([
-                            'title' => 'Engagement signature uploaded', 'body' => $user->name.' uploaded a client-provided signature for '.trim($signed->lead->first_name.' '.$signed->lead->last_name).'.',
-                            'lead_id' => $signed->lead_id, 'document_id' => $signed->id, 'uploaded_by' => $user->id,
-                            'link' => '/portal/immigration/cases/engagement',
-                        ]));
+                        $log = app(CommunicationService::class)->sendComposedEmail(strtolower(trim($recipient->email)),
+                            'Engagement signature uploaded - Immigration management', $body);
+                        $internalDelivery[$recipient->id] = $log->status === 'failed' ? 'failed' : 'queued';
                     } catch (\Throwable $e) {
+                        $internalDelivery[$recipient->id] = 'failed';
+                        Log::warning('Staff signature management email failed', ['document_id' => $signed->id, 'recipient_id' => $recipient->id]);
+                    }
+                    if ($internalDelivery[$recipient->id] === 'failed') {
                         $delivery['internal'] = 'failed';
-                        Log::warning('Staff signature internal notification failed', ['document_id' => $signed->id, 'recipient_id' => $recipient->id]);
                     }
                 }
             }
             try {
-                DB::transaction(function () use ($signed, $delivery) {
+                DB::transaction(function () use ($signed, $delivery, $internalDelivery) {
                     $fresh = LeadDocument::whereKey($signed->id)->lockForUpdate()->firstOrFail();
                     $notes = $fresh->notes;
                     $notes['staff_signature_upload']['notification_result'] = $delivery;
+                    $notes['staff_signature_upload']['internal_email_results'] = $internalDelivery;
                     $fresh->forceFill(['notes' => $notes])->save();
                 });
             } catch (\Throwable $e) {
