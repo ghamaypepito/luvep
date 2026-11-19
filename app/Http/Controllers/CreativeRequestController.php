@@ -8,6 +8,7 @@ use App\Models\LeadTask;
 use App\Models\User;
 use App\Notifications\CreativeRequestAssigned;
 use App\Support\TicketAttachments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -37,14 +38,56 @@ class CreativeRequestController extends Controller
         $filters = $request->validate(['status' => ['nullable', Rule::in(LeadTask::STATUSES)], 'view' => ['nullable', Rule::in(['active', 'deleted'])]]);
         $deleted = ($filters['view'] ?? 'active') === 'deleted';
         abort_if($deleted && ! $user->isAdmin(), 403);
-        $requests = CreativeRequest::visibleTo($user)->with(['task.assignee:id,name', 'task.creator:id,name'])
+        $query = CreativeRequest::visibleTo($user)
             ->when($deleted, fn ($q) => $q->onlyTrashed())
-            ->when($filters['status'] ?? null, fn ($q, $status) => $q->whereHas('task', fn ($q) => $q->where('status', $status)))
-            ->latest()->paginate(20)->withQueryString()->through(fn ($r) => $r->row());
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->whereHas('task', fn ($q) => $q->where('status', $status)));
+        $owner = $this->owner();
+        $analytics = $deleted ? null : $this->analytics(clone $query, $owner);
+        $requests = $query->with(['task.assignee:id,name', 'task.creator:id,name'])->latest()->paginate(20)->withQueryString()->through(fn ($r) => $r->row());
 
         return inertia('creative/Index', ['requests' => $requests, 'filters' => $filters,
-            'owner' => $this->owner()?->only(['id', 'name']), 'designTypes' => CreativeRequest::DESIGN_TYPES,
+            'analytics' => $analytics, 'owner' => $owner?->only(['id', 'name']), 'designTypes' => CreativeRequest::DESIGN_TYPES,
             'isAdmin' => $user->isAdmin()]);
+    }
+
+    private function analytics(Builder $query, ?User $owner): array
+    {
+        // Reuse the queue's visibility and status filters without loading brief or file contents.
+        $requests = $query->select('id', 'lead_task_id', 'created_at')
+            ->with('task:id,status,assignee_id,additional_assignee_ids,completed_at')->get();
+        $statuses = array_fill_keys(LeadTask::STATUSES, 0);
+        $ownerCounts = $owner ? $statuses : null;
+        $trends = [];
+        $start = now('Asia/Manila')->startOfWeek()->subWeeks(7);
+        for ($i = 0; $i < 8; $i++) {
+            $period = $start->copy()->addWeeks($i)->toDateString();
+            $trends[$period] = ['period' => $period, 'created' => 0, 'delivered' => 0];
+        }
+        $undatedDeliveries = 0;
+        foreach ($requests as $creative) {
+            $task = $creative->task;
+            $statuses[$task->status]++;
+            if ($owner && in_array($owner->id, $task->allAssigneeIds(), true)) {
+                $ownerCounts[$task->status]++;
+            }
+            $period = $creative->created_at->copy()->timezone('Asia/Manila')->startOfWeek()->toDateString();
+            if (isset($trends[$period])) {
+                $trends[$period]['created']++;
+            }
+            if ($task->status === 'completed') {
+                if ($task->completed_at) {
+                    $period = $task->completed_at->copy()->timezone('Asia/Manila')->startOfWeek()->toDateString();
+                    if (isset($trends[$period])) {
+                        $trends[$period]['delivered']++;
+                    }
+                } else {
+                    $undatedDeliveries++;
+                }
+            }
+        }
+
+        return ['total' => $requests->count(), 'status_counts' => $statuses, 'owner_counts' => $ownerCounts,
+            'trends' => array_values($trends), 'undated_deliveries' => $undatedDeliveries];
     }
 
     public function store(Request $request)
