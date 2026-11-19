@@ -3451,7 +3451,7 @@ class ImmigrationController extends Controller
                 || array_key_exists('work_visa_category', is_array($fields['vif_answers'] ?? null) ? $fields['vif_answers'] : []))) {
                 \App\Support\IntakeVisaTypeMap::syncWorkCategory($intake, 'fields.vif_answers.work_visa_category');
             }
-            if ($beforeVif != $vif->vifContent($type, $intake)) {
+            if ($beforeVif !== $vif->vifContent($type, $intake)) {
                 $vif->refreshStoredVifForIntake($type, $intake);
             }
             $afterEnglish = $type === 'resident' ? ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception] : null;

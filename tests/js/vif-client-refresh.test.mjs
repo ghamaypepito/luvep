@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 const bundle = await build({ stdin: { contents: `import React,{act}from'react';import{createRoot}from'react-dom/client';import Page from'./resources/js/pages/portal/lead/VisaAssessment.jsx';window.IS_REACT_ACT_ENVIRONMENT=true;window.act=act;const root=createRoot(document.getElementById('root'));window.renderProps=assessment=>root.render(<Page vif={{available:true,generated:false}} assessment={assessment}/>);window.renderClient=assessment=>act(()=>window.renderProps(assessment));window.unmount=()=>act(()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', alias: { '@': resolve('resources/js') }, plugins: [{ name: 'fresh-client-response', setup(builder) {
     builder.onResolve({ filter: /^@inertiajs\/react$/ }, () => ({ path: 'inertia', namespace: 'fresh-test' }));
     builder.onResolve({ filter: /^sonner$/ }, () => ({ path: 'sonner', namespace: 'fresh-test' }));
-    builder.onLoad({ filter: /.*/, namespace: 'fresh-test' }, args => ({ resolveDir: process.cwd(), contents: args.path === 'sonner' ? `export const toast={error(){},success(){}};` : `import React from'react';export const Head=()=>null;export const Link=({children,...props})=>React.createElement('a',props,children);export const usePage=()=>({props:{}});export const router={post(url,payload,options){window.posted=payload;window.renderProps(window.freshPage.props.assessment);options.onSuccess(window.freshPage);options.onFinish();}};` }));
+    builder.onLoad({ filter: /.*/, namespace: 'fresh-test' }, args => ({ resolveDir: process.cwd(), contents: args.path === 'sonner' ? `export const toast={error(){},success(){}};` : `import React from'react';export const Head=()=>null;export const Link=({children,...props})=>React.createElement('a',props,children);export const usePage=()=>({props:{}});export const router={post(url,payload,options){(window.posts??=[]).push(payload);window.posted=payload;window.renderProps(window.freshPage.props.assessment);options.onSuccess(window.freshPage);options.onFinish();}};` }));
 } }] });
 
 async function mount(assessment) {
@@ -47,5 +47,51 @@ test('actual client page combines refreshed readonly props with fresh staff Engl
         assert.match(w.document.body.textContent, /Not Required · Recorded by staff/);
         assert.equal([...w.document.querySelectorAll('input')].some(el => el.value === 'IELTS' || el.value === '7'), false);
         assert.equal(input(w, 'Job Title').value, 'Updated synthetic job');
+    } finally { await close(dom); }
+});
+
+
+test('actual stale client posts only its changed scalar and adopts newer staff siblings', async () => {
+    const initial = assessment('resident', { job_title: 'Old job', passport_number: '001234', vif_answers: { middle_name: 'Old staff name' } });
+    const dom = await mount(initial);
+    try {
+        const w = dom.window;
+        await fill(w, input(w, 'Job Title'), 'New job');
+        w.freshPage = { props: { assessment: assessment('resident', { job_title: 'New job', passport_number: 'NEW-STAFF-PASSPORT', vif_answers: { middle_name: 'New staff name' } }) } };
+        await save(w);
+        assert.equal(JSON.stringify(w.posted.field_values), JSON.stringify({ job_title: 'New job' }));
+        await save(w);
+        assert.equal(w.posts.length, 1, 'canonical response becomes the new no-op baseline');
+    } finally { await close(dom); }
+});
+
+test('actual stale Work tab sends only its changed supplemental key without stale category or siblings', async () => {
+    const dom = await mount(assessment('work', { passport_number: 'OLD-PASSPORT', vif_answers: { work_visa_category: 'Accredited Employer Work Visa', middle_name: 'Old name', employer_nzbn: 'OLD-NZBN' } }));
+    try {
+        const w = dom.window;
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Changed name');
+        w.freshPage = { props: { assessment: assessment('work', { passport_number: 'NEW-PASSPORT', vif_answers: { work_visa_category: 'Post-Study Work Visa', middle_name: 'Changed name' } }) } };
+        await save(w);
+        assert.equal(JSON.stringify(w.posted.field_values), JSON.stringify({ vif_answers: { middle_name: 'Changed name' } }));
+        assert.equal(input(w, 'Which work visa is this information for?').value, 'Post-Study Work Visa');
+        assert.equal(w.document.body.textContent.includes('Employer New Zealand Business Number (NZBN)'), false);
+    } finally { await close(dom); }
+});
+
+test('actual client unchanged and reverted changes do not post or resubmit family context', async () => {
+    const initial = assessment('family', { applying_as: 'Dependent child', visa_type: 'Residence class visa', vif_answers: { middle_name: 'Old name' } });
+    const dom = await mount(initial);
+    try {
+        const w = dom.window; w.freshPage = { props: { assessment: initial } };
+        await save(w);
+        assert.equal(w.posts, undefined);
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Temporary');
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Old name');
+        await save(w);
+        assert.equal(w.posts, undefined);
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Updated');
+        w.freshPage = { props: { assessment: assessment('family', { applying_as: 'Partner', visa_type: 'Residence class visa', vif_answers: {} }) } };
+        await save(w);
+        assert.equal(JSON.stringify(w.posted.field_values), JSON.stringify({ vif_answers: { middle_name: 'Updated' } }));
     } finally { await close(dom); }
 });

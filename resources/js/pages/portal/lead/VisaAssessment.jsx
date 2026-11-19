@@ -125,18 +125,32 @@ function VifStatusPill({ vif }) {
 function AssessmentEditor({ assessment }) {
     const sections = ASSESSMENT_SECTIONS[assessment.type] || [];
     const [values, setValues] = useState(assessment.values || {});
+    const [baseline, setBaseline] = useState(assessment.values || {});
     const [saving, setSaving] = useState(false);
     const [fieldErrors, setFieldErrors] = useState({});
     const readOnly = assessment.read_only_fields || [];
     const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
     const save = () => {
+        const changed = {};
+        for (const [key, value] of Object.entries(values)) {
+            if (readOnly.includes(key)) continue;
+            if (key === 'vif_answers') {
+                const answers = Object.fromEntries(Object.entries(value || {}).filter(([answer, next]) => JSON.stringify(next) !== JSON.stringify(baseline.vif_answers?.[answer])));
+                if (Object.keys(answers).length) changed.vif_answers = answers;
+            } else if (JSON.stringify(value) !== JSON.stringify(baseline[key])) {
+                changed[key] = value;
+            }
+        }
+        if (!Object.keys(changed).length) return;
         setSaving(true);
         setFieldErrors({});
-        router.post(assessment.save_url, { field_values: Object.fromEntries(Object.entries(values).filter(([key]) => !readOnly.includes(key))) }, {
+        router.post(assessment.save_url, { field_values: changed }, {
             preserveScroll: true,
             onSuccess: (page) => {
-                if (page?.props?.assessment?.values) setValues(page.props.assessment.values);
+                const saved = page?.props?.assessment?.values || values;
+                setValues(saved);
+                setBaseline(saved);
                 toast.success("Assessment saved");
             },
             onError: (e) => { setFieldErrors(Object.fromEntries(Object.entries(e).map(([key, value]) => [key.replace(/^field_values\./, ""), value]))); toast.error(Object.values(e)[0] || "Could not save"); },

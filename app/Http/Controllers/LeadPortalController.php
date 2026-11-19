@@ -368,7 +368,10 @@ class LeadPortalController extends Controller
         [$type, $intake] = $this->leadIntake($lead);
         abort_unless($intake, 422, 'No completed assessment to generate a Visa Information Form from.');
 
-        $this->buildAndStoreVif($lead, $type, $intake);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $type, $intake) {
+            $current = $intake->newQuery()->whereKey($intake->id)->lockForUpdate()->firstOrFail();
+            $this->buildAndStoreVif($lead, $type, $current);
+        });
 
         return back()->with('success', 'Your Visa Information Form has been generated.');
     }
@@ -406,28 +409,36 @@ class LeadPortalController extends Controller
 
         $name = trim(preg_replace('/[^A-Za-z0-9 \-]/', '', $applicant)) ?: 'Applicant';
         $path = "lead-documents/{$lead->id}/vif-".\Illuminate\Support\Str::uuid().'.pdf';
-        \Illuminate\Support\Facades\Storage::disk('local')->put($path, $bytes);
+        $disk = \Illuminate\Support\Facades\Storage::disk('local');
+        try {
+            if ($bytes === '' || ! $disk->put($path, $bytes)) {
+                throw new \RuntimeException('Could not save the generated Visa Information Form.');
+            }
 
-        // Replaces any prior VIF; checklist_key 'svf' satisfies the VIF checklist item.
-        // The VIF is referred straight to the licensed adviser for verification —
-        // it lands in the adviser's queue as 'Checked' (not a client "Submitted"
-        // upload). Regenerating after an edit re-refers it, invalidating any prior
-        // approval so the adviser re-checks the changed details. Clears the prior
-        // reviewer stamp so a re-referred form doesn't look already-verified.
-        \App\Models\LeadDocument::updateOrCreate(
-            ['lead_id' => $lead->id, 'source_variant' => 'vif'],
-            [
-                'checklist_key' => 'svf',
-                'original_name' => "{$name} VIF.pdf",
-                'file_path' => $path,
-                'mime' => 'application/pdf',
-                'size' => strlen($bytes),
-                'source' => 'generated',
-                'status' => \App\Models\LeadDocument::STATUS_CHECKED,
-                'reviewed_by' => null,
-                'reviewed_at' => now(), // referral time — orders it into the queue
-            ],
-        );
+            // A regenerated VIF returns to adviser review; its old file stays intact.
+            \App\Models\LeadDocument::updateOrCreate(
+                ['lead_id' => $lead->id, 'source_variant' => 'vif'],
+                [
+                    'checklist_key' => 'svf',
+                    'original_name' => "{$name} VIF.pdf",
+                    'file_path' => $path,
+                    'mime' => 'application/pdf',
+                    'size' => strlen($bytes),
+                    'source' => 'generated',
+                    'status' => \App\Models\LeadDocument::STATUS_CHECKED,
+                    'reviewed_by' => null,
+                    'reviewed_at' => now(), // referral time — orders it into the queue
+                ],
+            );
+        } catch (\Throwable $e) {
+            // Unique candidate paths cannot remove the prior approved document.
+            try {
+                $disk->delete($path);
+            } catch (\Throwable $cleanupError) {
+                \Illuminate\Support\Facades\Log::warning('Failed VIF candidate cleanup failed', ['lead_id' => $lead->id, 'error' => $cleanupError->getMessage()]);
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -459,7 +470,7 @@ class LeadPortalController extends Controller
             ]);
         }
 
-        [$intake, $vifChanged] = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $intake, $type, $data) {
+        $vifChanged = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $lead, $intake, $type, $data) {
             $current = $intake->newQuery()->whereKey($intake->id)->lockForUpdate()->firstOrFail();
             $before = $this->vifContent($type, $current);
             $workCategory = $current->vif_answers['work_visa_category'] ?? null;
@@ -494,16 +505,25 @@ class LeadPortalController extends Controller
                 \App\Support\IntakeVisaTypeMap::syncWorkCategory($current, 'field_values.vif_answers.work_visa_category');
             }
 
-            return [$current, $before != $this->vifContent($type, $current)];
+            $vifChanged = $before !== $this->vifContent($type, $current);
+            if ($vifChanged) {
+                // Publish while the same intake lock protects both answers and document.
+                $this->buildAndStoreVif($lead, $type, $current);
+                \Illuminate\Support\Facades\DB::afterCommit(fn () => $this->notifyAssessmentUpdated($lead, $type, $current));
+            }
+
+            return $vifChanged;
         });
 
         if (! $vifChanged) {
             return back()->with('success', 'Your assessment is up to date.');
         }
-        // The VIF is derived from the assessment — keep it in lockstep.
-        $this->buildAndStoreVif($lead, $type, $intake);
+        return back()->with('success', 'Your assessment has been updated and your Visa Information Form regenerated.');
+    }
 
-        // Notify all case staff that the client changed their assessment / VIF.
+    /** Notify only after the changed answers and matching document commit together. */
+    private function notifyAssessmentUpdated(Lead $lead, string $type, $intake): void
+    {
         try {
             $pct = \App\Support\AssessmentFormSchema::stats($intake, $type)['pct'];
             $recipients = \App\Models\User::whereIn('role', array_merge(['immigration'], \App\Models\User::IMMIGRATION_ROLES, ['admin', 'super_admin']))->get();
@@ -517,8 +537,6 @@ class LeadPortalController extends Controller
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Client assessment-update notify failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
         }
-
-        return back()->with('success', 'Your assessment has been updated and your Visa Information Form regenerated.');
     }
 
     /** Stream the client's generated VIF. */

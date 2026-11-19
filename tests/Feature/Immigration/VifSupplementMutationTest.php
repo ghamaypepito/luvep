@@ -306,4 +306,125 @@ class VifSupplementMutationTest extends TestCase
         }
         $this->assertSame(['middle_name' => 'Corrected answer'], $intake->refresh()->vif_answers);
     }
+
+    public static function renderedWriters(): array
+    {
+        return [['staff'], ['client'], ['public']];
+    }
+
+    #[DataProvider('renderedWriters')]
+    public function test_numeric_looking_identifiers_are_real_rendered_changes(string $writer): void
+    {
+        $payload = $this->residentPayload();
+        $payload['passport_number'] = '001234';
+        [$lead, $intake, $client] = $this->linked('resident', $payload + ['edit_token' => 'strict-rendered-id']);
+        $doc = $this->approve($lead, $client);
+        $oldPath = $doc->file_path;
+        if ($writer === 'staff') {
+            $this->actingAs($this->staff)->patchJson('/portal/immigration/intakes/resident/'.$intake->id, ['fields' => ['passport_number' => '1234']])->assertOk();
+        } elseif ($writer === 'client') {
+            $this->actingAs($client)->post('/portal/lead/visa-assessment', ['field_values' => ['passport_number' => '1234']])->assertRedirect()->assertSessionHasNoErrors();
+        } else {
+            $this->post('/resident-interest/edit/strict-rendered-id', array_replace($payload, ['passport_number' => '1234']))->assertRedirect()->assertSessionHasNoErrors();
+        }
+        $this->assertSame('1234', $intake->refresh()->passport_number);
+        $this->assertSame('Checked', $doc->refresh()->status);
+        $this->assertNotSame($oldPath, $doc->file_path);
+        Storage::disk('local')->assertExists($oldPath);
+    }
+
+    public static function vifFailures(): array
+    {
+        return [['render'], ['storage'], ['storage-exception'], ['pointer']];
+    }
+
+    #[DataProvider('vifFailures')]
+    public function test_failed_client_generation_rolls_back_and_identical_retry_refreshes(string $failure): void
+    {
+        [$lead, $intake, $client] = $this->linked('work', ['vif_answers' => ['middle_name' => 'Original']]);
+        $doc = $this->approve($lead, $client);
+        $originalIntake = $intake->refresh()->getRawOriginal();
+        $originalDoc = $doc->getRawOriginal();
+        $disk = Storage::disk('local');
+        $oldBytes = $disk->get($doc->file_path);
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::getFacadeRoot();
+        if ($failure === 'render') {
+            \Barryvdh\DomPDF\Facade\Pdf::shouldReceive('loadView')->once()->andThrow(new \RuntimeException('Synthetic render failure'));
+        } elseif ($failure === 'pointer') {
+            $failOnce = true;
+            LeadDocument::updating(function () use (&$failOnce) {
+                if ($failOnce) {
+                    $failOnce = false;
+                    throw new \RuntimeException('Synthetic pointer failure');
+                }
+            });
+        } else {
+            $failingDisk = \Mockery::mock($disk)->makePartial();
+            $failingDisk->shouldReceive('put')->once()->andReturnUsing(function ($path) use ($disk, $failure) {
+                $disk->put($path, 'partial synthetic bytes');
+                if ($failure === 'storage-exception') {
+                    throw new \RuntimeException('Synthetic storage failure');
+                }
+
+                return false;
+            });
+            Storage::set('local', $failingDisk);
+        }
+        $oldFiles = $disk->allFiles('lead-documents/'.$lead->id);
+        $this->actingAs($client)->post('/portal/lead/visa-assessment', ['field_values' => ['vif_answers' => ['middle_name' => 'Updated']]])->assertServerError();
+        $this->assertSame($originalIntake, $intake->refresh()->getRawOriginal());
+        $this->assertSame($originalDoc, $doc->refresh()->getRawOriginal());
+        $this->assertSame($oldBytes, $disk->get($doc->file_path));
+        $this->assertSame($oldFiles, $disk->allFiles('lead-documents/'.$lead->id), 'Failed candidates must not leave partial or orphan files');
+        Notification::assertNothingSent();
+        \Barryvdh\DomPDF\Facade\Pdf::swap($pdf);
+        Storage::set('local', $disk);
+        $this->post('/portal/lead/visa-assessment', ['field_values' => ['vif_answers' => ['middle_name' => 'Updated']]])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Updated', $intake->refresh()->vif_answers['middle_name']);
+        $this->assertSame('Checked', $doc->refresh()->status);
+        $this->assertNotSame($originalDoc['file_path'], $doc->file_path);
+    }
+
+    public function test_client_render_and_document_update_share_the_intake_lock_before_commit_notification(): void
+    {
+        [$lead, $intake, $client] = $this->linked('work', ['vif_answers' => ['middle_name' => 'Original']]);
+        $doc = $this->approve($lead, $client);
+        $baselineLevel = \Illuminate\Support\Facades\DB::transactionLevel();
+        $events = [];
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::getFacadeRoot();
+        \Barryvdh\DomPDF\Facade\Pdf::shouldReceive('loadView')->once()->andReturnUsing(function ($view, $content) use (&$events, $baselineLevel, $pdf) {
+            $this->assertSame($baselineLevel + 1, \Illuminate\Support\Facades\DB::transactionLevel(), 'Render must still hold the edit transaction');
+            $this->assertStringContainsString('Latest locked value', json_encode($content));
+            $events[] = 'render';
+
+            return $pdf->loadView($view, $content);
+        });
+        $disk = Storage::disk('local');
+        $recordingDisk = \Mockery::mock($disk)->makePartial();
+        $recordingDisk->shouldReceive('put')->once()->andReturnUsing(function ($path, $bytes) use (&$events, $baselineLevel, $disk) {
+            $this->assertSame($baselineLevel + 1, \Illuminate\Support\Facades\DB::transactionLevel());
+            $events[] = 'write';
+
+            return $disk->put($path, $bytes);
+        });
+        Storage::set('local', $recordingDisk);
+        LeadDocument::updating(function ($updating) use (&$events, $baselineLevel, $doc) {
+            if ($updating->id === $doc->id) {
+                $this->assertSame($baselineLevel + 1, \Illuminate\Support\Facades\DB::transactionLevel());
+                $events[] = 'document';
+            }
+        });
+        \Illuminate\Support\Facades\DB::listen(function ($query) use (&$events) {
+            if (str_contains($query->sql, 'work_intakes') && str_starts_with($query->sql, 'select')) {
+                $events[] = 'intake-read';
+            }
+        });
+        Notification::shouldReceive('send')->once()->andReturnUsing(function () use (&$events, $baselineLevel) {
+            $this->assertSame($baselineLevel, \Illuminate\Support\Facades\DB::transactionLevel(), 'Notice must follow commit');
+            $events[] = 'notify';
+        });
+        $this->actingAs($client)->post('/portal/lead/visa-assessment', ['field_values' => ['vif_answers' => ['middle_name' => 'Latest locked value']]])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(['render', 'write', 'document', 'notify'], array_values(array_filter($events, fn ($event) => $event !== 'intake-read')));
+        $this->assertGreaterThanOrEqual(2, count(array_filter($events, fn ($event) => $event === 'intake-read')), 'Resolve then fresh locked read precede publishing');
+    }
 }

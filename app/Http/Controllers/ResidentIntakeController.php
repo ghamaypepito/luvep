@@ -290,7 +290,7 @@ class ResidentIntakeController extends Controller
                 'document_files' => $mergedFiles ?: null,
             ]));
 
-            if ($beforeVif != $vif->vifContent('resident', $intake)) {
+            if ($beforeVif !== $vif->vifContent('resident', $intake)) {
                 $vif->refreshStoredVifForIntake('resident', $intake);
             }
 
