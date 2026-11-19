@@ -92,6 +92,7 @@ class EducationPersonalReport
             ])->all(),
             'contacts' => $this->contacts($period, $user),
             'notes' => $fields, 'notes_week_start' => $monday,
+            'dated_notes' => EducationDatedNotes::forPeriod($period, $user),
             'today' => $period->now->toDateString(),
         ];
     }
