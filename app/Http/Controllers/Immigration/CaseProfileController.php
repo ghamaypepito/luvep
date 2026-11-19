@@ -1489,6 +1489,17 @@ class CaseProfileController extends Controller
         return back()->with('success', 'Partner recommendation saved.');
     }
 
+    /** Explicitly add an empty optional client upload category for this case. */
+    public function addRecentVisaCategory(Request $request, Lead $lead, RecentVisaDocuments $recentVisas)
+    {
+        $user = $request->user();
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
+            || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
+        $added = $recentVisas->addCategory($lead);
+
+        return back()->with('success', $added ? 'Recent visa / eVisa upload category added.' : 'Recent visa / eVisa category already exists.');
+    }
+
     /** Explicitly classify an unmatched upload without replacing its file. */
     public function moveDocumentToRecentVisa(Request $request, Lead $lead, int $document, RecentVisaDocuments $recentVisas)
     {
