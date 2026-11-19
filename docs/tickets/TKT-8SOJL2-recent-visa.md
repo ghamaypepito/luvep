@@ -6,6 +6,8 @@ The existing **Move to Recent visa / eVisa** action remains available when staff
 
 ## Behavior and access
 
+The action is shown only for explicit Immigration cases (`is_immigration_case=true`), matching the existing client upload gate. Legacy stage-only case profiles do not offer it; their flags and access remain unchanged.
+
 The category action uses the same active internal Immigration role guard and locked case record as classification. Creation and its `case.document.category_added` audit event are idempotent. Existing rows, including hidden rows, are unchanged on retry. Existing checklist planning notes and resolved catalogue items are retained. The action changes only the case checklist; other cases, the global visa catalogue and required-document progress are unchanged. No email or notification is sent by category creation.
 
 Creation shares its row-building logic with Move. Move retains its original hidden-by-default behavior and existing hidden-file visibility guard. The explicit empty-category action creates a visible row. If a missing category already has `recent_visa` files or a hidden visibility setting, staff review is required before adding the visible target, so existing files are not inadvertently published. Document approvals, filenames, paths, notes and review metadata are untouched.

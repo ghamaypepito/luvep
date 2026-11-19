@@ -178,10 +178,10 @@ export default function DocumentsTab({
     // Orphans (no matching checklist entry) get collected separately.
     const items = checklist.items || [];
     const knownKeys = new Set(items.flatMap((i) => [i.key, ...(i.aliases || [])]));
-    const recentVisaCategory = <AddRecentVisaCategory leadId={lead.id} exists={knownKeys.has('recent_visa')} onAdded={() => {
+    const recentVisaCategory = lead.is_immigration_case ? <AddRecentVisaCategory leadId={lead.id} exists={knownKeys.has('recent_visa')} onAdded={() => {
         setFilter('all');
         setExpandedCats(prev => new Set([...prev, 'Visa applications & decisions']));
-    }} />;
+    }} /> : null;
 
     // A checklist key can hold several files (the client can "Upload another"
     // without replacing the first), so keep the full list per key, oldest first.
