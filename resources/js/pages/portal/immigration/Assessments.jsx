@@ -711,6 +711,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const [editSection, setEditSection] = useState(null);
     const [draft, setDraft] = useState({});
     const [savingSection, setSavingSection] = useState(false);
+    const [sectionError, setSectionError] = useState("");
     const triedRef = useRef(false);
 
     const runConvert = () => {
@@ -835,12 +836,17 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const startEdit = (idx, sec) => {
         const d = {};
         sec.fields.forEach((f) => { if (f.editable) d[f.key] = f.raw ?? ""; });
+        if (sec.fields.some((f) => f.key === "english_evidence" && f.options?.includes("Not Required"))) {
+            d.english_evidence_reason = data.english_evidence_exception?.reason || "";
+        }
+        setSectionError("");
         setDraft(d);
         setEditSection(idx);
     };
-    const cancelEdit = () => { setEditSection(null); setDraft({}); };
+    const cancelEdit = () => { setEditSection(null); setDraft({}); setSectionError(""); };
     const saveSection = () => {
         if (savingSection) return;
+        setSectionError("");
         setSavingSection(true);
         fetch(`/portal/immigration/intakes/${i.visa_type}/${i.id}`, {
             method: "PATCH",
@@ -848,7 +854,11 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
             headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...assessCsrf() },
             body: JSON.stringify({ fields: draft }),
         })
-            .then((r) => (r.ok ? r.json() : null))
+            .then(async (r) => {
+                const fresh = await r.json().catch(() => null);
+                if (!r.ok) throw new Error(Object.values(fresh?.errors || {}).flat()[0] || "Could not save changes.");
+                return fresh;
+            })
             .then((fresh) => {
                 if (fresh?.sections) {
                     // Merge the whole fresh payload (keys the endpoint omits keep
@@ -861,7 +871,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     toast.error("Could not save changes.");
                 }
             })
-            .catch(() => toast.error("Could not save changes."))
+            .catch((error) => setSectionError(error.message || "Could not save changes."))
             .finally(() => setSavingSection(false));
     };
 
@@ -1008,7 +1018,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                             {editing ? (
                                                 <div className="flex items-center gap-2 flex-shrink-0">
                                                     <button type="button" onClick={cancelEdit} disabled={savingSection} className="text-[11px] font-semibold text-gray-500 hover:underline disabled:opacity-50">Cancel</button>
-                                                    <button type="button" onClick={saveSection} disabled={savingSection} className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-[#009688] text-white text-[11px] font-bold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                                                    <button type="button" onClick={saveSection} disabled={savingSection || (draft.english_evidence === "Not Required" && !draft.english_evidence_reason?.trim())} className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-[#009688] text-white text-[11px] font-bold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
                                                         {savingSection && <Loader2 size={11} className="animate-spin" />} Save
                                                     </button>
                                                 </div>
@@ -1026,12 +1036,21 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                                     return (
                                                         <div key={f.key} className="min-w-0">
                                                             <dt className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-400">{f.label}</dt>
-                                                            <input
+                                                            {f.options ? <select
+                                                                aria-label={f.label}
+                                                                value={draft[f.key] ?? ""}
+                                                                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                                                                className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688] focus:ring-1 focus:ring-[#009688]"
+                                                            >
+                                                                <option value="">Select evidence</option>
+                                                                {f.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                                                            </select> : <input
+                                                                aria-label={f.label}
                                                                 type={isDate ? "date" : "text"}
                                                                 value={draft[f.key] ?? ""}
                                                                 onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                                                                 className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-[#009688] focus:ring-1 focus:ring-[#009688]"
-                                                            />
+                                                            />}
                                                         </div>
                                                     );
                                                 }
@@ -1048,6 +1067,28 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                                 );
                                             })}
                                         </dl>
+                                        {editing && draft.english_evidence === "Not Required" && (
+                                            <label className="mt-4 block text-xs font-semibold text-gray-700">
+                                                Reason for Not Required
+                                                <textarea required maxLength={2000} value={draft.english_evidence_reason || ""}
+                                                    onChange={(e) => setDraft((d) => ({ ...d, english_evidence_reason: e.target.value }))}
+                                                    className="mt-1 w-full rounded-lg border border-gray-200 p-2 text-sm" />
+                                                <span className="mt-1 block font-normal text-gray-500">Staff record only. This does not approve an exemption or waive any document checklist.</span>
+                                            </label>
+                                        )}
+                                        {editing && sectionError && <p role="alert" className="mt-3 text-xs text-rose-700">{sectionError}</p>}
+                                        {sec.fields.some((f) => f.key === "english_evidence") && data.english_evidence_history?.length > 0 && (
+                                            <details className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-600">
+                                                <summary className="cursor-pointer font-semibold">English evidence history</summary>
+                                                <ul className="mt-2 space-y-2">
+                                                    {data.english_evidence_history.map((entry, index) => <li key={index}>
+                                                        <p>{entry.evidence} · {entry.actor} · {new Date(entry.at).toLocaleString("en-NZ")}</p>
+                                                        {entry.reason && <p className="whitespace-pre-wrap">Reason: {entry.reason}</p>}
+                                                    </li>)}
+                                                </ul>
+                                                <p className="mt-2">This records staff evidence choices; it does not approve an exemption or waive a checklist.</p>
+                                            </details>
+                                        )}
                                     </section>
                                 );
                             })}

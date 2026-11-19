@@ -69,6 +69,44 @@ class ResidentIntakeUploadTest extends TestCase
         $this->assertStringContainsString("resident-intakes/{$intake->intake_id}", $path);
     }
 
+    public function test_public_submissions_cannot_forge_staff_evidence_or_reason(): void
+    {
+        foreach (['Not Required', 'not required', 'Not required', 'not_required'] as $evidence) {
+            $this->postJson('/resident-interest', $this->payload(['english_evidence' => $evidence]))
+                ->assertUnprocessable()->assertJsonValidationErrors('english_evidence');
+        }
+        foreach (['english_evidence_reason' => 'Forged', 'english_evidence_exception' => ['reason' => 'Forged']] as $key => $value) {
+            $this->postJson('/resident-interest', $this->payload([$key => $value]))
+                ->assertUnprocessable()->assertJsonValidationErrors($key);
+        }
+        $this->assertDatabaseCount('resident_intakes', 0);
+    }
+
+    public function test_public_edit_preserves_staff_evidence_reason_and_does_not_expose_internal_reason(): void
+    {
+        $this->post('/resident-interest', $this->payload())->assertSessionHas('intake_submitted');
+        $intake = ResidentIntake::sole();
+        $decision = ['reason' => 'Private staff review note', 'actor_id' => 123, 'recorded_at' => '2026-11-19T06:00:00Z'];
+        $intake->update(['edit_token' => 'staff-evidence-token', 'english_evidence' => 'Not Required', 'english_evidence_exception' => $decision]);
+        $url = '/resident-interest/edit/'.$intake->edit_token;
+        $this->get($url)->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->where('editIntake.english_evidence', 'Not Required')->missing('editIntake.english_evidence_exception'));
+        $this->postJson($url, $this->payload(['english_evidence' => 'Not Required']))
+            ->assertUnprocessable()->assertJsonValidationErrors('english_evidence');
+        $this->postJson($url, $this->payload(['english_evidence_exception' => ['reason' => 'Forged']]))
+            ->assertUnprocessable()->assertJsonValidationErrors('english_evidence_exception');
+        // A stale applicant form may still contain its earlier valid evidence choice.
+        $this->post($url, $this->payload(['phone' => '+6421999999']))->assertSessionHas('edited', true)->assertSessionHasNoErrors();
+        $intake->refresh();
+        $this->assertSame('Not Required', $intake->english_evidence);
+        $this->assertSame($decision, $intake->english_evidence_exception);
+        $this->assertSame('+6421999999', $intake->phone);
+        $withoutEnglish = $this->payload(['phone' => '+6421888888']);
+        unset($withoutEnglish['english_evidence']);
+        $this->post($url, $withoutEnglish)->assertSessionHas('edited', true)->assertSessionHasNoErrors();
+        $this->assertSame($decision, $intake->fresh()->english_evidence_exception);
+    }
+
     public function test_qualification_evidence_can_be_saved_and_reopened_without_test_results(): void
     {
         $qualification = $this->payload(['english_evidence' => 'Qualification(s)']);

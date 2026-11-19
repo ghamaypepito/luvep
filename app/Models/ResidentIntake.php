@@ -10,6 +10,14 @@ class ResidentIntake extends Model
 {
     use LogsActivity;
 
+    public const ENGLISH_EVIDENCE = [
+        'IELTS', 'TOEFL', 'PTE Academic', 'Qualification(s)',
+        'Passport (exempt country)', 'Occupational registration',
+        'Recognised employment', // Retain the earlier intake value.
+    ];
+
+    public const ENGLISH_NOT_REQUIRED = 'Not Required';
+
     protected $fillable = [
         'intake_id',
         'payment_status',
@@ -50,6 +58,7 @@ class ResidentIntake extends Model
         'total_skilled_years',
         'career_summary',
         'english_evidence',
+        'english_evidence_exception',
         'english_test_score',
         'english_test_date',
         'include_family',
@@ -73,6 +82,7 @@ class ResidentIntake extends Model
         'nz_arrival_date' => 'date',
         'employment_start' => 'date',
         'english_test_date' => 'date',
+        'english_evidence_exception' => 'array',
         'documents' => 'array',
         'document_files' => 'array',
         'family_members' => 'array',
