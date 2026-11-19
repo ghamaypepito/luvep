@@ -1,7 +1,17 @@
-import React, { useEffect, useState, useId } from 'react';
+import React, { useEffect, useState, useId, useRef } from 'react';
 import catalog from '@/data/vifSupplementQuestions.json';
 
 const inputClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900';
+
+function entryValue(entry, field) {
+    if (Object.hasOwn(entry || {}, field.key)) return entry[field.key] ?? '';
+    return (field.aliases || []).map(key => entry?.[key]).find(value => value !== undefined && value !== null && value !== '') ?? '';
+}
+
+function sameValue(left, right) {
+    const blank = value => value == null || value === '' || (Array.isArray(value) && !value.length);
+    return (blank(left) && blank(right)) || JSON.stringify(left) === JSON.stringify(right);
+}
 
 export function vifSupplementSections(type, values = {}) {
     return (catalog[type] || []).filter(section => {
@@ -17,11 +27,18 @@ function Question({ field, value, onChange, path, errors }) {
     const error = errors[path];
     if (field.type === 'list') {
         const entries = Array.isArray(value) ? value : [];
-        const update = (index, key, next) => onChange(entries.map((entry, i) => i === index ? { ...entry, [key]: next } : entry));
+        const update = (index, child, next) => onChange(entries.map((entry, i) => {
+            if (i !== index) return entry;
+            const changed = { ...entry, [child.key]: next };
+            for (const alias of child.aliases || []) {
+                if (alias !== child.key) delete changed[alias];
+            }
+            return changed;
+        }));
         return <fieldset className="space-y-3 sm:col-span-2"><legend className="text-sm font-semibold">{field.label}</legend>
             {entries.map((entry, i) => <div key={i} className="rounded-lg border border-gray-200 p-4 space-y-3">
                 <div className="flex justify-between"><span className="text-sm font-semibold">Entry {i + 1}</span><button type="button" className="text-sm text-red-700" onClick={() => onChange(entries.filter((_, j) => i !== j))}>Remove entry {i + 1}</button></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{field.fields.map(child => <Question key={child.key} field={child} value={[child.key, ...(child.aliases || [])].map(key => entry?.[key]).find(value => value !== undefined && value !== null && value !== '') ?? ''} onChange={next => update(i, child.key, next)} path={`${path}.${i}.${child.key}`} errors={errors} />)}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{field.fields.map(child => <Question key={child.key} field={child} value={entryValue(entry, child)} onChange={next => update(i, child, next)} path={`${path}.${i}.${child.key}`} errors={errors} />)}</div>
             </div>)}
             {entries.length < 25 && <button type="button" className="rounded-lg border border-teal-700 px-3 py-2 text-sm text-teal-800" onClick={() => onChange([...entries, {}])}>Add {field.label.toLowerCase()}</button>}
             {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
@@ -52,22 +69,35 @@ export default function VifSupplementFields({ type, values = {}, onChange, error
 
 export function VifSupplementEditor({ type, values, saveUrl, csrfHeaders, onSaved }) {
     const [draft, setDraft] = useState(values || {});
+    const baseline = useRef(values || {});
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
-    useEffect(() => { setDraft(values || {}); }, [values]);
+    useEffect(() => { baseline.current = values || {}; setDraft(values || {}); }, [values]);
     if (!catalog[type] || !values) return null;
     const save = async () => {
         if (saving) return;
+        const fields = {};
+        for (const [key, value] of Object.entries(draft)) {
+            if (key === 'vif_answers') {
+                const changed = Object.fromEntries(Object.entries(value || {}).filter(([answer, next]) => !sameValue(next, baseline.current.vif_answers?.[answer])));
+                if (Object.keys(changed).length) fields.vif_answers = changed;
+            } else if (!sameValue(value, baseline.current[key])) {
+                fields[key] = value;
+            }
+        }
+        if (!Object.keys(fields).length) return;
         setSaving(true); setErrors({}); setMessage('');
         try {
-            const response = await fetch(saveUrl, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeaders }, body: JSON.stringify({ fields: draft }) });
+            const response = await fetch(saveUrl, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeaders }, body: JSON.stringify({ fields }) });
             const fresh = await response.json().catch(() => null);
             if (!response.ok) {
                 setErrors(Object.fromEntries(Object.entries(fresh?.errors || {}).map(([key, value]) => [key.replace(/^fields\./, ''), Array.isArray(value) ? value[0] : value])));
                 throw new Error('Could not save additional answers. Your edits are still here.');
             }
             if (!fresh?.sections) throw new Error('Could not confirm saved answers.');
+            baseline.current = fresh.vif_values || draft;
+            setDraft(baseline.current);
             onSaved(fresh); setMessage('Additional answers saved.');
         } catch (error) { setMessage(error.message || 'Could not save additional answers.'); }
         finally { setSaving(false); }
