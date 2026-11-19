@@ -146,21 +146,22 @@ class AssignedCaseHelperTest extends TestCase
         $upload = fn ($fields) => $this->post($this->base($case).'/uploads', array_merge(['file' => UploadedFile::fake()->create('new.pdf', 5, 'application/pdf')], $fields));
         $this->actingAs($agent);
         $upload(['checklist_key' => 'passport'])->assertRedirect()->assertSessionHasNoErrors();
-        $upload(['request_id' => $request->id])->assertRedirect()->assertSessionHasNoErrors();
+        $upload(['request_id' => $request->id])->assertSessionHasErrors('request_id');
         $this->assertSame($before, $original->fresh()->getRawOriginal());
         $new = $case->documents()->where('id', '!=', $original->id)->get();
-        $this->assertCount(2, $new);
+        $this->assertCount(1, $new);
         foreach ($new as $doc) {
             $this->assertSame($agent->id, $doc->uploaded_by);
             $this->assertSame('Submitted', $doc->status);
             $this->assertNull($doc->reviewed_at);
+            $this->assertNull($doc->request_id);
             Storage::disk('local')->assertExists($doc->file_path);
         }
         foreach ([['checklist_key' => 'hidden'], ['checklist_key' => 'optional'], ['checklist_key' => 'unknown'], ['checklist_key' => '0'], ['request_id' => 0], ['request_id' => $foreign->id], ['checklist_key' => 'passport', 'request_id' => $request->id], ['checklist_key' => 'passport', 'dependent_id' => 999], ['checklist_key' => 'passport', 'status' => 'Approved']] as $fields) {
             $upload($fields)->assertSessionHasErrors();
         }
         $this->post($this->base($case).'/uploads', ['checklist_key' => 'passport', 'file' => UploadedFile::fake()->create('malware.php', 5, 'application/x-httpd-php')])->assertSessionHasErrors('file');
-        $this->assertSame(3, $case->documents()->count());
+        $this->assertSame(2, $case->documents()->count());
         foreach (['/stage', '/review', '/notes', '/sign', '/payments'] as $path) {
             $this->post($this->base($case).$path, [])->assertNotFound();
         }
@@ -325,22 +326,29 @@ class AssignedCaseHelperTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
-    public function test_known_manual_and_rfi_request_origins_keep_requested_evidence_access(): void
+    public function test_all_free_text_requests_are_staff_only_even_with_plausible_labels_or_a_checklist_link(): void
     {
         $agent = $this->agent();
         $case = $this->caseFor($agent);
         $files = [];
         foreach ([null, 'manual', 'rfi'] as $origin) {
-            $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'origin' => $origin, 'label' => 'Additional evidence']);
-            $files[] = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
+            foreach (['Mother’s passport', "Father's birth certificate", 'Wage slips', 'Additional evidence', 'Primary applicant police certificate', 'Passport'] as $label) {
+                $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'origin' => $origin, 'label' => $label]);
+                foreach ([null, 'passport'] as $key) {
+                    $files[] = $this->file($case, ['request_id' => $request->id, 'checklist_key' => $key, 'status' => 'Submitted']);
+                }
+            }
         }
-        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 3)->has('requests', 3));
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0)->has('requests', 0)->has('slots', 1)->where('slots.0.key', 'passport'));
+        $before = LeadDocument::count();
         foreach ($files as $doc) {
-            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertDownload($doc->original_name);
-            $this->post($this->base($case).'/uploads', ['request_id' => $doc->request_id,
-                'file' => UploadedFile::fake()->create('evidence.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
-            $this->assertSame(2, LeadDocument::where('request_id', $doc->request_id)->count());
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['request_id' => $doc->request_id,
+                'file' => UploadedFile::fake()->create('evidence.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('request_id');
         }
+        $this->assertSame($before, LeadDocument::count());
+        $this->post($this->base($case).'/uploads', ['checklist_key' => 'passport',
+            'file' => UploadedFile::fake()->create('evidence.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
     }
 
     public function test_referral_case_picker_keeps_own_referrals_without_exposing_other_or_helper_only_cases(): void
@@ -411,16 +419,15 @@ class AssignedCaseHelperTest extends TestCase
         }
         $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'label' => 'Primary applicant police certificate', 'origin' => 'rfi']);
         $allowed = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
-        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 1)->where('documents.0.id', $allowed->id)
-            ->has('requests', 1)->where('requests.0.id', $request->id));
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0)->has('requests', 0));
         foreach ($denied as $doc) {
             $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
             $this->postJson($this->base($case).'/uploads', ['request_id' => $doc->request_id,
                 'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('request_id');
         }
-        $this->get($this->base($case).'/documents/'.$allowed->id.'/download')->assertDownload($allowed->original_name);
+        $this->get($this->base($case).'/documents/'.$allowed->id.'/download')->assertNotFound();
         $this->post($this->base($case).'/uploads', ['request_id' => $request->id,
-            'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
+            'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertSessionHasErrors('request_id');
     }
 
     public function test_generic_request_cannot_override_disallowed_checklist_person_category_or_alias_metadata(): void
@@ -496,5 +503,37 @@ class AssignedCaseHelperTest extends TestCase
         foreach ($files as $file) {
             $this->get($this->base($case).'/documents/'.$file->id.'/download')->assertDownload($file->original_name);
         }
+    }
+
+    public function test_unknown_custom_checklists_or_classification_cannot_create_helper_access(): void
+    {
+        $agent = $this->agent();
+        $denied = [
+            ['key' => 'custom.mothers_passport', 'label' => 'Mother’s passport'],
+            ['key' => 'custom.wage_slips', 'label' => 'Wage slips'],
+            ['key' => 'custom.passport', 'label' => 'Passport'],
+            ['key' => 'passport', 'label' => 'Mother’s passport'],
+            ['key' => 'birth_certificate', 'label' => 'Father’s birth certificate'],
+            ['key' => 'passport', 'label' => 'Passport', 'category' => 'Unknown custom purpose'],
+            ['key' => 'passport', 'label' => 'Passport', 'file_code' => 'OTHER'],
+            ['key' => 'passport', 'label' => 'Passport', 'file_suffix' => '(of mother)'],
+            ['key' => 'passport', 'label' => 'Passport', 'person' => 'mother'],
+            ['key' => 'passport', 'label' => 'Passport', 'purpose' => 'Wage slips'],
+            ['key' => 'passport', 'label' => 'Passport', 'aliases' => ['mothers_passport']],
+            ['key' => 'passport', 'label' => 'Passport', 'hint' => 'Mother’s passport'],
+            ['key' => 'passport', 'label' => ''],
+        ];
+        foreach ($denied as $item) {
+            $case = $this->caseFor($agent, ['document_checklist' => [$item + ['required' => true]]]);
+            $doc = $this->file($case, ['checklist_key' => $item['key']]);
+            $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0)->has('slots', 0));
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['checklist_key' => $item['key'],
+                'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable();
+        }
+        $case = $this->caseFor($agent);
+        $doc = $this->file($case, ['notes' => ['purpose' => 'Wage slips']]);
+        $this->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0));
+        $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
     }
 }
