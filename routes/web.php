@@ -459,6 +459,8 @@ Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegist
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the
 // separate event-registration funnel.
+Route::get('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'show'])->where('token', '[A-Za-z0-9]{48}');
+Route::post('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'ring'])->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:3,1');
 Route::get('/register', [LeadController::class, 'showRegistration'])->name('register');
 Route::post('/register', [LeadController::class, 'storeRegistration']);
 Route::get('/register/full', [LeadController::class, 'showRegistrationFull'])->name('register.full');
@@ -1999,6 +2001,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/leads/{id}', [LeadController::class, 'show'])->name('leads.show');
 
             // WORK
+            Route::get('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'index'])->name('reception');
+            Route::post('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'setup']);
             Route::get('/assessments', [ImmigrationController::class, 'assessments'])->name('assessments');
             // Pre-screening (potential-client vetting) staff actions on an
             // assessment. {preScreening} resolves by its token (model route key).

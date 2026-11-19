@@ -56,6 +56,7 @@ jobs:
           node tests/Frontend/engagement-email-review.cjs
           node tests/Frontend/staff-engagement-signature.cjs
           node tests/Frontend/engagement-search.cjs
+          node tests/Frontend/reception-doorbell.cjs
           node tests/Frontend/engagement-service-gst.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs

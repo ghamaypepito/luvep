@@ -50,6 +50,8 @@ export default function ImmigrationLayout({ children }) {
         { name: "Setup", section: true },
         { name: "Visas",               href: "/portal/immigration/visa-types",          icon: <FileBadge size={20} /> },
         { name: "INZ Forms",           href: "/portal/immigration/inz-forms",           icon: <FileText size={20} /> },
+        ...(['admin', 'super_admin', 'immigration_manager'].includes(props.auth?.user?.role)
+            ? [{ name: "Reception QR", href: "/portal/immigration/reception", icon: <Bell size={20} /> }] : []),
 
         {
             name: "Email",
