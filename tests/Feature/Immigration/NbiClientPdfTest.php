@@ -41,7 +41,7 @@ class NbiClientPdfTest extends TestCase
     private function client(string $code, string $key): array
     {
         $visa = VisaType::create(['code' => $code, 'name' => 'Synthetic '.$code, 'category' => 'Resident', 'checklist_items' => [['key' => $key, 'label' => 'Existing clearance', 'required' => true], ['key' => 'other', 'label' => 'Other document']]]);
-        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'NBI', 'inz_visa_type' => $visa->name, 'is_immigration_case' => true, 'portal_invitation_status' => 'accepted', 'tracking_code' => 'NBI'.uniqid()]);
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'NBI', 'inz_visa_type' => $visa->name, 'is_immigration_case' => true, 'portal_invitation_status' => 'accepted', 'tracking_code' => strtoupper('NBI'.uniqid())]);
         $user = User::factory()->create(['role' => 'lead', 'lead_id' => $lead->id]);
         $this->actingAs($user);
 
@@ -144,5 +144,53 @@ class NbiClientPdfTest extends TestCase
         $queries = array_filter(\Illuminate\Support\Facades\DB::getQueryLog(), fn ($query) => str_contains($query['query'], 'visa_types'));
         \Illuminate\Support\Facades\DB::disableQueryLog();
         $this->assertLessThanOrEqual(5, count($queries), 'Catalogue queries: '.count($queries));
+    }
+
+    public function test_key_only_move_into_pdf_slot_requires_replacement_but_existing_images_are_preserved(): void
+    {
+        [$lead] = $this->client('SMCRV', 'police_clearance');
+        $lead->update(['is_immigration_case' => false]);
+        Storage::disk('local')->put('historical/image.png', 'Historical image bytes');
+        $doc = LeadDocument::create(['lead_id' => $lead->id, 'checklist_key' => 'other', 'original_name' => 'old.png', 'file_path' => 'historical/image.png', 'mime' => 'image/png', 'status' => 'Rejected']);
+        $before = $doc->refresh()->getRawOriginal();
+        $url = '/track/'.$lead->tracking_code.'/document/'.$doc->id;
+        $move = $this->postJson($url, ['checklist_key' => 'police_clearance']);
+        $this->assertSame($before, $doc->refresh()->getRawOriginal());
+        $move->assertUnprocessable()->assertJsonValidationErrors('file');
+        $this->assertSame('Historical image bytes', Storage::disk('local')->get('historical/image.png'));
+        $this->postJson($url, ['checklist_key' => 'police_clearance', 'file' => $this->image('disguise.pdf')])->assertUnprocessable();
+        $this->assertSame($before, $doc->refresh()->getRawOriginal());
+        $doc->update(['checklist_key' => 'police_clearance']);
+        $this->post($url, ['checklist_key' => 'police_clearance'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Historical image bytes', Storage::disk('local')->get('historical/image.png'));
+        $doc->update(['checklist_key' => 'other']);
+        $this->post($url, ['checklist_key' => 'police_clearance', 'file' => $this->pdf()])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('police_clearance', $doc->refresh()->checklist_key);
+        $this->assertSame('Submitted', $doc->status);
+    }
+
+    public function test_request_binding_list_queries_do_not_grow_with_requests_or_files(): void
+    {
+        [$lead] = $this->client('SMCRV', 'police_clearance');
+        $measure = function (string $url): array {
+            \Illuminate\Support\Facades\DB::flushQueryLog();
+            \Illuminate\Support\Facades\DB::enableQueryLog();
+            $this->get($url)->assertOk();
+            $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+            \Illuminate\Support\Facades\DB::disableQueryLog();
+
+            return array_map(fn ($table) => count(array_filter($queries, fn ($query) => str_contains($query['query'], $table))), ['visa_types', 'lead_documents']);
+        };
+        foreach ([1, 20] as $total) {
+            $existing = $lead->documentRequests()->count();
+            for ($i = $existing; $i < $total; $i++) {
+                $request = LeadDocumentRequest::create(['lead_id' => $lead->id, 'label' => 'Request '.$i, 'requested_at' => now()]);
+                foreach (['police_clearance', null, null] as $key) {
+                    LeadDocument::create(['lead_id' => $lead->id, 'request_id' => $request->id, 'checklist_key' => $key, 'original_name' => 'old.png', 'file_path' => 'historical/file.png', 'mime' => 'image/png', 'status' => 'Rejected']);
+                }
+            }
+            $costs[$total] = [$measure('/portal/lead/documents'), $measure('/portal/lead/tracker')];
+        }
+        $this->assertSame($costs[1], $costs[20], 'Catalogue/document query costs must stay constant: '.json_encode($costs));
     }
 }

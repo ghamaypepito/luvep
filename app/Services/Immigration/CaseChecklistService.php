@@ -97,13 +97,26 @@ class CaseChecklistService
             ->whereNotNull('checklist_key')->pluck('checklist_key')->unique()->values()->all();
     }
 
-    public function requestRequiresPdf(Lead $lead, int $requestId, ?array $pdfKeys = null): bool
+    /** Same-case binding snapshot for one list operation; no per-row queries or cache. */
+    public function requestBindingsFor(Lead $lead): array
+    {
+        $bindings = [];
+        foreach (LeadDocument::where('lead_id', $lead->id)->whereNotNull('request_id')
+            ->whereNotNull('checklist_key')->distinct()->get(['request_id', 'checklist_key']) as $document) {
+            $bindings[$document->request_id][] = $document->checklist_key;
+        }
+
+        return $bindings;
+    }
+
+    public function requestRequiresPdf(Lead $lead, int $requestId, ?array $pdfKeys = null, ?array $requestBindings = null): bool
     {
         $pdfKeys ??= $this->clientPdfKeys($lead);
         if ($pdfKeys === []) {
             return false;
         }
-        foreach ($this->requestChecklistKeys($lead, $requestId) as $key) {
+        $keys = $requestBindings !== null ? ($requestBindings[$requestId] ?? []) : $this->requestChecklistKeys($lead, $requestId);
+        foreach ($keys as $key) {
             if (in_array($key, $pdfKeys, true)) {
                 return true;
             }
@@ -112,12 +125,12 @@ class CaseChecklistService
         return false;
     }
 
-    public function documentRequiresPdf(Lead $lead, LeadDocument $document, ?array $pdfKeys = null): bool
+    public function documentRequiresPdf(Lead $lead, LeadDocument $document, ?array $pdfKeys = null, ?array $requestBindings = null): bool
     {
         $pdfKeys ??= $this->clientPdfKeys($lead);
 
         return in_array($document->checklist_key, $pdfKeys, true)
-            || ($document->request_id && $this->requestRequiresPdf($lead, $document->request_id, $pdfKeys));
+            || ($document->request_id && $this->requestRequiresPdf($lead, $document->request_id, $pdfKeys, $requestBindings));
     }
 
     /** Historical PRSWV sponsor visa keys describe one requirement; retain both upload keys. */

@@ -498,12 +498,13 @@ class LeadTrackingController extends Controller
 
         $request->validate(['checklist_key' => 'nullable|string|max:80']);
         $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
-        $pdfOnly = $checklist->documentRequiresPdf($lead, $doc)
-            || $checklist->clientRequiresPdf($lead, $request->input('checklist_key'));
+        $pdfKeys = $checklist->clientPdfKeys($lead);
+        $destination = $request->filled('checklist_key') ? $request->input('checklist_key') : $doc->checklist_key;
+        $enteringPdfSlot = in_array($destination, $pdfKeys, true) && ! in_array($doc->checklist_key, $pdfKeys, true);
+        $pdfOnly = in_array($destination, $pdfKeys, true) || $checklist->documentRequiresPdf($lead, $doc, $pdfKeys);
         $request->validate([
-            'file' => 'nullable|'.($pdfOnly ? UploadValidation::pdfDocument() : UploadValidation::document()),
-            'checklist_key' => 'nullable|string|max:80',
-        ]);
+            'file' => ($enteringPdfSlot ? 'required|' : 'nullable|').($pdfOnly ? UploadValidation::pdfDocument() : UploadValidation::document()),
+        ], ['file.required' => 'Upload a PDF replacement before moving this document to the Police/NBI clearance slot.']);
 
         $replacedFile = false;
         if ($request->hasFile('file')) {
@@ -904,6 +905,7 @@ class LeadTrackingController extends Controller
         $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
         $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $requestBindings = $pdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
         return $lead->documents()
             ->orderByDesc('created_at')
             ->get()
@@ -916,7 +918,7 @@ class LeadTrackingController extends Controller
                 'id' => $d->id,
                 'original_name' => $d->original_name,
                 'checklist_key' => $d->checklist_key,
-                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d, $pdfKeys),
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d, $pdfKeys, $requestBindings),
                 'size' => $d->size,
                 'mime' => $d->mime,
                 // Client-safe: the manager's internal "Checked" reads as "Under
