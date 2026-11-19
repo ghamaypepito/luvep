@@ -62,3 +62,4 @@ body[data-workspace-view="compose"] .test-release-banner,body[data-workspace-vie
 @media(max-height:800px){#ep-layout-canvas{max-height:310px}#ep-layout-dialog{padding:18px}#ep-layout-dialog .caption-suggestion-actions{margin:12px 0 8px}#ep-layout-status{padding:6px 0}.studio-art-preview{padding:12px}}
 body[data-workspace-view="compose"] .shell{margin-left:236px}
 @media(max-width:780px){body[data-workspace-view="compose"] .shell{margin-left:0}body[data-workspace-view="compose"] .sidebar{width:100%;height:auto;margin:0;border-radius:0;box-shadow:none}}
+@media(max-height:800px){#ep-layout-canvas{max-height:220px}.studio-result-editor label{margin:10px 0 6px}#ep-layout-dialog .studio-result-editor textarea{height:65px}#ep-layout-dialog .studio-result-editor input,#ep-layout-dialog .studio-result-editor select{padding:8px 10px}}
