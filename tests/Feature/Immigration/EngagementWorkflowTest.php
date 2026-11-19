@@ -210,6 +210,64 @@ class EngagementWorkflowTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
+    public function test_form_encoded_gst_flags_are_saved_and_reopened_as_booleans(): void
+    {
+        foreach (['initial_consultation', 'oia'] as $type) {
+            foreach (['0' => false, '1' => true] as $flag => $expected) {
+                $settings = $this->settings($type) + ['include_gst' => (string) $flag];
+                $prepared = $this->post("/admin/leads/{$this->lead->id}/engagement/prepare", $settings, ['Accept' => 'application/json'])
+                    ->assertOk()->json();
+                $saved = $this->postJson("/admin/leads/{$this->lead->id}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+                $agreement = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->where('source_variant', 'engagement:'.$type)->sole();
+                $this->assertSame($expected, $agreement->notes['engagement_settings']['include_gst']);
+                $this->get('/portal/immigration/cases/engagement')->assertOk()->assertInertia(fn ($page) => $page
+                    ->where('generated.0.include_gst', $expected)->where('generated.0.engagement_settings.include_gst', $expected));
+            }
+        }
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_new_standalone_service_generation_freezes_its_fee_snapshot(): void
+    {
+        $generator = app(EngagementDocumentGenerator::class);
+        foreach (['initial_consultation', 'oia'] as $type) {
+            $document = $generator->generate($this->lead, $type, $this->settings($type) + ['service_fee' => '123.45', 'include_gst' => false]);
+            $this->assertEquals(123.45, $document->notes['engagement_payload']['service_pricing']['grand_total']);
+            $html = $generator->renderHtml($this->lead, $type, ['payload_snapshot' => $document->notes['engagement_payload'], 'service_fee' => '999']);
+            $this->assertStringContainsString('123.45', $html);
+            $this->assertStringNotContainsString('999.00', $html);
+        }
+    }
+
+    public function test_legacy_issued_service_without_a_snapshot_keeps_original_wording_when_previewed_and_signed(): void
+    {
+        $generator = app(EngagementDocumentGenerator::class);
+        $token = str_repeat('l', 48);
+        $this->lead->forceFill(['engagement_signing_token' => $token, 'engagement_sent_at' => now()])->save();
+        foreach (['initial_consultation', 'oia'] as $type) {
+            $document = $generator->generate($this->lead, $type, $this->settings($type));
+            $legacySnapshot = $document->notes['engagement_payload'];
+            unset($legacySnapshot['service_pricing']);
+            Storage::disk('local')->put($document->file_path, $generator->pdfBinary($this->lead, $type, ['payload_snapshot' => $legacySnapshot]));
+            $document->update(['notes' => null]);
+            $url = "/engagement/{$token}/documents/{$document->id}";
+            $preview = $this->get($url.'/preview')->assertOk()->assertDontSee('Professional fee (ex GST)');
+            if ($type === 'oia') {
+                $preview->assertSee('500.00 + GST');
+            }
+            $this->post($url.'/sign', [
+                'signer_name' => 'Fixture Client',
+                'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            ])->assertRedirect()->assertSessionHasNoErrors();
+            $text = (new Parser)->parseContent(Storage::disk('local')->get($document->file_path))->getText();
+            $this->assertStringNotContainsString('Professional fee (ex GST)', $text);
+            if ($type === 'oia') {
+                $this->assertStringContainsString('500.00 + GST', $text);
+            }
+            $this->assertNotNull($document->fresh()->client_signed_at);
+        }
+    }
+
     public function test_legacy_issued_service_snapshots_keep_their_original_fee_wording(): void
     {
         $generator = app(EngagementDocumentGenerator::class);

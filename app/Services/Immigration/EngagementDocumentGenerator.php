@@ -166,6 +166,9 @@ class EngagementDocumentGenerator
             // Remember which adviser signed so a client-signed re-render
             // reproduces the same adviser signature block.
             'engagement_signer_id' => $overrides['signer_id'] ?? null,
+            'notes' => in_array($type, ['initial_consultation', 'oia'], true)
+                ? ['engagement_payload' => array_diff_key($payload, array_flip(['logo_data', 'cover_bg_data']))]
+                : null,
             'uploaded_by' => Auth::id(),
         ]);
     }

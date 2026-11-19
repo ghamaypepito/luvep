@@ -78,9 +78,7 @@ class EngagementPackWorkflow
     public function prepare(Lead $lead, array $settings): array
     {
         $type = $settings['engagement_type'];
-        if ($type !== 'immigration_advice') {
-            $settings['include_gst'] ??= $type === 'oia';
-        }
+        $settings['include_gst'] = (bool) ($settings['include_gst'] ?? ($type === 'oia'));
         $signer = User::findOrFail($settings['signer_id']);
         if (! $signer->holdsCurrentLicence()) {
             $this->fail('Choose a signing adviser with a current IAA licence.');
