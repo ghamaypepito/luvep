@@ -1602,6 +1602,7 @@ function DocumentsHubTab({
                         : 'submitted';
         return {
             key: it.key,
+            client_pdf_only: it.client_pdf_only,
             section: parsed.section,
             // Universal items carry a bare label (no "Section · Name"), so use
             // the label as the display name.
