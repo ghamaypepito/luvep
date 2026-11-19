@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class ResidentIntakeController extends Controller
 {
@@ -47,7 +48,7 @@ class ResidentIntakeController extends Controller
      * Validation rules shared by `store` (initial submission) and `updateFromEditLink`
      * (applicant editing via a shareable token link).
      */
-    private function intakeRules(bool $requireTerms = true): array
+    private function intakeRules(bool $requireTerms = true, bool $staffEvidenceRecorded = false): array
     {
         return [
             'terms_accepted' => ($requireTerms ? 'required|accepted' : 'nullable|boolean'),
@@ -89,7 +90,9 @@ class ResidentIntakeController extends Controller
             'total_skilled_years' => 'required|numeric|min:0',
             'career_summary' => 'nullable|string',
 
-            'english_evidence' => 'required|string|max:120',
+            'english_evidence' => [$staffEvidenceRecorded ? 'nullable' : 'required', 'string', Rule::in(ResidentIntake::ENGLISH_EVIDENCE)],
+            'english_evidence_exception' => 'prohibited',
+            'english_evidence_reason' => 'prohibited',
             'english_test_score' => 'nullable|required_if:english_evidence,IELTS|required_if:english_evidence,TOEFL|required_if:english_evidence,PTE Academic|string|max:30',
             'english_test_date' => 'nullable|required_if:english_evidence,IELTS|required_if:english_evidence,TOEFL|required_if:english_evidence,PTE Academic|date',
 
@@ -241,7 +244,7 @@ class ResidentIntakeController extends Controller
         $intake = ResidentIntake::where('edit_token', $token)->firstOrFail();
 
         return inertia('visa/ResidentIntakePage', [
-            'editIntake' => $intake,
+            'editIntake' => $intake->makeHidden('english_evidence_exception'),
             'editToken' => $token,
         ]);
     }
@@ -254,18 +257,21 @@ class ResidentIntakeController extends Controller
     {
         $intake = ResidentIntake::where('edit_token', $token)->firstOrFail();
 
-        // Editing doesn't re-require the terms-accept checkbox — that's part of the
-        // original submission. Everything else is validated identically.
-        $validated = $request->validate($this->intakeRules(requireTerms: false));
-
-        unset($validated['document_files'], $validated['terms_accepted']);
-
         $documents = collect((array) $request->input('documents', []))
             ->map(fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN))
             ->all();
 
         try {
             DB::beginTransaction();
+
+            $intake = ResidentIntake::whereKey($intake->id)->where('edit_token', $token)->lockForUpdate()->firstOrFail();
+            // Validation and field protection must use the same locked staff evidence state.
+            $validated = $request->validate($this->intakeRules(
+                requireTerms: false, staffEvidenceRecorded: $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED,
+            ));
+            unset($validated['document_files'], $validated['terms_accepted']);
+            // Applicant edits cannot replace a staff decision, including a stale form opened before it.
+            $validated = \Illuminate\Support\Arr::except($validated, $intake->applicantReadOnlyFields());
 
             $existingFiles = is_array($intake->document_files) ? $intake->document_files : [];
             [$mergedFiles, $documents] = $this->persistUploadedFiles($request, $intake->intake_id, $existingFiles, $documents);
@@ -282,6 +288,10 @@ class ResidentIntakeController extends Controller
                 'intake_id' => $intake->intake_id,
                 'edited' => true,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Resident intake edit-link update failed', ['error' => $e->getMessage()]);

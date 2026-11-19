@@ -105,6 +105,20 @@ class RecreateAssessmentTest extends TestCase
         );
     }
 
+    public function test_recreation_does_not_copy_a_staff_english_decision_to_a_new_intake(): void
+    {
+        $source = ResidentIntake::create([
+            'intake_id' => 'RI-DECISION', 'first_name' => 'Synthetic', 'last_name' => 'Applicant',
+            'email' => 'synthetic@example.test', 'english_evidence' => 'Not Required',
+            'english_evidence_exception' => ['reason' => 'Original intake only', 'actor_id' => 1],
+        ]);
+        $copy = app(IntakeTypeConverter::class)->recreateAs($source->fresh(), 'resident');
+        $this->assertNotSame('Not Required', $copy->english_evidence);
+        $this->assertNull($copy->english_evidence_exception);
+        $this->assertSame('Not Required', $source->fresh()->english_evidence);
+        $this->assertSame('Original intake only', $source->english_evidence_exception['reason']);
+    }
+
     public function test_recreate_fails_cleanly_when_target_visa_type_missing(): void
     {
         VisaType::where('category', 'Student')->orWhere('code', 'STUDENT')->delete();
