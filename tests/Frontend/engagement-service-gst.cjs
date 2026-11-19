@@ -7,6 +7,7 @@ const React = require('react');
 const { act } = React;
 const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const { createRoot } = require('react-dom/client');
 global.fetch = async () => ({ ok: true, json: async () => ({}) });
