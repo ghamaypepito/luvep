@@ -3,6 +3,7 @@ import { hrPath } from "@/lib/hrPath";
 import { Head, router, useForm } from "@inertiajs/react";
 import { useEffect } from "react";
 import { Errors } from "./Dtr";
+import DtrCalendar from "@/components/hr/DtrCalendar";
 const label = (s) => s.replaceAll("_", " ");
 export default function Reports({
     type,
@@ -15,6 +16,7 @@ export default function Reports({
     preview,
     preset,
     weeklyReport,
+    calendarRecords,
 }) {
     const f = useForm({
         type,
@@ -191,7 +193,7 @@ export default function Reports({
                     </div>
                 </form>
             </section>
-            <section className="hr-panel">
+            {calendarRecords ? <DtrCalendar records={calendarRecords} filters={filters} path="/reports" query={{ type }} title={type === "approved_hours" ? "Approved attendance" : "Attendance calendar"} summary /> : <section className="hr-panel">
                 <h2>{label(type)}</h2>
                 {type === "employee_status" && (
                     <p>
@@ -233,7 +235,7 @@ export default function Reports({
                 ) : (
                     <p>No records match these filters.</p>
                 )}
-            </section>
+            </section>}
             {!preview && (
                 <section className="hr-panel">
                     <h2>Private exports</h2>

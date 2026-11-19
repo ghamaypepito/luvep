@@ -21,12 +21,25 @@ class DtrService
     public function row(DtrEntry $entry): array
     {
         $setting = DtrSetting::where('user_id', $entry->user_id)->first();
+        $shifts = $entry->time_source === 'live' ? HrShift::with('breaks')->whereHas('employee', fn ($q) => $q->where('user_id', $entry->user_id))->whereDate('work_date', $entry->work_date)->get() : collect();
+        $totals = $this->timeTotals($entry, $setting, $shifts, CarbonImmutable::instance(now('UTC')));
+
+        return [...$entry->only(['id', 'time_in', 'time_out', 'tasks', 'remarks', 'hr_status', 'hr_version', 'work_location', 'meetings', 'people_assisted', 'blockers', 'tomorrow', 'declared_name', 'submitted_at']),
+            'can_edit' => $this->canEditDraft($entry),
+            'can_change_tasks' => $entry->time_source === 'live',
+            'can_change_report' => $entry->work_date->toDateString() <= now($setting?->timezone ?? 'UTC')->toDateString(),
+            'review_comment' => HrDtrReview::where('dtr_entry_id', $entry->id)->latest('id')->value('comment'),
+            'work_date' => $entry->work_date->toDateString(), ...$totals,
+            'task_seconds' => (int) collect($entry->tasks ?? [])->sum('seconds'), 'time_source' => $entry->time_source];
+    }
+
+    private function timeTotals(DtrEntry $entry, ?DtrSetting $setting, \Illuminate\Support\Collection $shifts, CarbonImmutable $now): array
+    {
         $seconds = 0;
         $break = 0;
         if ($entry->time_source === 'live') {
-            $shifts = HrShift::with('breaks')->whereHas('employee', fn ($q) => $q->where('user_id', $entry->user_id))->whereDate('work_date', $entry->work_date)->get();
             foreach ($shifts as $shift) {
-                $totals = app(ClockService::class)->totals($shift, CarbonImmutable::instance(now('UTC')));
+                $totals = app(ClockService::class)->totals($shift, $now);
                 $seconds += $totals['working_seconds'];
                 $break += $totals['break_seconds'];
             }
@@ -41,13 +54,22 @@ class DtrService
             $seconds = max(0, $elapsed - $break);
         }
 
-        return [...$entry->only(['id', 'time_in', 'time_out', 'tasks', 'remarks', 'hr_status', 'hr_version', 'work_location', 'meetings', 'people_assisted', 'blockers', 'tomorrow', 'declared_name', 'submitted_at']),
-            'can_edit' => $this->canEditDraft($entry),
-            'can_change_tasks' => $entry->time_source === 'live',
-            'can_change_report' => $entry->work_date->toDateString() <= now($setting?->timezone ?? 'UTC')->toDateString(),
-            'review_comment' => HrDtrReview::where('dtr_entry_id', $entry->id)->latest('id')->value('comment'),
-            'work_date' => $entry->work_date->toDateString(), 'working_seconds' => $seconds, 'break_seconds' => $break,
-            'task_seconds' => (int) collect($entry->tasks ?? [])->sum('seconds'), 'time_source' => $entry->time_source];
+        return ['working_seconds' => $seconds, 'break_seconds' => $break];
+    }
+
+    /** Batch the same clock calculation used by individual DTRs, without loading report notes. */
+    public function attendanceTotals(\Illuminate\Support\Collection $entries): \Illuminate\Support\Collection
+    {
+        $settings = DtrSetting::whereIn('user_id', $entries->pluck('user_id')->unique())->get()->keyBy('user_id');
+        $employees = HrEmployee::whereIn('user_id', $entries->where('time_source', 'live')->pluck('user_id')->unique())->pluck('user_id', 'id');
+        $shifts = $entries->isEmpty() || $employees->isEmpty() ? collect() : HrShift::with('breaks')
+            ->whereIn('hr_employee_id', $employees->keys())
+            ->whereDate('work_date', '>=', $entries->min('work_date')->toDateString())
+            ->whereDate('work_date', '<=', $entries->max('work_date')->toDateString())->get()
+            ->groupBy(fn ($shift) => $employees[$shift->hr_employee_id].':'.$shift->work_date);
+        $now = CarbonImmutable::instance(now('UTC'));
+
+        return $entries->mapWithKeys(fn ($entry) => [$entry->id => $this->timeTotals($entry, $settings->get($entry->user_id), $shifts->get($entry->user_id.':'.$entry->work_date->toDateString(), collect()), $now)]);
     }
 
     public function canEditDraft(DtrEntry $entry): bool

@@ -1082,3 +1082,21 @@
 .hr-info-tabs a { text-decoration: none; border-radius: 8px; padding: 11px 14px; font-size: 14px; color: var(--hr-muted); }
 .hr-info-tabs a[aria-current] { color: #274c32; background: #dbedb4; font-weight: 700; }
 .hr-employment-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Daily records share one calendar entry with their report changes and decisions. */
+button.hr-calendar-event{display:block;width:100%;text-align:left;color:var(--hr-ink);cursor:pointer;font:inherit;font-size:11px}
+button.hr-calendar-event:hover{filter:brightness(.96)}
+.hr-calendar-draft,.hr-calendar-legacy{background:#f0f1ed;border-color:#77816e}
+.hr-calendar-submitted{background:#eaf1ff;border-color:#4268b0}
+.hr-calendar-reviewed{background:#e7f2df;border-color:#537637}
+.hr-calendar-returned{background:#fff0e8;border-color:#b85a28}
+.hr-calendar-pending{background:#fff3d5;border-color:#a77617}
+.hr-dtr-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;font-size:12px}
+.hr-dtr-legend span{padding:5px 9px;border-radius:6px;background:#f0f1ed}
+.hr-dtr-legend span:nth-child(2){background:#eaf1ff}.hr-dtr-legend span:nth-child(3){background:#e7f2df}.hr-dtr-legend span:nth-child(4){background:#fff0e8}.hr-dtr-legend span:nth-child(5){background:#fff3d5}
+.hr-record-dialog{border:1px solid var(--hr-line);border-radius:18px;padding:28px;width:min(900px,94vw);max-height:90dvh;overflow:auto;background:var(--hr-surface,#fff);color:var(--hr-ink);margin:auto}
+.hr-record-dialog::backdrop{background:rgba(20,40,30,.55)}
+.hr-record-dialog>header{margin-bottom:22px}.hr-record-dialog .hr-panel{margin-top:20px}
+.hr-weekly-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px;margin-top:18px}
+.hr-weekly-totals{display:flex;flex-wrap:wrap;gap:20px;margin-top:20px}.hr-weekly-totals dt{font-size:12px;color:var(--hr-muted)}.hr-weekly-totals dd{font-size:19px;font-weight:600;margin:5px 0 0}
+@media(max-width:600px){.hr-record-dialog{padding:18px}.hr-record-dialog>header{align-items:flex-start}.hr-calendar-toolbar input[type=search]{width:100%}}

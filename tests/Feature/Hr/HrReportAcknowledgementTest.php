@@ -152,7 +152,8 @@ class HrReportAcknowledgementTest extends TestCase
         $this->save($owner, $entry)->assertOk();
         $this->submit($owner, $entry->fresh())->assertOk();
         $this->actingAs($owner)->get('https://hr.luvep.com/dtr/changes?scope=mine')->assertInertia(fn (Assert $page) => $page->component('hr/DtrChanges')->where('mode', 'mine')->has('entries', 1)->where('departmentHead.id', $head->id)->has('acknowledgements', 1));
-        $this->actingAs($head)->get('https://hr.luvep.com/dtr/changes')->assertInertia(fn (Assert $page) => $page->has('acknowledgements', 1)->where('acknowledgements.0.can_decide', true));
+        $this->actingAs($head)->get('https://hr.luvep.com/dtr/changes')->assertInertia(fn (Assert $page) => $page->has('records.data', 1)->where('records.data.0.pending_acknowledgements', 1));
+        $this->getJson('https://hr.luvep.com/dtr/'.$entry->id.'/history?details=1')->assertOk()->assertJsonPath('acknowledgements.data.0.can_decide', true);
         $unrelated = User::factory()->create(['role' => 'sales']);
         HrEmployee::create(['user_id' => $unrelated->id, 'status' => 'active']);
         $this->actingAs($unrelated)->get('https://hr.luvep.com/dtr/changes')->assertForbidden();
@@ -190,7 +191,8 @@ class HrReportAcknowledgementTest extends TestCase
         $this->submit($owner, $entry->fresh())->assertOk();
         $ack = HrDtrAcknowledgement::sole();
         $admin = User::factory()->create(['role' => 'admin']);
-        $this->actingAs($admin)->get('https://hr.luvep.com/dtr/changes')->assertOk()->assertInertia(fn (Assert $page) => $page->has('acknowledgements', 1)->where('acknowledgements.0.can_decide', false));
+        $this->actingAs($admin)->get('https://hr.luvep.com/dtr/changes')->assertOk()->assertInertia(fn (Assert $page) => $page->has('records.data', 1)->where('records.data.0.pending_acknowledgements', 1));
+        $this->getJson('https://hr.luvep.com/dtr/'.$entry->id.'/history?details=1')->assertOk()->assertJsonPath('acknowledgements.data.0.can_decide', false);
         $employee->update(['manager_user_id' => $admin->id]);
         $decision = ['version' => 1, 'decision' => 'acknowledged'];
         $this->actingAs($head)->postJson('https://hr.luvep.com/dtr/acknowledgements/'.$ack->id.'/decision', $decision)->assertForbidden();
