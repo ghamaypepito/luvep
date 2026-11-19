@@ -46,6 +46,7 @@ const record = { id: 7, name: 'Synthetic assigned case', reference: 'CASE-TEST',
     await render(List, { cases: { data: [record], links: [] } }); assert.ok(document.querySelector('a[href="/portal/agent/assigned-cases/7"]'));
     await render(Detail, { case: record, documents: [{ id: 12, name: 'Visible.pdf', status: 'Approved', url: '/portal/agent/assigned-cases/7/documents/12/download' }], slots: [{ key: 'passport', label: 'Passport' }], requests: [{ id: 21, label: 'Specific requested evidence' }] });
     assert.ok(document.querySelector('a[href$="download?inline=1"]'));
+    assert.match(document.body.textContent, /Bank, funds and income records, signatures or signed forms, and sponsor, partner, child or mixed-person records stay with staff/);
     assert.equal(button('Upload requested file').disabled, true);
     await change(document.querySelector('select'), 'request:21');
     const file = new File(['%PDF-1.4 synthetic'], 'new.pdf', { type: 'application/pdf' });
@@ -66,6 +67,7 @@ const record = { id: 7, name: 'Synthetic assigned case', reference: 'CASE-TEST',
     assert.equal(document.querySelector('select').value, '');
     await render(Staff, { case: record, helper: null, eligibleHelpers: [{ id: 10, name: 'Synthetic helper' }] });
     assert.match(document.body.textContent, /current owner and adviser remain responsible/);
+    assert.match(document.body.textContent, /Bank, funds and income records, signatures or signed forms, and sponsor, partner, child or mixed-person records stay with staff/);
     assert.match(document.body.textContent, /excludes invoices, payments, internal notes, stage changes, signatures and approvals/);
     await change(document.querySelector('select'), '10'); assert.equal(button('Update helper access').disabled, true);
     await click(document.querySelector('input[type=checkbox]')); await click(button('Update helper access'));

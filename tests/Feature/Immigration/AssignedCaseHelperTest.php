@@ -361,4 +361,140 @@ class AssignedCaseHelperTest extends TestCase
                     === collect([$own->id, $otherOwn->id, $other->id, $helperOnly->id])->sort()->values()->all()));
         }
     }
+
+    public function test_real_seeded_financial_sponsor_and_signature_purposes_never_become_helper_files_or_targets(): void
+    {
+        $agent = $this->agent();
+        $student = (new \Database\Seeders\VisaChecklistSeeder)->templates()['student']['items'];
+        $items = collect($student)->whereIn('key', ['passport', 'cv', 'bank_statement', 'payslips', 'sponsor_bank_statement', 'sponsor_passport', 'sponsor_birth_certificate'])->values()->all();
+        $items[] = ['key' => 'signature_sample', 'label' => 'Specimen signature', 'category' => 'Applicant Documents', 'required' => true];
+        $case = $this->caseFor($agent, ['document_checklist' => $items]);
+        $allowed = [];
+        $denied = [];
+        foreach ($items as $item) {
+            $doc = $this->file($case, ['checklist_key' => $item['key'], 'status' => 'Submitted']);
+            if (in_array($item['key'], ['passport', 'cv'], true)) {
+                $allowed[] = $doc;
+            } else {
+                $denied[] = $doc;
+            }
+        }
+        $before = LeadDocument::count();
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 2)->has('slots', 2)
+            ->where('slots.0.key', 'cv')->where('slots.1.key', 'passport'));
+        foreach ($denied as $doc) {
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['checklist_key' => $doc->checklist_key,
+                'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('checklist_key');
+        }
+        $this->assertSame($before, LeadDocument::count());
+        foreach ($allowed as $doc) {
+            // Permission comes from metadata, never from the filename.
+            $doc->update(['original_name' => 'bank-sponsor-signature.pdf']);
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertDownload($doc->fresh()->original_name);
+            $this->post($this->base($case).'/uploads', ['checklist_key' => $doc->checklist_key,
+                'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
+        }
+    }
+
+    public function test_request_purpose_and_description_use_the_same_financial_signature_and_person_boundary(): void
+    {
+        $agent = $this->agent();
+        $case = $this->caseFor($agent);
+        $denied = [];
+        foreach ([['Bank statement', null], ['Specimen signature', null], ['Sponsor passport', null], ['Partner birth certificate', null],
+            ['Additional evidence', 'Bank statements for the applicant'], ['Additional evidence', 'Specimen signature'], ['Additional evidence', 'Passport of spouse']] as [$label, $description]) {
+            foreach ([null, 'manual', 'rfi'] as $origin) {
+                $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'label' => $label, 'description' => $description, 'origin' => $origin]);
+                $denied[] = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
+            }
+        }
+        $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'label' => 'Primary applicant police certificate', 'origin' => 'rfi']);
+        $allowed = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 1)->where('documents.0.id', $allowed->id)
+            ->has('requests', 1)->where('requests.0.id', $request->id));
+        foreach ($denied as $doc) {
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['request_id' => $doc->request_id,
+                'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('request_id');
+        }
+        $this->get($this->base($case).'/documents/'.$allowed->id.'/download')->assertDownload($allowed->original_name);
+        $this->post($this->base($case).'/uploads', ['request_id' => $request->id,
+            'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
+    }
+
+    public function test_generic_request_cannot_override_disallowed_checklist_person_category_or_alias_metadata(): void
+    {
+        $agent = $this->agent();
+        $deniedItems = [
+            ['key' => 'neutral_financial', 'label' => 'Evidence', 'category' => 'Financial'],
+            ['key' => 'neutral_person', 'label' => 'Passport', 'person' => 'sponsor'],
+            ['key' => 'neutral_category', 'label' => 'Passport', 'category' => 'Partner Documents'],
+            ['key' => 'neutral_alias', 'label' => 'Passport', 'aliases' => ['spfin.passport']],
+            ['key' => 'neutral_suffix', 'label' => 'Passport', 'file_suffix' => '(of child)'],
+            ['key' => 'spouse_birth_certificate', 'label' => 'Birth Certificate'],
+            ['key' => 'part.passport', 'label' => 'Passport'],
+            ['key' => 'sponsor_birth_certificate', 'label' => 'Birth Certificate', 'aliases' => ['legacy_identity']],
+            ['key' => 'signature', 'label' => 'Specimen signature', 'aliases' => ['legacy_sample']],
+            ['key' => 'passport', 'label' => 'Passport', 'category' => 'Sponsor Documents'],
+        ];
+        $case = $this->caseFor($agent, ['document_checklist' => array_map(fn ($item) => $item + ['required' => true], $deniedItems)]);
+        $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'label' => 'Additional evidence', 'origin' => 'manual']);
+        $denied = [];
+        foreach ($deniedItems as $item) {
+            foreach (array_merge([$item['key']], $item['aliases'] ?? []) as $key) {
+                $denied[] = $this->file($case, ['checklist_key' => $key, 'request_id' => $request->id, 'status' => 'Submitted']);
+            }
+        }
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0)->has('slots', 0)->has('requests', 0));
+        $this->postJson($this->base($case).'/uploads', ['request_id' => $request->id,
+            'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('request_id');
+        foreach ($denied as $doc) {
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['checklist_key' => $doc->checklist_key,
+                'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable();
+        }
+    }
+
+    public function test_conflicting_legacy_alias_and_document_person_metadata_fail_closed(): void
+    {
+        $agent = $this->agent();
+        $case = $this->caseFor($agent, ['document_checklist' => [
+            ['key' => 'passport', 'label' => 'Applicant passport', 'category' => 'Identity', 'required' => true],
+            ['key' => 'sponsor_identity', 'label' => 'Sponsor passport', 'aliases' => ['passport'], 'required' => true],
+        ]]);
+        $doc = $this->file($case);
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('slots', 0)->has('documents', 0));
+        $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+        $this->postJson($this->base($case).'/uploads', ['checklist_key' => 'passport',
+            'file' => UploadedFile::fake()->create('ordinary.pdf', 1, 'application/pdf')])->assertUnprocessable();
+
+        $case->update(['document_checklist' => [['key' => 'passport', 'label' => 'Applicant passport', 'required' => true]]]);
+        $doc->delete();
+        $files = [];
+        foreach ([['person' => 'sponsor'], ['person_type' => 'child'], ['category' => 'Financial'], ['purpose' => 'Specimen signature']] as $metadata) {
+            $files[] = $this->file($case, ['notes' => $metadata]);
+        }
+        $this->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0));
+        foreach ($files as $file) {
+            $this->get($this->base($case).'/documents/'.$file->id.'/download')->assertNotFound();
+        }
+    }
+
+    public function test_ordinary_primary_applicant_seeded_identity_education_health_and_visa_evidence_remain_available(): void
+    {
+        $agent = $this->agent();
+        $student = (new \Database\Seeders\VisaChecklistSeeder)->templates()['student']['items'];
+        $keys = ['passport', 'cv', 'graduate_certificate', 'transcript', 'pte_ielts_result', 'nbi_police_clearance', 'medical_certificate', 'travel_records', 'nz_visa'];
+        $items = collect($student)->whereIn('key', $keys)->values()->all();
+        $case = $this->caseFor($agent, ['document_checklist' => $items]);
+        $files = [];
+        foreach ($items as $item) {
+            $files[] = $this->file($case, ['checklist_key' => $item['key'], 'notes' => ['person' => 'primary_applicant']]);
+        }
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', count($keys)));
+        foreach ($files as $file) {
+            $this->get($this->base($case).'/documents/'.$file->id.'/download')->assertDownload($file->original_name);
+        }
+    }
 }

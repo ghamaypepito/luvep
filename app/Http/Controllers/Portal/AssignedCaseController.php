@@ -33,7 +33,7 @@ class AssignedCaseController extends Controller
             'status' => LeadDocument::clientStatus($doc->status), 'uploaded_at' => $doc->created_at?->toIso8601String(),
             'url' => "/portal/agent/assigned-cases/{$case->id}/documents/{$doc->id}/download",
         ])->values();
-        $requests = $access->requests($case)->get()->filter(fn ($item) => $access->allowedRequest($item))
+        $requests = $access->requests($case)->get()->filter(fn ($item) => $access->allowedRequest($item, $case))
             ->map(fn ($item) => ['id' => $item->id, 'label' => $item->label])->values();
         CaseAuditView::create(['lead_id' => $case->id, 'viewer_id' => $actor->id, 'viewer_name' => $actor->name,
             'viewer_role' => $actor->role, 'action' => 'view', 'context' => 'assigned_case', 'ip' => $request->ip(), 'viewed_at' => now()]);
@@ -85,7 +85,7 @@ class AssignedCaseController extends Controller
                 }
                 if ($requestId) {
                     $target = $access->requests($case)->whereKey($requestId)->lockForUpdate()->first();
-                    if (! $target || ! $access->allowedRequest($target)) {
+                    if (! $target || ! $access->allowedRequest($target, $case)) {
                         throw ValidationException::withMessages(['request_id' => 'This request is no longer available for this case.']);
                     }
                 }

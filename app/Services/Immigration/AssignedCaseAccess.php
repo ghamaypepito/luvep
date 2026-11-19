@@ -51,21 +51,70 @@ class AssignedCaseAccess
             'stage' => $case->immigration_stage, 'updated_at' => $case->updated_at?->toIso8601String()];
     }
 
-    private function safePurpose(string $key, string $label = ''): bool
+    /** Trusted purpose/person metadata only. A filename never establishes access. */
+    private function safePurpose(array $metadata): bool
     {
-        return ! in_array($key, ['svf', 'rfi'], true)
-            && ! str_starts_with($key, 'agree.')
-            && ! preg_match('/(?:^|[._:-])(finance|invoice|payment|receipt|engagement|written_agreement)(?:$|[._:-])/i', $key)
-            && ! preg_match('/\b(invoice|payment|receipt|engagement|written agreement)\b/i', $label);
+        if (isset($metadata['aliases']) && ! is_array($metadata['aliases'])) {
+            return false;
+        }
+        $keys = array_merge([(string) ($metadata['key'] ?? '')], $metadata['aliases'] ?? []);
+        foreach ($keys as $key) {
+            if (! is_string($key) || in_array($key, ['svf', 'rfi'], true) || str_starts_with($key, 'agree.')) {
+                return false;
+            }
+        }
+        // Preserve the existing other-person key conventions documented by
+        // PassportPrefillService, also checking labels/categories and aliases.
+        $fields = array_intersect_key($metadata, array_flip(['key', 'aliases', 'label', 'description', 'category',
+            'file_code', 'file_suffix', 'person', 'person_type', 'applicant_type', 'subject', 'purpose', 'document_type']));
+        foreach (\Illuminate\Support\Arr::flatten($fields) as $value) {
+            if ($value === null) {
+                continue;
+            }
+            if (! is_string($value)) {
+                return false;
+            }
+            $words = strtolower(preg_replace('/[^\pL\pN]+/u', ' ', preg_replace('/(?<=[a-z])(?=[A-Z])/', ' ', $value)));
+            if (preg_match('/\b(?:financ\w*|invoice\w*|payment\w*|receipt\w*|bank\w*|fund\w*|payslip\w*|payroll|salary|salaries|earnings|income|tax\w*|ird|investment\w*|asset\w*|property|tuition|fees?|expenses?|bills?|savings|loans?|mortgage\w*|credit|debit|insurance|remittance\w*|bnks|pyslps|sof|eop|fin)\b/u', $words)
+                || preg_match('/\b(?:signature\w*|sign|signed|signing|specimen|agreement\w*|engagement\w*|declaration\w*|forms?|consent|authority|authorisation|authorization)\b/u', $words)
+                || preg_match('/\b(?:sponsor\w*|partner\w*|spouse\w*|depend[ae]nt\w*|child\w*|spfin|part|parents?|family|friends?|couple|joint|relatives?|supporters?|supporting|marriage|relationship|coapplicant|husband|wife|guardians?)\b/u', $words)) {
+                return false;
+            }
+        }
+        foreach (['person', 'person_type', 'applicant_type', 'subject'] as $field) {
+            if (array_key_exists($field, $metadata) && ! in_array($metadata[$field], ['primary', 'applicant', 'primary_applicant', 'primary applicant'], true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function safeChecklistPurpose(Lead $case, ?string $key): bool
+    {
+        if (! $this->safePurpose(['key' => $key ?? ''])) {
+            return false;
+        }
+        $resolver = app(CaseChecklistService::class);
+        foreach ($resolver->forCase($case) as $item) {
+            if (in_array($key, $resolver->itemKeys($item), true) && ! $this->safePurpose($item)) {
+                return false; // A generic request cannot override a disallowed item or alias.
+            }
+        }
+
+        return true;
     }
 
     public function visibleItems(Lead $case): array
     {
         $resolver = app(CaseChecklistService::class);
         $hidden = $resolver->hiddenKeysFor($case);
+        $items = $resolver->forCase($case);
+        $deniedKeys = collect($items)->reject(fn ($item) => $this->safePurpose($item))
+            ->flatMap(fn ($item) => $resolver->itemKeys($item))->all();
 
-        return array_values(array_filter($resolver->forCase($case), fn ($item) => ! array_intersect($resolver->itemKeys($item), $hidden)
-            && $this->safePurpose($item['key'], $item['label'] ?? '')));
+        return array_values(array_filter($items, fn ($item) => ! array_intersect($resolver->itemKeys($item), array_merge($hidden, $deniedKeys))
+            && $this->safePurpose($item)));
     }
 
     public function slots(Lead $case): array
@@ -80,15 +129,22 @@ class AssignedCaseAccess
             ->whereDoesntHave('documents', fn ($query) => $query->where('status', LeadDocument::STATUS_APPROVED));
     }
 
-    public function allowedRequest(LeadDocumentRequest $request): bool
+    public function allowedRequest(LeadDocumentRequest $request, ?Lead $case = null): bool
     {
         // Only known client-evidence workflows establish a safe request purpose.
         // Unknown origins (including differently cased/namespaced finance) fail closed.
-        return filled($request->label) && in_array($request->origin, [null, 'manual', 'rfi'], true)
-            && $this->safePurpose('', $request->label);
+        if (! filled($request->label) || ! in_array($request->origin, [null, 'manual', 'rfi'], true)
+            || ! $this->safePurpose(['label' => $request->label, 'description' => $request->description ?? ''])) {
+            return false;
+        }
+        $case ??= $request->lead;
+
+        return $case && (int) $request->lead_id === (int) $case->id
+            && ! $request->documents()->get()->contains(fn ($doc) => ! $this->documentPurposeAllowed($case, $doc));
     }
 
-    public function canRead(Lead $case, LeadDocument $doc): bool
+    /** Also prevents a generic request from relabelling restricted linked evidence. */
+    private function documentPurposeAllowed(Lead $case, LeadDocument $doc): bool
     {
         if ((int) $doc->lead_id !== (int) $case->id || $doc->dependent_id || $doc->source !== LeadDocument::SOURCE_UPLOAD
             || $doc->invoice_number !== null || $doc->invoice_total !== null || $doc->client_signed_at || $doc->client_signature_path) {
@@ -111,11 +167,22 @@ class AssignedCaseAccess
         if ($doc->checklist_key && in_array($doc->checklist_key, $resolver->hiddenKeysFor($case), true)) {
             return false;
         }
-        if (! $this->safePurpose((string) $doc->checklist_key)) {
+        if (! $this->safeChecklistPurpose($case, $doc->checklist_key)
+            || ! $this->safePurpose(array_intersect_key($doc->notes ?? [], array_flip(['category', 'person', 'person_type', 'applicant_type', 'subject', 'purpose', 'document_type'])))) {
             return false;
         }
+
+        return true;
+    }
+
+    public function canRead(Lead $case, LeadDocument $doc): bool
+    {
+        if (! $this->documentPurposeAllowed($case, $doc)) {
+            return false;
+        }
+        $resolver = app(CaseChecklistService::class);
         $request = $doc->request_id ? LeadDocumentRequest::where('lead_id', $case->id)->find($doc->request_id) : null;
-        if ($doc->request_id && (! $request || ! $this->allowedRequest($request))) {
+        if ($doc->request_id && (! $request || ! $this->allowedRequest($request, $case))) {
             return false;
         }
         $known = collect($this->visibleItems($case))->flatMap(fn ($item) => $resolver->itemKeys($item))->all();
