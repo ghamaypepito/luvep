@@ -1874,6 +1874,9 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'update'])->whereNumber('activity')->name('reports.activities.update');
             Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
             Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
+            Route::post('/reports/dated-notes', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'store'])->name('reports.dated-notes.store');
+            Route::patch('/reports/dated-notes/{note}', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'update'])->whereNumber('note')->name('reports.dated-notes.update');
+            Route::delete('/reports/dated-notes/{note}', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'destroy'])->whereNumber('note')->name('reports.dated-notes.destroy');
 
             // ACCOUNT
             Route::get('/profile', [EducationController::class, 'profile'])->name('profile');
