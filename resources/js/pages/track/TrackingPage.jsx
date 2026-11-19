@@ -3102,6 +3102,7 @@ function DocUploadModal({ open, onClose, code, lead = null, visa = null, documen
                                     ? 'Upload the face image as a JPEG (.jpg) file.'
                                     : 'Upload this document as a PDF (.pdf) file.'}
                                 {' '}Up to 10 files (max 50&nbsp;MB each).
+                                {docType?.client_pdf_only && ' Rescan before uploading if any details are unclear.'}
                             </p>
                             {(errors.files || errors['files.0']) && (
                                 <p className="text-[11px] text-red-500">{errors.files || errors['files.0']}</p>
@@ -3213,7 +3214,7 @@ function DocEditModal({ code, doc, onClose }) {
                                 onChange={(e) => setData('file', e.target.files?.[0] || null)}
                             />
                         </label>
-                        {doc.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file.</p>}
+                        {doc.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                         {errors.file && <p className="text-[11px] text-red-500 mt-1">{errors.file}</p>}
                     </div>
                 </form>

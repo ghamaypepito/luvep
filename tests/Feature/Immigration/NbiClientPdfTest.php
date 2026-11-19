@@ -127,6 +127,22 @@ class NbiClientPdfTest extends TestCase
         $visa = VisaType::where('name', $lead->inz_visa_type)->sole();
         $visa->update(['code' => 'STUDENT']);
         $lead->update(['document_checklist' => null]);
-        $this->post('/portal/lead/documents/checklist/police_clearance/upload',['files' => [$this->image('normal.png')]])->assertRedirect()->assertSessionHasNoErrors();
+        $this->post('/portal/lead/documents/checklist/police_clearance/upload', ['files' => [$this->image('normal.png')]])->assertRedirect()->assertSessionHasNoErrors();
+    }
+
+    public function test_pdf_policy_catalogue_queries_do_not_grow_with_checklist_rows(): void
+    {
+        [$lead] = $this->client('SMCRV', 'police_clearance');
+        $visa = VisaType::where('name', $lead->inz_visa_type)->sole();
+        $items = $visa->checklist_items;
+        for ($i = 0; $i < 30; $i++) {
+            $items[] = ['key' => 'extra_'.$i, 'label' => 'Unrelated '.$i];
+        }
+        $visa->update(['checklist_items' => $items]);
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+        app(\App\Services\Immigration\CaseChecklistService::class)->withStatuses($lead);
+        $queries = array_filter(\Illuminate\Support\Facades\DB::getQueryLog(), fn ($query) => str_contains($query['query'], 'visa_types'));
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+        $this->assertLessThanOrEqual(5, count($queries), 'Catalogue queries: '.count($queries));
     }
 }

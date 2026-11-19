@@ -2083,6 +2083,7 @@ class LeadDocumentController extends Controller
         $lead = $this->portalLead();
         abort_unless($lead, 403);
 
+        $clientPdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         $requests = $lead->documentRequests()
             ->with('latestDocument')
             ->orderByDesc('created_at')
@@ -2095,7 +2096,7 @@ class LeadDocumentController extends Controller
                 // 'rfi' groups these under a "Request Information" section the
                 // client uploads their INZ-requested documents into.
                 'origin' => $r->origin,
-                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id),
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id, $clientPdfKeys),
                 'requested_at' => $r->requested_at,
                 'latest_document' => $r->latestDocument ? $this->docSerialize($r->latestDocument) : null,
             ]);

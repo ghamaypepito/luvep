@@ -903,6 +903,7 @@ class LeadTrackingController extends Controller
         // file already attached to it.
         $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
+        $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         return $lead->documents()
             ->orderByDesc('created_at')
             ->get()
@@ -915,7 +916,7 @@ class LeadTrackingController extends Controller
                 'id' => $d->id,
                 'original_name' => $d->original_name,
                 'checklist_key' => $d->checklist_key,
-                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d),
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d, $pdfKeys),
                 'size' => $d->size,
                 'mime' => $d->mime,
                 // Client-safe: the manager's internal "Checked" reads as "Under
@@ -1374,7 +1375,8 @@ class LeadTrackingController extends Controller
                 ->all();
         }
 
-        $decorated = collect($items)->map(function ($item) use ($docsByKey, $lead) {
+        $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $decorated = collect($items)->map(function ($item) use ($docsByKey, $pdfKeys) {
             $key = $item['key'] ?? null;
             $docs = collect(array_merge([$key], $item['aliases'] ?? []))->flatMap(fn ($uploadKey) => $docsByKey->get($uploadKey) ?? collect());
 
@@ -1393,7 +1395,7 @@ class LeadTrackingController extends Controller
 
             return [
                 'key' => $key,
-                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $key),
+                'client_pdf_only' => in_array($key, $pdfKeys, true),
                 'aliases' => $item['aliases'] ?? [],
                 'label' => $item['label'] ?? '',
                 // Section heading. Null for visas saved before Section became

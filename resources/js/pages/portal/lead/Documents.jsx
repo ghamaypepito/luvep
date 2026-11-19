@@ -199,7 +199,7 @@ function RequestCard({ req }) {
                         )}
                         {doc && <StatusPill status={doc.status} />}
                     </div>
-                    {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file.</p>}
+                    {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                     {req.description && <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">{req.description}</p>}
                 </div>
                 {!approved && (
@@ -360,7 +360,7 @@ function RequestRow({ req }) {
                         <p className="text-sm font-medium text-[#282728] leading-tight">
                             {req.label}{req.required && <span className="ml-1 text-rose-500">*</span>}
                         </p>
-                        {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file.</p>}
+                        {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                     {req.description && <p className="text-[10.5px] text-gray-500 mt-0.5 max-w-[320px]">{req.description}</p>}
                     </div>
                 </div>
@@ -408,7 +408,7 @@ function ChecklistRow({ item, files }) {
                         <p className="text-sm font-medium text-[#282728] leading-tight">
                             {item.label}{item.required && <span className="ml-1 text-rose-500">*</span>}
                         </p>
-                        {item.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file.</p>}
+                        {item.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                         {item.hint && <p className="text-[10.5px] text-gray-500 mt-0.5 max-w-[320px]">{item.hint}</p>}
                     </div>
                 </div>
