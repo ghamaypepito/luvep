@@ -164,7 +164,8 @@ class EducationDatedReportNotesTest extends TestCase
         $this->assertCount(4, $this->report($emma, '?preset=all')['dated_notes']['entries']['data']);
         // NZ is already Friday, while UTC still shows Thursday.
         $this->travelTo(Carbon::parse('2026-11-12T11:15:00Z'));
-        $this->assertCount(5, $this->report($emma)['dated_notes']['entries']['data']);
+        $this->assertSame(['2026-11-13', '2026-11-12', '2026-11-11', '2026-11-09'],
+            array_column($this->report($emma)['dated_notes']['entries']['data'], 'date'));
         $this->post(self::URL, $this->payload(['occurred_on' => '2026-11-13']))->assertRedirect()->assertSessionHasNoErrors();
     }
 
