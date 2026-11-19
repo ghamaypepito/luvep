@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
 import { immBase } from "@/lib/caseRoutes";
 import CaseProfileHeader from "@/components/immigration/case-profile/CaseProfileHeader";
+import CaseHelperLink from "@/components/immigration/case-profile/CaseHelperLink";
 import OverviewTab from "@/components/immigration/case-profile/tabs/OverviewTab";
 import PersonalTab from "@/components/immigration/case-profile/tabs/PersonalTab";
 import DocumentsTab from "@/components/immigration/case-profile/tabs/DocumentsTab";
@@ -175,6 +176,7 @@ export default function CaseProfile() {
                 onNavigate={setActiveTab}
             />
 
+            <CaseHelperLink leadId={lead.id} />
             <VisaChainBar visaChain={visaChain} leadId={lead.id} visaTypes={visaTypes} />
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">

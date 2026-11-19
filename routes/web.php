@@ -1500,6 +1500,13 @@ Route::middleware(['auth'])->group(function () {
         // but can't touch stage/status, convert, or delete (those stay with
         // sales/admin). Everything here is scoped to the agent's own leads.
         Route::middleware('portal:agent')->prefix('agent')->name('portal.agent.')->group(function () {
+            Route::middleware('module:assigned_immigration_cases')->group(function () {
+                $assigned = \App\Http\Controllers\Portal\AssignedCaseController::class;
+                Route::get('/assigned-cases', [$assigned, 'index'])->name('assigned-cases');
+                Route::get('/assigned-cases/{lead}', [$assigned, 'show'])->whereNumber('lead')->name('assigned-cases.show');
+                Route::get('/assigned-cases/{lead}/documents/{document}/download', [$assigned, 'download'])->whereNumber(['lead', 'document'])->name('assigned-cases.download');
+                Route::post('/assigned-cases/{lead}/uploads', [$assigned, 'upload'])->whereNumber('lead')->name('assigned-cases.upload');
+            });
             Route::get('/dashboard', [\App\Http\Controllers\Portal\AgentController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'leads'])->name('leads');
             Route::post('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'storeLead'])->name('leads.store');
@@ -2133,6 +2140,8 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.profile');
             Route::post('/cases/{lead}/documents/other', [\App\Http\Controllers\Immigration\OtherCaseDocumentController::class, 'store'])
                 ->name('cases.documents.other');
+            Route::get('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'show'])->whereNumber('lead')->name('cases.helper');
+            Route::post('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'store'])->whereNumber('lead')->name('cases.helper.store');
             Route::post('/cases/{lead}/documents/recent-visa-category', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'addRecentVisaCategory'])
                 ->name('cases.documents.recent-visa-category');
             Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])

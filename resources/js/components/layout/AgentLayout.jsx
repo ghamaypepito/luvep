@@ -37,6 +37,7 @@ export default function AgentLayout({ children }) {
         // The agent's own referrals that became immigration cases. Ships hidden —
         // a super admin grants `referral_cases` per agent from Module Management.
         { name: "Cases", href: "/portal/agent/cases", icon: <Briefcase size={20} />, module: "referral_cases" },
+        ...(props?.auth?.user?.role === 'agent' ? [{ name: "Assigned cases", href: "/portal/agent/assigned-cases", icon: <Briefcase size={20} />, module: "assigned_immigration_cases" }] : []),
         { name: "Compose", href: "/portal/agent/compose", icon: <Mail size={20} /> },
 
         { name: "Account", section: true },

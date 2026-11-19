@@ -502,7 +502,12 @@ class Lead extends Model
         'meets_184_day_rule_two_years',
     ];
 
+    // Assigned-helper access is granted only by its dedicated staff operation.
+    // Do not add this FK to fillable or generic lead/client serialization.
+    protected $hidden = ['immigration_helper_id'];
+
     protected $casts = [
+        'immigration_helper_id' => 'integer',
         'referred_at' => 'datetime',
         'work_info' => 'array',
         'event_response' => 'array',
