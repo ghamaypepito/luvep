@@ -1,0 +1,25 @@
+# TKT-GJBKFO Accommodation agreement improvements
+
+Alane confirmed: a Notes / Special Conditions section, a searchable tenant marked Pending payment after signing, Alane Beryl Lozada as Exalt signatory, automatic move-in totals, Monday–Sunday advance-rent coverage with a separate initial partial week, and tenancy end equal to start plus duration minus one day.
+
+## Implementation
+
+New agreements snapshot workflow version 2. The builder uses property IDs, an explicit duration and unit, and advance weeks. `AgreementTerms` validates and calculates both preview and issued data on the server. Client totals, calculated dates, signature evidence and Exalt signature overrides are not trusted. End-of-month additions clamp to the target month's last valid day before subtracting one day. Days use the New Zealand calendar. Quoted rent is used for advance and partial-week rent; separately billed utilities are not silently added. Short-stay staff enter the agreed inclusive weekly amount. Coverage never exceeds the tenancy end. Bond and deposit remain editable and the total adds them to advance and partial-week rent in cents.
+
+Notes are escaped, bounded plain text with preserved line breaks. Existing agreement clauses and appendices remain in place. The confirmed signatory must resolve to exactly one active Accommodation/admin account named Alane Beryl Lozada with a saved private signature. No fallback to the generating user's signature is allowed. Name, user ID, signature and source recipient email are snapshotted on issue.
+
+Each listed tenant signs individually using the existing bearer-link signing surface. Partial signatures are stored with name, timestamp, IP and user agent. Duplicate signatures are rejected under a database row lock. The final signature stores the signed PDF and links a tenant in one database transaction. A PDF/linking failure rolls back the final signature and removes the new PDF. Only then is the signed PDF copy queued to the snapshotted primary source email and the existing staff notification sent. Standard mail queue failures must be monitored and retried; a failed email does not undo a completed agreement. Clients can download the signed PDF from the confirmation page.
+
+One tenancy/household record is created for the primary applicant, not one occupancy record per co-signer. It is Pending payment, with no paid amounts inferred and no occupied-room or active rent-roll contribution. Additional listed tenants remain on the agreement. Explicit prior source-to-tenant relationships are reused without overwriting identity/status; names/emails are never used to merge existing people. Separate source records for one person still need staff reconciliation. Historical signed agreements are not automatically backfilled.
+
+For onboarding, the pending record is linked to the source while onboarding remains Agreement signed. The existing payment-confirmed move-in action activates that same tenant rather than creating a duplicate. Standalone pre-tenancy tenants remain Pending payment until authorised staff complete their normal payment/move-in review. Tenant Documents links the signed agreements. Issued-property and signed-agreement deletion guards retain these records. Existing grants do not permit unrelated department users to read or issue accommodation agreements.
+
+Legacy agreements retain their issued amounts, dates, signatory snapshots and existing signing behavior. The new tenant/email completion workflow applies only to newly issued version 2 agreements. This ticket does not implement Janille's broader TKT-HOKBXI room register, report, package or payment-verifier additions.
+
+## Validation and release
+
+Focused regressions cover the actual preview/generation/signing routes, all three agreement types, escaped notes, calculations, partial signatures, duplicate completion, repeated agreements for a source, missing signatory, private access, pending occupancy/rent-roll exclusion, paid onboarding reuse, PDF-failure rollback and legacy behavior. React tests exercise the real builder and client signer picker. Real generated/signed PDF review uses synthetic records only.
+
+Deploy migration `2026_11_19_060000_link_accommodation_agreements_to_tenants` before the rebuilt assets. It adds nullable property and tenant foreign keys to accommodation agreements; no historical fields are rewritten. Confirm Alane's uniquely named active account and saved signature before issuing, and keep the queue worker/private storage available. Test a synthetic single-tenant and co-tenant agreement on staging, verify totals and Monday–Sunday dates, receipt of the signed email, Pending payment search, and payment-confirmed activation without a duplicate. Then obtain Alane's live acceptance before closing the ticket.
+
+Back up the database and private PDFs before release. Do not remove the new links or restore old conversion code over newly created pending tenants without a reconciliation plan. No production signatures, client records, emails or payments are altered by the tests.

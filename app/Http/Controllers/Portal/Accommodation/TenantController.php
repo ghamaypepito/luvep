@@ -54,6 +54,8 @@ class TenantController extends Controller
         return inertia('portal/accommodation/TenantDetail', [
             'tenant' => $tenant,
             'documents' => $tenant->documents()->latest()->get(['id', 'tenant_id', 'name', 'category', 'size', 'created_at']),
+            'signedAgreements' => \App\Models\AccommodationAgreement::where('tenant_id', $tenant->id)
+                ->where('status', 'signed')->latest('signed_at')->get(['id', 'agreement_type', 'signed_at']),
             'historical' => $historical,
             'properties' => $this->propertyOptions(), // for the "move" modal
         ]);

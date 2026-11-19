@@ -119,19 +119,23 @@
         @if($isTransient)
             <tr><td>Bond (rent + utilities)</td><td>1 week</td><td class="amt">NZ${!! $m($c['bond'] ?? '') !!}</td></tr>
             <tr><td>Deposit (rent + utilities)</td><td>1 week</td><td class="amt">NZ${!! $m($c['deposit'] ?? '') !!}</td></tr>
-            <tr><td>Rent + Utilities in Advance</td><td>{!! $f($t['term'] ?? '', '[confirmed stay]') !!}</td><td class="amt">NZ${!! $m($c['rent_advance'] ?? '') !!}</td></tr>
+            <tr><td>Rent + Utilities in Advance</td><td>@if(($data['workflow_version'] ?? null) === 2) {!! $d($c['rent_advance_from'] ?? '') !!} to {!! $d($c['rent_advance_to'] ?? '') !!} @else {!! $f($t['term'] ?? '', '[confirmed stay]') !!} @endif</td><td class="amt">NZ${!! $m($c['rent_advance'] ?? '') !!}</td></tr>
             <tr><td>Pro-rated Rent + Utilities</td><td>{!! $f($c['prorated_days'] ?? '', '[days, if applicable]') !!}</td><td class="amt">NZ${!! $m($c['prorated_rent'] ?? '') !!}</td></tr>
         @else
             <tr><td>Bond</td><td>1 week</td><td class="amt">NZ${!! $m($c['bond'] ?? '') !!}</td></tr>
             <tr><td>Deposit</td><td>1 week</td><td class="amt">NZ${!! $m($c['deposit'] ?? '') !!}</td></tr>
-            <tr><td>Rent in Advance</td><td>1 week</td><td class="amt">NZ${!! $m($c['rent_advance'] ?? '') !!}</td></tr>
+            <tr><td>Rent in Advance</td><td>@if(($data['workflow_version'] ?? null) === 2) {!! $d($c['rent_advance_from'] ?? '') !!} to {!! $d($c['rent_advance_to'] ?? '') !!} @else 1 week @endif</td><td class="amt">NZ${!! $m($c['rent_advance'] ?? '') !!}</td></tr>
             <tr><td>Pro-rated Rent</td><td>{!! $f($c['prorated_days'] ?? '', '[number of days]') !!}</td><td class="amt">NZ${!! $m($c['prorated_rent'] ?? '') !!}</td></tr>
         @endif
         <tr class="total"><td colspan="2">Total Move-in Cost</td><td class="amt">NZ${!! $m($c['total_move_in'] ?? '') !!}</td></tr>
     </table>
 
     @if($isTransient)
-        <p>The rent + utilities in advance covers the confirmed accommodation period stated above. Exalt's standard rental week runs from Monday to Sunday. Where the Tenant's move-in date falls partway through the standard rental week, the applicable amount will be calculated on a pro-rated basis for the relevant number of days.</p>
+        @if(($data['workflow_version'] ?? null) === 2)
+            <p>The advance covers the dates shown in the table. Any initial partial week is shown separately. Rent is calculated from the agreed inclusive weekly amount, with coverage limited to the tenancy end date.</p>
+        @else
+            <p>The rent + utilities in advance covers the confirmed accommodation period stated above. Exalt's standard rental week runs from Monday to Sunday. Where the Tenant's move-in date falls partway through the standard rental week, the applicable amount will be calculated on a pro-rated basis for the relevant number of days.</p>
+        @endif
     @else
         <p>The rent in advance covers the period from {!! $d($c['rent_advance_from'] ?? '', '[Monday, date]') !!} to {!! $d($c['rent_advance_to'] ?? '', '[Sunday, date]') !!}. Where the Tenant's move-in date falls partway through Exalt's standard rental week, a pro-rated rent amount will apply for the applicable number of days. Please note that Exalt's standard rental week runs from Monday to Sunday, and rent is payable in advance in accordance with the payment schedule stated in the Agreement.</p>
         <p>The bond and deposit are calculated based on the agreed weekly rent and are refundable subject to the terms and conditions of the Agreement, completion of the final inspection, and settlement of any outstanding amounts or damages.</p>
@@ -177,10 +181,30 @@
         <tr><td class="label">Reference</td><td>{!! $f($bank['reference'] ?? '', '[Property name]') !!}</td></tr>
     </table>
 
+    @if(!empty($data['notes']))
+        <h2 class="section">Notes / Special Conditions</h2>
+        <div style="white-space:pre-wrap; overflow-wrap:anywhere;">{{ $data['notes'] }}</div>
+    @endif
+
     {{-- ---------- Signatures (sub-tenants + Exalt Property Management) ---------- --}}
     @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     <h2 class="section">Signatures</h2>
     <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
+    @if(($data['workflow_version'] ?? null) === 2)
+        <table class="sign">
+            @foreach($subtenants as $index => $person)
+                @php $tenantSignature = $data['tenant_signatures'][$index] ?? null; @endphp
+                <tr><td>
+                    @if($tenantSignature)
+                        <img src="{{ $tenantSignature['image'] }}" alt="Tenant signature" style="max-height:48px; display:block;">
+                    @endif
+                    <div class="sign-line"></div>
+                    <div class="sign-cap">{{ trim(($person['first_name'] ?? '').' '.($person['last_name'] ?? '')) }} · {{ $tenantSignature['at'] ?? 'Awaiting signature' }}</div>
+                    @if($tenantSignature)<div class="sign-cap">Signed as {{ $tenantSignature['name'] }} · IP {{ $tenantSignature['ip'] }}</div>@endif
+                </td></tr>
+            @endforeach
+        </table>
+    @else
     <table class="sign">
         <tr>
             <td>
@@ -197,6 +221,7 @@
             <td></td>
         </tr>
     </table>
+    @endif
 
     @if($signedMeta)
         <div class="callout" style="margin-top:14px;">
@@ -221,6 +246,9 @@
                 @endif
                 <div class="sign-line"></div>
                 <div class="sign-cap">Exalt Property Admin</div>
+                @if(($data['workflow_version'] ?? null) === 2)
+                    <div class="sign-cap">{{ $adminName }}</div>
+                @endif
                 <div class="decl-cap">[signatory of admin]</div>
             </td>
             <td></td>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import SignatureCanvas from "react-signature-canvas";
 import { FileSignature, Eraser, ShieldCheck, AlertCircle, Loader2, Type, PenTool, Upload } from "lucide-react";
@@ -29,9 +29,10 @@ function renderNameSignature(name) {
 // Public, tokenised e-signing page for an Exalt flat/house-sharing agreement.
 // The agreement renders in an iframe; the client signs (type a cursive
 // signature, draw one, or upload an image) and posts back.
-export default function SignAgreement({ token, clientName, typeLabel, documentUrl }) {
+export default function SignAgreement({ token, clientName, typeLabel, documentUrl, signers = [] }) {
     const sigRef = useRef(null);
-    const [signerName, setSignerName] = useState(clientName || "");
+    const [signerIndex, setSignerIndex] = useState(signers.find(s => !s.signed)?.index ?? 0);
+    const [signerName, setSignerName] = useState(signers.find(s => !s.signed)?.name || clientName || "");
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [sigMode, setSigMode] = useState("type"); // type | draw | upload
     const [hasInk, setHasInk] = useState(false);
@@ -39,6 +40,14 @@ export default function SignAgreement({ token, clientName, typeLabel, documentUr
     const [submitting, setSubmitting] = useState(false);
     const [errors, setErrors] = useState({});
     const [serverError, setServerError] = useState(null);
+
+    useEffect(() => {
+        const next = signers.find(s => !s.signed);
+        if (next && signers.find(s => s.index === signerIndex)?.signed) {
+            setSignerIndex(next.index); setSignerName(next.name); setTermsAccepted(false);
+            setUploadDataUrl(null); sigRef.current?.clear(); setHasInk(false);
+        }
+    }, [signers]);
 
     const typedSignature = useMemo(() => renderNameSignature(signerName), [signerName]);
     const clear = () => { sigRef.current?.clear(); setHasInk(false); };
@@ -80,6 +89,7 @@ export default function SignAgreement({ token, clientName, typeLabel, documentUr
         setSubmitting(true);
         router.post(`/agreement/${token}/sign`, {
             signer_name: signerName.trim(),
+            ...(signers.length ? { signer_index: signerIndex } : {}),
             signature_data: currentSignature(),
             terms_accepted: termsAccepted ? 1 : 0,
         }, {
@@ -108,6 +118,16 @@ export default function SignAgreement({ token, clientName, typeLabel, documentUr
                             <AlertCircle size={14} className="mt-0.5 shrink-0" /> {serverError}
                         </div>
                     )}
+                    {signers.length > 0 && <label className="block text-sm font-semibold">Tenant signing
+                        <select aria-label="Tenant signing" value={signerIndex} onChange={e => {
+                            const index = Number(e.target.value); setSignerIndex(index);
+                            setSignerName(signers.find(s => s.index === index)?.name || '');
+                            setTermsAccepted(false); setUploadDataUrl(null); sigRef.current?.clear(); setHasInk(false);
+                        }} className="mt-1 w-full rounded-md border border-gray-300 p-2">
+                            {signers.map(s => <option key={s.index} value={s.index} disabled={s.signed}>{s.name}{s.signed ? ' — signed' : ''}</option>)}
+                        </select>
+                        <span className="mt-1 block text-xs font-normal text-gray-500">Each listed tenant must sign. The signed copy and pending-payment tenant record are created after the final signature.</span>
+                    </label>}
 
                     <label className="flex cursor-pointer items-start gap-2.5">
                         <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} className="mt-1 h-4 w-4" />

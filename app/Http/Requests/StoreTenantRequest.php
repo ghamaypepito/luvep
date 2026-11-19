@@ -15,6 +15,10 @@ class StoreTenantRequest extends FormRequest
 
     public function rules(): array
     {
+        $tenant = $this->route('tenant') instanceof Tenant ? $this->route('tenant') : null;
+        $sameDay = $tenant && ($tenant->current_status === 'pending_payment'
+            || ($tenant->contract_start && $tenant->contract_end && $tenant->contract_start->equalTo($tenant->contract_end)));
+
         return [
             // Assignment — property must exist and still be in the portfolio.
             'property_id' => ['required', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
@@ -34,7 +38,7 @@ class StoreTenantRequest extends FormRequest
             // Contract — end must be after start only when both are supplied.
             'contract_type' => ['required', Rule::in(Tenant::CONTRACT_TYPES)],
             'contract_start' => 'nullable|date',
-            'contract_end' => array_values(array_filter(['nullable', 'date', $this->filled('contract_start') ? 'after:contract_start' : null])),
+            'contract_end' => array_values(array_filter(['nullable', 'date', $this->filled('contract_start') ? ($sameDay ? 'after_or_equal:contract_start' : 'after:contract_start') : null])),
             'open_contract_notice_weeks' => 'nullable|integer|min:0|max:520',
 
             // Financial

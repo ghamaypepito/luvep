@@ -8,7 +8,7 @@ import PdfPreviewModal from "@/components/ui/PdfPreviewModal";
 // auto-filled editable fields and a live preview then use the full width.
 // Generating renders the chosen Exalt agreement to a stored PDF (and links it to
 // the onboarding record when the client has one).
-export default function Agreements({ clients = [], agreements = [], types = {}, properties = [], visaTypes = [] }) {
+export default function Agreements({ clients = [], agreements = [], types = {}, properties = [], visaTypes = [], signatoryReady = false }) {
     const typeKeys = Object.keys(types);
     const [search, setSearch] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -22,6 +22,13 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
     const [copiedId, setCopiedId] = useState(null);
     const [docPreview, setDocPreview] = useState(null); // { url, title, downloadUrl }
     const previewTimer = useRef(null);
+    const previewSequence = useRef(0);
+    const prefillSequence = useRef(0);
+    const [calculated, setCalculated] = useState(null);
+    const [previewKey, setPreviewKey] = useState('');
+    const [formErrors, setFormErrors] = useState([]);
+    const currentKey = JSON.stringify({ agreement_type: agreementType, data: fields });
+    const computed = previewKey === currentKey ? calculated : null;
 
     const copyLink = (a) => {
         if (!a.signing_url) return;
@@ -37,6 +44,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
 
     // Pick a client -> load auto-fill from their pre-tenancy submission.
     const pickClient = async (c) => {
+        const selection = ++prefillSequence.current;
+        ++previewSequence.current;
+        setPreviewKey('');
         setPickerOpen(false);
         setSelected(c);
         setLoadingPrefill(true);
@@ -49,11 +59,19 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                 body: JSON.stringify({ source: c.source, id: c.id }),
             });
             const json = await res.json();
-            setFields(json.data);
+            if (selection !== prefillSequence.current) return;
+            if (!res.ok) throw new Error('Unable to load client details.');
+            const match = properties.filter(p => p.label === json.data.property_address);
+            setFields({ ...json.data, property_id: match.length === 1 ? match[0].id : '',
+                tenancy: { ...json.data.tenancy, duration: '', duration_unit: 'months' },
+                costs: { ...json.data.costs, advance_weeks: 1 } });
         } catch {
-            setFields(emptyFields());
+            if (selection === prefillSequence.current) {
+                setFields(null);
+                setFormErrors(['Client details could not be loaded. Please select the client again.']);
+            }
         } finally {
-            setLoadingPrefill(false);
+            if (selection === prefillSequence.current) setLoadingPrefill(false);
         }
     };
 
@@ -68,21 +86,28 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
 
     const refreshPreview = async () => {
         if (!fields) return;
+        const sequence = ++previewSequence.current;
+        const key = JSON.stringify({ agreement_type: agreementType, data: fields });
         setPreviewLoading(true);
         try {
             const res = await fetch("/portal/accommodation/forms/agreements/preview", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Accept": "text/html", "X-Requested-With": "XMLHttpRequest", ...csrfHeaders() },
-                body: JSON.stringify({ agreement_type: agreementType, data: fields }),
+                headers: { "Content-Type": "application/json", "Accept": "application/json", "X-Requested-With": "XMLHttpRequest", ...csrfHeaders() },
+                body: key,
             });
-            setPreviewHtml(await res.text());
+            const json = await res.json();
+            if (sequence !== previewSequence.current) return;
+            if (!res.ok) { setFormErrors(Object.values(json.errors || { preview: 'Preview could not be calculated.' }).flat()); setPreviewKey(''); return; }
+            setPreviewHtml(json.html); setCalculated(json.data); setPreviewKey(key); setFormErrors([]);
+        } catch {
+            if (sequence === previewSequence.current) { setPreviewKey(''); setFormErrors(['Preview could not be loaded. Try Preview again.']); }
         } finally {
-            setPreviewLoading(false);
+            if (sequence === previewSequence.current) setPreviewLoading(false);
         }
     };
 
     const generate = () => {
-        if (!selected || !fields) return;
+        if (!selected || !fields || !computed || !signatoryReady) return;
         setGenerating(true);
         router.post("/portal/accommodation/forms/agreements/generate", {
             agreement_type: agreementType,
@@ -91,6 +116,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
             data: fields,
         }, {
             preserveScroll: true,
+            onError: (errors) => setFormErrors(Object.values(errors).flat()),
             onFinish: () => setGenerating(false),
         });
     };
@@ -113,6 +139,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                 </p>
             </div>
 
+            {!signatoryReady && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Alane Beryl Lozada must have one active Accommodation or administrator account with a saved signature before agreements can be issued.</p>}
+            {formErrors.length > 0 && <ul role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{formErrors.map((error, i) => <li key={i}>{error}</li>)}</ul>}
+            <p className="text-sm text-gray-600">After signing, the tenant is listed as Pending payment. Payment and move-in remain separate steps.</p>
             {/* Builder card */}
             <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
                 {/* Top bar: client picker + type tabs + actions */}
@@ -172,7 +201,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                             <button onClick={refreshPreview} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50">
                                 <RefreshCw size={13} className={previewLoading ? "animate-spin" : ""} /> Preview
                             </button>
-                            <button onClick={generate} disabled={generating} title="Generate the PDF and email the client a signing link" className="inline-flex items-center gap-1.5 rounded-full bg-[#1F5A8B] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#184A73] disabled:opacity-60">
+                            <button onClick={generate} disabled={generating || !computed || !signatoryReady || previewLoading} title="Generate the PDF and email the client a signing link" className="inline-flex items-center gap-1.5 rounded-full bg-[#1F5A8B] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#184A73] disabled:opacity-60">
                                 {generating ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Generate &amp; send
                             </button>
                         </div>
@@ -195,12 +224,10 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                         <div className="max-h-[44rem] space-y-5 overflow-y-auto border-r border-gray-100 p-4">
                             <label className="block">
                                 <span className="mb-1 block text-xs font-medium text-gray-500">Property address</span>
-                                <select value={fields.property_address || ""} onChange={(e) => setF(["property_address"], e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none focus:ring-1 focus:ring-[#1F5A8B]">
+                                <select value={fields.property_id || ""} onChange={(e) => setF(["property_id"], e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none focus:ring-1 focus:ring-[#1F5A8B]">
                                     <option value="">Select a property…</option>
-                                    {properties.map((p) => <option key={p} value={p}>{p}</option>)}
-                                    {fields.property_address && !properties.includes(fields.property_address) && (
-                                        <option value={fields.property_address}>{fields.property_address}</option>
-                                    )}
+                                    {properties.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+
                                 </select>
                             </label>
 
@@ -237,12 +264,13 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                 <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Tenancy</p>
                                 <div className="grid grid-cols-2 gap-2">
                                     <Mini label="Commence date" type="date" value={fields.tenancy?.commence_date} onChange={(v) => setF(["tenancy", "commence_date"], v)} />
-                                    <Mini label="Term" value={fields.tenancy?.term} onChange={(v) => setF(["tenancy", "term"], v)} />
-                                    <Mini label="End date" type="date" value={fields.tenancy?.end_date} onChange={(v) => setF(["tenancy", "end_date"], v)} />
+                                    <Mini label="Duration" type="number" step="1" value={fields.tenancy?.duration} onChange={(v) => setF(["tenancy", "duration"], v)} />
+                                    <Mini label="Duration unit" options={["days", "weeks", "months"]} value={fields.tenancy?.duration_unit} onChange={(v) => setF(["tenancy", "duration_unit"], v)} />
+                                    <Mini label="End date (automatic)" type="date" readOnly value={computed?.tenancy?.end_date ?? ""} />
                                     <Mini label="Weekly rent" type="number" step="0.01" prefix="NZ$" value={fields.tenancy?.weekly_rent} onChange={(v) => setF(["tenancy", "weekly_rent"], v)} />
                                     <Mini label="Move-in date" type="date" value={fields.tenancy?.move_in_date} onChange={(v) => setF(["tenancy", "move_in_date"], v)} />
                                     <Mini label="Move-in time" type="time" value={fields.tenancy?.move_in_time} onChange={(v) => setF(["tenancy", "move_in_time"], v)} />
-                                    <Mini label="Move-out date" type="date" value={fields.tenancy?.move_out_date} onChange={(v) => setF(["tenancy", "move_out_date"], v)} />
+                                    <Mini label="Move-out date (automatic)" type="date" readOnly value={computed?.tenancy?.move_out_date ?? ""} />
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
                                     <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
@@ -254,18 +282,23 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
 
                             <div>
                                 <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Move-in costs (NZ$)</p>
+                                <p className="mb-2 text-xs text-gray-500">Full weeks run Monday–Sunday. Midweek days are charged separately at the quoted weekly rent divided by 7. Coverage stops at the tenancy end. For short stays, enter the agreed inclusive weekly amount. Separately billed utilities are not added. End date is start plus duration minus one day; month-end dates are clamped before subtracting one day.</p>
                                 <div className="grid grid-cols-2 gap-2">
+                                    <Mini label="Advance weeks" type="number" step="1" value={fields.costs?.advance_weeks} onChange={(v) => setF(["costs", "advance_weeks"], v)} />
                                     <Mini label="Bond" type="number" step="0.01" prefix="NZ$" value={fields.costs?.bond} onChange={(v) => setF(["costs", "bond"], v)} />
                                     <Mini label="Deposit" type="number" step="0.01" prefix="NZ$" value={fields.costs?.deposit} onChange={(v) => setF(["costs", "deposit"], v)} />
-                                    <Mini label="Rent in advance" type="number" step="0.01" prefix="NZ$" value={fields.costs?.rent_advance} onChange={(v) => setF(["costs", "rent_advance"], v)} />
-                                    <Mini label="Pro-rated days" type="number" step="1" value={fields.costs?.prorated_days} onChange={(v) => setF(["costs", "prorated_days"], v)} />
-                                    <Mini label="Pro-rated rent" type="number" step="0.01" prefix="NZ$" value={fields.costs?.prorated_rent} onChange={(v) => setF(["costs", "prorated_rent"], v)} />
-                                    <Mini label="Total move-in" type="number" step="0.01" prefix="NZ$" value={fields.costs?.total_move_in} onChange={(v) => setF(["costs", "total_move_in"], v)} />
-                                    <Mini label="Advance from" type="date" value={fields.costs?.rent_advance_from} onChange={(v) => setF(["costs", "rent_advance_from"], v)} />
-                                    <Mini label="Advance to" type="date" value={fields.costs?.rent_advance_to} onChange={(v) => setF(["costs", "rent_advance_to"], v)} />
+                                    <Mini label="Rent in advance (automatic)" type="number" readOnly value={computed?.costs?.rent_advance ?? ""} />
+                                    <Mini label="Pro-rated days (automatic)" type="number" readOnly value={computed?.costs?.prorated_days ?? ""} />
+                                    <Mini label="Pro-rated rent (automatic)" type="number" readOnly value={computed?.costs?.prorated_rent ?? ""} />
+                                    <Mini label="Total move-in (automatic)" type="number" readOnly value={computed?.costs?.total_move_in ?? ""} />
+                                    <Mini label="Advance from (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_from ?? ""} />
+                                    <Mini label="Advance to (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_to ?? ""} />
                                 </div>
                             </div>
 
+                            <label className="block text-sm font-semibold text-gray-700">Notes / Special Conditions
+                                <textarea name="agreement_notes" maxLength={3000} rows={5} value={fields.notes || ""} onChange={e => setF(["notes"], e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 p-2 font-normal" />
+                            </label>
                             <div>
                                 <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Bank reference</p>
                                 <div className="grid grid-cols-2 gap-2">
@@ -335,18 +368,18 @@ function Field({ label, value, onChange }) {
     return (
         <label className="block">
             <span className="mb-1 block text-xs font-medium text-gray-500">{label}</span>
-            <input value={value || ""} onChange={(e) => onChange(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none focus:ring-1 focus:ring-[#1F5A8B]" />
+            <input value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none focus:ring-1 focus:ring-[#1F5A8B]" />
         </label>
     );
 }
 
-function Mini({ label, value, onChange, full = false, type = "text", options = null, step, prefix }) {
+function Mini({ label, value, onChange, full = false, type = "text", options = null, step, prefix, readOnly = false }) {
     const cls = "w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-[#1F5A8B] focus:outline-none";
     return (
         <label className={`block ${full ? "col-span-2" : ""}`}>
             <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-gray-400">{label}</span>
             {options ? (
-                <select value={value || ""} onChange={(e) => onChange(e.target.value)} className={cls}>
+                <select value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} className={cls}>
                     <option value="">—</option>
                     {options.map((o) => (typeof o === "string"
                         ? <option key={o} value={o}>{o}</option>
@@ -355,10 +388,10 @@ function Mini({ label, value, onChange, full = false, type = "text", options = n
             ) : prefix ? (
                 <div className="flex items-center rounded-md border border-gray-200 focus-within:border-[#1F5A8B]">
                     <span className="pl-2 text-sm text-gray-400">{prefix}</span>
-                    <input type={type} step={step} min={type === "number" ? "0" : undefined} value={value || ""} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border-0 px-1.5 py-1.5 text-sm focus:outline-none focus:ring-0" />
+                    <input readOnly={readOnly} type={type} step={step} min={type === "number" ? "0" : undefined} value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} className="w-full rounded-md border-0 px-1.5 py-1.5 text-sm focus:outline-none focus:ring-0" />
                 </div>
             ) : (
-                <input type={type} step={step} min={type === "number" ? "0" : undefined} value={value || ""} onChange={(e) => onChange(e.target.value)} className={cls} />
+                <input readOnly={readOnly} type={type} step={step} min={type === "number" ? "0" : undefined} value={value ?? ""} onChange={(e) => onChange?.(e.target.value)} className={cls} />
             )}
         </label>
     );

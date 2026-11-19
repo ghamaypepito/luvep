@@ -167,6 +167,23 @@ class EoiSubmissionController extends Controller
         }
 
         if ($submission->converted_to_tenant_id) {
+            $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $request) {
+                $source = EoiSubmission::whereKey($submission->id)->lockForUpdate()->firstOrFail();
+                $tenant = Tenant::whereKey($source->converted_to_tenant_id)->lockForUpdate()->firstOrFail();
+                if ($tenant->current_status !== 'pending_payment') {
+                    return null;
+                }
+                abort_unless($source->status === 'payment_confirmed', 422, 'Payment must be confirmed before move-in.');
+                $data = $request->validated();
+                abort_unless((int) $data['property_id'] === $tenant->property_id, 422, 'Use the property linked to the signed agreement.');
+                $tenant->fill([...$data, 'current_status' => 'active'])->save();
+                $source->update(['status' => 'moved_in', 'move_in_date' => $source->move_in_date ?: $data['contract_start']]);
+
+                return $tenant;
+            });
+            if ($tenant) {
+                return redirect()->route('portal.accommodation.tenants.show', $tenant)->with('success', 'Payment confirmed — the existing tenant is now active.');
+            }
             return redirect()->back()->with('error', 'This applicant has already been converted to a tenant.');
         }
 

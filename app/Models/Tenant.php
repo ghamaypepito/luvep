@@ -20,7 +20,7 @@ class Tenant extends Model
 
     public const CONTRACT_TYPES = ['fixed_term', 'periodic', 'open', 'not_yet_defined'];
 
-    public const STATUSES = ['active', 'notice_given', 'vacating', 'vacated', 'breached'];
+    public const STATUSES = ['pending_payment', 'active', 'notice_given', 'vacating', 'vacated', 'breached'];
 
     /** Window (days) before contract_end that flags a tenancy as "ending soon". */
     public const ENDING_SOON_DAYS = 25;

@@ -113,6 +113,9 @@ class Property extends Model
         // Block deletion while tenants still live here — they must be vacated
         // (or moved) first. Mirrors the controller guard for defence in depth.
         static::deleting(function (Property $property) {
+            if (AccommodationAgreement::where('property_id', $property->id)->exists()) {
+                throw new \DomainException('This property has issued agreements. Archive it to preserve those records.');
+            }
             if ($property->activeTenants()->exists()) {
                 throw new \RuntimeException('Cannot delete a property with active tenants. All tenants must be vacated first.');
             }

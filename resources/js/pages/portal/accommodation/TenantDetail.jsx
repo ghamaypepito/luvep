@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 
 const STATUS_STYLES = {
+    pending_payment: "bg-amber-50 text-amber-800",
     active: "bg-emerald-50 text-emerald-700", notice_given: "bg-amber-50 text-amber-700",
     vacating: "bg-orange-50 text-orange-700", vacated: "bg-gray-100 text-gray-500",
     breached: "bg-rose-50 text-rose-600",
 };
 const STATUS_LABEL = {
+    pending_payment: "Pending payment",
     active: "Active", notice_given: "Notice given", vacating: "Vacating", vacated: "Vacated", breached: "Breached",
 };
 const CONTRACT_STATUS_LABEL = {
@@ -55,7 +57,7 @@ function Modal({ title, onClose, children }) {
 const FIELD = "w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
 const LABEL = "block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5";
 
-export default function TenantDetail({ tenant, historical = [], properties = [], documents = [] }) {
+export default function TenantDetail({ tenant, historical = [], properties = [], documents = [], signedAgreements = [] }) {
     const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null); // notice | vacate | renew | move
     const isVacated = tenant.current_status === "vacated";
@@ -191,7 +193,12 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
 
             {tab === "rent" && <Placeholder icon={<Receipt size={40} />} title="Rent payments coming soon" text="Rent payment history will appear here once the Rent & Utilities module is built." />}
             {tab === "comms" && <Placeholder icon={<MessageSquare size={40} />} title="Communication log coming soon" text="Email and message log will appear here once the Communication module is built." />}
-            {tab === "docs" && <TenantDocuments tenant={tenant} documents={documents} />}
+            {tab === "docs" && <>
+                {signedAgreements.length > 0 && <Card title="Signed agreements" icon={<FileText size={18} />}>
+                    {signedAgreements.map(a => <a key={a.id} className="block py-2 text-sm font-semibold text-blue-700 underline" href={`/portal/accommodation/forms/agreements/${a.id}/download`}>Signed agreement #{a.id} · {fmtDate(a.signed_at)}</a>)}
+                </Card>}
+                <TenantDocuments tenant={tenant} documents={documents} />
+            </>}
             {tab === "activity" && <Placeholder icon={<Activity size={40} />} title="Activity log coming soon" text="Status changes, contract updates and notes will be shown here once the audit presentation layer is built." />}
 
             {modal === "notice" && <NoticeModal tenant={tenant} onClose={() => setModal(null)} />}
