@@ -9,8 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Consultancy Agreement Verification — the consultancy counterpart of Program
@@ -72,7 +72,7 @@ class ConsultancyVerificationController extends Controller
             }
 
             $itemKeys = is_array($review['item_keys'] ?? null) ? $review['item_keys'] : array_keys($meta);
-            $items = collect($itemKeys)->map(function ($key) use ($meta) {
+            $items = collect($itemKeys)->map(function ($key) use ($meta, $review) {
                 $m = is_array($meta[$key] ?? null) ? $meta[$key] : [];
 
                 return [
@@ -84,6 +84,7 @@ class ConsultancyVerificationController extends Controller
                     'label' => \App\Services\ConsultancyReviewService::ITEM_LABELS[$key]
                         ?? ($m['label'] ?? \Illuminate\Support\Str::headline($key)),
                     'amount' => $m['amount'] ?? null,
+                    'currency_symbol' => ($review['scenario'] ?? null) === 'english_engagement' && $key === 'pte_exam' ? 'US$' : (($review['currency'] ?? 'php') === 'nzd' ? 'NZ$' : 'Php'),
                     'status' => $m['status'] ?? 'needs_check', // verified | needs_check
                     'edited' => (bool) ($m['edited'] ?? false),
                     'note' => trim((string) ($m['note'] ?? '')) ?: null,
@@ -117,6 +118,7 @@ class ConsultancyVerificationController extends Controller
 
             return [
                 'id' => $l->id,
+                'delete_token' => $this->canDeleteDraft($review) ? hash('sha256', json_encode($review, JSON_THROW_ON_ERROR)) : null,
                 'document' => $document,
                 'preview_url' => "/consultancy-verification/{$l->id}/preview",
                 'lead_id' => $l->lead_id,
@@ -142,7 +144,7 @@ class ConsultancyVerificationController extends Controller
                 'items' => $items,
                 'items_count' => $total,
                 'confirmed_count' => $confirmed,
-                'total_amount' => $items->sum(fn ($i) => (int) ($i['amount'] ?? 0)),
+                'total_amount' => ConsultancyReviewService::totalAmount($review),
                 'note' => $review['note'] ?? null, // document-level review note
                 'changes_requested' => $review['changes_requested'] ?? null,
             ];
@@ -307,6 +309,35 @@ class ConsultancyVerificationController extends Controller
         return back()->with('success', 'Saved as draft.');
     }
 
+    private function canDeleteDraft(array $review): bool
+    {
+        return ($review['status'] ?? null) === 'pending' && empty($review['approved_at'])
+            && empty($review['approved_by']) && empty($review['emailed']);
+    }
+
+    public function deleteDraft(Request $request, Lead $lead)
+    {
+        $data = $request->validate(['delete_token' => 'required|string|size:64']);
+        DB::transaction(function () use ($lead, $data) {
+            $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            $review = is_array($lead->consultancy_review) ? $lead->consultancy_review : [];
+            if (! $this->canDeleteDraft($review)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['draft' => 'Only an unapproved draft can be deleted.']);
+            }
+            if (! hash_equals(hash('sha256', json_encode($review, JSON_THROW_ON_ERROR)), $data['delete_token'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['draft' => 'This draft changed. Refresh it before deleting.']);
+            }
+            \App\Models\ActivityLog::record('consultancy.draft.deleted', [
+                'description' => 'Deleted draft agreement review', 'entity_type' => Lead::class,
+                'entity_id' => $lead->id, 'properties' => ['review' => $review],
+            ]);
+            $lead->forceFill(['consultancy_review' => null])->saveOrFail();
+            $lead->recordStaffActivity('Deleted draft agreement review');
+        });
+
+        return redirect()->route('consultancy-verification.index')->with('success', 'Draft deleted. Previously issued documents are retained.');
+    }
+
     /**
      * Step 2 — approve: send the consultancy agreement to the client. `verify_all`
      * confirms every fee item first; `send_email=0` approves without emailing.
@@ -382,10 +413,9 @@ class ConsultancyVerificationController extends Controller
                 // (client / agent-CC / education-team, each off until configured).
                 // Its return says whether a CLIENT message was sent, so the
                 // built-in client email falls back only when none is configured.
-                $items = is_array($review['items'] ?? null) ? $review['items'] : [];
                 $firedClient = app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.approved', $lead->fresh(), [
                     'agreement_type' => $review['scenario_label'] ?? 'Consultancy Agreement',
-                    'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+                    'total_amount' => ConsultancyReviewService::totalAmount($review),
                 ]);
 
                 app(\App\Http\Controllers\LeadDocumentController::class)->sendConsultancyAgreementEmail($lead->fresh(), ! $firedClient);
