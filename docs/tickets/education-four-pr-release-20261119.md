@@ -9,7 +9,9 @@ Combines Kent's PRs #140 (Bulk Email readiness), #147 (dated personal notes), #1
 - Students search and its department-selection logic include every current program's raw and formatted intake date through one matcher.
 - An uncertain dated-note submission followed by an edited retry now returns an actionable Inertia validation error. JSON callers retain conflict status 409; existing saved/deleted entries are not overwritten or duplicated.
 
-No required defects were found in the Bulk Email guidance or monthly stage-count implementation. Counts remain filtered students in four specified stages, not completed tasks or a second card for each program. Intake Monitoring continues to use each student's primary program date.
+- Bulk Email now includes server flash refusals in its inline error display, retaining the draft. Education scheduling readiness rejects past times and labels the existing server interpretation as UTC. Backend refusal checks prove no campaign or dispatch is created.
+
+No required defects were found in the monthly stage-count implementation. Counts remain filtered students in four specified stages, not completed tasks or a second card for each program. Intake Monitoring continues to use each student's primary program date.
 
 ## Verification and release contract
 

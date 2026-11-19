@@ -127,6 +127,11 @@ const chooseFiles = async files => {
     await click(button("Schedule"));
     assert.match(document.querySelector('#education-bulk-send-help').textContent, /scheduled date and time/);
     assert.equal(button("Schedule campaign \u00b7 3 leads").disabled, true);
+    await change(document.querySelector('input[type="datetime-local"]'), "2000-01-01T12:00");
+    assert.match(document.querySelector('#education-bulk-send-help').textContent, /future.*UTC/);
+    assert.equal(button("Schedule campaign \u00b7 3 leads").disabled, true);
+    await change(document.querySelector('input[type="datetime-local"]'), "2999-01-01T12:00");
+    assert.equal(button("Schedule campaign \u00b7 3 leads").disabled, false);
     await click(button("Send now"));
     await change(select("All stages"), "New Leads");
     assert.match(document.body.textContent, /1 selected · 1 shown/);
@@ -140,6 +145,11 @@ const chooseFiles = async files => {
     assert.match(document.querySelector('[role="alert"]').textContent, /Please retry/);
     assert.equal(document.querySelector('input[placeholder="June re-engagement"]').value, "Synthetic campaign");
     assert.equal(button("Send \u00b7 1 lead").disabled, false, "Failed request retains the draft and allows retry");
+    for (const message of ["Pick an active email template.", "No valid recipients."]) {
+        await act(async () => posts[2].options.onSuccess({ props: { flash: { error: message } } }));
+        assert.match(document.querySelector('[role="alert"]').textContent, new RegExp(message));
+        assert.equal(document.querySelector('input[placeholder="June re-engagement"]').value, "Synthetic campaign");
+    }
 
     await act(async () => root.render(React.createElement(BulkEmail, {
         key: "search-all-recipients",

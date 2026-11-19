@@ -222,12 +222,14 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         });
     };
 
-    const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || scheduledAt) && !sending;
+    const futureSchedule = scheduledAt && Date.parse(`${scheduledAt}Z`) > Date.now();
+    const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || (scheduledAt && (!educationEmail || futureSchedule))) && !sending;
     const missingRequirements = [
         !name.trim() && "Enter a campaign name (the example text is only a placeholder).",
         !templateId && "Choose an active email template.",
         visibleSelection.size === 0 && "Select at least one recipient matching the current filters.",
         action === "schedule" && !scheduledAt && "Choose a scheduled date and time.",
+        action === "schedule" && scheduledAt && !futureSchedule && "Choose a future scheduled date and time (UTC).",
     ].filter(Boolean);
 
 
@@ -241,6 +243,7 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
             action, scheduled_at: action === "schedule" ? scheduledAt : null,
         }, {
             preserveScroll: true,
+            onSuccess: (page) => { if (educationEmail && page.props.flash?.error) setSendErrors({ campaign: page.props.flash.error }); },
             onError: (e) => { if (educationEmail) setSendErrors(e); toast.error(Object.values(e)[0] || "Could not start the campaign."); },
             onFinish: () => setSending(false),
         });
@@ -276,7 +279,10 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                             </button>
                         </div>
                         {action === "schedule" && (
-                            <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inp} />
+                            <label className="block text-xs text-gray-600">
+                                {educationEmail && "Scheduled date and time (UTC)"}
+                                <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inp} />
+                            </label>
                         )}
                     </div>
 
