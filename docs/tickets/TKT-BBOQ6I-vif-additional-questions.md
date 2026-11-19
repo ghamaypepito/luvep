@@ -39,3 +39,26 @@ Highlighted headings sometimes cover a multi-page section. Hendry/Nova must conf
 Portable React interaction coverage is in tests/js/vif-supplement.test.mjs and is included in the existing CI workflow. Backend coverage in VifSupplementTest exercises public submission, staff/client persistence, exports, approval gating, cross-account denial, invalid inputs, multiple contacts and new PSWV classification. Existing public intake and VIF regression tests must remain green.
 
 Deploy only after CI and reviewer approval. Run the normal Laravel migrations for the nullable JSON additions. Stage synthetic SV, GVV, SMC, AEWV, PSWV and DCRV examples, including an existing generated/approved VIF, before production acceptance. Confirm existing documents remain accessible and Education/Accommodation/Finance workflows remain unchanged. Production deployment and LIA acceptance are not established by a branch or green CI.
+
+
+## Follow-up source comparison — 19 November 2026
+
+Independent inspection reconfirmed all seven PDFs: 187 pages, 163 yellow highlight annotations on 68 pages. Scanned highlighted regions were read with local OCR; the supporting evidence remains private and is not committed. The short video shows the public assessment entry cards; its audio has not been transcribed. The Taste Vault form-reference query returned no matches; this correction reuses the existing shared question component.
+
+Two source-backed capture gaps were corrected in the shared catalogue, without changing eligibility rules:
+
+| Source evidence | Field mapping | Compatibility |
+| --- | --- | --- |
+| **Dependent Child Resident Visa.pdf, page2:** the highlighted parent question records a specific citizenship/residency class, including “New Zealand resident or permanent resident visa holder”. A Yes/No answer alone loses that information. | `family.vif_answers.supporting_parent_nz_status`, text, **Parent’s New Zealand citizenship or residence status** | Retain `parent_nz_citizen_or_resident` and its historical Yes/No answers. The additional text records the parent’s stated status; it grants no eligibility or waiver. Remains limited to dependent-child residence forms. |
+| **SMC EOI.pdf, page17:** highlighted **What type of employment do you or will you have?** includes an independent-midwife basis absent from the ordinary employment-type selector. | `resident.vif_answers.smc_employment_basis`, select, with the four source options below | Keep ordinary `employment_type` unchanged. No pathway, occupation or eligibility is inferred from this answer. |
+
+The four SMC choices are copied literally:
+
+- Permanent or for a fixed term of at least 1 year
+- A contract for services
+- I am an independent midwife practitioner with a letter of authority to claim under the Maternity Notice and registration with the Midwifery Council
+- None of the above
+
+The shared catalogue drives validation, applicant/staff editing, owner persistence and VIF exports. Focused regressions cover both fields, all four SMC choices, preservation of the old parent Yes/No value, visa scoping, public submission, client/staff persistence and HTML/Word/PDF output. The CI merge retains PDF-worker compatibility, main’s critical-dependency checks and the VIF interaction tests.
+
+Before acceptance, Hendry/Nova must review the regenerated synthetic SV/GVV/SMC/AEWV/PSWV/DCRV previews and confirm wording/completeness, particularly section-heading highlights and existing private upload/checklist coverage. The synthetic packet is a review artifact, not a production submission or LIA approval. This integration starts from main59dd9db9 and PR106head1238227f; the separate staff English-evidence change touches the same Resident/client intake writers and must be integrated and independently retested before any release. Do not close TKT-BBOQ6I before LIA acceptance and deployed staging verification.

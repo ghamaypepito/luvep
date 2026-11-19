@@ -1277,6 +1277,17 @@
           "type": "text"
         },
         {
+          "key": "smc_employment_basis",
+          "label": "What type of employment do you or will you have?",
+          "type": "select",
+          "options": [
+            "Permanent or for a fixed term of at least 1 year",
+            "A contract for services",
+            "I am an independent midwife practitioner with a letter of authority to claim under the Maternity Notice and registration with the Midwifery Council",
+            "None of the above"
+          ]
+        },
+        {
           "key": "smc_pathway",
           "label": "Which Skilled Migrant Category pathway are you applying under?",
           "type": "select",
@@ -1726,6 +1737,11 @@
             "Yes",
             "No"
           ]
+        },
+        {
+          "key": "supporting_parent_nz_status",
+          "label": "Parent’s New Zealand citizenship or residence status",
+          "type": "text"
         },
         {
           "key": "dependent_child_category",

@@ -117,9 +117,17 @@ class VifSupplementTest extends TestCase
                 'english_evidence' => 'Recognised employment', 'include_family' => 'No',
             ];
         }
+        if ($type === 'resident') {
+            $payload['vif_answers']['smc_employment_basis'] = 'A contract for services';
+        } elseif ($type === 'family') {
+            $payload['vif_answers']['parent_nz_citizen_or_resident'] = 'Yes';
+            $payload['vif_answers']['supporting_parent_nz_status'] = 'New Zealand citizen';
+        }
         $this->post('/'.$type.'-interest', $payload)->assertRedirect()->assertSessionHasNoErrors();
         $model = 'App\\Models\\'.ucfirst($type).'Intake';
-        $this->assertSame('Public form middle', $model::firstOrFail()->vif_answers['middle_name']);
+        foreach ($payload['vif_answers'] as $key => $answer) {
+            $this->assertSame($answer, $model::firstOrFail()->vif_answers[$key]);
+        }
     }
 
     public function test_new_post_study_submission_uses_post_study_visa_not_aewv(): void
@@ -176,5 +184,55 @@ class VifSupplementTest extends TestCase
         $this->assertSame([], VifSupplement::schema('education'));
         $this->assertStringNotContainsString('Supporting parent', json_encode(VifSupplement::sections('family', ['applying_as' => 'Partner'])));
         $this->assertStringContainsString('Supporting parent', json_encode(VifSupplement::sections('family', ['applying_as' => 'Dependent child', 'visa_type' => 'Residence class visa'])));
+    }
+
+    public function test_source_parent_status_and_all_smc_employment_bases_persist_and_export_without_eligibility_changes(): void
+    {
+        $bases = [
+            'Permanent or for a fixed term of at least 1 year',
+            'A contract for services',
+            'I am an independent midwife practitioner with a letter of authority to claim under the Maternity Notice and registration with the Midwifery Council',
+            'None of the above',
+        ];
+        foreach (['family', 'resident'] as $type) {
+            [$staff, $lead, $intake, $client] = $this->linkedDraft($type);
+            $url = "/portal/immigration/intakes/{$type}/{$intake->id}";
+            $answers = $type === 'family'
+                ? [['parent_nz_citizen_or_resident' => 'Yes', 'supporting_parent_nz_status' => 'New Zealand resident or permanent resident visa holder']]
+                : array_map(fn ($basis) => ['smc_employment_basis' => $basis], $bases);
+            foreach ($answers as $value) {
+                $this->actingAs($staff)->patchJson($url, ['fields' => ['vif_answers' => $value]])->assertOk();
+                foreach ($value as $key => $answer) {
+                    $this->assertSame($answer, $intake->refresh()->vif_answers[$key]);
+                    $this->get($url.'/preview')->assertOk()->assertSee($answer);
+                    $this->get($url.'/word')->assertOk()->assertSee($answer);
+                }
+                $pdf = $this->get($url.'/pdf')->assertOk();
+                $text = preg_replace('/\s+/', ' ', (new \Smalot\PdfParser\Parser)->parseContent($pdf->getContent())->getText());
+                $this->assertStringContainsString(end($value), $text);
+                $this->assertSame('Draft', $intake->refresh()->status);
+                $this->assertSame(0, LeadDocument::where('lead_id', $lead->id)->count());
+            }
+            $this->actingAs($client)->post('/portal/lead/visa-assessment', ['field_values' => ['vif_answers' => $answers[0]]])
+                ->assertRedirect()->assertSessionHasNoErrors();
+            foreach ($answers[0] as $key => $answer) {
+                $this->assertSame($answer, $intake->refresh()->vif_answers[$key]);
+            }
+        }
+    }
+
+    public function test_source_gap_fields_remain_visa_scoped_and_keep_legacy_parent_yes_no(): void
+    {
+        $fields = collect(VifSupplement::schema('resident'))->flatMap(fn ($section) => $section['fields']);
+        $this->assertSame([
+            'Permanent or for a fixed term of at least 1 year', 'A contract for services',
+            'I am an independent midwife practitioner with a letter of authority to claim under the Maternity Notice and registration with the Midwifery Council',
+            'None of the above',
+        ], $fields->firstWhere('key', 'smc_employment_basis')['options']);
+        $familyFields = collect(VifSupplement::schema('family'))->flatMap(fn ($section) => $section['fields']);
+        $this->assertSame(['Yes', 'No'], $familyFields->firstWhere('key', 'parent_nz_citizen_or_resident')['options']);
+        $this->assertFalse(Validator::make(['vif_answers' => ['smc_employment_basis' => 'Guessed eligibility']], VifSupplement::rules('resident'))->passes());
+        $this->assertFalse(Validator::make(['vif_answers' => ['supporting_parent_nz_status' => 'Resident']], VifSupplement::rules('work'))->passes());
+        $this->assertStringNotContainsString('citizenship or residence status', json_encode(VifSupplement::sections('family', ['applying_as' => 'Partner', 'visa_type' => 'Residence class visa'])));
     }
 }
