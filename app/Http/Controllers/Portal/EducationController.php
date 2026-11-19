@@ -954,7 +954,7 @@ class EducationController extends Controller
                             'preferred_intake' => $data['intake'] ?? null,
                             'english_test_type' => $data['english_test'] ?? null,
                         ], fn ($v) => $v !== null && $v !== ''));
-                    \App\Services\StudentProgramIntakes::apply($linkedPlan, $data);
+                    \App\Services\StudentProgramIntakes::apply($linkedPlan, $data, preserveBlankDates: true);
                     $linkedPlan->save();
                 }
 
@@ -1390,6 +1390,7 @@ class EducationController extends Controller
             if ($request->has('entry_action')) {
                 return \App\Services\Reports\EducationWeeklyNotes::save($request);
             }
+
             return ReportWeek::save($request, 'education');
         }
 

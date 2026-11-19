@@ -97,6 +97,22 @@ class EducationDatedReportNotesTest extends TestCase
         $this->assertDatabaseCount('education_dated_report_notes', 1);
     }
 
+    public function test_inertia_retry_conflicts_return_actionable_errors_without_replacing_the_draft(): void
+    {
+        $this->actingAs($this->staff());
+        $payload = $this->payload();
+        $this->post(self::URL, $payload)->assertRedirect();
+        $note = EducationDatedReportNote::sole();
+        $this->from('/portal/education/reports')->withHeader('X-Inertia', 'true')
+            ->post(self::URL, array_merge($payload, ['body' => 'Edited after an uncertain response']))
+            ->assertRedirect('/portal/education/reports')->assertSessionHasErrors('submission_key');
+        $this->assertSame($payload['body'], $note->fresh()->body);
+        $this->delete(self::URL.'/'.$note->id, ['revision' => 1])->assertRedirect();
+        $this->post(self::URL, $payload)->assertRedirect()->assertSessionHasErrors('submission_key');
+        $this->assertDatabaseCount('education_dated_report_notes', 1);
+        $this->assertSoftDeleted($note);
+    }
+
     public function test_edit_moves_a_note_to_its_activity_day_and_stale_edits_or_removal_do_not_lose_it(): void
     {
         $emma = $this->staff();

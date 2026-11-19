@@ -153,6 +153,71 @@ class StudentProgramIntakesTest extends TestCase
         $this->assertDatabaseCount('leads', 1);
     }
 
+    public function test_legacy_plan_writers_keep_current_dates_in_course_order(): void
+    {
+        $plan = $this->existing($this->payload()['program_intakes'])->studyPlans()->sole();
+        $plan->update(['preferred_intake' => '2027-04-01']);
+        $this->assertSame('2027-04-01', $plan->fresh()->program_intakes[0]['intake']);
+
+        $plan->update(['preferred_course' => self::B]);
+        $b = ['program' => self::B, 'intake' => '2027-07-12'];
+        $this->assertSame([$b], $plan->fresh()->program_intakes);
+        $this->assertSame($b['intake'], $plan->fresh()->preferred_intake);
+        $plan->update(['preferred_course' => self::B.' · '.self::A]);
+        $this->assertSame([$b, ['program' => self::A, 'intake' => null]], $plan->fresh()->program_intakes);
+        $plan->update(['preferred_course' => null]);
+        $this->assertSame([], $plan->fresh()->program_intakes);
+        $this->assertNull($plan->fresh()->preferred_intake);
+    }
+
+    public function test_legacy_edit_can_explicitly_select_the_previous_primary_date_for_a_new_first_program(): void
+    {
+        $lead = $this->existing($this->payload()['program_intakes']);
+        $data = $this->payload(['program_text' => self::B]);
+        unset($data['program_intakes']);
+        $this->post('/portal/education/students/'.$lead->id.'/update', $data)->assertSessionHasNoErrors();
+        $plan = $lead->studyPlans()->sole();
+        $this->assertSame([['program' => self::B, 'intake' => $data['intake']]], $plan->program_intakes);
+        $this->assertSame($data['intake'], $plan->preferred_intake);
+    }
+
+    public function test_removing_all_programs_also_removes_their_primary_date(): void
+    {
+        $lead = $this->existing($this->payload()['program_intakes']);
+        $data = $this->payload(['program_text' => null, 'program_intakes' => []]);
+        unset($data['intake']);
+        $this->post('/portal/education/students/'.$lead->id.'/update', $data)->assertSessionHasNoErrors();
+        $plan = $lead->studyPlans()->sole();
+        $this->assertSame([], $plan->program_intakes);
+        $this->assertNull($plan->preferred_intake);
+    }
+
+    public function test_linking_blank_dates_preserves_a_preexisting_shared_intake(): void
+    {
+        $lead = $this->existing(null, 'November 2027');
+        $lead->update(['is_student' => false]);
+        $rows = [['program' => self::A, 'intake' => null], ['program' => self::B, 'intake' => '2028-01-01']];
+        $this->post('/portal/education/students/link-existing', $this->payload([
+            'lead_id' => $lead->id, 'intake' => '', 'program_intakes' => $rows,
+        ]))->assertSessionHasNoErrors()->assertSessionMissing('error');
+        $rows[0]['intake'] = 'November 2027';
+        $plan = $lead->studyPlans()->sole();
+        $this->assertSame('November 2027', $plan->preferred_intake);
+        $this->assertSame($rows, $plan->program_intakes);
+    }
+
+    public function test_linking_an_english_test_preserves_existing_mapped_dates(): void
+    {
+        $lead = $this->existing($this->payload()['program_intakes']);
+        $lead->update(['is_student' => false]);
+        $data = $this->payload(['lead_id' => $lead->id, 'program_text' => '', 'intake' => '', 'english_test' => 'IELTS']);
+        unset($data['program_intakes']);
+        $this->post('/portal/education/students/link-existing', $data)->assertSessionHasNoErrors()->assertSessionMissing('error');
+        $plan = $lead->studyPlans()->sole();
+        $this->assertSame($this->payload()['program_intakes'], $plan->program_intakes);
+        $this->assertSame('2027-02-17', $plan->preferred_intake);
+    }
+
     public function test_ungranted_roles_cannot_save_new_program_dates(): void
     {
         $lead = $this->existing();

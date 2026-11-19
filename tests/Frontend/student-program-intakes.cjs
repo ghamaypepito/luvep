@@ -11,14 +11,14 @@ const React = require('react');
 const { act } = React;
 const { createRoot } = require('react-dom/client');
 const posts = [];
-const output = buildSync({ stdin: { contents: `export { default as Modal } from './resources/js/pages/portal/education/AddEditStudentModal.jsx'; export { default as Dates } from './resources/js/components/education/ProgramIntakeDates.jsx';`,
+const output = buildSync({ stdin: { contents: `export { default as Students } from './resources/js/pages/portal/education/Students.jsx'; export { default as Modal } from './resources/js/pages/portal/education/AddEditStudentModal.jsx'; export { default as Dates } from './resources/js/components/education/ProgramIntakeDates.jsx';`,
     resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
-    external: ['react', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
+    alias: { '@': path.resolve('resources/js') }, external: ['react', 'react-dom', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
 const loaded = new Module(path.resolve('student-program-intakes.cjs'), module);
 loaded.filename = path.resolve('student-program-intakes.cjs'); loaded.paths = module.paths;
-loaded.require = name => name === '@inertiajs/react' ? { router: { post: (url, data, options) => posts.push({ url, data, options }) } } : module.require(name);
+loaded.require = name => name === '@inertiajs/react' ? { Head: () => null, Link: 'a', router: { post: (url, data, options) => posts.push({ url, data, options }) } } : module.require(name);
 loaded._compile(output, loaded.filename);
-const { Modal, Dates } = loaded.exports;
+const { Students, Modal, Dates } = loaded.exports;
 const root = createRoot(document.getElementById('root'));
 const A = 'English for Academic Purposes', B = 'Master of Education', C = 'Third program';
 const student = { id: 22, first_name: 'Synthetic', last_name: 'Student', email: 'synthetic@example.test', phone: '+64000000000',
@@ -93,6 +93,13 @@ const addProgram = async title => {
     await submit();
     assert.equal(posts.at(-1).url, '/portal/education/students');
     assert.deepEqual(posts.at(-1).data.program_intakes, [{ program: C, intake: '2028-01-15' }]);
+    const searchedStudent = { ...reopened, name: 'Synthetic Student', english_stage: 'Enrolled', education_stage: '' };
+    await act(async () => root.render(React.createElement(Students, { students: [searchedStudent], readOnly: true })));
+    for (const needle of ['2027-07-12', '12 Jul 2027']) {
+        await change(document.querySelector('input[placeholder^="Search name, school, intake"]'), needle);
+        assert.match(document.querySelector('tbody').textContent, /Synthetic Student/);
+        assert.match(document.body.textContent, /Pipeline · 1 student/);
+    }
     await act(async () => root.unmount());
     console.log('Student per-program intakes actual-modal tests passed: independent dates, legacy preservation/clear, retry/reopen, program identity after removal, new drafts, read display and actual-start isolation');
 })().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\StudentProgramIntakes;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,6 +21,11 @@ class LeadStudyPlan extends Model
         'program_schools' => 'array',
         'program_intakes' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving([StudentProgramIntakes::class, 'syncLegacyChanges']);
+    }
 
     public function lead(): BelongsTo
     {

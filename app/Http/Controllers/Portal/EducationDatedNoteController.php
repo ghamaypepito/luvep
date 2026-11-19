@@ -42,9 +42,12 @@ class EducationDatedNoteController extends Controller
         $note = EducationDatedReportNote::withTrashed()->firstOrCreate(
             ['user_id' => $request->user()->id, 'submission_key' => $key], $data,
         );
-        abort_if($note->trashed() || $note->occurred_on->toDateString() !== $data['occurred_on']
-            || $note->category !== $data['category'] || $note->body !== $data['body'],
-            409, 'This submission was already used. Copy your draft and refresh before adding another note.');
+        if ($note->trashed() || $note->occurred_on->toDateString() !== $data['occurred_on']
+            || $note->category !== $data['category'] || $note->body !== $data['body']) {
+            $message = 'This submission was already used. Copy your draft and refresh before adding another note.';
+            abort_if($request->expectsJson(), 409, $message);
+            throw ValidationException::withMessages(['submission_key' => $message]);
+        }
 
         return back()->with('success', 'Dated Education note saved.');
     }
