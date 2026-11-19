@@ -1587,7 +1587,8 @@ class ImmigrationController extends Controller
             $doc = \App\Models\LeadDocument::create([
                 'lead_id' => $lead->id,
                 'checklist_key' => null,
-                'original_name' => $file->getClientOriginalName() ?: 'Visa decline letter',
+                'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: 'Visa decline letter'),
                 'file_path' => $path,
                 'mime' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
@@ -1679,7 +1680,8 @@ class ImmigrationController extends Controller
             $doc = \App\Models\LeadDocument::create([
                 'lead_id' => $lead->id,
                 'checklist_key' => null,
-                'original_name' => $file->getClientOriginalName() ?: ($stage.' document'),
+                'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: ($stage.' document')),
                 'file_path' => $path,
                 'mime' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
@@ -1874,7 +1876,8 @@ class ImmigrationController extends Controller
                     throw new \RuntimeException('Could not store the INZ notice.');
                 }
                 $storedPaths[] = $path;
-                $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
+                $name = app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: 'RFI document.pdf');
                 $document = \App\Models\LeadDocument::create([
                     'lead_id' => $lead->id,
                     // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
