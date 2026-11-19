@@ -115,8 +115,19 @@ const chooseFiles = async files => {
             { id: 3, name: "Student", email: "student@example.test", stage: "New Leads", status: "New Leads", is_new_lead: false },
         ],
     })));
-    await change(document.querySelector('input[placeholder="June re-engagement"]'), "Synthetic campaign");
+    assert.match(document.querySelector('#education-bulk-send-help').textContent, /Enter a campaign name/);
+    assert.equal(document.querySelector('input[placeholder="June re-engagement"]').required, true);
     await click(button("Select all matching (3)"));
+    assert.equal(button("Send \u00b7 3 leads").disabled, true, "Selected recipients alone do not bypass required campaign name");
+    assert.match(document.querySelector('#education-bulk-send-help').textContent, /placeholder/);
+    await click(button("Send now"));
+    assert.equal(button("Send \u00b7 3 leads").disabled, true, "Timing selector does not start a campaign");
+    await change(document.querySelector('input[placeholder="June re-engagement"]'), "Synthetic campaign");
+    assert.equal(button("Send \u00b7 3 leads").disabled, false);
+    await click(button("Schedule"));
+    assert.match(document.querySelector('#education-bulk-send-help').textContent, /scheduled date and time/);
+    assert.equal(button("Schedule campaign \u00b7 3 leads").disabled, true);
+    await click(button("Send now"));
     await change(select("All stages"), "New Leads");
     assert.match(document.body.textContent, /1 selected · 1 shown/);
     assert.match(document.body.textContent, /Eligible/);
@@ -125,6 +136,11 @@ const chooseFiles = async files => {
     assert.equal(posts[2].url, "/portal/education/bulk-email");
     assert.deepEqual(posts[2].data.recipient_lead_ids, [1]);
     assert.equal(posts[2].data.new_leads_only, true);
+    await act(async () => { posts[2].options.onError({ name: "Campaign could not be started. Please retry." }); posts[2].options.onFinish(); });
+    assert.match(document.querySelector('[role="alert"]').textContent, /Please retry/);
+    assert.equal(document.querySelector('input[placeholder="June re-engagement"]').value, "Synthetic campaign");
+    assert.equal(button("Send \u00b7 1 lead").disabled, false, "Failed request retains the draft and allows retry");
+
     await act(async () => root.render(React.createElement(BulkEmail, {
         key: "search-all-recipients",
         basePath: "/portal/education/bulk-email",
@@ -207,6 +223,15 @@ const chooseFiles = async files => {
         url: "/portal/education/school-mail",
         data: { visit_ids: [8], audience: "registered", purpose: "email_follow_up" },
     }, "Education visits open their exact mailing audience without colliding with general event IDs");
+    for (const props of [
+        { basePath: "/portal/sales/bulk-email", channel: "email" },
+        { basePath: "/portal/immigration/bulk-email", channel: "email" },
+        { basePath: "/portal/education/sms", channel: "sms" },
+    ]) {
+        await act(async () => root.render(React.createElement(BulkEmail, { ...props, key: props.basePath, templates: [{ id: 1, name: "Fixture" }], recipients: [] })));
+        assert.equal(document.querySelector('#education-bulk-send-help'), null, "Education email help stays out of other portals/SMS");
+        assert.equal(document.querySelector('input[placeholder="June re-engagement"]').required, false);
+    }
     await act(async () => root.unmount());
     console.log("Education Compose templates, consecutive attachments, removal, retry and New Leads recipients verified");
 })().catch(error => { console.error(error); process.exitCode = 1; });
