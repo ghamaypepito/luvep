@@ -809,6 +809,7 @@ class ImmigrationController extends Controller
      */
     public function engagement(string $page = 'portal/immigration/Engagement')
     {
+        $search = trim(request()->validate(['q' => ['nullable', 'string', 'max:150']])['q'] ?? '');
         try {
             // Visa fee lookup so the picker can flag cases whose visa has
             // no fees set (the Written Agreement would render placeholders).
@@ -870,6 +871,16 @@ class ImmigrationController extends Controller
                 'uploader:id,name,email',
             ])
                 ->where('source_variant', 'like', 'engagement:%')
+                // Search before the document limit, so older matching packs remain findable.
+                ->when($search !== '', fn ($query) => $query->whereHas('lead', function ($lead) use ($search) {
+                    foreach (preg_split('/\s+/u', $search) as $term) {
+                        $lead->where(function ($fields) use ($term) {
+                            foreach (['first_name', 'middle_name', 'last_name', 'lead_id', 'email', 'phone'] as $field) {
+                                $fields->orWhere($field, 'like', '%'.$term.'%');
+                            }
+                        });
+                    }
+                }))
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->limit(300)
@@ -1007,6 +1018,7 @@ class ImmigrationController extends Controller
                 'default_signer_id' => $this->defaultSignerId(),
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
+                'search' => $search,
             ]);
         } catch (\Throwable $e) {
             Log::error('Immigration engagement page failed', ['error' => $e->getMessage()]);

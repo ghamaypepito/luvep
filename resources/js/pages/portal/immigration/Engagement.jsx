@@ -183,7 +183,16 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [] }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "" }) {
+    const [query, setQuery] = useState(search);
+    useEffect(() => { setQuery(search); }, [search]);
+    const searchEngagements = (value) => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("case");
+        if (value.trim()) url.searchParams.set("q", value.trim());
+        else url.searchParams.delete("q");
+        router.get(url.pathname + url.search, {}, { preserveState: true, preserveScroll: true, replace: true });
+    };
     const [modalOpen, setModalOpen] = useState(false);
     const [auditFor, setAuditFor] = useState(null);   // { case_name, audit } for the audit-trail modal
     const [manageFor, setManageFor] = useState(null); // the draft row being managed
@@ -245,6 +254,19 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                 ))}
             </div>
 
+            {view === "documents" && (
+                <form role="search" aria-label="Search Engagement" onSubmit={(event) => { event.preventDefault(); searchEngagements(query); }} className="flex flex-wrap items-end gap-2">
+                    <label className="flex-1 min-w-[220px] text-xs font-semibold text-gray-600">
+                        Search Engagement
+                        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} maxLength={150}
+                            placeholder="Client name, reference, email or phone"
+                            className="mt-1 block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <button type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">Search</button>
+                    {(query || search) && <button type="button" onClick={() => { setQuery(""); searchEngagements(""); }} className="rounded-lg border px-4 py-2 text-sm">Clear</button>}
+                </form>
+            )}
+
             {/* Recently generated — same column layout as Proposals & Agreements */}
             {view === "documents" && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -254,7 +276,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
 
                 {generated.length === 0 ? (
                     <div className="px-5 py-12 text-center text-sm text-gray-400">
-                        No engagement documents generated yet. Click <span className="font-semibold text-gray-600">New</span> to start.
+                        {search ? "No engagement records match your search. Clear the search to see recent records." : <>No engagement documents generated yet. Click <span className="font-semibold text-gray-600">New</span> to start.</>}
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
