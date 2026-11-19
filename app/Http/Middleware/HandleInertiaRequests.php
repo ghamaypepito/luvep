@@ -44,7 +44,7 @@ class HandleInertiaRequests extends Middleware
             $hr = $context->props($request);
             $user = $hr['preview'] ? $context->subject($request)->user : $request->user();
 
-            return [...parent::share($request), 'userView' => \App\Services\UserView::props($request), 'auth' => ['user' => $user?->only(['id', 'name', 'email', 'avatar_url', 'role']), 'modules' => [], 'portals' => [], 'can_manage_modules' => false],
+            return [...parent::share($request), 'userView' => \App\Services\UserView::props($request), 'auth' => ['user' => $user?->only(['id', 'name', 'email', 'avatar_url', 'role']), 'modules' => [], 'portals' => [], 'can_manage_modules' => false, 'can_view_help' => $user?->canAccessHelpCenter() ?? false],
                 'notifications' => ['unread_count' => $hr['preview'] ? 0 : ($request->user()?->unreadNotifications()->count() ?? 0)], 'hr' => $hr, 'flash' => ['success' => $request->session()->get('success'), 'error' => $request->session()->get('error')]];
         }
 
@@ -54,6 +54,7 @@ class HandleInertiaRequests extends Middleware
             'hr' => fn () => config('hr.enabled') && $request->user() ? app(\App\Services\Hr\HrContext::class)->props($request) : null,
             'auth' => [
                 'user' => $request->user(),
+                'can_view_help' => $request->user()?->canAccessHelpCenter() ?? false,
                 // Drives the topbar AI button + lead health badge. True only
                 // when the config kill switch AND the tenant toggle are on.
                 'ep_agent' => app(\App\EpAgent\Pilot::class)->state($request->user()),
