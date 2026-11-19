@@ -13,6 +13,7 @@ class EducationEventRegistration extends Model
         'event_date' => 'date', 'contact_details' => 'array', 'notified_user_ids' => 'array',
         'consented_at' => 'datetime', 'prepared_at' => 'datetime',
         'email_follow_up' => 'boolean', 'email_newsletter' => 'boolean',
+        'legacy_event_follow_up' => 'boolean',
     ];
 
     public function lead(): BelongsTo

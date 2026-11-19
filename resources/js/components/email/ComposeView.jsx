@@ -30,6 +30,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const [previewOpen, setPreviewOpen] = useState(false);
     const [selected, setSelected] = useState(null); // a sent item being previewed
     const [sending, setSending] = useState(false);
+    const [sendErrors, setSendErrors] = useState({});
     const fileRef = useRef(null);
 
     // Debounced lead typeahead.
@@ -60,7 +61,11 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     };
     const removeLead = (id) => setLeads((p) => p.filter((x) => x.id !== id));
     const removeEmail = (v) => setEmails((p) => p.filter((x) => x !== v));
-    const pickFiles = (e) => { setAttachments((p) => [...p, ...Array.from(e.target.files || [])]); e.target.value = ""; };
+    const pickFiles = (e) => {
+        const files = Array.from(e.target.files || []);
+        setAttachments((previous) => [...previous, ...files]);
+        e.target.value = "";
+    };
     const removeFile = (i) => setAttachments((p) => p.filter((_, ix) => ix !== i));
     const applyTemplate = (id) => {
         const template = templates.find((item) => String(item.id) === id);
@@ -74,12 +79,14 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const resetForm = () => {
         setLeads([]); setEmails([]); setSubject(""); setBody(""); setDesignJson(null);
         setAttachments([]); setQuery(""); setSuggestions([]);
+        setSendErrors({});
     };
 
     const canSend = (leads.length > 0 || emails.length > 0) && (subject.trim() || body.trim()) && !sending;
 
     const send = () => {
         if (!canSend) return;
+        setSendErrors({});
         setSending(true);
         const fd = new FormData();
         leads.forEach((l) => fd.append("lead_ids[]", l.id));
@@ -91,6 +98,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => resetForm(),
+            onError: setSendErrors,
             onFinish: () => setSending(false),
         });
     };
@@ -145,7 +153,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
                             {/* Recipients */}
                             <div className="relative">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">To</span>
@@ -213,22 +221,24 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                 <span className="block text-[11px] text-gray-400 mt-1">Use <code>{"{{first_name}}"}</code>-style variables — they fill in for lead recipients (blank for typed addresses).</span>
                             </div>
 
-                            {/* Attachments */}
-                            <div className="block">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="block text-xs font-semibold text-gray-600">Attachments</span>
-                                    <button type="button" onClick={() => fileRef.current?.click()} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1"><Paperclip size={12} /> Add files</button>
-                                    <input ref={fileRef} type="file" multiple onChange={pickFiles} className="hidden" />
-                                </div>
-                                {attachments.length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {attachments.map((f, i) => (
-                                            <span key={i} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs rounded-lg px-2 py-1"><Paperclip size={11} /> {f.name} <button type="button" onClick={() => removeFile(i)} className="hover:text-rose-600"><X size={12} /></button></span>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
                         </div>
+
+                        <section aria-label="Attachments" className="shrink-0 border-t border-gray-100 px-5 py-3 max-h-40 overflow-y-auto">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="block text-xs font-semibold text-gray-600">Attachments ({attachments.length})</span>
+                                <button type="button" disabled={sending} onClick={() => fileRef.current?.click()} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1 disabled:opacity-40"><Paperclip size={12} /> Add files</button>
+                                <input ref={fileRef} type="file" multiple disabled={sending} onChange={pickFiles} className="hidden" />
+                            </div>
+                            <p className="text-[11px] text-gray-500 mb-2">Up to 10 files, 10 MB each. Files upload when you send.</p>
+                            <div aria-label="Selected attachments" aria-live="polite" className="flex flex-wrap gap-1.5">
+                                {attachments.map((f, i) => (
+                                    <span key={i} className="inline-flex max-w-full items-center gap-1 bg-gray-100 text-gray-700 text-xs rounded-lg px-2 py-1"><Paperclip size={11} className="shrink-0" /><span className="break-all">{f.name}</span><button type="button" aria-label={`Remove ${f.name}`} disabled={sending} onClick={() => removeFile(i)} className="shrink-0 hover:text-rose-600 disabled:opacity-40"><X size={12} /></button></span>
+                                ))}
+                            </div>
+                            {Object.keys(sendErrors).length > 0 && (
+                                <div role="alert" className="mt-2 text-xs text-rose-700">{Object.values(sendErrors).join(" ")}</div>
+                            )}
+                        </section>
                     </div>
                 )}
             </main>

@@ -3,9 +3,11 @@
 namespace Tests\Feature\Hr;
 
 use App\Models\DtrSetting;
+use App\Models\HrAuditEvent;
 use App\Models\HrEmployee;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class HrEnrollmentTest extends TestCase
@@ -17,6 +19,28 @@ class HrEnrollmentTest extends TestCase
         config(['hr.enabled' => true]);
 
         return User::factory()->create(['role' => 'admin']);
+    }
+
+    public function test_people_hides_removed_accounts_but_keeps_archived_employees_and_restores(): void
+    {
+        $admin = $this->admin();
+        $this->withoutVite();
+        foreach (['active', 'archived'] as $status) {
+            $user = User::factory()->create(['role' => 'sales', 'name' => $status.' employee']);
+            HrEmployee::create(['user_id' => $user->id, 'status' => $status]);
+        }
+        $demo = User::factory()->create(['role' => 'sales', 'name' => 'Removed demo']);
+        HrEmployee::create(['user_id' => $demo->id, 'status' => 'archived']);
+        $demo->delete();
+
+        $this->actingAs($admin)->get('https://hr.luvep.com/people')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('employees.data', 2)
+                ->where('employees.data.0.name', 'active employee')
+                ->where('employees.data.1.name', 'archived employee'));
+        $demo->restore();
+        $this->get('https://hr.luvep.com/people')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('employees.data', 3)
+                ->where('employees.data.2.name', 'Removed demo'));
     }
 
     public function test_enrollment_is_candidate_first_and_rejects_external_accounts(): void
@@ -49,5 +73,27 @@ class HrEnrollmentTest extends TestCase
         $e = HrEmployee::create(['user_id' => $admin->id, 'status' => 'candidate']);
         $this->actingAs($admin)->patchJson('https://hr.luvep.com/people/'.$e->id, ['version' => 0, 'status' => 'candidate', 'role' => 'super_admin'])->assertUnprocessable();
         $this->patchJson('https://hr.luvep.com/people/'.$e->id, ['version' => 0, 'status' => 'candidate', 'manager_user_id' => $admin->id])->assertUnprocessable();
+    }
+
+    public function test_hr_updates_employment_details_with_version_guard_and_field_only_audit(): void
+    {
+        $admin = $this->admin();
+        $this->withoutVite();
+        $staff = User::factory()->create(['role' => 'sales']);
+        $employee = HrEmployee::create(['user_id' => $staff->id, 'status' => 'candidate']);
+        $url = 'https://hr.luvep.com/people/'.$employee->id;
+        $details = "Agreed terms\nPrivate employment information";
+        $this->actingAs($admin)->patchJson($url, ['version' => 0, 'status' => 'candidate', 'employment_details' => $details])->assertOk()->assertJsonPath('employee.version', 1);
+        $this->assertSame($details, $employee->fresh()->employment_details);
+        $this->get($url.'/edit')->assertInertia(fn (Assert $page) => $page->where('employee.employment_details', $details));
+        $audit = HrAuditEvent::where('action', 'employee.updated')->sole();
+        $this->assertContains('employment_details', $audit->metadata['fields']);
+        $this->assertStringNotContainsString('Private employment information', json_encode($audit->metadata));
+        $this->patchJson($url, ['version' => 0, 'status' => 'candidate', 'employment_details' => 'Stale overwrite'])->assertConflict();
+        $this->assertSame($details, $employee->fresh()->employment_details);
+        $this->actingAs($staff)->patchJson($url, ['version' => 1, 'status' => 'candidate', 'employment_details' => 'Own terms'])->assertForbidden();
+        $this->actingAs($admin)->patchJson($url, ['version' => 1, 'status' => 'candidate', 'employment_details' => str_repeat('a', 20001)])->assertUnprocessable()->assertJsonValidationErrors('employment_details');
+        $this->patchJson($url, ['version' => 1, 'status' => 'candidate', 'employment_details' => null])->assertOk();
+        $this->assertNull($employee->fresh()->employment_details);
     }
 }

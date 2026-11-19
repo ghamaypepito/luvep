@@ -8,7 +8,7 @@ const labels = {
     declared_name: "Declared by", submitted_at: "Submitted at",
 };
 const actions = {
-    "dtr.draft_saved": "Draft saved", "dtr.submitted": "Daily report submitted",
+    "dtr.draft_saved": "Draft saved", "dtr.report_saved": "Report changes saved", "dtr.submitted": "Daily report submitted",
     "dtr.returned": "Returned for correction", "dtr.reviewed": "Marked reviewed",
     "dtr.corrected": "Attendance correction recorded",
 };

@@ -2,18 +2,21 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
+use App\Models\AffiliateApplication;
 use App\Models\AgentAgreement;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Generates the Referral Agent Agreement PDF for an agent (User role=agent).
  * Only the fillable fields + Schedule A commission structure are editable;
- * the rest of the agreement is fixed. One current agreement per agent —
- * generating replaces the previous one.
+ * the rest of the agreement is fixed. Every generated version is retained.
  */
 class AgentAgreementService
 {
@@ -195,78 +198,93 @@ class AgentAgreementService
         ];
     }
 
-    /**
-     * Render the stored agreement to HTML for a live preview, merging optional
-     * override field values (e.g. the agent's in-progress Schedule B edits) and
-     * keeping whatever signatures already exist.
-     */
+    /** Preview changes only to the unsigned affiliate details in the frozen document. */
     public function previewHtmlForAgreement(AgentAgreement $agreement, array $override = []): string
     {
-        $fields = is_array($agreement->fields) ? $agreement->fields : [];
-        foreach ($override as $key => $value) {
-            if (in_array($key, self::fieldKeys(), true) && is_string($value)) {
-                $fields[$key] = mb_substr(trim($value), 0, 500);
+        abort_unless($agreement->rendered_html !== null, 422, 'Generate a new version before editing or signing this legacy agreement.');
+        $html = $agreement->rendered_html;
+        if ($agreement->canEditDetails()) {
+            foreach (self::affiliateFields() as $field) {
+                $key = $field['key'];
+                if (isset($override[$key]) && is_string($override[$key])) {
+                    $html = $this->replaceSlot($html, 'field:'.$key, e(mb_substr(trim($override[$key]), 0, 500)));
+                }
             }
         }
 
-        $payload = $this->payload($agreement->agent, $fields, $this->signaturesFrom($agreement));
-        $payload['preview'] = true;
-
-        return view('agreements.agent-referral', $payload)->render();
+        return $this->browserHtml($html);
     }
 
-    /** Signatures captured so far on a stored agreement, for a re-render. */
-    private function signaturesFrom(AgentAgreement $agreement): array
+    private function browserHtml(string $html): string
     {
-        $sigs = [];
-        if ($agreement->isSignedByAgent()) {
-            $sigs['agent'] = [
-                'data' => $agreement->agent_signature_data,
-                'name' => $agreement->agent_signer_name,
-                'date' => $agreement->agent_signed_at->format('j M Y'),
-            ];
-        }
-        if ($agreement->isSignedByCompany()) {
-            $sigs['company'] = [
-                'data' => $agreement->company_signature_data,
-                'name' => $agreement->company_signer_name,
-                'date' => $agreement->company_signed_at->format('j M Y'),
-            ];
-        }
+        $prefix = rtrim(public_path(), '/').'/';
 
-        return $sigs;
+        return str_replace($prefix, rtrim(url('/'), '/').'/', $html);
     }
 
-    /**
-     * Merge partial field updates onto the agreement (e.g. the Affiliate
-     * Partner's Schedule B bank + contact details) and re-render the PDF,
-     * preserving any signatures already captured.
-     */
-    public function updateFields(AgentAgreement $agreement, array $partial): AgentAgreement
+    private function replaceSlot(string $html, string $slot, string $replacement): string
     {
-        $fields = is_array($agreement->fields) ? $agreement->fields : [];
-        foreach ($partial as $key => $value) {
-            if (in_array($key, self::fieldKeys(), true) && is_string($value)) {
-                $fields[$key] = mb_substr(trim($value), 0, 500);
+        $pattern = '~(<!--affiliate-'.preg_quote($slot, '~').'-->).*?(<!--/affiliate-'.preg_quote($slot, '~').'-->)~s';
+        $result = preg_replace_callback($pattern, fn ($match) => $match[1].$replacement.$match[2], $html, -1, $count);
+        if ($count === 0) {
+            throw new \RuntimeException('Agreement rendering slot is missing.');
+        }
+
+        return $result;
+    }
+
+    private function applyDetails(AgentAgreement $agreement, array $partial): void
+    {
+        $fields = $agreement->fields ?? [];
+        foreach (self::affiliateFields() as $field) {
+            $key = $field['key'];
+            if (! array_key_exists($key, $partial)) {
+                continue;
+            }
+            $value = mb_substr(trim((string) $partial[$key]), 0, 500);
+            if ($value !== (string) ($fields[$key] ?? '')) {
+                abort_unless($agreement->canEditDetails(), 422, 'Signed or previous agreement details are locked. Ask EP to prepare a replacement version.');
+                $agreement->rendered_html = $this->replaceSlot($agreement->rendered_html, 'field:'.$key, e($value));
+                $fields[$key] = $value;
             }
         }
         $agreement->fields = $fields;
-        $agreement->save();
-
-        $this->rebuild($agreement);
-
-        return $agreement;
     }
 
-    /** Re-render the stored agreement PDF with whatever signatures exist. */
-    private function rebuild(AgentAgreement $agreement): void
+    public function updateFields(AgentAgreement $agreement, array $partial): AgentAgreement
     {
-        $payload = $this->payload($agreement->agent, (array) $agreement->fields, $this->signaturesFrom($agreement));
-        $binary = Pdf::loadView('agreements.agent-referral', $payload)->setPaper('a4')->output();
+        return DB::transaction(function () use ($agreement, $partial) {
+            User::whereKey($agreement->agent_id)->lockForUpdate()->firstOrFail();
+            $locked = AgentAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->canEditDetails(), 422, 'This agreement is locked. Ask EP to prepare a replacement version.');
+            $this->applyDetails($locked, $partial);
+            $this->writeDocument($locked);
+            ActivityLog::record('affiliate.agreement.details_saved', ['properties' => ['agreement_id' => $locked->id, 'version' => $locked->version]]);
 
-        Storage::disk(self::DISK)->put($agreement->file_path, $binary);
-        $agreement->size = strlen($binary);
-        $agreement->save();
+            return $locked;
+        });
+    }
+
+    /** Use a new private file so a failed database write cannot corrupt the issued PDF. */
+    private function writeDocument(AgentAgreement $agreement): void
+    {
+        $binary = Pdf::loadHTML($agreement->rendered_html)->setPaper('a4')->output();
+        $path = 'agent-agreements/'.$agreement->agent_id.'/'.Str::random(24).'.pdf';
+        if (! Storage::disk(self::DISK)->put($path, $binary)) {
+            throw new \RuntimeException('Agreement PDF could not be stored.');
+        }
+        $oldPath = $agreement->file_path;
+        try {
+            $agreement->file_path = $path;
+            $agreement->size = strlen($binary);
+            $agreement->save();
+        } catch (\Throwable $error) {
+            Storage::disk(self::DISK)->delete($path);
+            throw $error;
+        }
+        if ($oldPath && $oldPath !== $agreement->issued_file_path) {
+            DB::afterCommit(fn () => Storage::disk(self::DISK)->delete($oldPath));
+        }
     }
 
     /** Render the agreement as HTML for the live preview (no dompdf). */
@@ -278,72 +296,89 @@ class AgentAgreementService
         return view('agreements.agent-referral', $payload)->render();
     }
 
-    /** Generate the PDF, store it, and replace any existing agreement. */
-    public function generate(User $agent, array $fields): AgentAgreement
+    /** Save a new version; the partner account lock allocates versions across concurrent requests. */
+    public function generate(User $agent, array $fields, bool $draft = false, ?int $draftId = null, ?string $expiresOn = null): AgentAgreement
     {
-        $normalised = $this->normaliseFields($agent, $fields);
-        $payload = $this->payload($agent, $normalised);
+        return DB::transaction(function () use ($agent, $fields, $draft, $draftId, $expiresOn) {
+            User::whereKey($agent->id)->lockForUpdate()->firstOrFail();
+            $normalised = $this->normaliseFields($agent, $fields);
+            $html = view('agreements.agent-referral', $this->payload($agent, $normalised))->render();
+            $version = (int) AgentAgreement::where('agent_id', $agent->id)->max('version') + 1;
+            $agreement = $draftId
+                ? AgentAgreement::where('agent_id', $agent->id)->where('is_draft', true)->lockForUpdate()->findOrFail($draftId)
+                : new AgentAgreement(['agent_id' => $agent->id, 'version' => $version]);
+            if ($draftId && ! $draft && AgentAgreement::where('agent_id', $agent->id)->where('version', '>', $agreement->version)->exists()) {
+                $agreement->version = $version;
+            }
+            $agreement->fill([
+                'fields' => $normalised,
+                'rendered_html' => $html,
+                'is_draft' => $draft,
+                'expires_on' => $expiresOn,
+                'generated_at' => $draft ? null : now(),
+                'original_name' => 'Affiliate-Partner-Agreement-'.Str::slug($agent->name ?: 'Partner').'-v'.$agreement->version.'.pdf',
+                'mime' => 'application/pdf',
+                'generated_by' => Auth::id(),
+            ]);
+            $this->writeDocument($agreement);
+            if (! $draft) {
+                $agreement->issued_file_path = $agreement->file_path;
+                $agreement->save();
+                app(AffiliateOnboarding::class)->issued($agreement);
+            }
+            ActivityLog::record($draft ? 'affiliate.agreement.draft_saved' : 'affiliate.agreement.generated', [
+                'properties' => ['agreement_id' => $agreement->id, 'partner_id' => $agent->id, 'version' => $agreement->version],
+            ]);
 
-        $pdf = Pdf::loadView('agreements.agent-referral', $payload)->setPaper('a4');
-        $binary = $pdf->output();
-
-        $safeName = Str::slug($agent->name ?: 'Agent') ?: ('agent-'.$agent->id);
-        $filename = "Affiliate-Partner-Agreement-{$safeName}.pdf";
-        $path = "agent-agreements/{$agent->id}/".Str::random(12)."-{$filename}";
-
-        Storage::disk(self::DISK)->put($path, $binary);
-
-        // One current agreement per agent — drop the previous file + row.
-        $existing = AgentAgreement::where('agent_id', $agent->id)->get();
-        foreach ($existing as $old) {
-            \App\Support\DocumentFiles::delete($old->file_path, 'local');
-            $old->delete();
-        }
-
-        return AgentAgreement::create([
-            'agent_id' => $agent->id,
-            'fields' => $normalised,
-            'file_path' => $path,
-            'original_name' => $filename,
-            'mime' => 'application/pdf',
-            'size' => strlen($binary),
-            'generated_by' => Auth::id(),
-        ]);
+            return $agreement;
+        });
     }
 
-    /**
-     * Record the agent's e-signature and re-render the PDF with it embedded in
-     * the "For the Agent" cell. Mirrors the tracker signing flow: typed legal
-     * name + base64 signature (drawn or uploaded) + IP/UA audit.
-     */
-    public function recordAgentSignature(AgentAgreement $agreement, string $signerName, string $signatureData, string $ip, ?string $userAgent): AgentAgreement
+    public function recordAgentSignature(AgentAgreement $agreement, string $signerName, string $signatureData, string $ip, ?string $userAgent, array $details = [], ?AffiliateApplication $privateApplication = null): AgentAgreement
     {
-        $agreement->agent_signer_name = $signerName;
-        $agreement->agent_signature_data = $signatureData;
-        $agreement->agent_signed_at = now();
-        $agreement->agent_signed_ip = $ip;
-        $agreement->agent_signed_user_agent = $userAgent;
-        $agreement->save();
-
-        $this->rebuild($agreement);
-
-        return $agreement;
+        return $this->sign($agreement, 'agent', $signerName, $signatureData, $ip, $userAgent, $details, $privateApplication);
     }
 
-    /**
-     * Record the ePathways (staff) e-signature on the "For ePathways" cell —
-     * same draw/upload capture as the agent side.
-     */
     public function recordCompanySignature(AgentAgreement $agreement, string $signerName, string $signatureData): AgentAgreement
     {
-        $agreement->company_signer_name = $signerName;
-        $agreement->company_signature_data = $signatureData;
-        $agreement->company_signed_at = now();
-        $agreement->company_signed_by = Auth::id();
-        $agreement->save();
+        return $this->sign($agreement, 'company', $signerName, $signatureData);
+    }
 
-        $this->rebuild($agreement);
+    private function sign(AgentAgreement $agreement, string $side, string $signerName, string $signatureData, ?string $ip = null, ?string $userAgent = null, array $details = [], ?AffiliateApplication $privateApplication = null): AgentAgreement
+    {
+        if (! preg_match('~^data:image/(?:png|jpeg);base64,([a-zA-Z0-9+/=\r\n]+)$~D', $signatureData, $match)
+            || ! ($bytes = base64_decode($match[1], true)) || ! ($image = @getimagesizefromstring($bytes)) || ! in_array($image[2], [IMAGETYPE_PNG, IMAGETYPE_JPEG], true)
+            || $image[0] > 4096 || $image[1] > 4096 || ! @imagecreatefromstring($bytes)) {
+            throw ValidationException::withMessages(['signature_data' => 'Use a valid PNG or JPEG signature image.']);
+        }
 
-        return $agreement;
+        return DB::transaction(function () use ($agreement, $side, $signerName, $signatureData, $ip, $userAgent, $details, $privateApplication) {
+            $partner = User::whereKey($agreement->agent_id)->lockForUpdate()->firstOrFail();
+            $locked = AgentAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->canSign(), 422, 'This version is read-only. Open the current generated agreement.');
+            abort_if($locked->{$side.'_signed_at'} !== null, 422, 'This side of the agreement is already signed.');
+            $onboarding = app(AffiliateOnboarding::class);
+            $application = $onboarding->assertSigningAllowed($partner, $locked, $privateApplication);
+            if ($side === 'agent') {
+                $this->applyDetails($locked, $details);
+            }
+            $locked->{$side.'_signer_name'} = $signerName;
+            $locked->{$side.'_signature_data'} = $signatureData;
+            $locked->{$side.'_signed_at'} = now();
+            if ($side === 'agent') {
+                $locked->agent_signed_ip = $ip;
+                $locked->agent_signed_user_agent = $userAgent;
+            } else {
+                $locked->company_signed_by = Auth::id();
+            }
+            $signatureHtml = '<img src="'.e($signatureData).'" alt="Signature" style="max-height:46px;max-width:150px;margin:0 auto 2px;display:block">';
+            $locked->rendered_html = $this->replaceSlot($locked->rendered_html, 'signature:'.$side, $signatureHtml);
+            $locked->rendered_html = $this->replaceSlot($locked->rendered_html, 'date:'.$side, e(now()->format('j M Y')));
+            $this->writeDocument($locked);
+            $onboarding->activateWhenSigned($partner, $locked, $application);
+            ActivityLog::record('affiliate.agreement.'.$side.'_signed', ['properties' => ['agreement_id' => $locked->id, 'version' => $locked->version]]);
+
+            return $locked;
+        });
     }
 }

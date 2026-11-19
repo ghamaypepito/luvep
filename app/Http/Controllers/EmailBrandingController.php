@@ -24,6 +24,9 @@ class EmailBrandingController extends Controller
      */
     private function context(Request $request): array
     {
+        // External partners use approved templates through Compose; staff manage the library.
+        abort_if(in_array($request->user()->role, ['agent', \App\Models\User::ROLE_SUB_AGENT], true), 403);
+
         $name = (string) $request->route()?->getName();
 
         if (str_starts_with($name, 'portal.')) {
@@ -98,6 +101,8 @@ class EmailBrandingController extends Controller
 
     public function update(Request $request, string $department)
     {
+        $this->context($request);
+
         abort_unless(array_key_exists($department, config('email_branding', [])), 404);
 
         $request->validate([

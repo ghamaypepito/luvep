@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
+import DatedReportNotes from "./DatedReportNotes";
 
 const errorText = errors => Object.values(errors || {}).flat().join(" ") || "Could not save. Please try again.";
 const newKey = () => globalThis.crypto.randomUUID();
@@ -129,6 +130,8 @@ function PersonalReportContent({ data }) {
                     <button type="button" disabled={!entries.next_page_url} onClick={() => router.get(entries.next_page_url, {}, { preserveState: true, preserveScroll: true })}>Next activities</button>
                 </div>}
             </div>
+
+            <DatedReportNotes data={data.dated_notes} today={data.today} />
 
             <form aria-label="My weekly Education notes" onSubmit={saveNotes} className="space-y-3 border-t border-gray-200 pt-4">
                 <h3 className="text-sm font-semibold">My weekly notes · week starting {data.notes_week_start}</h3>

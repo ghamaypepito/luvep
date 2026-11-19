@@ -4,6 +4,7 @@ namespace App\Services\Hr;
 
 use App\Models\DtrEntry;
 use App\Models\DtrSetting;
+use App\Models\HrDtrAcknowledgement;
 use App\Models\HrDtrReview;
 use App\Models\HrEmployee;
 use App\Models\HrShift;
@@ -42,6 +43,8 @@ class DtrService
 
         return [...$entry->only(['id', 'time_in', 'time_out', 'tasks', 'remarks', 'hr_status', 'hr_version', 'work_location', 'meetings', 'people_assisted', 'blockers', 'tomorrow', 'declared_name', 'submitted_at']),
             'can_edit' => $this->canEditDraft($entry),
+            'can_change_tasks' => $entry->time_source === 'live',
+            'can_change_report' => $entry->work_date->toDateString() <= now($setting?->timezone ?? 'UTC')->toDateString(),
             'review_comment' => HrDtrReview::where('dtr_entry_id', $entry->id)->latest('id')->value('comment'),
             'work_date' => $entry->work_date->toDateString(), 'working_seconds' => $seconds, 'break_seconds' => $break,
             'task_seconds' => (int) collect($entry->tasks ?? [])->sum('seconds'), 'time_source' => $entry->time_source];
@@ -60,16 +63,7 @@ class DtrService
     public function saveDraft(HrEmployee $employee, array $validated): DtrEntry
     {
         abort_unless($employee->user && app(HrAccess::class)->employee($employee->user)?->id === $employee->id, 403);
-        $data = Validator::make($validated, [
-            'work_date' => ['required', 'date_format:Y-m-d'], 'expected_version' => ['required', 'integer', 'min:0'],
-            'time_in' => ['prohibited'], 'time_out' => ['prohibited'],
-            'work_location' => ['nullable', 'string', 'max:120'], 'tasks' => ['present', 'array', 'max:200'],
-            'tasks.*.task' => ['required', 'string', 'max:2000'], 'tasks.*.status' => ['required', Rule::in(['done', 'in_progress', 'carried_over', 'todo'])],
-            'tasks.*.category' => ['nullable', Rule::in(['client', 'admin', 'meeting', 'training', 'other'])], 'tasks.*.reference' => ['nullable', 'string', 'max:250'],
-            'tasks.*.start' => ['nullable', 'date_format:H:i,H:i:s'], 'tasks.*.end' => ['nullable', 'date_format:H:i,H:i:s'],
-            'meetings' => ['nullable', 'integer', 'min:0', 'max:10000'], 'people_assisted' => ['nullable', 'integer', 'min:0', 'max:10000'],
-            'blockers' => ['nullable', 'string', 'max:10000'], 'tomorrow' => ['nullable', 'string', 'max:10000'], 'remarks' => ['nullable', 'string', 'max:10000'],
-        ])->validate();
+        $data = $this->validateReport($validated);
 
         return DB::transaction(function () use ($employee, $data) {
             HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
@@ -81,6 +75,7 @@ class DtrService
                 throw ValidationException::withMessages(['work_date' => 'Only existing drafts or returned records up to today can be edited. New records must be for today.']);
             }
             $before = app(DtrHistory::class)->snapshot($entry);
+            $reportBefore = app(DtrHistory::class)->reportSnapshot($entry);
             foreach (['meetings', 'people_assisted'] as $counter) {
                 if (array_key_exists($counter, $data)) {
                     $data[$counter] = (int) ($data[$counter] ?? 0);
@@ -89,12 +84,148 @@ class DtrService
             $data['tasks'] = $this->tasks($entry, $data['tasks']);
             unset($data['expected_version'], $data['work_date']);
             $entry->forceFill([...$data, 'hr_status' => $entry->hr_status === 'returned' ? 'returned' : 'draft', 'hr_version' => (int) $entry->hr_version + 1])->save();
+            if (app(DtrHistory::class)->reportSnapshot($entry) !== $reportBefore) {
+                $this->supersedeAcknowledgements($entry);
+            }
             $this->invalidateWeek($employee, $entry);
             app(DtrHistory::class)->record($entry, $employee->user, 'dtr.draft_saved', $before);
             app(HrAudit::class)->record($employee->user, 'dtr.draft_saved', $entry, ['employee_id' => $employee->id, 'version' => $entry->hr_version]);
 
             return $entry->fresh();
         });
+    }
+
+    private function validateReport(array $validated): array
+    {
+        return Validator::make($validated, [
+            'work_date' => ['required', 'date_format:Y-m-d'], 'expected_version' => ['required', 'integer', 'min:0'],
+            'time_in' => ['prohibited'], 'time_out' => ['prohibited'],
+            'work_location' => ['nullable', 'string', 'max:120'], 'tasks' => ['present', 'array', 'max:200'],
+            'tasks.*.task' => ['required', 'string', 'max:2000'], 'tasks.*.status' => ['required', Rule::in(['done', 'in_progress', 'carried_over', 'todo'])],
+            'tasks.*.category' => ['nullable', Rule::in(['client', 'admin', 'meeting', 'training', 'other'])], 'tasks.*.reference' => ['nullable', 'string', 'max:250'],
+            'tasks.*.start' => ['nullable', 'date_format:H:i,H:i:s'], 'tasks.*.end' => ['nullable', 'date_format:H:i,H:i:s'],
+            'meetings' => ['nullable', 'integer', 'min:0', 'max:10000'], 'people_assisted' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'blockers' => ['nullable', 'string', 'max:10000'], 'tomorrow' => ['nullable', 'string', 'max:10000'], 'remarks' => ['nullable', 'string', 'max:10000'],
+        ])->validate();
+    }
+
+    public function saveReport(User $actor, DtrEntry $entry, array $validated): DtrEntry
+    {
+        $employee = app(HrAccess::class)->employee($actor);
+        abort_unless($employee && $entry->user_id === $actor->id, 404);
+
+        return DB::transaction(function () use ($actor, $employee, $entry, $validated) {
+            HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            abort_unless(app(HrAccess::class)->employee($actor)?->id === $employee->id, 404);
+            $entry = DtrEntry::whereKey($entry->id)->lockForUpdate()->firstOrFail();
+            $historicalTasks = $entry->time_source !== 'live';
+            $data = $this->validateReport($historicalTasks ? [...$validated, 'tasks' => []] : $validated);
+            if ($historicalTasks) {
+                $data['tasks'] = Validator::make($validated, ['tasks' => ['present', 'array', 'max:200'], 'tasks.*' => ['array']])->validate()['tasks'];
+            }
+            abort_unless((int) $entry->hr_version === (int) $data['expected_version'], 409, 'This report changed. Refresh before saving.');
+            if ($data['work_date'] !== $entry->work_date->toDateString() || $entry->work_date->toDateString() > now($employee->schedule?->timezone ?? 'UTC')->toDateString()) {
+                throw ValidationException::withMessages(['work_date' => 'Edit an existing report up to today without changing its work date.']);
+            }
+            $history = app(DtrHistory::class);
+            $before = $history->snapshot($entry);
+            foreach (['meetings', 'people_assisted'] as $counter) {
+                if (array_key_exists($counter, $data)) {
+                    $data[$counter] = (int) ($data[$counter] ?? 0);
+                }
+            }
+            $taskContent = fn (array $tasks) => array_map(fn ($task) => [
+                'task' => ($task['task'] ?? '') ?: ($task['description'] ?? ''),
+                'start' => $task['start'] ?? '', 'end' => $task['end'] ?? '',
+                'category' => ($task['category'] ?? '') ?: 'other', 'reference' => $task['reference'] ?? '',
+                'status' => ($task['status'] ?? '') ?: 'todo',
+            ], $tasks);
+            $tasksUnchanged = $taskContent($data['tasks']) === $taskContent($entry->tasks ?? []);
+            if ($entry->time_source !== 'live') {
+                foreach ($data['tasks'] as $index => $task) {
+                    foreach (array_diff_key($task, array_flip(['task', 'start', 'end', 'category', 'reference', 'status', 'seconds'])) as $field => $value) {
+                        if (($entry->tasks[$index][$field] ?? null) !== $value) {
+                            $tasksUnchanged = false;
+                        }
+                    }
+                }
+            }
+            if ($entry->time_source !== 'live' && ! $tasksUnchanged) {
+                throw ValidationException::withMessages(['tasks' => 'Historical tasks are read-only. Edit the report notes or ask HR to review the task record.']);
+            }
+            // Preserve stored metadata and legacy timing when the visible task content is unchanged.
+            $data['tasks'] = $tasksUnchanged ? $entry->tasks : $this->tasks($entry, $data['tasks']);
+            unset($data['expected_version'], $data['work_date']);
+            $entry->forceFill($data);
+            if ($history->snapshot($entry) === $before) {
+                return $entry;
+            }
+            $entry->hr_version++;
+            $entry->save();
+            $this->supersedeAcknowledgements($entry);
+            $this->invalidateWeek($employee, $entry);
+            $history->record($entry, $actor, 'dtr.report_saved', $before);
+            app(HrAudit::class)->record($actor, 'dtr.report_saved', $entry, ['employee_id' => $employee->id, 'version' => $entry->hr_version]);
+
+            return $entry->fresh();
+        });
+    }
+
+    public function submitAcknowledgement(User $actor, DtrEntry $entry, int $version, string $reason): HrDtrAcknowledgement
+    {
+        $employee = app(HrAccess::class)->employee($actor);
+        abort_unless($employee && $entry->user_id === $actor->id, 404);
+        $reason = trim($reason);
+        Validator::make(compact('reason'), ['reason' => ['required', 'string', 'max:5000']])->validate();
+
+        return DB::transaction(function () use ($actor, $employee, $entry, $version, $reason) {
+            $employee = HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            abort_unless(app(HrAccess::class)->employee($actor)?->id === $employee->id, 404);
+            $entry = DtrEntry::whereKey($entry->id)->lockForUpdate()->firstOrFail();
+            abort_unless($entry->hr_version === $version, 409, 'This report changed. Refresh before submitting.');
+            $head = app(DtrHistory::class)->departmentHead($employee);
+            if (! $head) {
+                throw ValidationException::withMessages(['head' => 'An active Department Head other than yourself must be assigned before submitting.']);
+            }
+            $changes = app(DtrHistory::class)->reportChanges($entry);
+            if (! $changes) {
+                throw ValidationException::withMessages(['report' => 'Save report changes before requesting acknowledgement.']);
+            }
+            $snapshot = app(DtrHistory::class)->reportSnapshot($entry);
+            $submitted = HrDtrAcknowledgement::where('dtr_entry_id', $entry->id)->get();
+            abort_if($submitted->contains(fn ($ack) => $ack->report_version === $version || ($ack->status === 'pending' && $ack->snapshot === $snapshot)), 409, 'These saved changes have already been submitted.');
+            $this->supersedeAcknowledgements($entry);
+            $acknowledgement = HrDtrAcknowledgement::create(['dtr_entry_id' => $entry->id, 'head_user_id' => $head->id, 'report_version' => $version, 'version' => 1, 'status' => 'pending', 'reason' => $reason,
+                'snapshot' => $snapshot, 'changes' => $changes, 'submitted_at' => now()]);
+            app(HrAudit::class)->record($actor, 'dtr.acknowledgement_requested', $acknowledgement, ['employee_id' => $employee->id, 'version' => $version]);
+
+            return $acknowledgement;
+        });
+    }
+
+    public function decideAcknowledgement(User $actor, HrDtrAcknowledgement $acknowledgement, int $version, string $decision, string $comment): HrDtrAcknowledgement
+    {
+        $employee = HrEmployee::where('user_id', $acknowledgement->entry->user_id)->firstOrFail();
+        abort_unless(app(DtrHistory::class)->canDecide($actor, $acknowledgement, $employee), 403);
+        $comment = trim($comment);
+        Validator::make(compact('decision', 'comment'), ['decision' => ['required', Rule::in(['acknowledged', 'clarification'])], 'comment' => [$decision === 'clarification' ? 'required' : 'nullable', 'string', 'max:5000']])->validate();
+
+        return DB::transaction(function () use ($actor, $employee, $acknowledgement, $version, $decision, $comment) {
+            $employee = HrEmployee::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            $entry = DtrEntry::whereKey($acknowledgement->dtr_entry_id)->lockForUpdate()->firstOrFail();
+            $acknowledgement = HrDtrAcknowledgement::whereKey($acknowledgement->id)->lockForUpdate()->firstOrFail();
+            abort_unless(app(DtrHistory::class)->canDecide($actor, $acknowledgement, $employee), 403);
+            abort_unless($acknowledgement->status === 'pending' && $acknowledgement->version === $version && app(DtrHistory::class)->reportSnapshot($entry) === $acknowledgement->snapshot, 409, 'This acknowledgement changed. Refresh and try again.');
+            $acknowledgement->update(['status' => $decision, 'comment' => $comment, 'decided_at' => now(), 'version' => $version + 1]);
+            app(HrAudit::class)->record($actor, 'dtr.'.$decision, $acknowledgement, ['employee_id' => $employee->id, 'version' => $acknowledgement->report_version]);
+
+            return $acknowledgement->fresh();
+        });
+    }
+
+    private function supersedeAcknowledgements(DtrEntry $entry): void
+    {
+        HrDtrAcknowledgement::where('dtr_entry_id', $entry->id)->where('status', 'pending')->update(['status' => 'superseded', 'version' => DB::raw('version + 1')]);
     }
 
     public function submit(User $actor, DtrEntry $entry, int $version): DtrEntry
@@ -139,9 +270,13 @@ class DtrService
             $entry = DtrEntry::whereKey($entry->id)->lockForUpdate()->firstOrFail();
             abort_unless((int) $entry->hr_version === $version, 409, 'This record changed. Refresh and try again.');
             $before = app(DtrHistory::class)->snapshot($entry);
+            $reportBefore = app(DtrHistory::class)->reportSnapshot($entry);
             $result = $change($entry);
             $entry->hr_version++;
             $entry->save();
+            if (app(DtrHistory::class)->reportSnapshot($entry) !== $reportBefore) {
+                $this->supersedeAcknowledgements($entry);
+            }
             $this->invalidateWeek($employee, $entry);
             app(DtrHistory::class)->record($entry, $result['actor'], $result['event'], $before);
             app(HrAudit::class)->record($result['actor'], $result['event'], $entry, ['employee_id' => $employee->id, 'version' => $entry->hr_version]);

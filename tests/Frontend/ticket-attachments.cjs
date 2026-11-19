@@ -18,6 +18,7 @@ let createRequest;
 let creationData;
 let createCount = 0;
 const inertia = {
+    Link: ({ children, ...props }) => React.createElement('a', props, children),
     Head: () => null, router: {},
     useForm(initial) {
         const [data, set] = React.useState(initial);
@@ -114,6 +115,8 @@ const attachment = (name, mime) => ({ name, mime, size: 1234, url: `/private/${n
     // Catches gallery integration regressions and accidental removal of legacy screenshots.
     const ticket = { id: 9, title: 'Synthetic ticket', status: 'open', category: 'bug', priority: 'normal', images: ['/legacy.png'], attachments: [attachment('ticket.mov', 'video/quicktime'), attachment('ticket.png', 'image/png'), attachment('recording.mp4', 'text/plain')], archived_at: '2026-10-28' };
     await render(Mine, { tickets: { data: [ticket], links: [] } });
+    assert.equal(document.querySelector('nav[aria-label="Ticket type"] a[aria-current="page"]').textContent, 'System');
+    assert.equal(document.querySelector('nav[aria-label="Ticket type"] a[href="/creative-requests"]').textContent, 'Digital');
     assert.ok(document.querySelector('img[src="/legacy.png"]')); assert.ok(document.querySelector('video')); assert.ok(document.querySelector('a[download][href="/private/ticket.mov"]'));
     assert.ok(!document.querySelector('video[aria-label="recording.mp4"]'), 'Server text/plain MIME prevents a filename from turning a document into a video');
     assert.ok(document.querySelector('a[download][href="/private/recording.mp4"]'), 'A document with a media extension remains downloadable');

@@ -62,6 +62,7 @@ export default function RequestTicketButton() {
                             <div>
                                 <h2 className="text-lg font-bold text-gray-900">Submit a ticket</h2>
                                 <p className="text-xs text-gray-500">Tell the admin team what you'd like changed or added.</p>
+                                <a href="/creative-requests?new=1" className="mt-2 inline-block text-xs font-semibold text-[#214f44] underline">Need a design or video? Create a Digital request</a>
                             </div>
                             <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
                         </div>

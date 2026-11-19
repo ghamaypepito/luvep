@@ -23,7 +23,7 @@ const ROLE_STYLES = {
 };
 
 const roleStyle = (role) => ROLE_STYLES[role] || 'bg-gray-100 text-gray-600 border-gray-200';
-const ROLE_LABELS = { super_admin: 'Super Admin', sub_agent: 'Sub-agent' };
+const ROLE_LABELS = { super_admin: 'Super Admin', agent: 'Affiliate Partner', sub_agent: 'Sub-agent' };
 const roleLabel = (role) => (role ? ROLE_LABELS[role] || role.charAt(0).toUpperCase() + role.slice(1) : '—');
 
 const formatDate = (iso) => {
@@ -230,13 +230,13 @@ function UserModal({ open, onClose, editing, roles, agents = [] }) {
 
                         {data.role === 'sub_agent' && (
                             <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-2">
-                                <Label required>Works under agent</Label>
+                                <Label required>Works under Affiliate Partner</Label>
                                 <select
                                     value={data.parent_agent_id}
                                     onChange={e => setField('parent_agent_id', e.target.value)}
                                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition-all"
                                 >
-                                    <option value="">Select an agent…</option>
+                                    <option value="">Select an Affiliate Partner…</option>
                                     {agents.map(a => (
                                         <option key={a.id} value={a.id}>{a.name}{a.referral_code ? ` · ${a.referral_code}` : ''}</option>
                                     ))}
@@ -400,6 +400,12 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
 
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [accountError, setAccountError] = useState('');
+    const accountOptions = {
+        preserveScroll: true,
+        onStart: () => setAccountError(''),
+        onError: errors => setAccountError(errors.user || errors.expected || errors.action || 'Refresh the directory and try again.'),
+    };
 
     const openCreate = () => { setEditing(null); setShowModal(true); };
     const openEdit = (user) => { setEditing(user); setShowModal(true); };
@@ -451,7 +457,8 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
         if (!deleteTarget) return;
         setIsDeleting(true);
         router.delete('/admin/users/' + deleteTarget.id, {
-            preserveScroll: true,
+            ...accountOptions,
+            data: { expected: deleteTarget.account_state },
             onFinish: () => { setIsDeleting(false); setDeleteTarget(null); },
         });
     };
@@ -460,16 +467,19 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
 
     const restoreUser = (user) => {
         setActiveDropdown(null);
-        router.post('/admin/users/' + user.id + '/restore', {}, { preserveScroll: true });
+        router.post('/admin/users/' + user.id + '/restore', { expected: 'archived' }, accountOptions);
     };
     const toggleActive = (user) => {
         setActiveDropdown(null);
-        router.post('/admin/users/' + user.id + '/toggle-active', {}, { preserveScroll: true });
+        router.post('/admin/users/' + user.id + '/toggle-active', {
+            action: user.account_state === 'active' ? 'disable' : 'activate', expected: user.account_state,
+        }, accountOptions);
     };
 
     return (
         <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
             <Head title="User Management" />
+            {accountError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{accountError}</p>}
 
             <div className="hidden lg:flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
@@ -596,7 +606,7 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
                                                 {showDeleted ? (
                                                     <span className="inline-flex px-2 py-1 rounded-full text-[10px] font-bold border bg-rose-50 text-rose-600 border-rose-200">Deleted</span>
                                                 ) : user.is_active === false ? (
-                                                    <span className="inline-flex px-2 py-1 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-700 border-amber-200">Inactive</span>
+                                                    <span className="inline-flex px-2 py-1 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-700 border-amber-200">{user.account_state === 'awaiting_signatures' ? 'Awaiting signatures' : 'Inactive'}</span>
                                                 ) : null}
                                             </div>
                                         </td>
@@ -629,8 +639,8 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
                                                                 </button>
                                                                 <button
                                                                     onClick={() => toggleActive(user)}
-                                                                    disabled={isSelf}
-                                                                    title={isSelf ? "You can't deactivate your own account" : undefined}
+                                                                    disabled={isSelf || user.account_state === 'awaiting_signatures'}
+                                                                    title={user.account_state === "awaiting_signatures" ? "Both signatures are required for activation" : isSelf ? "You can't deactivate your own account" : undefined}
                                                                     className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                                                                 >
                                                                     {user.is_active === false
@@ -732,9 +742,10 @@ export default function Users({ users = [], deletedUsers = [], agents = [], role
                                 <div className="flex-1">
                                     <h3 className="text-lg font-bold text-gray-900">Delete User?</h3>
                                     <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">
-                                        You're about to permanently delete{' '}
-                                        <span className="font-semibold text-gray-900">"{deleteTarget.name}"</span> ({deleteTarget.email}).
-                                        They will lose access immediately. This action cannot be undone.
+                                        Move{' '}
+                                        <span className="font-semibold text-gray-900">"{deleteTarget.name}"</span> ({deleteTarget.email}) to Deleted?
+                                        They will lose access immediately. You can restore this account from the Deleted list.
+                                        {deleteTarget.account_state === 'awaiting_signatures' && ' The current invitation will close. After restore, issue a new agreement for both parties to sign.'}
                                     </p>
                                 </div>
                                 <button onClick={cancelDelete} disabled={isDeleting} className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50" aria-label="Close">

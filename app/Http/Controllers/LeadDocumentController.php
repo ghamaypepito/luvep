@@ -693,10 +693,9 @@ class LeadDocumentController extends Controller
                 // Notify via the Education "Consultancy agreement submitted for
                 // verification" automation (a no-op unless an admin enabled it).
                 $review = is_array($lead->fresh()->consultancy_review) ? $lead->fresh()->consultancy_review : [];
-                $items = is_array($review['items'] ?? null) ? $review['items'] : [];
                 app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.submitted', $lead->fresh(), [
                     'agreement_type' => \App\Services\ConsultancyReviewService::scenarioLabel($type),
-                    'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+                    'total_amount' => \App\Services\ConsultancyReviewService::totalAmount($review),
                 ]);
 
                 $label = $isEnglishAgreement ? 'English agreement' : 'Consultancy Agreement';
@@ -756,10 +755,9 @@ class LeadDocumentController extends Controller
         \App\Services\ConsultancyReviewService::submit($lead, $type, $overrides, optional($request->user())->id);
 
         $fresh = is_array($lead->fresh()->consultancy_review) ? $lead->fresh()->consultancy_review : [];
-        $items = is_array($fresh['items'] ?? null) ? $fresh['items'] : [];
         app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.submitted', $lead->fresh(), [
             'agreement_type' => \App\Services\ConsultancyReviewService::scenarioLabel($type),
-            'total_amount' => array_sum(array_map(fn ($m) => (int) ($m['amount'] ?? 0), $items)),
+            'total_amount' => \App\Services\ConsultancyReviewService::totalAmount($fresh),
         ]);
 
         return back()->with('success', "English agreement sent for verification — {$lead->first_name} {$lead->last_name}.");
@@ -1509,10 +1507,16 @@ class LeadDocumentController extends Controller
             ]);
         }
 
+        $engageType = $this->engagementTypeFor($type);
+        $engagementType = $type === 'engage_invoice' ? $request->query('engagement_type', 'immigration_advice') : $engageType;
+        $serviceFee = in_array($engagementType, ['initial_consultation', 'oia'], true)
+            ? $request->validate(['service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE])
+            : [];
+
         // The invoice rides in the engagement pack but renders through the
         // InvoiceGenerator, priced off the same tier / location / GST / fee.
         if ($type === 'engage_invoice') {
-            $engOverrides = [];
+            $engOverrides = $serviceFee;
             if (in_array($request->query('fee_tier'), \App\Models\VisaType::FEE_TIERS, true)) {
                 $engOverrides['fee_tier'] = $request->query('fee_tier');
             }
@@ -1526,7 +1530,6 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $engOverrides['professional_fee'] = (float) $profFee;
             }
-            $engagementType = $request->query('engagement_type', 'immigration_advice');
             $invoiceOptions = app(\App\Services\Immigration\EngagementPackWorkflow::class)->invoiceOptions($lead, $engagementType, $engOverrides);
             $html = app(\App\Services\Immigration\InvoiceGenerator::class)->renderHtml($lead, $invoiceOptions);
 
@@ -1534,13 +1537,12 @@ class LeadDocumentController extends Controller
         }
 
         // Immigration engagement docs render through their own generator.
-        $engageType = $this->engagementTypeFor($type);
         if ($engageType !== null) {
             $signer = $request->query('signer');
             $assistSigner = $request->query('assist_signer');
             $tier = $request->query('fee_tier');
             $location = $request->query('fee_location');
-            $opts = [];
+            $opts = $serviceFee;
             if ($signer) {
                 $opts['signer_id'] = (int) $signer;
             }
@@ -2517,14 +2519,16 @@ class LeadDocumentController extends Controller
         // ?inline=1 streams with Content-Disposition: inline so the browser
         // renders the PDF in-tab instead of forcing a download — used by the
         // "View" button on the agreements panel.
+        $headers = ['Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
         if ($request->boolean('inline')) {
             return response()->file(Storage::disk($disk)->path($doc->file_path), [
+                ...$headers,
                 'Content-Type' => $doc->mime ?: 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$doc->original_name.'"',
-            ]);
+                'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition('inline', $doc->original_name, 'document'),
+            ])->setPrivate();
         }
 
-        return Storage::disk($disk)->download($doc->file_path, $doc->original_name);
+        return Storage::disk($disk)->download($doc->file_path, $doc->original_name, $headers);
     }
 
     /**

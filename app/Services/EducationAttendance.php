@@ -11,7 +11,7 @@ use Illuminate\Validation\Rule;
 
 class EducationAttendance
 {
-    public const KEYS = ['folder_id', 'school', 'visit_id', 'email', 'attendance_status', 'verification', 'kind'];
+    public const KEYS = ['folder_id', 'school', 'visit_id', 'email', 'attendance_status', 'verification', 'kind', 'registered_from', 'registered_to'];
 
     private const AUTO_ATTENDANCE_START = '2026-11-04';
 
@@ -38,7 +38,10 @@ class EducationAttendance
                 $input[$key] = trim($input[$key]);
             }
         }
-        $filters = Validator::make($input, ['folder_id' => 'nullable|integer|min:1', 'school' => 'nullable|string|max:180', 'visit_id' => 'nullable|integer|min:1', 'email' => 'nullable|email:rfc|max:254', 'attendance_status' => ['nullable', Rule::in(['rsvp', 'attended', 'cancelled'])], 'verification' => ['nullable', Rule::in(['verified', 'unverified'])], 'kind' => ['nullable', Rule::in(['school', 'partnership'])]])->validate();
+        $filters = Validator::make($input, ['folder_id' => 'nullable|integer|min:1', 'school' => 'nullable|string|max:180', 'visit_id' => 'nullable|integer|min:1', 'email' => 'nullable|email:rfc|max:254', 'attendance_status' => ['nullable', Rule::in(['rsvp', 'attended', 'cancelled'])], 'verification' => ['nullable', Rule::in(['verified', 'unverified'])], 'kind' => ['nullable', Rule::in(['school', 'partnership'])],
+            'registered_from' => ['nullable', 'date_format:Y-m-d'],
+            'registered_to' => ['nullable', 'date_format:Y-m-d', Rule::when(! empty($input['registered_from']), 'after_or_equal:registered_from')],
+        ])->validate();
         $filters = array_filter($filters, fn ($v) => $v !== null && $v !== '');
         if (isset($filters['email'])) {
             $filters['email'] = mb_strtolower($filters['email']);
@@ -69,7 +72,9 @@ class EducationAttendance
             ->when($filters['folder_id'] ?? null, fn ($q, $id) => $q->whereHas('folders', fn ($folder) => $folder->where('education_rsvp_folders.id', $id)))
             ->when($filters['visit_id'] ?? null, fn ($q, $v) => $q->where('education_visit_id', $v))->when($filters['kind'] ?? null, fn ($q, $v) => $q->whereHas('visit', fn ($vst) => $vst->where('kind', $v)))
             ->when($filters['email'] ?? null, fn ($q, $v) => $q->where('email', $v))->when($filters['attendance_status'] ?? null, fn ($q, $v) => $q->where('attendance_status', $v))
-            ->when($filters['verification'] ?? null, fn ($q, $v) => $v === 'verified' ? $q->whereNotNull('verified_at') : $q->whereNull('verified_at'));
+            ->when($filters['verification'] ?? null, fn ($q, $v) => $v === 'verified' ? $q->whereNotNull('verified_at') : $q->whereNull('verified_at'))
+            ->when($filters['registered_from'] ?? null, fn ($q, $date) => $q->where('created_at', '>=', \Carbon\CarbonImmutable::parse($date, 'Asia/Manila')->utc()))
+            ->when($filters['registered_to'] ?? null, fn ($q, $date) => $q->where('created_at', '<', \Carbon\CarbonImmutable::parse($date, 'Asia/Manila')->addDay()->utc()));
     }
 
     public static function csvCell(mixed $value): string

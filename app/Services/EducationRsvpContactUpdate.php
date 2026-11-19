@@ -60,6 +60,7 @@ class EducationRsvpContactUpdate
             $rows = EducationRsvp::whereRaw('LOWER(TRIM(email)) = ?', [$email])->orderBy('id')->lockForUpdate()->get();
             $current = $rows->firstWhere('id', $rsvp->id);
             abort_unless($current && hash_equals($this->emailKey($current), $emailKey), 403);
+            abort_unless(hash_equals($current->public_id, $rsvp->public_id), 403);
             abort_unless($this->contactAllowed($current), 410);
             $name = EducationRsvpWorkflow::nameKey($current->full_name);
             $updated = collect();

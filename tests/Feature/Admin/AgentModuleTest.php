@@ -19,11 +19,12 @@ class AgentModuleTest extends TestCase
             ->assertOk();
     }
 
-    public function test_ungranted_admin_is_blocked_from_agents(): void
+    public function test_admin_has_default_access_and_staff_grants_do_not_allow_affiliate_management(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin']))
-            ->get('/admin/agents')
-            ->assertForbidden();
+            ->get('/admin/agents')->assertOk();
+        $this->actingAs(User::factory()->create(['role' => 'sales', 'module_permissions' => ['agents'], 'portal_access' => ['admin']]))
+            ->get('/admin/agents')->assertForbidden();
     }
 
     public function test_granted_admin_can_view_agents(): void
@@ -54,7 +55,7 @@ class AgentModuleTest extends TestCase
         Storage::disk('local')->assertExists($agreement->file_path);
     }
 
-    public function test_regenerating_replaces_the_previous_agreement(): void
+    public function test_regenerating_retains_the_previous_agreement(): void
     {
         Storage::fake('local');
         $super = User::factory()->create(['role' => 'super_admin']);
@@ -63,8 +64,13 @@ class AgentModuleTest extends TestCase
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_passport' => 'A1']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_passport' => 'B2']);
 
-        $this->assertSame(1, AgentAgreement::where('agent_id', $agent->id)->count());
-        $this->assertSame('B2', AgentAgreement::where('agent_id', $agent->id)->first()->fields['agent_passport']);
+        $this->assertSame(2, AgentAgreement::where('agent_id', $agent->id)->count());
+        $this->assertSame('A1', AgentAgreement::where('agent_id', $agent->id)->orderBy('version')->first()->fields['agent_passport']);
+        $this->assertSame('B2', AgentAgreement::where('agent_id', $agent->id)->orderByDesc('version')->first()->fields['agent_passport']);
+        foreach (AgentAgreement::where('agent_id', $agent->id)->get() as $version) {
+            Storage::disk('local')->assertExists($version->file_path);
+            Storage::disk('local')->assertExists($version->issued_file_path);
+        }
     }
 
     public function test_show_404s_for_a_non_agent_user(): void
@@ -105,7 +111,7 @@ class AgentModuleTest extends TestCase
 
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'Lillian']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($agent)
             ->post('/portal/agent/agreement/sign', [
                 'signer_name' => 'Lillian Ejorango',
@@ -140,7 +146,7 @@ class AgentModuleTest extends TestCase
         $agent = User::factory()->create(['role' => 'agent']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'X']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $payload = ['signer_name' => 'A', 'signature_data' => $png, 'terms_accepted' => 1];
 
         $this->actingAs($agent)->post('/portal/agent/agreement/sign', $payload)->assertRedirect();
@@ -154,7 +160,7 @@ class AgentModuleTest extends TestCase
         $agent = User::factory()->create(['role' => 'agent']);
         $this->actingAs($super)->post("/admin/agents/{$agent->id}/agreement/generate", ['agent_full_name' => 'Lillian']);
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($agent)
             ->post('/portal/agent/agreement/sign', [
                 'signer_name' => 'Lillian Ejorango',
@@ -253,7 +259,7 @@ class AgentModuleTest extends TestCase
         // Inline view works.
         $this->actingAs($super)->get("/admin/agents/{$agent->id}/agreement/view")->assertOk();
 
-        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
         $this->actingAs($super)
             ->post("/admin/agents/{$agent->id}/agreement/sign", ['signer_name' => 'Dinah Suarin', 'signature_data' => $png])
             ->assertRedirect();

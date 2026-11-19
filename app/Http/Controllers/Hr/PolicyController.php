@@ -20,26 +20,28 @@ class PolicyController extends Controller
         $context = app(HrContext::class);
         $preview = $context->isPreview($request);
         $actor = $request->user();
-        $manage = ! $preview && app(HrAccess::class)->allows($actor, 'policies.publish');
+        $mine = $request->query('scope') === 'mine';
+        $manage = ! $preview && ! $mine && app(HrAccess::class)->allows($actor, 'policies.publish');
         $subject = $preview ? $context->subject($request)->user_id : $actor->id;
         $acks = HrPolicyAcknowledgement::where('user_id', $subject)->get()->keyBy('hr_policy_version_id');
         $policies = HrPolicy::with(['versions' => fn ($q) => $q->orderByDesc('version')])->when(! $manage, fn ($q) => $q->whereHas('versions'))->orderByDesc('id')->limit(100)->get()->map(function ($p) use ($manage, $acks) {
-            $row = ['id' => $p->id, 'revision' => $p->revision, 'versions' => $p->versions->map(fn ($v) => [...$v->only(['id', 'version', 'title', 'body', 'published_at']), 'acknowledged_at' => $acks->get($v->id)?->acknowledged_at])];
+            $row = ['id' => $p->id, 'revision' => $p->revision, 'versions' => $p->versions->map(fn ($v) => [...$v->only(['id', 'version', 'title', 'body', 'published_at']), 'acknowledged_at' => $acks->get($v->id)?->acknowledged_at, 'attachment' => app(PolicyService::class)->attachment($v->attachment, 'policies/versions/'.$v->id.'/attachment')])];
             if ($manage) {
                 $row['draft_title'] = $p->draft_title;
                 $row['draft_body'] = $p->draft_body;
+                $row['draft_attachment'] = app(PolicyService::class)->attachment($p->draft_attachment, 'policies/'.$p->id.'/draft/attachment');
             }
 
-return $row;
+            return $row;
         });
 
-        return Inertia::render('hr/Policies', compact('policies', 'manage'));
+        return Inertia::render('hr/Policies', ['policies' => $policies, 'manage' => $manage, 'scope' => $mine ? 'mine' : 'manage']);
     }
 
     public function draft(Request $request, ?HrPolicy $policy = null)
     {
-        $data = $request->validate(['title' => 'required|string|max:200', 'body' => 'required|string|max:100000', 'version' => 'required|integer|min:0']);
-        app(PolicyService::class)->saveDraft($request->user(), $data['title'], $data['body'], $policy, (int) $data['version']);
+        $data = $request->validate(['title' => 'required|string|max:200', 'body' => 'required|string|max:100000', 'version' => 'required|integer|min:0', 'file' => 'nullable|file']);
+        app(PolicyService::class)->saveDraft($request->user(), $data['title'], $data['body'], $policy, (int) $data['version'], $request->file('file'));
 
         return back()->with('success', 'Policy draft saved.');
     }
@@ -47,11 +49,23 @@ return $row;
     public function publish(Request $request, HrPolicy $policy)
     {
         abort_unless(app(HrAccess::class)->allows($request->user(), 'policies.publish'), 403);
-        $data = $request->validate(['title' => 'required|string|max:200', 'body' => 'required|string|max:100000', 'version' => 'required|integer|min:0']);
+        $data = $request->validate(['title' => 'required|string|max:200', 'body' => 'required|string|max:100000', 'version' => 'required|integer|min:0', 'file' => 'nullable|file']);
         abort_unless($policy->revision === (int) $data['version'], 409, 'The policy changed. Refresh before publishing.');
-        app(PolicyService::class)->publish($request->user(), $policy, $data['title'], $data['body']);
+        app(PolicyService::class)->publish($request->user(), $policy, $data['title'], $data['body'], $request->file('file'));
 
         return back()->with('success', 'New policy version published.');
+    }
+
+    public function download(Request $request, HrPolicyVersion $version)
+    {
+        return app(PolicyService::class)->download($request->user(), $version);
+    }
+
+    public function downloadDraft(Request $request, HrPolicy $policy)
+    {
+        abort_if(app(HrContext::class)->isPreview($request), 403);
+
+        return app(PolicyService::class)->download($request->user(), $policy);
     }
 
     public function acknowledge(Request $request, HrPolicyVersion $version)

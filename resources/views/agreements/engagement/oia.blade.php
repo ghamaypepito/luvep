@@ -26,7 +26,7 @@
 <div class="signature"><img id="applicant-signature" src="{{ $client['signature'] ?? '' }}" alt="Applicant signature" style="display:{{ empty($client['signature']) ? 'none' : 'inline' }}"></div>
 <p>Signature</p><p>Date: {{ !empty($client['signature']) ? ($client_signed_date ?? '________________') : '________________' }}</p>
 <h2>Service Fee</h2>
-<p>The service fee for the relevant file request is <strong>NZD $500.00 + GST</strong> (payable in advance).</p>
+<p>The service fee for the relevant file request is <strong>NZD ${{ $service_fee }} + GST</strong> (payable in advance).</p>
 <p>The service includes submitting requests to Immigration New Zealand on behalf of the applicant to obtain the above-mentioned records, assisting the applicant in reviewing the relevant documents and information obtained, and providing visa-related advice based on the disclosed information.</p>
 <p>Please use your own email address to send the completed and signed authorisation form back to us.</p>
 <p>15 Mercari Way, Albany, Auckland 0632, New Zealand</p>

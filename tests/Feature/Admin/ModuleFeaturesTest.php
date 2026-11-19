@@ -22,12 +22,13 @@ class ModuleFeaturesTest extends TestCase
     public function test_admin_gets_admin_default_modules_but_not_super_only(): void
     {
         $u = User::factory()->create(['role' => 'admin', 'module_permissions' => []]);
-        // admin_default: DTR + portal invitations.
+        // Admins receive the staff reporting, portal invitation and affiliate modules by default.
         $this->assertTrue($u->canSeeModule('dtr'));
         $this->assertTrue($u->canSeeModule('dtr.reports'));
         $this->assertTrue($u->canSeeModule('portal_invitation'));
-        // super-only restricted modules are NOT auto-granted to plain admins.
-        $this->assertFalse($u->canSeeModule('agents'));
+        $this->assertTrue($u->canSeeModule('agents'));
+        $this->assertContains('agents', $u->grantedModules());
+        $this->assertFalse($u->canSeeModule('referral_students'));
     }
 
     public function test_whole_module_grant_implies_every_feature(): void

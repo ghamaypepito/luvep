@@ -6,6 +6,7 @@ export default function Profile({ profile, readOnly = false }) {
     const locked = readOnly || !!hr?.preview;
     const photo = useForm({ avatar: null });
     const form = useForm({
+        name: profile.user?.name || "",
         phone: profile.user?.phone || "",
         emergency_contact: profile.emergency_contact || "",
     });
@@ -15,22 +16,11 @@ export default function Profile({ profile, readOnly = false }) {
     };
     return (
         <>
-            <Head title="My profile · Luvep" />
-            <div className="hr-page-heading">
-                <h1>{readOnly ? "Employee profile" : "My profile"}</h1>
-                <p>Your details, securely held in one place.</p>
-                {readOnly &&
-                    !hr.preview &&
-                    hr.permissions["profile.manage"] && (
-                        <Link
-                            className="hr-button-secondary"
-                            href={hrPath(`/people/${profile.id}/edit`)}
-                        >
-                            Edit employee setup
-                        </Link>
-                    )}
-            </div>
+            <Head
+                title={readOnly ? "Employee profile · Luvep" : "My Info · Luvep"}
+            />
             <section className="hr-panel">
+                <div className="hr-section-heading">
                 <div className="hr-person-heading">
                     <span className="hr-avatar hr-avatar-large">
                         {profile.user.avatar_url ? (
@@ -43,6 +33,22 @@ export default function Profile({ profile, readOnly = false }) {
                         <h2>{profile.user.name}</h2>
                         <p>{profile.user.email}</p>
                     </div>
+                </div>
+                {!locked && (
+                    <a className="hr-button-secondary" href="#edit-profile">
+                        Edit profile
+                    </a>
+                )}
+                {readOnly &&
+                    !hr.preview &&
+                    hr.permissions["profile.manage"] && (
+                        <Link
+                            className="hr-button-secondary"
+                            href={hrPath(`/people/${profile.id}/edit`)}
+                        >
+                            Edit employee setup
+                        </Link>
+                    )}
                 </div>
                 <dl className="hr-profile-grid">
                     {[
@@ -62,6 +68,15 @@ export default function Profile({ profile, readOnly = false }) {
                     ))}
                 </dl>
             </section>
+            {"employment_details" in profile && (
+                <section className="hr-panel">
+                    <h2>Employment Details</h2>
+                    <p>Managed by HR.</p>
+                    <p style={{ whiteSpace: "pre-wrap" }}>
+                        {profile.employment_details || "Awaiting HR setup"}
+                    </p>
+                </section>
+            )}
             {!locked && (
                 <section className="hr-panel">
                     <h2>Profile photo</h2>
@@ -119,10 +134,26 @@ export default function Profile({ profile, readOnly = false }) {
                     </form>
                 </section>
             )}
-            <section className="hr-panel">
-                <h2>Contact information</h2>
+            <section className="hr-panel" id="edit-profile">
+                <h2>Personal details</h2>
                 <p>Employment details are managed by HR.</p>
                 <form onSubmit={submit} className="hr-form">
+                    <label>
+                        Display name
+                        <input
+                            value={form.data.name}
+                            disabled={locked || form.processing}
+                            onChange={(e) => form.setData("name", e.target.value)}
+                            autoComplete="name"
+                            maxLength={255}
+                            required
+                        />
+                    </label>
+                    {form.errors.name && (
+                        <p className="hr-error" role="alert">
+                            {form.errors.name}
+                        </p>
+                    )}
                     <label>
                         Phone number
                         <input

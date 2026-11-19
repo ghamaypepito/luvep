@@ -14,6 +14,8 @@ import {
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import AddEditStudentModal from "./AddEditStudentModal";
 import { studentReferralLabel } from "../../../lib/studentReferral";
+import ProgramIntakeDates from "../../../components/education/ProgramIntakeDates";
+import { buildProgramIntakes } from "../../../lib/programIntakes";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing } from "@/utils/priority";
 
@@ -470,6 +472,14 @@ const fmtIntake = (val) => {
     return val;
 };
 
+function studentMatchesSearch(student, query) {
+    const dates = [student.intake, ...buildProgramIntakes(student.program, student.program_intakes).map(row => row.intake)];
+    const values = [student.name, student.email, student.lead_id, student.phone, student.program, student.school,
+        student.school_name, ...dates.flatMap(date => [date, fmtIntake(date)]), student.location, student.status,
+        student.education_stage, student.english_stage, student.immigration_stage];
+    return values.join(" ").toLowerCase().includes(query);
+}
+
 export default function EducationStudents({ students = [], schoolOptions = [], programOptions = [], agentOptions = [], readOnly = false }) {
     // Add / edit student modal — null = closed, {} = new, object = edit.
     const [editingStudent, setEditingStudent] = useState(null);
@@ -570,11 +580,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
             if (q) {
                 // A search spans ALL three department tabs — a name that lives
                 // under English or Immigration still surfaces here.
-                // Intake is matched both raw ("2026-05-11") and formatted
-                // ("11 May 2026") so either spelling finds it; school covers the
-                // FK name too.
-                const hay = `${s.name || ""} ${s.email || ""} ${s.lead_id || ""} ${s.phone || ""} ${s.program || ""} ${s.school || ""} ${s.school_name || ""} ${s.intake || ""} ${fmtIntake(s.intake)} ${s.location || ""} ${s.status || ""} ${s.education_stage || ""} ${s.english_stage || ""} ${s.immigration_stage || ""}`.toLowerCase();
-                return hay.includes(q);
+                return studentMatchesSearch(s, q);
             }
             // No search — scope to the active department tab. Membership, not
             // single-owner: a student the Immigration team also handles stays
@@ -605,7 +611,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
     useEffect(() => {
         const q = search.trim().toLowerCase();
         if (!q) return;
-        const matches = (s) => `${s.name || ""} ${s.email || ""} ${s.lead_id || ""} ${s.phone || ""} ${s.program || ""} ${s.school || ""} ${s.school_name || ""} ${s.intake || ""} ${fmtIntake(s.intake)} ${s.location || ""} ${s.status || ""} ${s.education_stage || ""} ${s.english_stage || ""} ${s.immigration_stage || ""}`.toLowerCase().includes(q);
+        const matches = (s) => studentMatchesSearch(s, q);
         if (students.some((s) => departmentsOf(s).has(view) && matches(s))) return;
         for (const d of ["education", "english", "immigration"]) {
             if (students.some((s) => departmentsOf(s).has(d) && matches(s))) {
@@ -803,9 +809,9 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                 <SortableTh label="Status"    sortKey="status"       current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Programme & School" sortKey="program" current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Intake"    sortKey="intake"       current={sortKey} dir={sortDir} onSort={toggleSort} />
+                                <SortableTh label="Updated"   sortKey="updated_at"   current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <SortableTh label="Engaged"   sortKey="date_engaged" current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <th className="px-3 py-3">Docs</th>
-                                <SortableTh label="Updated"   sortKey="updated_at"   current={sortKey} dir={sortDir} onSort={toggleSort} />
                                 <th className="px-3 py-3 text-right pr-4">Actions</th>
                             </tr>
                         </thead>
@@ -978,7 +984,31 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
 
                                             {/* Intake */}
                                             <td className="px-3 py-2.5 whitespace-nowrap">
-                                                {s.intake ? <span className="text-gray-700">{fmtIntake(s.intake)}</span> : <span className="text-gray-300">—</span>}
+                                                <ProgramIntakeDates student={s} format={fmtIntake} />
+                                            </td>
+
+                                            {/* Updated — last staff activity on this record:
+                                                when, who, and what they changed. */}
+                                            <td className="px-3 py-2.5 whitespace-nowrap">
+                                                {s.updated_at ? (
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs text-gray-700 tabular-nums">
+                                                            {fmtDate(s.updated_at)}
+                                                        </span>
+                                                        {s.updated_by && (
+                                                            <span className="text-[10px] text-gray-400 truncate max-w-[160px]">
+                                                                by {s.updated_by}
+                                                            </span>
+                                                        )}
+                                                        {s.updated_desc && (
+                                                            <span className="text-[10px] text-gray-500 truncate max-w-[160px]" title={s.updated_desc}>
+                                                                {s.updated_desc}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-300">—</span>
+                                                )}
                                             </td>
 
                                             {/* Engaged */}
@@ -1001,30 +1031,6 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                         <span className="text-xs font-semibold tabular-nums whitespace-nowrap text-emerald-600">
                                                             {pct}%
                                                         </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-300">—</span>
-                                                )}
-                                            </td>
-
-                                            {/* Updated — last staff activity on this record:
-                                                when, who, and what they changed. */}
-                                            <td className="px-3 py-2.5 whitespace-nowrap">
-                                                {s.updated_at ? (
-                                                    <div className="flex flex-col">
-                                                        <span className="text-xs text-gray-700 tabular-nums">
-                                                            {fmtDate(s.updated_at)}
-                                                        </span>
-                                                        {s.updated_by && (
-                                                            <span className="text-[10px] text-gray-400 truncate max-w-[160px]">
-                                                                by {s.updated_by}
-                                                            </span>
-                                                        )}
-                                                        {s.updated_desc && (
-                                                            <span className="text-[10px] text-gray-500 truncate max-w-[160px]" title={s.updated_desc}>
-                                                                {s.updated_desc}
-                                                            </span>
-                                                        )}
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-300">—</span>
@@ -1226,7 +1232,9 @@ function StudentDashboardPanel({ student: s }) {
                     {/* Row 1 — academic */}
                     <ReadOnlyField icon={BookOpen}  label="Program"     value={s.program ? `${s.program}${s.level ? ` · ${s.level}` : ""}` : null} />
                     <ReadOnlyField icon={School}    label="School"      value={schoolDisplay} />
-                    <ReadOnlyField icon={Calendar}  label="Planned intake" value={fmtIntake(s.intake)} />
+                    <ReadOnlyField icon={Calendar} label="Planned intakes" value={Array.isArray(s.program_intakes) && s.program_intakes.length
+                        ? buildProgramIntakes(s.program, s.program_intakes).map(row => `${row.program}: ${row.intake ? fmtIntake(row.intake) : "Not set"}`).join("; ")
+                        : fmtIntake(s.intake)} />
                     <ReadOnlyField icon={Languages} label="PTE / IELTS" value={englishTest} />
                     <ReadOnlyField icon={Calendar} label="Actual course start" value={fmtIntake(s.actual_course_started_on)} />
 

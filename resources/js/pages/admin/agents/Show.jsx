@@ -7,12 +7,18 @@ import {
 } from "lucide-react";
 import AgreementSignModal from "@/components/AgreementSignModal";
 import PdfViewerModal from "@/components/PdfViewerModal";
+import Pagination from "@/components/ui/Pagination";
+import AccountActions from "@/components/affiliate/AccountActions";
+import ReferralLinkCard from "@/components/affiliate/ReferralLinkCard";
 
 export default function AgentShow({
     agent = {},
     leads = [],
     leadsCount = 0,
+    leadPagination = [],
+    convertedCount = 0,
     agreement = null,
+    agreements = [],
     agreementFieldGroups = [],
     agreementDefaults = {},
     previewBase = "",
@@ -24,7 +30,7 @@ export default function AgentShow({
     const [viewOpen, setViewOpen] = useState(false);
 
     // Same rule as the Sales agent-leads screen: everything not closed out.
-    const inPipeline = leads.filter((l) => l.status !== "Closed" && l.status !== "Not Qualified").length;
+    const inPipeline = statusCounts.filter((row) => row.status !== "Closed" && row.status !== "Not Qualified").reduce((total, row) => total + row.count, 0);
 
     const initials = (name = "") =>
         (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join("") || "?";
@@ -47,10 +53,10 @@ export default function AgentShow({
 
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
-            <Head title={`${agent.name} — Agent`} />
+            <Head title={`${agent.name} — Affiliate Partner`} />
 
             <Link href="/admin/agents" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800">
-                <ArrowLeft size={15} /> Back to Agents
+                <ArrowLeft size={15} /> Back to Affiliate Partners
             </Link>
 
             {/* Agent header */}
@@ -59,16 +65,20 @@ export default function AgentShow({
                     {agent.avatar_url ? <img src={agent.avatar_url} alt={agent.name} className="w-full h-full object-cover" /> : initials(agent.name)}
                 </div>
                 <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">Agent</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gray-400">Affiliate Partner</p>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{agent.name}</h1>
                     <div className="flex items-center gap-4 flex-wrap text-[13px] text-gray-500 mt-1">
                         {agent.email && <span className="inline-flex items-center gap-1.5"><Mail size={13} /> {agent.email}</span>}
                         {agent.phone && <span className="inline-flex items-center gap-1.5"><Phone size={13} /> {agent.phone}</span>}
                         {agent.location && <span className="inline-flex items-center gap-1.5"><MapPin size={13} /> {agent.location}</span>}
+                        {agent.registered_at && <span>Registered {fmtDate(agent.registered_at)}</span>}
                         {agent.referral_code && <span className="font-mono text-gray-400">{agent.referral_code}</span>}
                     </div>
                 </div>
             </div>
+
+            <AccountActions agent={agent} />
+            <ReferralLinkCard referral={agent.referral} />
 
             {/* Stat cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -121,7 +131,7 @@ export default function AgentShow({
                             <h2 className="text-sm font-bold uppercase tracking-wider text-gray-800">Affiliate Partner Agreement</h2>
                             <p className="text-[12px] text-gray-500 mt-0.5">
                                 {agreement
-                                    ? `Generated ${fmtDate(agreement.created_at)} · ${fmtSize(agreement.size)}`
+                                    ? `Version ${agreement.version} · ${agreement.status} · ${fmtDate(agreement.created_at)} · ${fmtSize(agreement.size)}`
                                     : "No agreement on file yet."}
                             </p>
                         </div>
@@ -135,32 +145,49 @@ export default function AgentShow({
                                 <a href={agreement.download_url} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
                                     <Download size={14} /> Download
                                 </a>
-                                {! agreement.company_signed && (
+                                {! agreement.company_signed && agreement.can_sign && (
                                     <button type="button" onClick={() => setSignOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black transition-colors">
                                         <PenTool size={14} /> Sign (ePathways)
                                     </button>
                                 )}
-                                <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
-                                    <RefreshCw size={14} /> Regenerate
-                                </button>
+                                {agent.account_state !== "archived" && <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
+                                    <RefreshCw size={14} /> {agreement.is_draft ? "Edit draft" : "New version"}
+                                </button>}
                             </>
                         )}
-                        {! agreement && (
+                        {! agreement && agent.account_state !== "archived" && (
                             <button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black transition-colors">
-                                <Wand2 size={14} /> Generate agreement
+                                <Wand2 size={14} /> Generate Affiliate Partner Agreement
                             </button>
                         )}
                     </div>
                 </div>
 
+                {agreement?.is_draft && <p className="mt-3 text-sm text-amber-800">Draft. Review and generate the PDF to make this version available to the affiliate partner.</p>}
+                {agreement?.legacy && <p className="mt-3 text-sm text-gray-600">This existing PDF is preserved as issued. Generate a new version for further editing or signing.</p>}
+                {agreement?.can_send && <button type="button" onClick={() => router.post(`/admin/agents/${agent.id}/agreement/send?agreement=${agreement.id}`)} className="mt-4 rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white">Send for signature</button>}
+                {agreement?.send_requested_at && <p className="mt-3 text-xs text-gray-600">{agreement.sent_at ? "Invitation accepted by the mail transport." : agreement.send_error || "Invitation queued. Delivery status updates after the mail worker runs."}</p>}
+
                 {/* Signature status — both parties */}
                 {agreement && (
                     <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <SignStatus label="ePathways" signed={agreement.company_signed} name={agreement.company_signer_name} at={agreement.company_signed_at} fmtDate={fmtDate} />
-                        <SignStatus label="Agent" signed={agreement.agent_signed} name={agreement.agent_signer_name} at={agreement.agent_signed_at} fmtDate={fmtDate} />
+                        <SignStatus label="Affiliate Partner" signed={agreement.agent_signed} name={agreement.agent_signer_name} at={agreement.agent_signed_at} fmtDate={fmtDate} />
                     </div>
                 )}
             </div>
+
+            <section className="rounded-2xl border border-gray-100 bg-white p-6">
+                <div className="flex justify-between gap-3"><h2 className="text-lg font-semibold">Agreement history</h2><Link className="text-sm text-emerald-800 underline" href="/admin/agents/agreements">All agreements</Link></div>
+                <div className="overflow-x-auto mt-4"><table className="w-full text-left text-sm">
+                    <thead><tr className="text-gray-500">{["Version", "Status", "Created", "Partner signed", "EP signed", "Expires", "Documents"].map(label => <th className="py-2 pr-4" key={label}>{label}</th>)}</tr></thead>
+                    <tbody>{agreements.map(version => <tr key={version.id} className="border-t border-gray-100">
+                        <td className="py-3"><Link href={`/admin/agents/${agent.id}?agreement=${version.id}`} className="text-emerald-800 underline">Version {version.version}</Link></td><td>{version.status}</td><td>{fmtDate(version.created_at)}</td><td>{fmtDate(version.agent_signed_at)}</td><td>{fmtDate(version.company_signed_at)}</td><td>{version.expires_on || "—"}</td>
+                        <td><a className="text-emerald-800 underline mr-3" href={version.view_url} target="_blank" rel="noreferrer">View</a><a className="text-emerald-800 underline" href={version.download_url}>Download</a></td>
+                    </tr>)}</tbody>
+                </table></div>
+                {!agreements.length && <p className="mt-3 text-sm text-gray-500">No agreement versions yet.</p>}
+            </section>
 
             {/* Commission dashboard */}
             {commission && <CommissionSection commission={commission} hasAgreement={!! agreement} />}
@@ -168,7 +195,7 @@ export default function AgentShow({
             {/* Leads */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-gray-700">Leads recruited</h3>
+                    <h3 className="text-sm font-bold text-gray-700">Lead history · {leadsCount} referrals · {convertedCount} converted</h3>
                 </div>
                 {leads.length === 0 ? (
                     <div className="p-12 text-center text-gray-400 text-sm">No leads recruited yet.</div>
@@ -210,13 +237,17 @@ export default function AgentShow({
                 )}
             </div>
 
+            <Pagination links={leadPagination} />
+
             {modalOpen && (
                 <AgreementModal
                     agentId={agent.id}
                     fieldGroups={agreementFieldGroups}
                     defaults={agreementDefaults}
                     previewBase={previewBase}
-                    isRegenerate={!! agreement}
+                    isRegenerate={!! agreement && ! agreement.is_draft}
+                    draftId={agreement?.is_draft ? agreement.id : null}
+                    expiresOn={agreement?.expires_on || ""}
                     onClose={() => setModalOpen(false)}
                 />
             )}
@@ -349,11 +380,12 @@ function SignStatus({ label, signed, name, at, fmtDate }) {
 }
 
 // ── Generate / edit agreement modal ──────────────────────────────────
-function AgreementModal({ agentId, fieldGroups, defaults, previewBase, isRegenerate, onClose }) {
+function AgreementModal({ agentId, fieldGroups, defaults, previewBase, isRegenerate, draftId, expiresOn, onClose }) {
     const [fields, setFields] = useState(() => ({ ...defaults }));
     const [previewFields, setPreviewFields] = useState(() => ({ ...defaults }));
     const [previewLoading, setPreviewLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [expiry, setExpiry] = useState(expiresOn || "");
     const timer = useRef(null);
 
     const setField = (key, val) => setFields((f) => ({ ...f, [key]: val }));
@@ -373,9 +405,9 @@ function AgreementModal({ agentId, fieldGroups, defaults, previewBase, isRegener
 
     useEffect(() => { setPreviewLoading(true); }, [previewUrl]);
 
-    const submit = () => {
+    const submit = (intent = "generate") => {
         setSubmitting(true);
-        router.post(`/admin/agents/${agentId}/agreement/generate`, fields, {
+        router.post(`/admin/agents/${agentId}/agreement/generate`, { ...fields, intent, draft_id: draftId, expires_on: expiry || null }, {
             preserveScroll: true,
             onSuccess: () => onClose(),
             onFinish: () => setSubmitting(false),
@@ -483,14 +515,16 @@ function AgreementModal({ agentId, fieldGroups, defaults, previewBase, isRegener
 
                 <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0 bg-white">
                     <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-gray-900">Cancel</button>
+                    <label className="mr-auto text-xs text-gray-600">Expiry date (optional)<input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} className="ml-2 rounded border border-gray-200 p-1" /></label>
+                    <button type="button" disabled={submitting} onClick={() => submit("draft")} className="px-4 py-2 text-sm font-semibold text-emerald-800">Save draft</button>
                     <button
                         type="button"
                         disabled={submitting}
-                        onClick={submit}
+                        onClick={() => submit("generate")}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black disabled:opacity-60 transition-colors"
                     >
                         {submitting ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
-                        {isRegenerate ? "Regenerate PDF" : "Generate PDF"}
+                        {isRegenerate ? "Generate new version" : "Generate PDF"}
                     </button>
                 </div>
             </div>

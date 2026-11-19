@@ -170,91 +170,97 @@ class TaskController extends Controller
      */
     public function update(Request $request, int $id)
     {
-        $user = $request->user();
-        $task = LeadTask::findOrFail($id);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
+            $user = $request->user();
+            $task = LeadTask::lockForUpdate()->findOrFail($id);
 
-        $canEdit = $user->isAdmin()
-            || $task->created_by === $user->id
-            || $task->assignee_id === $user->id
-            || in_array($user->id, $task->additional_assignee_ids ?? [], true)
-            || ($task->department && $task->department === $user->role);
+            $canEdit = $user->isAdmin()
+                || $task->created_by === $user->id
+                || $task->assignee_id === $user->id
+                || in_array($user->id, $task->additional_assignee_ids ?? [], true)
+                || ($task->department && $task->department === $user->role);
 
-        abort_unless($canEdit, 403, 'You do not have permission to update this task.');
+            abort_unless($canEdit, 403, 'You do not have permission to update this task.');
 
-        // Snapshot current assignees so we can notify anyone newly added.
-        $assigneesBefore = $task->allAssigneeIds();
+            if (\App\Models\CreativeRequest::withTrashed()->where('lead_task_id', $task->id)->exists()) {
+                abort_unless($user->isAdmin() || in_array($user->id, $task->allAssigneeIds(), true), 403, 'Only the assigned creative owner or an administrator can update this request.');
+            }
 
-        $validated = $request->validate([
-            'status' => ['sometimes', Rule::in(LeadTask::STATUSES)],
-            'completion_notes' => 'sometimes|nullable|string|max:2000',
-            'priority' => ['sometimes', Rule::in(LeadTask::PRIORITIES)],
-            'progress' => 'sometimes|integer|min:0|max:100',
-            'title' => 'sometimes|string|max:200',
-            'description' => 'sometimes|nullable|string|max:2000',
-            'note' => 'sometimes|nullable|string|max:500',
-            'due_at' => 'sometimes|nullable|date',
-            'assignee_id' => 'sometimes|nullable|exists:users,id',
-            'assignee_ids' => 'sometimes|nullable|array|max:20',
-            'assignee_ids.*' => 'integer|exists:users,id',
-            'lead_id' => 'sometimes|nullable|exists:leads,id',
-            'lead_ids' => 'sometimes|nullable|array|max:50',
-            'lead_ids.*' => 'integer|exists:leads,id',
-            'department' => ['sometimes', Rule::in(LeadTask::DEPARTMENTS)],
-            'cross_dept_reason' => 'sometimes|nullable|string|max:500',
-            'tags' => 'sometimes|nullable|array',
-            'tags.*' => 'string|max:50',
-            'type' => ['sometimes', 'nullable', Rule::in(LeadTask::TYPES)],
-            'category' => 'sometimes|nullable|string|max:100',
-        ]);
+            // Snapshot current assignees so we can notify anyone newly added.
+            $assigneesBefore = $task->allAssigneeIds();
 
-        try {
-            if (array_key_exists('status', $validated)) {
-                $task->status = $validated['status'];
-                if ($validated['status'] === 'completed') {
-                    $task->completed_by = $user->id;
-                    $task->completed_at = $task->completed_at ?? now();
+            $validated = $request->validate([
+                'status' => ['sometimes', Rule::in(LeadTask::STATUSES)],
+                'completion_notes' => 'sometimes|nullable|string|max:2000',
+                'priority' => ['sometimes', Rule::in(LeadTask::PRIORITIES)],
+                'progress' => 'sometimes|integer|min:0|max:100',
+                'title' => 'sometimes|string|max:200',
+                'description' => 'sometimes|nullable|string|max:2000',
+                'note' => 'sometimes|nullable|string|max:500',
+                'due_at' => 'sometimes|nullable|date',
+                'assignee_id' => 'sometimes|nullable|exists:users,id',
+                'assignee_ids' => 'sometimes|nullable|array|max:20',
+                'assignee_ids.*' => 'integer|exists:users,id',
+                'lead_id' => 'sometimes|nullable|exists:leads,id',
+                'lead_ids' => 'sometimes|nullable|array|max:50',
+                'lead_ids.*' => 'integer|exists:leads,id',
+                'department' => ['sometimes', Rule::in(LeadTask::DEPARTMENTS)],
+                'cross_dept_reason' => 'sometimes|nullable|string|max:500',
+                'tags' => 'sometimes|nullable|array',
+                'tags.*' => 'string|max:50',
+                'type' => ['sometimes', 'nullable', Rule::in(LeadTask::TYPES)],
+                'category' => 'sometimes|nullable|string|max:100',
+            ]);
+
+            try {
+                if (array_key_exists('status', $validated)) {
+                    $task->status = $validated['status'];
+                    if ($validated['status'] === 'completed') {
+                        $task->completed_by = $user->id;
+                        $task->completed_at = $task->completed_at ?? now();
+                    }
                 }
-            }
 
-            // Multi-assignee replace: an explicit `assignee_ids` overrides
-            // both columns. Otherwise fall back to setting the single
-            // `assignee_id` if it was sent.
-            if (array_key_exists('assignee_ids', $validated)) {
-                $ids = array_values(array_unique(array_filter(array_map('intval', $validated['assignee_ids'] ?? []))));
-                $task->assignee_id = $ids[0] ?? null;
-                $task->additional_assignee_ids = count($ids) > 1 ? array_slice($ids, 1) : null;
-            } elseif (array_key_exists('assignee_id', $validated)) {
-                $task->assignee_id = $validated['assignee_id'];
-            }
-
-            // Multi-lead replace: same shape as the assignee path.
-            if (array_key_exists('lead_ids', $validated)) {
-                $ids = array_values(array_unique(array_filter(array_map('intval', $validated['lead_ids'] ?? []))));
-                $task->lead_id = $ids[0] ?? null;
-                $task->additional_lead_ids = count($ids) > 1 ? array_slice($ids, 1) : null;
-            } elseif (array_key_exists('lead_id', $validated)) {
-                $task->lead_id = $validated['lead_id'];
-            }
-
-            foreach (['completion_notes', 'priority', 'progress', 'title', 'description', 'note', 'due_at', 'department', 'cross_dept_reason', 'tags', 'type', 'category'] as $field) {
-                if (array_key_exists($field, $validated)) {
-                    $task->{$field} = $validated[$field];
+                // Multi-assignee replace: an explicit `assignee_ids` overrides
+                // both columns. Otherwise fall back to setting the single
+                // `assignee_id` if it was sent.
+                if (array_key_exists('assignee_ids', $validated)) {
+                    $ids = array_values(array_unique(array_filter(array_map('intval', $validated['assignee_ids'] ?? []))));
+                    $task->assignee_id = $ids[0] ?? null;
+                    $task->additional_assignee_ids = count($ids) > 1 ? array_slice($ids, 1) : null;
+                } elseif (array_key_exists('assignee_id', $validated)) {
+                    $task->assignee_id = $validated['assignee_id'];
                 }
+
+                // Multi-lead replace: same shape as the assignee path.
+                if (array_key_exists('lead_ids', $validated)) {
+                    $ids = array_values(array_unique(array_filter(array_map('intval', $validated['lead_ids'] ?? []))));
+                    $task->lead_id = $ids[0] ?? null;
+                    $task->additional_lead_ids = count($ids) > 1 ? array_slice($ids, 1) : null;
+                } elseif (array_key_exists('lead_id', $validated)) {
+                    $task->lead_id = $validated['lead_id'];
+                }
+
+                foreach (['completion_notes', 'priority', 'progress', 'title', 'description', 'note', 'due_at', 'department', 'cross_dept_reason', 'tags', 'type', 'category'] as $field) {
+                    if (array_key_exists($field, $validated)) {
+                        $task->{$field} = $validated[$field];
+                    }
+                }
+
+                $task->save();
+
+                // Notify anyone added as an assignee by this update (not re-notify
+                // existing ones, and never the editor themselves).
+                $added = array_diff($task->allAssigneeIds(), $assigneesBefore);
+                \Illuminate\Support\Facades\DB::afterCommit(fn () => $this->notifyAssignees($task, $added, $user->id));
+
+                return back()->with('success', 'Task updated.');
+            } catch (\Throwable $e) {
+                Log::error('Task update failed', ['task_id' => $id, 'error' => $e->getMessage()]);
+
+                return back()->withErrors(['error' => 'Could not update task.']);
             }
-
-            $task->save();
-
-            // Notify anyone added as an assignee by this update (not re-notify
-            // existing ones, and never the editor themselves).
-            $added = array_diff($task->allAssigneeIds(), $assigneesBefore);
-            $this->notifyAssignees($task, $added, $user->id);
-
-            return back()->with('success', 'Task updated.');
-        } catch (\Throwable $e) {
-            Log::error('Task update failed', ['task_id' => $id, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not update task.']);
-        }
+        });
     }
 
     /**

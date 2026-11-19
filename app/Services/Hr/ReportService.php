@@ -115,11 +115,12 @@ class ReportService
                 return;
             }
             if ($type === 'leave') {
-                $q = DtrLeave::whereIn('user_id', $ids)->whereDate('end_date', '>=', $filters['from'])->whereDate('start_date', '<=', $filters['to']);
+                $q = DtrLeave::with('reviewer:id,name')->whereIn('user_id', $ids)->whereDate('end_date', '>=', $filters['from'])->whereDate('start_date', '<=', $filters['to']);
                 if (isset($filters['status'])) {
                     $q->where('status', $filters['status']);
                 }foreach ($q->lazyById(100) as $l) {
-                    yield [...$base($byUser[$l->user_id]), 'start_date' => $l->start_date->toDateString(), 'end_date' => $l->end_date->toDateString(), 'working_days' => $l->total_days, 'status' => $l->status];
+                    yield [...$base($byUser[$l->user_id]), 'start_date' => $l->start_date->toDateString(), 'end_date' => $l->end_date->toDateString(), 'working_days' => $l->total_days, 'status' => $l->status,
+                        'decision' => $l->decision ?? '', 'reviewed_by' => $l->reviewer?->name ?? '', 'reviewed_at' => $l->reviewed_at?->toIso8601String() ?? ''];
                 }
 
                 return;

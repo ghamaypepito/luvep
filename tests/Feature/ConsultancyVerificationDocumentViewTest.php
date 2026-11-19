@@ -60,4 +60,18 @@ class ConsultancyVerificationDocumentViewTest extends TestCase
         $lead->refresh();
         $this->assertSame('Checked the total — looks right.', $lead->consultancy_review['note']);
     }
+
+    public function test_english_verification_uses_only_review_fee_and_keeps_exam_usd_separate(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'super_admin']));
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client']);
+        \App\Services\ConsultancyReviewService::submit($lead, 'english_engagement', ['english_fee' => 12500, 'pte_fee' => 240], null);
+        $this->get('/consultancy-verification')->assertInertia(fn ($page) => $page
+            ->where('proposals.0.total_amount', 12500)
+            ->where('proposals.0.items.1.currency_symbol', 'US$')
+            ->where('proposals.0.items.1.amount', 240));
+        $this->assertSame(12500, \App\Services\ConsultancyReviewService::totalAmount($lead->fresh()->consultancy_review));
+        $this->get('/admin/leads/proposals-agreements')->assertInertia(fn ($page) => $page
+            ->where('agreements.0.documents.0.total_amount', 12500));
+    }
 }

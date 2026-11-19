@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 class EngagementWorkflowTest extends TestCase
@@ -119,6 +120,45 @@ class EngagementWorkflowTest extends TestCase
         $this->assertEquals(575, $b['total']);
         $this->assertDatabaseCount('lead_documents', 4);
         Mail::assertNothingOutgoing();
+    }
+
+    public function test_custom_service_fees_match_the_previews_invoice_and_issued_agreement(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+
+        foreach ([['initial_consultation', 'USD', '315.25', 315.25], ['oia', 'NZD', '620.10', 713.12]] as [$type, $currency, $fee, $total]) {
+            $settings = $this->settings($type) + ['service_fee' => $fee];
+            $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+            $this->get("{$base}/generate/engage_{$type}/preview?{$query}")->assertOk()->assertSee($fee);
+            $this->get("{$base}/generate/engage_invoice/preview?{$query}")->assertOk()
+                ->assertSee(number_format($total, 2))->assertSee($currency);
+
+            $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()
+                ->assertJsonPath('currency', $currency)->assertJsonPath('total', $total)->json();
+            $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+            $documents = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+            $agreement = $documents->firstWhere('source_variant', 'engagement:'.$type);
+            $invoice = $documents->firstWhere('source_variant', 'invoice');
+            $this->assertEquals($total, $invoice->invoice_total);
+            $this->assertEquals($fee, $agreement->notes['engagement_fee_excl']);
+            $this->assertSame($fee, $agreement->notes['engagement_settings']['service_fee']);
+
+            $review = $this->postJson("{$base}/engagement/review", ['pack_id' => $saved['pack_id']])->assertOk()->json();
+            $this->postJson("{$base}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+            $token = $agreement->notes['engagement_signing_token'];
+            $signingUrl = "/engagement/{$token}/documents/{$agreement->id}";
+            $this->get($signingUrl.'/preview')->assertOk()->assertSee($fee);
+            $this->post($signingUrl.'/sign', [
+                'signer_name' => 'Fixture Client',
+                'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            ])->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNotNull($agreement->fresh()->client_signed_at);
+            $signedPdf = Storage::disk('local')->get($agreement->file_path);
+            $this->assertStringContainsString($fee, (new Parser)->parseContent($signedPdf)->getText());
+            $this->assertDatabaseHas('finance_receivables', [
+                'invoice_document_id' => $invoice->id, 'currency' => $currency, 'amount' => $total,
+            ]);
+        }
     }
 
     public function test_templates_autofill_case_and_selected_adviser(): void

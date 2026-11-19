@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\EditorialArticle;
 use App\Models\EditorialSocialDelivery;
+use App\Models\MarketingPost;
+use App\Services\Ghl\GhlConnection;
 use App\Services\Ghl\GhlSocialReader;
 use App\Support\Seo;
 use Carbon\CarbonImmutable;
@@ -37,8 +39,24 @@ class EditorialCalendarController extends Controller
             'topics' => EditorialArticle::whereBetween('planned_date', [$start->toDateString(), $start->endOfMonth()->toDateString()])
                 ->orderBy('planned_date')->orderBy('id')->get(self::SUMMARY),
             'undated' => EditorialArticle::whereNull('planned_date')->orderByDesc('updated_at')->get(self::SUMMARY),
+            'socialPosts' => $this->socialPosts()->whereBetween('scheduled_at', [$start->utc(), $start->endOfMonth()->utc()])->orderBy('scheduled_at')->get()->map(fn ($post) => $this->socialSummary($post)),
+            'undatedSocialPosts' => $this->socialPosts()->whereNull('scheduled_at')->latest('updated_at')->limit(100)->get()->map(fn ($post) => $this->socialSummary($post)),
             'canPublish' => $request->user()->isSuperAdmin(),
         ]);
+    }
+
+    private function socialPosts()
+    {
+        return MarketingPost::where('location_id', GhlConnection::LOCATION)->where('account_id', GhlSocialReader::ACCOUNT)
+            ->select('id', 'campaign', 'service', 'status', 'scheduled_at', 'updated_at', 'post_type', 'publish_now', 'ghl_post_id');
+    }
+
+    private function socialSummary(MarketingPost $post): array
+    {
+        return ['id' => $post->id, 'title' => $post->campaign, 'pillar' => $post->service,
+            'status' => $post->status, 'ghl_post_id' => $post->ghl_post_id, 'post_type' => $post->post_type ?: 'post', 'publish_now' => (bool) $post->publish_now,
+            'planned_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
+            'planned_time' => $post->scheduled_at?->setTimezone('Asia/Manila')->format('H:i')];
     }
 
     public function show(EditorialArticle $article): JsonResponse

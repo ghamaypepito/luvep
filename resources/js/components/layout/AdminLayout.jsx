@@ -56,6 +56,7 @@ const ADMIN_NAV = [
         ],
     },
     { name: "Document Queue", href: "/admin/document-queue", icon: <Inbox size={20} /> },
+    { name: "Offers of Place", href: "/admin/offers-of-place", icon: <FileText size={20} /> },
     { name: "Portal Invitations", href: "/admin/portal-invitations", icon: <KeyRound size={20} />, module: "portal_invitation" },
     { name: "Events", href: "/admin/events", icon: <CalendarIcon size={20} /> },
     { name: "Bookings", href: "/admin/booking", icon: <BookOpen size={20} /> },
@@ -67,7 +68,7 @@ const ADMIN_NAV = [
     { name: "Facebook Live", href: "/admin/facebook-live", icon: <Video size={20} /> },
     { name: "Visa Approved", href: "/admin/visa-approvals", icon: <Award size={20} /> },
     // Restricted module — hidden unless granted (default super-admin-only).
-    { name: "Agents", href: "/admin/agents", icon: <UserCheck size={20} />, module: "agents" },
+    { name: "Affiliate Partners", href: "/admin/agents", icon: <UserCheck size={20} />, module: "agents" },
     {
         name: "Verification",
         icon: <BadgeCheck size={20} />,
@@ -125,7 +126,7 @@ const ADMIN_NAV = [
             { name: "Immigration Adviser Portal", href: "/portal/immigration-adviser/dashboard", icon: <BadgeCheck size={16} /> },
             { name: "Accommodation Portal", href: "/portal/accommodation/dashboard", icon: <Building2 size={16} /> },
             { name: "Finance Portal", href: "/portal/finance/dashboard", icon: <Wallet size={16} /> },
-            { name: "Agent Portal", href: "/portal/agent/dashboard", icon: <UserCheck size={16} /> },
+            { name: "Affiliate Partner Portal", href: "/portal/agent/dashboard", icon: <UserCheck size={16} /> },
             { name: "Client Portal", href: "/portal/lead/dashboard", icon: <User size={16} /> },
         ],
     },

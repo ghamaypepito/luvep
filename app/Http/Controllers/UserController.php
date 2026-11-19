@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\AffiliateOnboarding;
 use App\Support\UploadValidation;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -32,13 +34,17 @@ class UserController extends Controller
         // ('lead' / 'revoked_lead') belong on the Leads tab, not in the
         // staff directory.
         $users = User::whereNotIn('role', ['lead', 'revoked_lead'])
-            ->orderBy('name')
+            ->with('affiliateApplication:id,user_id,activated_at')->orderBy('name')
             ->get(['id', 'name', 'email', 'phone', 'location', 'role', 'is_active', 'avatar_path', 'created_at',
                 // Sub-agent → recruiting agent link; the edit modal pre-fills it.
                 'parent_agent_id',
                 // IAA licence — admin-managed (Build 12 fast-follow); the edit
                 // modal pre-fills from these.
-                'iaa_licence_number', 'iaa_licence_type', 'iaa_licence_expiry', 'iaa_licence_verified_at']);
+                'iaa_licence_number', 'iaa_licence_type', 'iaa_licence_expiry', 'iaa_licence_verified_at'])
+            ->each(function (User $user) {
+                $user->account_state = app(AffiliateOnboarding::class)->accountState($user, $user->affiliateApplication);
+                $user->unsetRelation('affiliateApplication');
+            });
 
         // Soft-deleted staff accounts — shown in the "Deleted" view for restore.
         $deletedUsers = User::onlyTrashed()
@@ -221,54 +227,41 @@ class UserController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-
-        if ($user->is($request->user())) {
-            return back()->withErrors(['user' => 'You cannot delete your own account.']);
-        }
-
-        $snapshot = ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role];
-
-        $user->delete();
-
-        ActivityLog::record('user.deleted', [
-            'description' => "Deleted user {$snapshot['target_name']} ({$snapshot['target_email']})",
-            'properties' => $snapshot,
-        ]);
-
-        return back()->with('success', 'User deleted successfully.');
+        return $this->changeAccount($request, $id, 'archive');
     }
 
-    /** Restore a soft-deleted user. */
     public function restore(Request $request, $id)
     {
-        $user = User::onlyTrashed()->findOrFail($id);
-        $user->restore();
-        ActivityLog::record('user.restored', [
-            'description' => "Restored user {$user->name} ({$user->email})",
-            'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
-        ]);
-
-        return back()->with('success', 'User restored successfully.');
+        return $this->changeAccount($request, $id, 'restore');
     }
 
-    /** Activate / deactivate a user account (reversible suspension). */
     public function toggleActive(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        if ($user->is($request->user())) {
-            return back()->withErrors(['user' => 'You cannot deactivate your own account.']);
-        }
+        $intent = $request->validate(['action' => 'required|in:activate,disable']);
 
-        $user->is_active = ! $user->is_active;
-        $user->save();
+        return $this->changeAccount($request, $id, $intent['action']);
+    }
 
-        ActivityLog::record($user->is_active ? 'user.activated' : 'user.deactivated', [
-            'description' => ($user->is_active ? 'Activated' : 'Deactivated')." user {$user->name} ({$user->email})",
-            'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role],
-        ]);
+    private function changeAccount(Request $request, $id, string $action)
+    {
+        $expected = $request->validate(['expected' => 'required|in:active,disabled,awaiting_signatures,archived'])['expected'];
 
-        return back()->with('success', $user->is_active ? 'User activated.' : 'User deactivated.');
+        return DB::transaction(function () use ($id, $request, $action, $expected) {
+            $user = User::withTrashed()->lockForUpdate()->findOrFail($id);
+            if ($user->is($request->user())) {
+                return back()->withErrors(['user' => 'You cannot change the state of your own account.']);
+            }
+            $transition = app(AffiliateOnboarding::class)->applyToLockedAccount($user, $action, $expected);
+            $verb = match ($action) {
+                'archive' => 'deleted', 'restore' => 'restored', 'activate' => 'activated', 'disable' => 'deactivated',
+            };
+            ActivityLog::record('user.'.$verb, [
+                'description' => ucfirst($verb)." user {$user->name} ({$user->email})",
+                'properties' => ['target_id' => $user->id, 'target_name' => $user->name, 'target_email' => $user->email, 'target_role' => $user->role] + $transition,
+            ]);
+
+            return back()->with('success', 'User '.$verb.'.');
+        });
     }
 
     /**

@@ -26,6 +26,7 @@ $hrRoutes = function () {
         Route::post('/checklists/templates/{template}', [\App\Http\Controllers\Hr\ChecklistController::class, 'template'])->name('checklists.template.update');
         Route::post('/checklists/tasks/{task}/complete', [\App\Http\Controllers\Hr\ChecklistController::class, 'complete'])->name('checklists.complete');
         Route::get('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'index'])->name('equipment');
+        Route::post('/equipment/self', [\App\Http\Controllers\Hr\EquipmentController::class, 'recordOwn'])->name('equipment.self');
         Route::post('/equipment', [\App\Http\Controllers\Hr\EquipmentController::class, 'store'])->name('equipment.store');
         Route::post('/equipment/{item}/return', [\App\Http\Controllers\Hr\EquipmentController::class, 'recordReturn'])->name('equipment.return');
         Route::get('/requests', [\App\Http\Controllers\Hr\RequestController::class, 'index'])->name('requests');
@@ -34,6 +35,8 @@ $hrRoutes = function () {
         Route::post('/requests/{case}/reply', [\App\Http\Controllers\Hr\RequestController::class, 'reply'])->name('requests.reply');
         Route::post('/requests/{case}/assign', [\App\Http\Controllers\Hr\RequestController::class, 'assign'])->name('requests.assign');
         Route::post('/requests/{case}/close', [\App\Http\Controllers\Hr\RequestController::class, 'close'])->name('requests.close');
+        Route::get('/policies/versions/{version}/attachment', [\App\Http\Controllers\Hr\PolicyController::class, 'download'])->name('policies.attachment');
+        Route::get('/policies/{policy}/draft/attachment', [\App\Http\Controllers\Hr\PolicyController::class, 'downloadDraft'])->name('policies.draft.attachment');
         Route::get('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'index'])->name('policies');
         Route::post('/policies', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.store');
         Route::post('/policies/{policy}/draft', [\App\Http\Controllers\Hr\PolicyController::class, 'draft'])->name('policies.draft');
@@ -63,6 +66,9 @@ $hrRoutes = function () {
         Route::get('/dtr/corrections', [\App\Http\Controllers\Hr\DtrController::class, 'corrections'])->name('dtr.corrections');
         Route::get('/dtr/review', [\App\Http\Controllers\Hr\DtrController::class, 'inbox'])->name('dtr.inbox');
         Route::get('/dtr/changes', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'index'])->name('dtr.changes');
+        Route::post('/dtr/{entry}/report', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'saveReport'])->name('dtr.report.save');
+        Route::post('/dtr/{entry}/acknowledgements', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'submitAcknowledgement'])->name('dtr.acknowledgements.submit');
+        Route::post('/dtr/acknowledgements/{acknowledgement}/decision', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'decideAcknowledgement'])->name('dtr.acknowledgements.decide');
         Route::get('/dtr/{entry}/history', [\App\Http\Controllers\Hr\DtrHistoryController::class, 'show'])->name('dtr.history');
         Route::post('/dtr', [\App\Http\Controllers\Hr\DtrController::class, 'store'])->name('dtr.store');
         Route::post('/dtr/week/sign', [\App\Http\Controllers\Hr\DtrController::class, 'signWeek'])->name('dtr.week.sign');
@@ -81,6 +87,7 @@ $hrRoutes = function () {
         Route::post('/profile/avatar', [\App\Http\Controllers\UserController::class, 'uploadAvatar'])->name('profile.avatar.upload');
         Route::delete('/profile/avatar', [\App\Http\Controllers\UserController::class, 'deleteAvatar'])->name('profile.avatar.delete');
         Route::patch('/profile', [EmployeeController::class, 'update'])->name('profile.update');
+        Route::get('/team', \App\Http\Controllers\Hr\TeamController::class)->name('team');
         Route::get('/people', [EmployeeController::class, 'index'])->name('people');
         Route::get('/people/new', [\App\Http\Controllers\Hr\EnrollmentController::class, 'create'])->name('people.create');
         Route::post('/people', [\App\Http\Controllers\Hr\EnrollmentController::class, 'store'])->name('people.store');

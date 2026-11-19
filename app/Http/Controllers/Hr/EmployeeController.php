@@ -15,14 +15,19 @@ use Inertia\Inertia;
 
 class EmployeeController extends Controller
 {
-    public static function profileData(?HrEmployee $employee, User $user): array
+    public static function profileData(?HrEmployee $employee, User $user, ?User $viewer = null): array
     {
-        return ['id' => $employee?->id, 'user' => $user->only(['id', 'name', 'email', 'phone', 'avatar_url']),
+        $profile = ['id' => $employee?->id, 'user' => $user->only(['id', 'name', 'email', 'phone', 'avatar_url']),
             'employee_number' => $employee?->employee_number, 'department' => $employee?->department,
             'position' => $employee?->position, 'office' => $employee?->office, 'employment_type' => $employee?->employment_type,
             'employment_start' => $employee?->employment_start?->toDateString(), 'manager' => $employee?->manager?->name,
             'reviewer' => $employee?->reviewer?->name, 'emergency_contact' => $employee?->emergency_contact,
             'schedule' => $employee?->schedule?->only(['timezone', 'sched_in', 'sched_out', 'weekly_schedule', 'schedule_type'])];
+        if ($employee && $viewer && ($employee->user_id === $viewer->id || app(HrAccess::class)->allows($viewer, 'profile.manage', $employee))) {
+            $profile['employment_details'] = $employee->employment_details;
+        }
+
+        return $profile;
     }
 
     public function profile(Request $request)
@@ -30,7 +35,7 @@ class EmployeeController extends Controller
         $context = app(HrContext::class);
         $employee = $context->isPreview($request) ? $context->subject($request) : app(HrAccess::class)->employee($request->user());
 
-        return Inertia::render('hr/Profile', ['profile' => self::profileData($employee, $employee?->user ?? $request->user())]);
+        return Inertia::render('hr/Profile', ['profile' => self::profileData($employee, $employee?->user ?? $request->user(), $request->user())]);
     }
 
     public function update(UpdatePersonalProfileRequest $request)
@@ -39,9 +44,7 @@ class EmployeeController extends Controller
         $employee = app(HrAccess::class)->employee($actor);
         DB::transaction(function () use ($actor, $employee, $request) {
             $data = $request->validated();
-            if (array_key_exists('phone', $data)) {
-                $actor->update(['phone' => $data['phone']]);
-            }
+            $actor->update(array_intersect_key($data, array_flip(['name', 'phone'])));
             if ($employee && array_key_exists('emergency_contact', $data)) {
                 $employee->update(['emergency_contact' => $data['emergency_contact']]);
             }
@@ -56,7 +59,7 @@ class EmployeeController extends Controller
         abort_unless(app(HrAccess::class)->allows($request->user(), 'people'), 403);
         abort_if(app(HrContext::class)->isPreview($request), 403);
         $search = mb_substr((string) $request->query('search', ''), 0, 100);
-        $employees = HrEmployee::with('user')->when($search, fn ($q) => $q->whereHas('user', fn ($q) => $q->where('name', 'like', '%'.$search.'%')))
+        $employees = HrEmployee::with('user')->whereHas('user')->when($search, fn ($q) => $q->whereHas('user', fn ($q) => $q->where('name', 'like', '%'.$search.'%')))
             ->orderBy('id')->paginate(25)->withQueryString()->through(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name, 'department' => $e->department, 'position' => $e->position, 'status' => $e->status]);
 
         return Inertia::render('hr/Employees', compact('employees', 'search'));
@@ -66,7 +69,7 @@ class EmployeeController extends Controller
     {
         abort_unless(! app(HrContext::class)->isPreview($request) && app(HrAccess::class)->allows($request->user(), 'profile.view', $employee), 404);
         abort_unless($employee->user, 404);
-        $profile = self::profileData($employee, $employee->user);
+        $profile = self::profileData($employee, $employee->user, $request->user());
         if (! app(HrAccess::class)->allows($request->user(), 'profile.manage', $employee)) {
             unset($profile['emergency_contact']);
         }

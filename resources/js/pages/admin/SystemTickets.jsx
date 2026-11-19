@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
-import { Ticket, Search, X } from "lucide-react";
+import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
+import { Search, X } from "lucide-react";
 import TicketConversation from "@/components/TicketConversation";
 import TicketAttachments from "@/components/TicketAttachments";
 import TicketRequestEditor from "@/components/TicketRequestEditor";
@@ -47,22 +48,23 @@ export default function SystemTickets({ tickets = { data: [], links: [] }, filte
     const openTicket = (ticket, nextIntent = null) => { setIntent(nextIntent); setActive(ticket); };
 
     return (
-        <div className="space-y-6 max-w-6xl mx-auto">
+        <div className="ticket-workspace ticket-board space-y-6 max-w-6xl mx-auto">
             <Head title="System Tickets" />
 
-            <header className="flex items-end justify-between gap-4 flex-wrap">
+            <header className="tw-heading flex items-end justify-between gap-4 flex-wrap">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Ticket className="w-6 h-6 text-gray-700" /> System Tickets
+                        System Tickets
                         {(counts.open ?? 0) > 0 && <span className="text-xs font-bold bg-blue-600 text-white rounded-full px-2 py-0.5">{counts.open} open</span>}
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">Change &amp; feature tickets raised by the departments.</p>
+                    <p className="text-sm text-gray-500 mt-1">One place to track support, changes and feature requests.</p>
                 </div>
             </header>
 
-            <nav className="flex flex-wrap gap-4 text-sm font-medium" aria-label="Ticket views">
-                <button onClick={() => setFilter({ tab: "active", status: "open" })} className={(filters.tab ?? "active") === "active" ? "underline" : "text-gray-500"}>Tickets</button>
-                <button onClick={() => setFilter({ tab: "archived", status: "all" })} className={filters.tab === "archived" ? "underline" : "text-gray-500"}>Archive</button>
+            <TicketTypeTabs />
+            <nav className="tw-nav" aria-label="Ticket views">
+                <button onClick={() => setFilter({ tab: "active", status: "open" })} aria-current={(filters.tab ?? "active") === "active" ? "page" : undefined}>Tickets</button>
+                <button onClick={() => setFilter({ tab: "archived", status: "all" })} aria-current={filters.tab === "archived" ? "page" : undefined}>Archive</button>
                 <a href="/admin/system-tickets/analytics" className="text-blue-700">Analytics</a>
                 <a href="/admin/system-tickets/documentation" className="text-blue-700">Documentation</a>
             </nav>
@@ -83,8 +85,8 @@ export default function SystemTickets({ tickets = { data: [], links: [] }, filte
 
             <p className="text-xs text-gray-500">{archived ? "Archived tickets appear only here and are read-only. Files and conversation history are kept." : filters.status === "done" ? "Done tickets appear only in this tab until archived. They are automatically archived two months after completion." : "Each status tab shows matching tickets. All excludes Done and archived tickets."}</p>
 
-            <div className="bg-white rounded-3xl border border-gray-50 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="tw-card tw-queue overflow-hidden">
+                <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Ticket queue">
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-gray-50/50 border-y border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">

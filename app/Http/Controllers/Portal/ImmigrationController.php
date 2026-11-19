@@ -809,6 +809,7 @@ class ImmigrationController extends Controller
      */
     public function engagement(string $page = 'portal/immigration/Engagement')
     {
+        $search = trim(request()->validate(['q' => ['nullable', 'string', 'max:150']])['q'] ?? '');
         try {
             // Visa fee lookup so the picker can flag cases whose visa has
             // no fees set (the Written Agreement would render placeholders).
@@ -870,6 +871,16 @@ class ImmigrationController extends Controller
                 'uploader:id,name,email',
             ])
                 ->where('source_variant', 'like', 'engagement:%')
+                // Search before the document limit, so older matching packs remain findable.
+                ->when($search !== '', fn ($query) => $query->whereHas('lead', function ($lead) use ($search) {
+                    foreach (preg_split('/\s+/u', $search) as $term) {
+                        $lead->where(function ($fields) use ($term) {
+                            foreach (['first_name', 'middle_name', 'last_name', 'lead_id', 'email', 'phone'] as $field) {
+                                $fields->orWhere($field, 'like', '%'.$term.'%');
+                            }
+                        });
+                    }
+                }))
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->limit(300)
@@ -954,6 +965,7 @@ class ImmigrationController extends Controller
                         'signed' => (bool) $signedAt,
                         'signed_at' => optional($signedAt)?->toIso8601String(),
                         'signer_name' => optional($waDoc)->client_signer_name,
+                        'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         // Audit trail for the Written Agreement — who sent it, who
                         // signed, and when (drives the Audit trail modal).
                         'audit' => [
@@ -967,6 +979,7 @@ class ImmigrationController extends Controller
                             'client_email' => $lead?->email,
                             'signer_name' => optional($waDoc)->client_signer_name,
                             'signed_at' => optional($signedAt)?->toIso8601String(),
+                            'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         ],
                         'documents' => $docs->concat($packInvoice ? [$packInvoice] : [])->map(fn ($d) => [
                             'id' => $d->id,
@@ -1007,6 +1020,9 @@ class ImmigrationController extends Controller
                 'default_signer_id' => $this->defaultSignerId(),
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
+                'canUploadSignature' => \App\Services\Immigration\StaffEngagementSignature::permitted(auth()->user()),
+                'internalSignatureNotificationsReady' => app(\App\Services\Immigration\StaffEngagementSignature::class)->internalRecipients()->isNotEmpty(),
+                'search' => $search,
             ]);
         } catch (\Throwable $e) {
             Log::error('Immigration engagement page failed', ['error' => $e->getMessage()]);
@@ -4717,6 +4733,31 @@ class ImmigrationController extends Controller
         $declines = $stageRows('Decline Visa');
         $signatures = $stageRows('Agreement Signed');
 
+        $quotations = $stageRows('For Agreement & Invoice');
+        $quotedInvoices = LeadDocument::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->where('source', LeadDocument::SOURCE_GENERATED)->where('source_variant', 'invoice')
+            ->where('status', '!=', LeadDocument::STATUS_REJECTED)
+            ->where(fn ($query) => $query->whereNotNull('notes->engagement_sent_at')
+                ->orWhere('status', LeadDocument::STATUS_STAFF_SHARED)->orWhere('notes->invoice_finance->draft', false));
+        foreach ($quotedInvoices->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->notes['engagement_sent_at']
+                ?? ($invoice->status === LeadDocument::STATUS_STAFF_SHARED ? $invoice->reviewed_at : null)
+                ?? ($invoice->notes['invoice_finance']['issue_date'] ?? null));
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        // Use the verified Afirmo invoice date, so historical imports stay in their original reporting period.
+        foreach (\App\Models\FinanceReceivable::with('lead')->whereHas('lead', fn ($query) => $query->immigrationCase())
+            ->whereIn('status', ['sent', 'paid'])->where('notes', 'like', '%[afirmo-source:INVOICE:%')
+            ->whereDate('issue_date', '>=', $rangeFrom)->whereDate('issue_date', '<=', $rangeTo)->lazyById() as $invoice) {
+            $date = ReportPeriod::eventDate($invoice->issue_date?->toDateString());
+            if ($date && $date->betweenIncluded($from, $to) && $date->lte($now)) {
+                $quotations->push($reportRow($invoice->lead, $date->utc()->toIso8601String()));
+            }
+        }
+        $quotations = $quotations->sortByDesc('date')->unique('id')->values();
+
         // ── Activity in the selected window ──────────────────────────────
         $activity = [
             'new_clients' => $newCases()->count(),
@@ -4792,12 +4833,12 @@ class ImmigrationController extends Controller
         };
 
         // Pipeline position — mostly current snapshots (new_clients is in-window).
-        // "For quotation" = the pricing/invoice stage; "on hold" is omitted.
         $pipeline = [
             'new_clients' => $activity['new_clients'],
             'in_progress' => $inCase()->whereNotIn('immigration_stage', array_merge($withInzStages, $terminalStages))
                 ->where(fn ($q) => $q->whereNotNull('immigration_stage'))->count(),
-            'for_quotation' => $count('For Agreement & Invoice'),
+            'for_quotation' => $quotations->count(),
+            'quotation_cases' => $quotations,
             'endorsed_lia' => $liaEndorsements->count(),
             'agreements_sent' => $count('Agreement Sent'),
             'with_inz' => $count($withInzStages),

@@ -11,6 +11,7 @@ URL.createObjectURL = () => 'blob:synthetic-preview'; URL.revokeObjectURL = () =
 const React = require('react'), { act } = React, { createRoot } = require('react-dom/client');
 const requests = [];
 const inertia = {
+    Link: ({ children, ...props }) => React.createElement('a', props, children),
     Head: () => null, router: { get() {}, post() {} },
     useForm(initial) {
         const [data, setData] = React.useState(initial), [errors, setErrors] = React.useState({}), [processing, setProcessing] = React.useState(false), [progress, setProgress] = React.useState(null);

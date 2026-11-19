@@ -1,5 +1,5 @@
 import { hrPath } from "@/lib/hrPath";
-import { Head, useForm } from "@inertiajs/react";
+import { Head, Link, useForm } from "@inertiajs/react";
 import { Errors } from "./Dtr";
 function Return({ item }) {
     const form = useForm({ version: item.version, condition: "" });
@@ -15,7 +15,7 @@ function Return({ item }) {
         >
             <Errors errors={form.errors} />
             <label>
-                Condition at return
+                {item.source === "self_reported" ? "Condition / note" : "Condition at return"}
                 <textarea
                     required
                     maxLength={2000}
@@ -28,13 +28,25 @@ function Return({ item }) {
                     className="hr-button-secondary"
                     disabled={form.processing}
                 >
-                    Record return
+                    {item.source === "self_reported" ? "Mark no longer in use" : "Record return"}
                 </button>
             </div>
         </form>
     );
 }
-export default function Equipment({ items, history, employees }) {
+function AddOwnEquipment() {
+    const form = useForm({ description: '' });
+    return <details className="hr-panel"><summary><strong>Add my equipment</strong></summary>
+        <p>Record equipment you use for work. Staff-added items are kept separate from HR-issued asset assignments.</p>
+        <form className="hr-form" onSubmit={e => { e.preventDefault(); form.post(hrPath('/equipment/self'), { preserveScroll: true, onSuccess: () => form.reset() }); }}>
+            <fieldset disabled={form.processing}><Errors errors={form.errors} />
+                <label>Equipment details<textarea required maxLength={500} rows={3} value={form.data.description} onChange={e => form.setData('description', e.target.value)} placeholder="For example, laptop model, monitor or headset" /></label>
+                <button className="hr-button">{form.processing ? 'Adding…' : 'Add equipment'}</button>
+            </fieldset>
+        </form>
+    </details>;
+}
+export default function Equipment({ items, history, employees, scope, canAddOwn = false, canManageEquipment = false }) {
     const form = useForm({ employee_id: "", asset_tag: "", description: "" });
     return (
         <>
@@ -45,6 +57,8 @@ export default function Equipment({ items, history, employees }) {
                     Track issued equipment and retain a clear custody history.
                 </p>
             </div>
+            {scope === 'mine' && canManageEquipment && <p><Link className="hr-text-link" href={hrPath('/equipment')}>Manage employee equipment</Link></p>}
+            {canAddOwn && <AddOwnEquipment />}
             {employees.length > 0 && (
                 <details className="hr-panel">
                     <summary>
@@ -116,15 +130,16 @@ export default function Equipment({ items, history, employees }) {
                     <section className="hr-panel" key={i.id}>
                         <div className="hr-section-bar">
                             <div>
-                                <h2>{i.asset_tag}</h2>
+                                <h2>{i.source === "self_reported" ? i.description : i.asset_tag}</h2>
                                 <p>
-                                    {i.description} · {i.employee_name}
+                                    {i.source !== "self_reported" && <>{i.description} · </>}{i.employee_name}
+                                    <br />{i.source === "self_reported" ? "Staff-added equipment" : "HR-issued equipment"}
                                 </p>
                             </div>
-                            <span className="hr-status">{i.status}</span>
+                            <span className="hr-status">{i.source === "self_reported" ? (i.status === "issued" ? "In use" : "No longer in use") : i.status}</span>
                         </div>
                         <p>
-                            Issued{" "}
+                            {i.source === "self_reported" ? "Recorded" : "Issued"}{" "}
                             {i.issued_at
                                 ? new Date(i.issued_at).toLocaleString()
                                 : "Not recorded"}
@@ -162,7 +177,7 @@ export default function Equipment({ items, history, employees }) {
                                         <td>
                                             {e.asset_tag} · {e.description}
                                         </td>
-                                        <td>{e.action}</td>
+                                        <td>{e.action.replaceAll("_", " ")}</td>
                                         <td>
                                             {new Date(
                                                 e.created_at,

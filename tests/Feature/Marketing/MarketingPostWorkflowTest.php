@@ -240,4 +240,84 @@ class MarketingPostWorkflowTest extends TestCase
             URL::forceScheme(null);
         }
     }
+
+    public function test_calendar_fields_preserve_legacy_approval_and_send_the_saved_first_comment(): void
+    {
+        $this->connected();
+        $p = $this->approve($this->draft());
+        $row = MarketingPost::find($p['id']);
+        $legacy = hash('sha256', json_encode([$row->campaign, $row->service, $row->caption, $row->media_hash, $row->media_mime, $row->location_id, $row->account_id, $row->scheduled_at?->utc()->toIso8601String()], JSON_THROW_ON_ERROR));
+        $this->assertSame($legacy, $row->approval_fingerprint);
+        $p = $this->approve($this->draft(['id' => $p['id'], 'version' => $p['version'], 'first_comment' => '0', 'schedule_timezone' => 'Asia/Manila', 'schedule_date' => now('Asia/Manila')->addDays(2)->toDateString(), 'schedule_time' => '09:00']));
+        $this->assertSame('09:00', $p['calendar_time']);
+        $this->assertSame('0', $p['first_comment']);
+        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertOk();
+        Http::assertSent(fn ($r) => $r->method() === 'POST' && $r['followUpComment'] === '0' && $r['type'] === 'post');
+    }
+
+    public function test_reel_requires_one_mp4_and_private_video_is_sent_with_the_correct_type(): void
+    {
+        $p = $this->draft(['post_type' => 'reel']);
+        $this->postJson("/social/marketing/posts/{$p['id']}/submit", ['version' => $p['version']])->assertUnprocessable()->assertJsonValidationErrors('media');
+        MarketingPost::query()->delete();
+        URL::forceScheme('https');
+        $this->connected();
+        $video = UploadedFile::fake()->createWithContent('clip.mp4', hex2bin('000000186674797069736f6d0000000069736f6d69736f32'));
+        $p = $this->approve($this->draft(['post_type' => 'reel', 'media' => $video]));
+        $this->assertNull($p['image_url']);
+        $this->assertNotNull($p['media_url']);
+        $this->get($p['media_url'], ['Range' => 'bytes=0-9'])->assertStatus(206)->assertHeader('Content-Type', 'video/mp4')->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertOk();
+        Http::assertSent(fn ($r) => $r->method() === 'POST' && $r['type'] === 'reel' && $r['facebookPostDetails']['type'] === 'reel' && $r['media'][0]['type'] === 'video/mp4');
+        $this->get($this->capturedMediaUrl)->assertOk();
+    }
+
+    public function test_story_refuses_text_and_oversize_images_but_schedules_valid_media(): void
+    {
+        $p = $this->draft(['post_type' => 'story', 'caption' => 'Not supported', 'media' => UploadedFile::fake()->image('story.png')]);
+        $this->postJson("/social/marketing/posts/{$p['id']}/submit", ['version' => $p['version']])->assertUnprocessable()->assertJsonValidationErrors('caption');
+        $image = UploadedFile::fake()->image('original.png', 20, 20);
+        $large = UploadedFile::fake()->createWithContent('story.png', file_get_contents($image->getRealPath()).str_repeat('x', 4 * 1024 * 1024));
+        $p = $this->draft(['post_type' => 'story', 'caption' => '', 'media' => $large]);
+        $this->postJson("/social/marketing/posts/{$p['id']}/submit", ['version' => $p['version']])->assertUnprocessable()->assertJsonValidationErrors('media');
+        MarketingPost::query()->delete();
+        URL::forceScheme('https');
+        $this->connected();
+        $p = $this->approve($this->draft(['post_type' => 'story', 'caption' => '', 'media' => UploadedFile::fake()->image('valid.png')]));
+        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertOk();
+        Http::assertSent(fn ($r) => $r->method() === 'POST' && $r['type'] === 'story' && $r['summary'] === '');
+    }
+
+    public function test_post_now_approves_intent_and_keeps_the_private_media_approval_after_capture(): void
+    {
+        URL::forceScheme('https');
+        $this->connected();
+        $p = $this->approve($this->draft(['publish_now' => true, 'media' => UploadedFile::fake()->image('approved.png')]));
+        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertOk();
+        $row = MarketingPost::find($p['id']);
+        $this->assertTrue($row->hasCurrentApproval());
+        $this->assertEqualsWithDelta(now()->addMinutes(2)->timestamp, $row->scheduled_at->timestamp, 2);
+        $this->get($this->capturedMediaUrl)->assertOk();
+        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $row->version])->assertConflict();
+        $this->assertSame(1, $this->writes);
+    }
+
+    public function test_calendar_show_and_new_fields_keep_authorization_and_media_limits(): void
+    {
+        $p = $this->draft(['first_comment' => 'Saved comment']);
+        $this->getJson("/social/marketing/posts/{$p['id']}")->assertOk()->assertJsonPath('post.first_comment', 'Saved comment')->assertDontSee('approval_fingerprint');
+        $this->postJson('/social/marketing/posts', ['campaign' => 'x', 'service' => 'x', 'caption' => 'x', 'media' => UploadedFile::fake()->create('large.mp4', 51200, 'video/mp4')])->assertUnprocessable();
+        $this->actingAs(User::factory()->create(['role' => 'sales']));
+        $this->getJson("/social/marketing/posts/{$p['id']}")->assertForbidden();
+    }
+
+    public function test_new_delivery_fields_are_bound_to_approval_before_any_provider_read(): void
+    {
+        foreach ([['post_type' => 'reel'], ['first_comment' => 'Changed after approval'], ['publish_now' => true]] as $tamper) {
+            $p = $this->approve($this->draft(['first_comment' => 'Approved original comment']));
+            MarketingPost::whereKey($p['id'])->update($tamper);
+            $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertConflict();
+        }
+        Http::assertNothingSent();
+    }
 }

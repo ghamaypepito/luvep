@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Coffee } from "lucide-react";
-export default function BreakDialog({ state, pending, resume, error }) {
+export default function BreakDialog({ state, pending, resume, error, refresh }) {
     const dialog = useRef(null);
     useEffect(() => {
         if (state?.status === "on_break") {
@@ -34,6 +34,7 @@ export default function BreakDialog({ state, pending, resume, error }) {
                 >
                     I’m back · resume work
                 </button>
+                {error && <button type="button" className="hr-button-secondary" onClick={refresh}>Refresh clock</button>}
                 <button
                     className="hr-button-secondary"
                     onClick={() => dialog.current.close()}

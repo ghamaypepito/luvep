@@ -16,11 +16,11 @@ class TicketAttachments
 
     public const TYPES = 'jpg,jpeg,png,webp,gif,mp4,webm,mov,pdf,doc,docx,xls,xlsx,csv,txt,zip';
 
-    public static function rules(): array
+    public static function rules(string $field = 'attachments'): array
     {
         return [
-            'attachments' => ['nullable', 'array', 'max:'.self::MAX_FILES],
-            'attachments.*' => ['required', 'file', 'mimes:'.self::TYPES, 'extensions:'.self::TYPES, 'max:'.self::MAX_KB],
+            $field => ['nullable', 'array', 'max:'.self::MAX_FILES],
+            $field.'.*' => ['required', 'file', 'mimes:'.self::TYPES, 'extensions:'.self::TYPES, 'max:'.self::MAX_KB],
         ];
     }
 

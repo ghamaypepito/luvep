@@ -1,0 +1,130 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const { JSDOM } = require('jsdom');
+const Module = require('node:module');
+const path = require('node:path');
+const { webcrypto } = require('node:crypto');
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/education/reports?preset=this_week' });
+for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+if (!global.crypto) Object.defineProperty(global, 'crypto', { value: webcrypto });
+global.IS_REACT_ACT_ENVIRONMENT = true;
+const React = require('react');
+const { act } = React;
+const { createRoot } = require('react-dom/client');
+const requests = [];
+const inertia = { router: Object.fromEntries(['post', 'patch', 'delete', 'get'].map(method => [method, (...args) => requests.push({ method, args })])) };
+const output = buildSync({ entryPoints: ['resources/js/components/education/PersonalReport.jsx'], bundle: true, write: false,
+    format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
+const loaded = new Module(path.resolve('education-dated-notes.cjs'), module);
+loaded.filename = path.resolve('education-dated-notes.cjs'); loaded.paths = module.paths;
+loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
+loaded._compile(output, loaded.filename);
+const Report = loaded.exports.default;
+const root = createRoot(document.getElementById('root'));
+const categories = { accomplishments: 'Weekly accomplishment', other_activities: 'Other activity' };
+const note = { id: 1, date: '2026-11-11', category: 'other_activities', body: 'Original meeting\nSecond line', revision: 3 };
+const data = {
+    today: '2026-11-12', notes_week_start: '2026-11-09',
+    notes: { accomplishments: 'Untouched accomplishment', other_activities: 'Old undated meeting', next_week_tasks: 'Plan' },
+    kinds: {}, counts: {}, contacts: {}, entries: { data: [], current_page: 1, last_page: 1 },
+    dated_notes: { categories, day_counts: { '2026-11-11': 31, '2026-11-10': 1 }, entries: { data: [note,
+        { id: 2, date: '2026-11-11', category: 'accomplishments', body: '<script>unsafe</script>', revision: 1 },
+        { id: 3, date: '2026-11-10', category: 'other_activities', body: 'Earlier note', revision: 1 }], current_page: 1, last_page: 2,
+        prev_page_url: null, next_page_url: '/portal/education/reports?preset=this_week&note_page=2' } },
+};
+const render = next => act(async () => root.render(React.createElement(Report, { data: next })));
+const byLabel = label => document.querySelector('[aria-label="' + label + '"]');
+const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
+const click = node => act(async () => { assert.ok(node); node.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+const change = (node, value) => act(async () => {
+    assert.ok(node); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), 'value').set.call(node, value);
+    node.dispatchEvent(new Event(node.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+});
+const submit = node => act(async () => node.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+const finish = async ({ ok = false, error } = {}) => act(async () => {
+    const request = requests.at(-1); const options = request.args[request.method === 'delete' ? 1 : 2];
+    if (error) options.onError(error); else if (ok) options.onSuccess();
+    options.onFinish?.();
+});
+(async () => {
+    await render(data);
+    const section = byLabel('Dated weekly notes');
+    assert.equal(section.querySelectorAll('details').length, 2);
+    assert.match(section.textContent, /Wednesday, 11 November 2026 · 31 entries/);
+    assert.match(section.textContent, /Showing 2 of 31 entries/);
+    assert.match(section.textContent, /Tuesday, 10 November 2026 · 1 entry/);
+    assert.equal(section.querySelector('script'), null, 'Note body must render as text');
+    assert.match(section.textContent, /<script>unsafe<\/script>/);
+    assert.equal(byLabel('Weekly accomplishments').value, 'Untouched accomplishment');
+    assert.equal(byLabel('Other activities').value, 'Old undated meeting');
+    assert.equal(byLabel('My weekly Education notes').contains(byLabel('Add dated weekly note')), false, 'No nested forms');
+    const details = section.querySelector('details');
+    details.open = false; assert.equal(details.open, false); details.open = true;
+    await submit(byLabel('Add dated weekly note'));
+    assert.equal(requests.length, 0, 'Blank draft must not send');
+    await change(byLabel('Dated note date'), '2026-11-10');
+    await change(byLabel('Dated note category'), 'accomplishments');
+    await change(byLabel('Dated note text'), 'New dated achievement');
+    assert.equal(byLabel('Edit dated note 1').disabled, true, 'Do not discard an unsaved new draft by opening an edit');
+    await submit(byLabel('Add dated weekly note'));
+    const first = requests.at(-1);
+    assert.equal(first.method, 'post'); assert.equal(first.args[0], '/portal/education/reports/dated-notes');
+    assert.equal(first.args[1].occurred_on, '2026-11-10');
+    assert.equal(first.args[1].category, 'accomplishments');
+    await submit(byLabel('Add dated weekly note')); assert.equal(requests.length, 1);
+    await finish({ error: { body: 'Save failed' } });
+    assert.equal(byLabel('Dated note text').value, 'New dated achievement');
+    assert.match(section.textContent, /Save failed/);
+    await render({ ...data, notes_week_start: '2026-11-02', dated_notes: { ...data.dated_notes, entries: { ...data.dated_notes.entries, data: [] } } });
+    assert.equal(byLabel('Dated note date').value, '2026-11-10', 'Report navigation must preserve draft date');
+    await submit(byLabel('Add dated weekly note'));
+    assert.equal(requests.at(-1).args[1].submission_key, first.args[1].submission_key);
+    await finish({ ok: true });
+    assert.equal(byLabel('Dated note text').value, '');
+    await change(byLabel('Dated note text'), 'Next note');
+    await submit(byLabel('Add dated weekly note'));
+    assert.notEqual(requests.at(-1).args[1].submission_key, first.args[1].submission_key);
+    await finish({ ok: true });
+    await render(data);
+    await click(byLabel('Edit dated note 1'));
+    assert.equal(byLabel('Dated note text').value, note.body);
+    await change(byLabel('Dated note date'), '2026-11-09');
+    await change(byLabel('Dated note text'), 'Corrected draft');
+    await submit(byLabel('Edit dated weekly note'));
+    assert.equal(requests.at(-1).method, 'patch');
+    assert.deepEqual(requests.at(-1).args[1], { occurred_on: '2026-11-09', category: 'other_activities', body: 'Corrected draft', revision: 3 });
+    await finish({ error: { revision: 'Changed in another window' } });
+    assert.equal(byLabel('Dated note text').value, 'Corrected draft');
+    assert.match(section.textContent, /Changed in another window/);
+    await submit(byLabel('Edit dated weekly note'));
+    await finish({ ok: true });
+    assert.equal(byLabel('Edit dated weekly note'), null);
+    await click(byLabel('Edit dated note 1'));
+    await click(button('Cancel note edit'));
+    assert.equal(byLabel('Edit dated weekly note'), null);
+    assert.equal(document.activeElement, section.querySelector('h3'));
+    await click(byLabel('Remove dated note 1'));
+    const count = requests.length;
+    await click(button('Keep note')); assert.equal(requests.length, count);
+    await click(byLabel('Remove dated note 1'));
+    await click(button('Confirm remove note'));
+    assert.equal(requests.at(-1).method, 'delete');
+    assert.deepEqual(requests.at(-1).args[1].data, { revision: 3 });
+    await finish({ error: { revision: 'Newer version exists' } });
+    assert.ok(byLabel('Confirm dated note removal'));
+    assert.match(section.textContent, /Newer version exists/);
+    await click(button('Keep note'));
+    await click(button('Next notes'));
+    assert.equal(requests.at(-1).method, 'get');
+    assert.equal(requests.at(-1).args[0], data.dated_notes.entries.next_page_url);
+    await render({ ...data, dated_notes: { ...data.dated_notes, day_counts: {}, entries: { data: [], last_page: 1 } } });
+    assert.match(section.textContent, /No dated notes in this reporting period/);
+    assert.equal(byLabel('Other activities').value, 'Old undated meeting');
+    assert.equal(byLabel('Next week\'s tasks').value, 'Plan');
+    await change(byLabel('Dated note text'), 'Keep until discarded');
+    await click(button('Discard dated note draft'));
+    assert.equal(byLabel('Dated note text').value, '');
+    await act(async () => root.unmount());
+    console.log('Dated weekly notes actual-report tests passed: day groups, counts, legacy preservation, retry, edit conflicts, removal confirmation, pagination and safe rendering');
+})().catch(error => { console.error(error); process.exitCode = 1; });

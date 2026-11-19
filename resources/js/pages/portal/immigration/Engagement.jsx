@@ -1,3 +1,4 @@
+import StaffSignatureUpload from '@/components/immigration/StaffSignatureUpload';
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Head, router, Link } from "@inertiajs/react";
@@ -183,8 +184,18 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [] }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, internalSignatureNotificationsReady = false }) {
+    const [query, setQuery] = useState(search);
+    useEffect(() => { setQuery(search); }, [search]);
+    const searchEngagements = (value) => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("case");
+        if (value.trim()) url.searchParams.set("q", value.trim());
+        else url.searchParams.delete("q");
+        router.get(url.pathname + url.search, {}, { preserveState: true, preserveScroll: true, replace: true });
+    };
     const [modalOpen, setModalOpen] = useState(false);
+    const [signatureFor, setSignatureFor] = useState(null);
     const [auditFor, setAuditFor] = useState(null);   // { case_name, audit } for the audit-trail modal
     const [manageFor, setManageFor] = useState(null); // the draft row being managed
     const [preselectedCase, setPreselectedCase] = useState(null);
@@ -245,6 +256,19 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                 ))}
             </div>
 
+            {view === "documents" && (
+                <form role="search" aria-label="Search Engagement" onSubmit={(event) => { event.preventDefault(); searchEngagements(query); }} className="flex flex-wrap items-end gap-2">
+                    <label className="flex-1 min-w-[220px] text-xs font-semibold text-gray-600">
+                        Search Engagement
+                        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} maxLength={150}
+                            placeholder="Client name, reference, email or phone"
+                            className="mt-1 block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <button type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">Search</button>
+                    {(query || search) && <button type="button" onClick={() => { setQuery(""); searchEngagements(""); }} className="rounded-lg border px-4 py-2 text-sm">Clear</button>}
+                </form>
+            )}
+
             {/* Recently generated — same column layout as Proposals & Agreements */}
             {view === "documents" && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -254,7 +278,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
 
                 {generated.length === 0 ? (
                     <div className="px-5 py-12 text-center text-sm text-gray-400">
-                        No engagement documents generated yet. Click <span className="font-semibold text-gray-600">New</span> to start.
+                        {search ? "No engagement records match your search. Clear the search to see recent records." : <>No engagement documents generated yet. Click <span className="font-semibold text-gray-600">New</span> to start.</>}
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -376,6 +400,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                                         <Check size={11} /> Signed
                                                     </span>
+                                                    {c.signature_uploaded_by && <p className="mt-1 text-[10px] text-gray-500">Uploaded by staff: {c.signature_uploaded_by}</p>}
                                                     {(c.signer_name || c.signed_at) && (
                                                         <div className="text-[10px] text-gray-400 mt-1">
                                                             {c.signer_name}{c.signer_name && c.signed_at ? " · " : ""}{c.signed_at ? fmtDate(c.signed_at) : ""}
@@ -413,6 +438,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 >
                                                     <ScrollText size={13} />
                                                 </button>
+                                                {canUploadSignature && !c.signed && !c.is_draft && c.documents.some((doc) => ['written_agreement', 'initial_consultation', 'oia'].includes(doc.type_key) && !doc.signed) && <button type="button" onClick={() => setSignatureFor(c)} className="rounded-lg border px-2 py-1 text-[11px] font-semibold text-teal-800">Upload signature</button>}
                                                 <DeleteCaseDocsButton
                                                     caseId={c.case_id}
                                                     packId={c.pack_id}
@@ -455,6 +481,8 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                     )}
                 </div>
             )}
+
+            {signatureFor && <StaffSignatureUpload record={signatureFor} internalReady={internalSignatureNotificationsReady} onClose={() => setSignatureFor(null)} onSaved={() => router.reload({ preserveScroll: true })} />}
 
             {modalOpen && (
                 <NewEngagementModal
@@ -517,6 +545,7 @@ function AuditTrailModal({ caseName, audit = {}, onClose }) {
                                     {signed ? "Signed" : "Awaiting signature"}
                                 </span>
                             } />
+                            {audit.signature_uploaded_by && <Row label="Signature source" value={`Client-provided signature uploaded by ${audit.signature_uploaded_by}`} />}
                             <Row label="Status timestamp" value={<span className="whitespace-pre-line tabular-nums">{fmt(audit.status_at)} UTC</span>} />
                         </dl>
                     </section>
@@ -583,6 +612,13 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
+    const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
+    const defaultServiceFee = consultation ? 250 : 500;
+    const serviceFee = serviceFees[engagementType];
+    const serviceFeeOverride = specialService && serviceFee != null && serviceFee !== "" ? String(serviceFee) : null;
+    const serviceFeeValid = serviceFeeOverride === null || (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(serviceFeeOverride) && Number(serviceFeeOverride) <= 9999999);
+    const baseServiceFee = Number(serviceFeeOverride ?? defaultServiceFee);
+    const serviceGst = consultation ? 0 : Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100;
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
@@ -804,6 +840,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         engagement_type: engagementType, types: selectedTypes, signer_id: signerId,
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
+        ...(specialService ? { service_fee: serviceFeeOverride } : {}),
         ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
             consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
@@ -815,6 +852,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
+        ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
         ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
             consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}), _r: familyRefresh,
     });
@@ -1109,7 +1147,20 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
-                                <p className="font-semibold">{consultation ? "USD 250.00 booking fee" : "NZD 500.00 + 75.00 GST = NZD 575.00"}</p>
+                                <label className="block text-xs font-semibold">
+                                    {consultation ? "Booking fee (USD)" : "Service fee (NZD, ex GST)"}
+                                    <input type="text" inputMode="decimal" disabled={!!draft?.signed}
+                                        value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
+                                        onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
+                                        aria-invalid={!serviceFeeValid} aria-describedby="engagement-service-fee-note"
+                                        className={`${ctrlCls} mt-1.5`} />
+                                </label>
+                                <p id="engagement-service-fee-note" className={`mt-1 text-xs ${serviceFeeValid ? "" : "text-red-700"}`}>
+                                    {serviceFeeValid ? "Leave blank to use the standard fee." : "Enter an amount from 0 to 9,999,999 with up to two decimal places."}
+                                </p>
+                                {serviceFeeValid && <p className="mt-2 font-semibold tabular-nums">
+                                    {consultation ? `Total USD ${fmtFee(baseServiceFee)}` : `NZD ${fmtFee(baseServiceFee)} + ${fmtFee(serviceGst)} GST = NZD ${fmtFee(baseServiceFee + serviceGst)}`}
+                                </p>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
                             </div>}
@@ -1209,7 +1260,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => { if (!submitting) onClose(); }} disabled={submitting} className="px-3 py-2 text-sm font-semibold text-gray-600 disabled:opacity-50">Close</button>
                         <button type="button" onClick={flow.generate}
-                            disabled={!selectedCase || !selectedTypes.length || !signerId || submitting || selectedSigner?.licence_current === false || !!draft?.signed}
+                            disabled={!selectedCase || !selectedTypes.length || !signerId || submitting || !serviceFeeValid || selectedSigner?.licence_current === false || !!draft?.signed}
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                             {flow.busy === "prepare" ? "Generating…" : "Generate"}
                         </button>

@@ -7,7 +7,7 @@ import PdfViewerModal from "@/components/PdfViewerModal";
 // Agent-facing view of their own Affiliate Partner Agreement. After staff
 // generate it, the agent fills their own Schedule B (bank + contact details)
 // and then e-signs it.
-export default function AgentAgreement({ agreement = null, affiliateFields = [], affiliateValues = {} }) {
+export default function AgentAgreement({ agreement = null, agreements = [], affiliateFields = [], affiliateValues = {} }) {
     const [signOpen, setSignOpen] = useState(false);
     const [viewOpen, setViewOpen] = useState(false);
 
@@ -18,10 +18,10 @@ export default function AgentAgreement({ agreement = null, affiliateFields = [],
 
     return (
         <div className="space-y-6 max-w-3xl">
-            <Head title="My Agreement" />
+            <Head title="My Affiliate Agreement" />
 
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Agreement</h1>
+                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Affiliate Agreement</h1>
                 <p className="text-sm text-gray-500 mt-1">Your Affiliate Partner Agreement with EP.</p>
             </div>
 
@@ -43,7 +43,7 @@ export default function AgentAgreement({ agreement = null, affiliateFields = [],
                                 <a href={agreement.download_url} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
                                     <Download size={14} /> Download
                                 </a>
-                                {! agreement.signed && (
+                                {! agreement.signed && agreement.can_sign && (
                                     <button type="button" onClick={() => setSignOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black transition-colors">
                                         <PenTool size={14} /> Sign agreement
                                     </button>
@@ -70,7 +70,8 @@ export default function AgentAgreement({ agreement = null, affiliateFields = [],
                     </div>
 
                     {/* Schedule B — the agent fills their own bank + contact details. */}
-                    <DetailsCard fields={affiliateFields} values={affiliateValues} />
+                    {agreement.can_edit && <DetailsCard key={agreement.id} agreementId={agreement.id} fields={affiliateFields} values={affiliateValues} />}
+                    {!agreement.can_edit && <p className="text-sm text-gray-600">{agreement.legacy ? "This existing agreement is preserved as issued. Ask EP to create a new version for further signing." : "This agreement’s details are locked. Corrections require a new version."}</p>}
                 </>
             ) : (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
@@ -84,16 +85,29 @@ export default function AgentAgreement({ agreement = null, affiliateFields = [],
                 </div>
             )}
 
+            {agreements.length > 0 && (
+                <section className="rounded-2xl border border-gray-100 bg-white p-6">
+                    <h2 className="text-lg font-semibold mb-4">Agreement history</h2>
+                    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+                        <thead><tr className="text-gray-500"><th className="py-2">Version</th><th>Status</th><th>Prepared</th><th>Signed</th><th>Expires</th><th>Documents</th></tr></thead>
+                        <tbody>{agreements.map(version => <tr key={version.id} className="border-t border-gray-100">
+                            <td className="py-3">{version.version}</td><td>{version.status}</td><td>{fmtDate(version.created_at)}</td><td>{fmtDate(version.agent_signed_at)}</td><td>{version.expires_on || "—"}</td>
+                            <td><a className="text-emerald-800 underline mr-3" href={version.view_url} target="_blank" rel="noreferrer">View</a><a className="text-emerald-800 underline" href={version.download_url}>Download</a></td>
+                        </tr>)}</tbody>
+                    </table></div>
+                </section>
+            )}
+
             {signOpen && agreement && (
                 <AgreementSignModal
-                    postUrl="/portal/agent/agreement/sign"
+                    postUrl={agreement.sign_url}
                     title="Sign your agreement"
                     requireTerms
                     reviewUrl={agreement.view_url}
-                    extraFields={affiliateFields}
+                    extraFields={agreement.can_edit ? affiliateFields : []}
                     extraInitial={affiliateValues}
                     extraTitle="Your bank account & contact details"
-                    previewUrl="/portal/agent/agreement/preview"
+                    previewUrl={agreement.preview_url}
                     onClose={() => setSignOpen(false)}
                 />
             )}
@@ -111,7 +125,7 @@ export default function AgentAgreement({ agreement = null, affiliateFields = [],
 }
 
 // ── Schedule B — bank account & contact details, filled by the agent. ──
-function DetailsCard({ fields, values }) {
+function DetailsCard({ agreementId, fields, values }) {
     const [form, setForm] = useState(() => {
         const seed = {};
         fields.forEach((f) => { seed[f.key] = values[f.key] ?? ""; });
@@ -122,7 +136,7 @@ function DetailsCard({ fields, values }) {
     const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
     const save = () => {
         setSaving(true);
-        router.post("/portal/agent/agreement/details", form, {
+        router.post(`/portal/agent/agreement/details?agreement=${agreementId}`, form, {
             preserveScroll: true,
             onFinish: () => setSaving(false),
         });

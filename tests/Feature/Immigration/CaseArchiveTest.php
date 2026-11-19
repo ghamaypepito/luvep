@@ -86,7 +86,7 @@ class CaseArchiveTest extends TestCase
         $this->postJson("/portal/education/students/{$case->id}/update", ['first_name' => 'Modified'] + $contact)
             ->assertUnprocessable()->assertJsonValidationErrors('first_name');
         $this->post("/portal/education/students/{$case->id}/update", ['first_name' => 'Two Names', 'payment' => 'Paid'] + $contact)
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasNoErrors()->assertSessionMissing('error');
         $this->assertSame('Paid', $case->fresh()->student_payment);
     }
 

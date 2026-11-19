@@ -411,7 +411,7 @@ class Lead extends Model
         'assigned_to',
         // Recruiting Agent (role='agent') who added this lead. Scopes the
         // Agent portal to its own leads + surfaces on the Sales Agents tab.
-        'agent_id',
+        'agent_id', 'original_affiliate_id', 'referred_at',
         // Last time the lead opened their /track/{code} page
         'last_seen_at',
         // INZ lodgement tracking
@@ -503,6 +503,7 @@ class Lead extends Model
     ];
 
     protected $casts = [
+        'referred_at' => 'datetime',
         'work_info' => 'array',
         'event_response' => 'array',
         'event_notes_updated_at' => 'datetime',
@@ -834,6 +835,14 @@ class Lead extends Model
             }
         });
 
+        static::updating(function (Lead $lead) {
+            if ($lead->isDirty(['original_affiliate_id', 'referred_at'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'original_affiliate_id' => 'Original Affiliate Partner attribution cannot be changed.',
+                ]);
+            }
+        });
+
         // Stamp who last touched the record, and with what, before the row
         // is written — this is what the portals' Updated column reports.
         static::updating(fn (Lead $lead) => $lead->stampLastActivity());
@@ -1034,6 +1043,13 @@ class Lead extends Model
     public function documentRequests()
     {
         return $this->hasMany(LeadDocumentRequest::class);
+    }
+
+    /** Original referral wins for reporting after a staff reassignment. */
+    public function scopeReferredByAffiliate($query, int $affiliateId)
+    {
+        return $query->where(fn ($q) => $q->where('original_affiliate_id', $affiliateId)
+            ->orWhere(fn ($q) => $q->whereNull('original_affiliate_id')->where('agent_id', $affiliateId)));
     }
 
     public function tags()

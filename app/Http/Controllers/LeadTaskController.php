@@ -67,6 +67,8 @@ class LeadTaskController extends Controller
 
     public function update(Request $request, $leadId, $taskId)
     {
+        abort_if(\App\Models\CreativeRequest::withTrashed()->where('lead_task_id', $taskId)->exists(), 403, 'Update creative requests from the task board or Digital queue.');
+
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'sometimes|nullable|string|max:1000',
@@ -100,12 +102,14 @@ class LeadTaskController extends Controller
 
     public function destroy(Request $request, $leadId, $taskId)
     {
+        abort_if(\App\Models\CreativeRequest::withTrashed()->where('lead_task_id', $taskId)->exists(), 403, 'Delete creative requests from the Digital queue so they can be recovered.');
+
         try {
             $task = LeadTask::where('lead_id', $leadId)->findOrFail($taskId);
             $user = Auth::user();
 
             $canDelete = $user?->isAdmin() || $task->created_by === $user?->id;
-            $canDelete ? $task->delete() : abort(403, 'You can only delete tasks you created.');
+            $canDelete ? $task->forceDelete() : abort(403, 'You can only delete tasks you created.');
 
             return back()->with('success', 'Task removed.');
         } catch (\Throwable $e) {

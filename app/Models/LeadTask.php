@@ -6,10 +6,11 @@ use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LeadTask extends Model
 {
-    use LogsActivity;
+    use LogsActivity, SoftDeletes;
 
     public const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 

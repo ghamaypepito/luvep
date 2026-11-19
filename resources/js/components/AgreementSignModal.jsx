@@ -46,6 +46,7 @@ function renderNameSignature(name) {
  */
 export default function AgreementSignModal({
     postUrl,
+    agreementId = null,
     title = "Sign agreement",
     requireTerms = false,
     reviewUrl = null,
@@ -103,10 +104,10 @@ export default function AgreementSignModal({
     }, [extra, previewUrl]);
     const previewSrc = useMemo(() => {
         if (! previewUrl) return null;
-        const params = new URLSearchParams();
+        const params = new URLSearchParams(previewUrl.split("?")[1] || "");
         Object.entries(previewFields).forEach(([k, v]) => params.set(k, v ?? ""));
         const q = params.toString();
-        return q ? `${previewUrl}?${q}` : previewUrl;
+        return q ? `${previewUrl.split("?")[0]}?${q}` : previewUrl;
     }, [previewUrl, previewFields]);
     useEffect(() => { if (previewSrc) setPreviewLoading(true); }, [previewSrc]);
 
@@ -134,6 +135,7 @@ export default function AgreementSignModal({
 
         setSubmitting(true);
         const payload = { signer_name: signerName.trim(), signature_data: signatureData(), ...extra };
+        if (agreementId !== null) payload.agreement_id = agreementId;
         if (requireTerms) payload.terms_accepted = terms ? 1 : 0;
 
         router.post(postUrl, payload, {
@@ -148,13 +150,13 @@ export default function AgreementSignModal({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3">
+        <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3">
             <div className={`bg-white rounded-2xl shadow-xl w-full flex flex-col overflow-hidden ${previewUrl ? "max-w-[1400px] h-[94vh]" : "max-w-2xl max-h-[94vh]"}`}>
                 <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between shrink-0">
                     <h3 className="text-[15px] font-bold text-gray-900 flex items-center gap-2">
                         <FileSignature size={17} /> {title}
                     </h3>
-                    <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X size={18} /></button>
+                    <button type="button" aria-label="Close signing dialog" onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X size={18} /></button>
                 </div>
 
                 <div className="flex-1 flex min-h-0">
@@ -213,9 +215,10 @@ export default function AgreementSignModal({
                     )}
 
                     <div>
-                        <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Type your full legal name</label>
+                        <label htmlFor="agreement-signer-name" className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Type your full legal name</label>
                         <input
                             type="text"
+                            id="agreement-signer-name"
                             value={signerName}
                             onChange={(e) => setSignerName(e.target.value)}
                             maxLength={200}
