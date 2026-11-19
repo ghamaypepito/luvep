@@ -257,14 +257,6 @@ class ResidentIntakeController extends Controller
     {
         $intake = ResidentIntake::where('edit_token', $token)->firstOrFail();
 
-        // Editing doesn't re-require the terms-accept checkbox — that's part of the
-        // original submission. Everything else is validated identically.
-        $validated = $request->validate($this->intakeRules(
-            requireTerms: false, staffEvidenceRecorded: $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED,
-        ));
-
-        unset($validated['document_files'], $validated['terms_accepted']);
-
         $documents = collect((array) $request->input('documents', []))
             ->map(fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN))
             ->all();
@@ -272,7 +264,12 @@ class ResidentIntakeController extends Controller
         try {
             DB::beginTransaction();
 
-            $intake = ResidentIntake::whereKey($intake->id)->lockForUpdate()->firstOrFail();
+            $intake = ResidentIntake::whereKey($intake->id)->where('edit_token', $token)->lockForUpdate()->firstOrFail();
+            // Validation and field protection must use the same locked staff evidence state.
+            $validated = $request->validate($this->intakeRules(
+                requireTerms: false, staffEvidenceRecorded: $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED,
+            ));
+            unset($validated['document_files'], $validated['terms_accepted']);
             // Applicant edits cannot replace a staff decision, including a stale form opened before it.
             $validated = \Illuminate\Support\Arr::except($validated, $intake->applicantReadOnlyFields());
 
@@ -291,6 +288,10 @@ class ResidentIntakeController extends Controller
                 'intake_id' => $intake->intake_id,
                 'edited' => true,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Resident intake edit-link update failed', ['error' => $e->getMessage()]);

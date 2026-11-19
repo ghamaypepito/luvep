@@ -710,6 +710,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const [rightTab, setRightTab] = useState("notes");
     const [editSection, setEditSection] = useState(null);
     const [draft, setDraft] = useState({});
+    const editBaseline = useRef({});
     const [savingSection, setSavingSection] = useState(false);
     const [sectionError, setSectionError] = useState("");
     const triedRef = useRef(false);
@@ -831,8 +832,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
     const requestAnswers = () => toast("Send answer requests via the applicant's edit link — not from here.");
     const ring = 2 * Math.PI * 24;
 
-    // Inline "Edit section" — seed a draft from the section's raw values, save
-    // the whole section to the staff update endpoint, then merge the fresh data.
+    // Send only changed fields so an unrelated edit cannot overwrite fresher staff choices.
     const startEdit = (idx, sec) => {
         const d = {};
         sec.fields.forEach((f) => { if (f.editable) d[f.key] = f.raw ?? ""; });
@@ -840,19 +840,29 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
             d.english_evidence_reason = data.english_evidence_exception?.reason || "";
         }
         setSectionError("");
+        editBaseline.current = d;
         setDraft(d);
         setEditSection(idx);
     };
-    const cancelEdit = () => { setEditSection(null); setDraft({}); setSectionError(""); };
+    const cancelEdit = () => { setEditSection(null); setDraft({}); editBaseline.current = {}; setSectionError(""); };
+    const englishEvidenceChanged = draft.english_evidence !== editBaseline.current.english_evidence
+        || draft.english_evidence_reason !== editBaseline.current.english_evidence_reason;
     const saveSection = () => {
         if (savingSection) return;
+        const fields = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== editBaseline.current[key]));
+        delete fields.english_evidence_reason;
+        if (englishEvidenceChanged && draft.english_evidence === "Not Required") {
+            fields.english_evidence = draft.english_evidence;
+            fields.english_evidence_reason = draft.english_evidence_reason;
+        }
+        if (!Object.keys(fields).length) { cancelEdit(); return; }
         setSectionError("");
         setSavingSection(true);
         fetch(`/portal/immigration/intakes/${i.visa_type}/${i.id}`, {
             method: "PATCH",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json", Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...assessCsrf() },
-            body: JSON.stringify({ fields: draft }),
+            body: JSON.stringify({ fields }),
         })
             .then(async (r) => {
                 const fresh = await r.json().catch(() => null);
@@ -866,6 +876,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                     setDataPatch(fresh);
                     setEditSection(null);
                     setDraft({});
+                    editBaseline.current = {};
                     toast.success("Saved.");
                 } else {
                     toast.error("Could not save changes.");
@@ -1018,7 +1029,7 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                             {editing ? (
                                                 <div className="flex items-center gap-2 flex-shrink-0">
                                                     <button type="button" onClick={cancelEdit} disabled={savingSection} className="text-[11px] font-semibold text-gray-500 hover:underline disabled:opacity-50">Cancel</button>
-                                                    <button type="button" onClick={saveSection} disabled={savingSection || (draft.english_evidence === "Not Required" && !draft.english_evidence_reason?.trim())} className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-[#009688] text-white text-[11px] font-bold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
+                                                    <button type="button" onClick={saveSection} disabled={savingSection || (englishEvidenceChanged && draft.english_evidence === "Not Required" && !draft.english_evidence_reason?.trim())} className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-[#009688] text-white text-[11px] font-bold hover:bg-[#00796b] disabled:bg-gray-200 disabled:text-gray-400">
                                                         {savingSection && <Loader2 size={11} className="animate-spin" />} Save
                                                     </button>
                                                 </div>

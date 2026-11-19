@@ -39,7 +39,7 @@ const data = { ai_review: {}, notes: [], sections: [{ title: 'English & Family',
 const button = (name) => [...document.querySelectorAll('button')].find((el) => el.textContent.trim() === name);
 async function change(element, value) {
     await act(async () => {
-        const proto = element.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLTextAreaElement.prototype;
+        const proto = element.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : element.tagName === 'INPUT' ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
         Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, value);
         element.dispatchEvent(new Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
     });
@@ -69,6 +69,28 @@ async function change(element, value) {
     assert.match(document.body.textContent, /Synthetic Manager/);
     assert.match(document.body.textContent, /Reason: Staff reviewed the evidence/);
     await act(async () => root.unmount());
+    // Family-only edits must not send blank or stale English values from the opened section.
+    for (const openedEvidence of ['', 'IELTS']) {
+        const familyField = { key: 'include_family', label: 'Family Members to Include', raw: 'No', value: 'No', provided: true, editable: true };
+        const opened = { ...data, sections: [{ title: 'English & Family', fields: [{ ...field, raw: openedEvidence, value: openedEvidence || '—', provided: !!openedEvidence }, familyField] }] };
+        let serverEvidence = openedEvidence;
+        let postedFields;
+        global.fetch = async (_url, options) => {
+            postedFields = JSON.parse(options.body).fields;
+            if (Object.hasOwn(postedFields, 'english_evidence')) serverEvidence = postedFields.english_evidence;
+            return { ok: true, json: async () => ({ ...opened, sections: [{ title: 'English & Family', fields: [{ ...field, raw: serverEvidence, value: serverEvidence || '—' }, { ...familyField, raw: 'Yes', value: 'Yes' }] }] }) };
+        };
+        root = createRoot(document.getElementById('root'));
+        await act(async () => root.render(React.createElement(IntakeViewModal, { intake: { visa_type: 'resident', id: 1 }, data: opened, loading: false, asPage: true, chromeless: true })));
+        await act(async () => button('Edit section').click());
+        if (openedEvidence === 'IELTS') serverEvidence = 'Not Required';
+        await change(document.querySelector('input[aria-label="Family Members to Include"]'), 'Yes');
+        await act(async () => button('Save').click());
+        assert.deepEqual(postedFields, { include_family: 'Yes' });
+        assert.equal(serverEvidence, openedEvidence === 'IELTS' ? 'Not Required' : '');
+        assert.equal(document.querySelector('input[aria-label="Family Members to Include"]'), null);
+        await act(async () => root.unmount());
+    }
     root = createRoot(document.getElementById('root'));
     await act(async () => root.render(React.createElement(StepEnglishFamily, { data: { english_evidence: '', include_family: 'No', family_members: [] }, errors: {}, setData: empty })));
     assert.match(document.body.textContent, /Qualification\(s\)/);

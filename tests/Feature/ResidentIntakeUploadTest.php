@@ -107,6 +107,34 @@ class ResidentIntakeUploadTest extends TestCase
         $this->assertSame($decision, $intake->fresh()->english_evidence_exception);
     }
 
+    public function test_edit_link_validates_against_the_same_fresh_record_it_writes(): void
+    {
+        $this->post('/resident-interest', $this->payload())->assertSessionHas('intake_submitted');
+        $intake = ResidentIntake::sole();
+        $intake->update([
+            'edit_token' => 'concurrent-staff-evidence', 'english_evidence' => 'Not Required',
+            'english_evidence_exception' => ['reason' => 'Earlier staff record'],
+        ]);
+        $changed = false;
+        // Simulate another staff save after the first token lookup and before the locked fresh read.
+        ResidentIntake::retrieved(function ($record) use ($intake, &$changed) {
+            if ($record->id === $intake->id && ! $changed) {
+                $changed = true;
+                ResidentIntake::whereKey($record->id)->update([
+                    'english_evidence' => 'IELTS', 'english_evidence_exception' => null,
+                    'english_test_score' => '7', 'english_test_date' => '2026-10-01',
+                ]);
+            }
+        });
+        $this->postJson('/resident-interest/edit/'.$intake->edit_token, $this->payload([
+            'english_evidence' => null, 'english_test_score' => null, 'english_test_date' => null,
+        ]))->assertUnprocessable()->assertJsonValidationErrors('english_evidence');
+        $intake->refresh();
+        $this->assertSame('IELTS', $intake->english_evidence);
+        $this->assertSame('7', $intake->english_test_score);
+        $this->assertNull($intake->english_evidence_exception);
+    }
+
     public function test_qualification_evidence_can_be_saved_and_reopened_without_test_results(): void
     {
         $qualification = $this->payload(['english_evidence' => 'Qualification(s)']);

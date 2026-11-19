@@ -101,4 +101,21 @@ class ResidentEnglishExceptionTest extends TestCase
         $this->patchJson($url, ['fields' => ['english_evidence_exception' => ['reason' => 'Forged']]])
             ->assertUnprocessable()->assertJsonValidationErrors('fields.english_evidence_exception');
     }
+
+    public function test_family_only_edits_do_not_require_or_replace_english_evidence(): void
+    {
+        $intake = $this->intake();
+        $intake->update(['english_evidence' => null, 'english_test_score' => null, 'english_test_date' => null]);
+        $this->actingAs(User::factory()->create(['role' => 'immigration_manager']));
+        $url = "/portal/immigration/intakes/resident/{$intake->id}";
+        $this->patchJson($url, ['fields' => ['include_family' => 'Yes']])->assertOk();
+        $this->assertNull($intake->fresh()->english_evidence);
+        $this->patchJson($url, ['fields' => ['english_evidence' => 'Not Required', 'english_evidence_reason' => 'Fresh staff record']])->assertOk();
+        $decision = $intake->fresh()->english_evidence_exception;
+        $this->patchJson($url, ['fields' => ['include_family' => 'No']])->assertOk();
+        $intake->refresh();
+        $this->assertSame('Not Required', $intake->english_evidence);
+        $this->assertSame($decision, $intake->english_evidence_exception);
+        $this->assertSame('No', $intake->include_family);
+    }
 }
