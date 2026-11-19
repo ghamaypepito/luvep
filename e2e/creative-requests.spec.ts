@@ -7,8 +7,12 @@ const password = process.env.CREATIVE_E2E_PASSWORD;
 test.use({ timezoneId: 'Asia/Manila' });
 test.skip(!origin || !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin) || !email || !password, 'Requires the seeded local Creative Requests preview.');
 
-test('caption and private references reach the task and DTR, preserving a Manila deadline', async ({ page }) => {
+test('updated short brief and private references reach the task and DTR without inventing a deadline', async ({ page }) => {
     const title = `Creative browser workflow ${Date.now()}`;
+    let dtrWrites = 0;
+    page.on('request', request => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/portal/hr/dtr') dtrWrites++;
+    });
     await page.goto(`${origin}/login`);
     await page.locator('#email').fill(email!);
     await page.locator('#password').fill(password!);
@@ -16,25 +20,81 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await page.waitForURL(/admin/);
     await page.goto(`${origin}/admin/system-tickets?type=digital`);
     await page.getByRole('button', { name: 'New creative request', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Creative brief ticket', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Project name')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'New creative request', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: 'New creative request', exact: true }).click();
+    for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+        await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
     await page.getByLabel('Project name').fill(title);
-    await page.getByLabel('Deadline', { exact: false }).first().fill('2026-11-27');
-    await page.getByLabel('What do you need designed?').fill('Create a consultation campaign graphic.');
+    await page.screenshot({ path: test.info().outputPath('creative-request-popup.png') });
+    await expect(page.locator('[name=deadline]')).toHaveCount(0);
+    await expect(page.locator('[name=approver]')).toHaveCount(0);
+    await page.getByRole('textbox', { name: 'Project overview', exact: false }).fill('Create a consultation campaign graphic.');
     await page.locator('.cw-steps button').nth(1).click();
-    await page.getByLabel('Caption', { exact: false }).fill('Plan your next chapter. #StudyInNZ');
+    await page.getByLabel('Required copy', { exact: false }).fill('Plan your next chapter. #StudyInNZ');
     await page.locator('.cw-steps button').nth(2).click();
-    await page.getByLabel('Social media graphic', { exact: true }).check();
+    await page.getByLabel('Digital media', { exact: false }).check();
     await page.locator('.cw-steps button').nth(3).click();
     await page.getByLabel('Sample designs / references').setInputFiles({ name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('Reference layout: clear headline and approved logo.') });
-    await page.locator('.cw-steps button').nth(5).click();
-    await page.getByLabel('Final approver').fill('Marketing lead');
+    await page.locator('.cw-steps button').nth(4).click();
+    await page.getByRole('textbox', { name: 'Curated assets', exact: true }).fill('https://example.test/approved-assets');
+    await page.getByLabel('Curated asset files', { exact: false }).setInputFiles([
+        { name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') },
+        { name: 'brand-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Approved campaign asset notes.') },
+    ]);
+    await expect(page.getByRole('img', { name: 'logo.png', exact: true })).toBeVisible();
+    for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.screenshot({ path: test.info().outputPath('curated-assets-upload.png') });
+    await page.getByLabel('Additional notes', { exact: true }).fill('Use the approved logo.');
     await expect(page.getByRole('button', { name: 'Submit creative request', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Submit creative request', exact: true }).click();
     await page.waitForURL(/creative-requests\/\d+$/);
     const requestUrl = page.url();
+    await expect(page.locator('header .cw-eyebrow')).toContainText('Digital · CR-');
+    const requestRef = (await page.locator('header .cw-eyebrow').innerText()).match(/CR-[A-Z0-9]+/)![0];
     await expect(page.getByText('Plan your next chapter. #StudyInNZ', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Download reference.txt' })).toBeVisible();
+    const assetSection = page.locator('.cw-brief-section').filter({ has: page.getByRole('heading', { name: 'Curated assets', exact: true }) });
+    const referenceSection = page.locator('.cw-brief-section').filter({ has: page.getByRole('heading', { name: 'References & inspiration', exact: true }) });
+    await expect(assetSection.getByRole('link', { name: 'Download logo.png', exact: true })).toBeVisible();
+    await expect(assetSection.getByRole('link', { name: 'Download brand-notes.txt', exact: true })).toBeVisible();
+    await expect(referenceSection.getByRole('link', { name: 'Download logo.png', exact: true })).toHaveCount(0);
+    const logoDownload = await assetSection.getByRole('link', { name: 'Download logo.png', exact: true }).getAttribute('href');
+    expect((await page.request.get(logoDownload!)).status()).toBe(200);
     await page.goto(`${origin}/portal/hr/dtr`);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    const assigned = page.locator('.cw-assigned-row').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+    await expect(assigned).toContainText('1 reference file');
+    await expect(assigned).toContainText('2 curated assets');
+    await assigned.getByRole('button', { name: 'Add to daily record', exact: true }).click();
+    const added = page.locator('.hr-task-editor').filter({ has: page.locator('textarea').filter({ hasText: title }) });
+    await expect(added.locator('textarea')).toBeFocused();
+    await expect(added.locator('input[type=time]').first()).toHaveValue('');
+    await expect(added.locator('input[type=time]').last()).toHaveValue('');
+    await expect(added.getByLabel('Client or reference')).toHaveValue(requestRef);
+    await page.screenshot({ path: test.info().outputPath('creative-request-dtr-draft.png') });
+    await assigned.getByRole('button', { name: 'Add to daily record', exact: true }).click();
+    await expect(added).toHaveCount(1);
+    expect(dtrWrites).toBe(0);
+    for (const width of [1440, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    }
+    await page.setViewportSize({ width: 1440, height: 1080 });
+    await page.getByRole('button', { name: 'Cancel editing', exact: true }).click();
+    await page.reload();
+    await expect(page.locator('.hr-task-editor')).toHaveCount(0);
+    expect(dtrWrites).toBe(0);
     await page.goto(`${origin}/admin/tasks?scope=mine`);
     const dueBefore = await page.evaluate((project) => JSON.parse(document.querySelector('#app')!.getAttribute('data-page')!).props.all_tasks.find((task: { title: string }) => task.title === project).due_at, title);
     await page.getByText(title, { exact: true }).first().click();
@@ -43,9 +103,10 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await expect(page.getByRole('dialog', { name: 'Task details' })).toBeHidden();
     await page.reload();
     const dueAfter = await page.evaluate((project) => JSON.parse(document.querySelector('#app')!.getAttribute('data-page')!).props.all_tasks.find((task: { title: string }) => task.title === project).due_at, title);
+    expect(dueBefore).toBeNull();
     expect(dueAfter).toBe(dueBefore);
     await page.goto(requestUrl);
-    await expect(page.getByText('Project deadline: 2026-11-27', { exact: true })).toBeVisible();
+    await expect(page.getByText('No deadline', { exact: true })).toBeVisible();
     for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
@@ -72,6 +133,7 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await page.getByRole('button', { name: 'Delete request', exact: true }).click();
     await expect(row).toHaveCount(0);
     expect((await page.request.get(requestUrl)).status()).toBe(404);
+    expect((await page.request.get(logoDownload!)).status()).toBe(404);
     await page.getByRole('link', { name: 'Deleted requests', exact: true }).click();
     await expect(row.locator('.cw-status')).toHaveText('Delivered');
     await expect(row.getByRole('link')).toHaveCount(0);
@@ -81,4 +143,6 @@ test('caption and private references reach the task and DTR, preserving a Manila
     await expect(page.getByText('Plan your next chapter. #StudyInNZ', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Download reference.txt' })).toBeVisible();
     await expect(page.locator('header .cw-status')).toHaveText('Delivered');
+    await expect(page.getByRole('link', { name: 'Download logo.png', exact: true })).toBeVisible();
+    expect((await page.request.get(logoDownload!)).status()).toBe(200);
 });

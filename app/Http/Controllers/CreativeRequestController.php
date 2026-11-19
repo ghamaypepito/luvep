@@ -8,6 +8,7 @@ use App\Models\LeadTask;
 use App\Models\User;
 use App\Notifications\CreativeRequestAssigned;
 use App\Support\TicketAttachments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -37,25 +38,67 @@ class CreativeRequestController extends Controller
         $filters = $request->validate(['status' => ['nullable', Rule::in(LeadTask::STATUSES)], 'view' => ['nullable', Rule::in(['active', 'deleted'])]]);
         $deleted = ($filters['view'] ?? 'active') === 'deleted';
         abort_if($deleted && ! $user->isAdmin(), 403);
-        $requests = CreativeRequest::visibleTo($user)->with(['task.assignee:id,name', 'task.creator:id,name'])
+        $query = CreativeRequest::visibleTo($user)
             ->when($deleted, fn ($q) => $q->onlyTrashed())
-            ->when($filters['status'] ?? null, fn ($q, $status) => $q->whereHas('task', fn ($q) => $q->where('status', $status)))
-            ->latest()->paginate(20)->withQueryString()->through(fn ($r) => $r->row());
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->whereHas('task', fn ($q) => $q->where('status', $status)));
+        $owner = $this->owner();
+        $analytics = $deleted ? null : $this->analytics(clone $query, $owner);
+        $requests = $query->with(['task.assignee:id,name', 'task.creator:id,name'])->latest()->paginate(20)->withQueryString()->through(fn ($r) => $r->row());
 
         return inertia('creative/Index', ['requests' => $requests, 'filters' => $filters,
-            'owner' => $this->owner()?->only(['id', 'name']), 'designTypes' => CreativeRequest::DESIGN_TYPES,
+            'analytics' => $analytics, 'owner' => $owner?->only(['id', 'name']), 'designTypes' => CreativeRequest::DESIGN_TYPES,
             'isAdmin' => $user->isAdmin()]);
+    }
+
+    private function analytics(Builder $query, ?User $owner): array
+    {
+        // Reuse the queue's visibility and status filters without loading brief or file contents.
+        $requests = $query->select('id', 'lead_task_id', 'created_at')
+            ->with('task:id,status,assignee_id,additional_assignee_ids,completed_at')->get();
+        $statuses = array_fill_keys(LeadTask::STATUSES, 0);
+        $ownerCounts = $owner ? $statuses : null;
+        $trends = [];
+        $start = now('Asia/Manila')->startOfWeek()->subWeeks(7);
+        for ($i = 0; $i < 8; $i++) {
+            $period = $start->copy()->addWeeks($i)->toDateString();
+            $trends[$period] = ['period' => $period, 'created' => 0, 'delivered' => 0];
+        }
+        $undatedDeliveries = 0;
+        foreach ($requests as $creative) {
+            $task = $creative->task;
+            $statuses[$task->status]++;
+            if ($owner && in_array($owner->id, $task->allAssigneeIds(), true)) {
+                $ownerCounts[$task->status]++;
+            }
+            $period = $creative->created_at->copy()->timezone('Asia/Manila')->startOfWeek()->toDateString();
+            if (isset($trends[$period])) {
+                $trends[$period]['created']++;
+            }
+            if ($task->status === 'completed') {
+                if ($task->completed_at) {
+                    $period = $task->completed_at->copy()->timezone('Asia/Manila')->startOfWeek()->toDateString();
+                    if (isset($trends[$period])) {
+                        $trends[$period]['delivered']++;
+                    }
+                } else {
+                    $undatedDeliveries++;
+                }
+            }
+        }
+
+        return ['total' => $requests->count(), 'status_counts' => $statuses, 'owner_counts' => $ownerCounts,
+            'trends' => array_values($trends), 'undated_deliveries' => $undatedDeliveries];
     }
 
     public function store(Request $request)
     {
         $user = $this->staff($request);
         $rules = [
-            'project' => ['required', 'string', 'max:160'], 'deadline' => ['required', 'date_format:Y-m-d'],
+            'project' => ['required', 'string', 'max:160'], 'deadline' => ['nullable', 'date_format:Y-m-d'],
             'overview' => ['required', 'string', 'max:5000'], 'types' => ['required', 'array', 'min:1', 'max:4'],
-            'types.*' => ['required', 'distinct', Rule::in(CreativeRequest::DESIGN_TYPES)],
+            'types.*' => ['required', 'distinct', Rule::in([...CreativeRequest::DESIGN_TYPES, ...CreativeRequest::LEGACY_DESIGN_TYPES])],
             'other' => ['nullable', 'string', 'max:200'],
-            'approver' => ['required', 'string', 'max:160'],
+            'approver' => ['nullable', 'string', 'max:160'],
             'final_due' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:deadline'],
         ];
         foreach (['goal', 'audience', 'message', 'copy', 'caption', 'cta', 'style', 'references', 'include', 'avoid', 'assets', 'missing', 'budget', 'notes'] as $field) {
@@ -65,7 +108,10 @@ class CreativeRequestController extends Controller
         foreach (['draft_due', 'feedback_due'] as $field) {
             $rules[$field] = ['nullable', 'date_format:Y-m-d', 'before_or_equal:'.($final ?: 'deadline')];
         }
-        $data = $request->validate($rules + TicketAttachments::rules());
+        $data = $request->validate($rules + TicketAttachments::rules() + TicketAttachments::rules('asset_attachments'));
+        if (count($data['attachments'] ?? []) + count($data['asset_attachments'] ?? []) > TicketAttachments::MAX_FILES) {
+            throw ValidationException::withMessages(['asset_attachments' => 'Attach up to '.TicketAttachments::MAX_FILES.' files in total across references and curated assets.']);
+        }
         if (in_array('Other', $data['types'], true) && ! trim($data['other'] ?? '')) {
             throw ValidationException::withMessages(['other' => 'Describe the other design type.']);
         }
@@ -76,8 +122,8 @@ class CreativeRequestController extends Controller
         if (! $owner) {
             throw ValidationException::withMessages(['assignee' => 'Sharry’s active Luvep account could not be found. Contact an administrator before submitting.']);
         }
-        unset($data['attachments']);
-        $data['final_due'] = $data['final_due'] ?? $data['deadline'];
+        unset($data['attachments'], $data['asset_attachments']);
+        $data['final_due'] = $data['final_due'] ?? ($data['deadline'] ?? null);
         if (! filter_var(config('creative.notification_email'), FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages(['notification' => 'The creative request email alert is not configured. Contact an administrator before submitting.']);
         }
@@ -88,9 +134,12 @@ class CreativeRequestController extends Controller
                 $task = LeadTask::create(['created_by' => $user->id, 'assignee_id' => $owner->id,
                     'title' => $data['project'], 'description' => Str::limit($data['overview'], 1500), 'type' => 'internal', 'department' => 'admin',
                     'category' => 'Creative request', 'priority' => 'normal', 'status' => 'not_started',
-                    'due_at' => \Illuminate\Support\Carbon::parse($data['deadline'].' 23:59:59', $data['timezone'])->utc()]);
+                    'due_at' => ! empty($data['deadline']) ? \Illuminate\Support\Carbon::parse($data['deadline'].' 23:59:59', $data['timezone'])->utc() : null]);
                 $creative = CreativeRequest::create(['request_ref' => 'CR-'.strtoupper(Str::random(8)), 'lead_task_id' => $task->id, 'brief' => $data]);
                 $stored = TicketAttachments::store($request->file('attachments', []), "creative-requests/{$creative->id}");
+                foreach (TicketAttachments::store($request->file('asset_attachments', []), "creative-requests/{$creative->id}/assets") as $file) {
+                    $stored[] = [...$file, 'group' => 'assets'];
+                }
                 $creative->update(['attachments' => $stored ?: null]);
                 $task->update(['description' => Str::limit($data['overview'], 1500)."\n\nFull creative brief: ".$creative->url()]);
 

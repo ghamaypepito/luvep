@@ -436,6 +436,22 @@ Route::middleware(['throttle:tracker'])->group(function () {
 });
 
 // Affiliate referrals use their own form and never enter the event funnel.
+Route::controller(\App\Http\Controllers\AffiliateApplicationController::class)->group(function () {
+    Route::get('/affiliate/apply', 'form')->name('affiliate.apply');
+    Route::middleware('throttle:affiliate-applications')->group(function () {
+        Route::post('/affiliate/apply', 'store')->name('affiliate.apply.store');
+        Route::post('/affiliate/apply/resend', 'resend')->name('affiliate.apply.resend');
+    });
+    Route::prefix('affiliate/applications/{application:uuid}')->whereUuid('application')
+        ->middleware([\App\Http\Middleware\PrivateAffiliateLink::class, 'signed:relative', 'throttle:60,1'])->name('affiliate.application.')->group(function () {
+            Route::get('/', 'status')->name('status');
+            Route::post('/verify', 'verify')->name('verify');
+            Route::get('/document', 'document')->name('document');
+            Route::get('/download', 'document')->name('download');
+            Route::post('/sign', 'sign')->name('sign');
+        });
+});
+
 Route::get('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'show'])->middleware('throttle:60,1')->name('affiliate.registration');
 Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegistrationController::class, 'store'])->middleware('throttle:10,1')->name('affiliate.registration.store');
 
@@ -532,9 +548,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Active message templates (JSON) — feeds the bulk-email + compose pickers.
     // Any authenticated staff member; no lead-specific data is exposed.
-    Route::get('/api/message-templates', function () {
+    Route::get('/api/message-templates', function (\Illuminate\Http\Request $request) {
         return response()->json(
-            \App\Models\MessageTemplate::active()->orderBy('name')
+            \App\Models\MessageTemplate::active()->availableTo($request->user())->orderBy('name')
                 ->get(['id', 'name', 'channels', 'email_subject', 'email_body', 'sms_body'])
         );
     })->name('api.message-templates');
@@ -620,18 +636,24 @@ Route::middleware(['auth'])->group(function () {
             ->name('admin.module-management.portals');
     });
 
-    // Agents module — restricted (default super-admin-only, grantable per user
-    // via Module Management). Admin-area surface behind both portal:admin and
-    // the module gate.
-    Route::middleware(['portal:admin', 'module:agents'])->group(function () {
+    // Only Admin and Super Admin manage partners, irrespective of staff portal grants.
+    Route::middleware(['portal:admin', 'can:administer-accounts', 'module:agents'])->group(function () {
         Route::get('/admin/agents', [\App\Http\Controllers\Admin\AgentModuleController::class, 'index'])
             ->name('admin.agents.index');
         Route::get('/admin/agents/agreements', [\App\Http\Controllers\Admin\AgentModuleController::class, 'agreements'])
             ->name('admin.agents.agreements');
+        Route::controller(\App\Http\Controllers\Admin\AffiliateApplicationController::class)->prefix('/admin/agents/applications')->name('admin.agents.applications.')->group(function () {
+            Route::get('/', 'index')->name('index');
+            Route::get('/{application}', 'show')->name('show');
+            Route::post('/{application}/approve', 'approve')->name('approve');
+            Route::post('/{application}/decline', 'decline')->name('decline');
+        });
+        Route::post('/admin/agents/{agent}/lifecycle', [\App\Http\Controllers\Admin\AgentModuleController::class, 'lifecycle'])
+            ->withTrashed()->name('admin.agents.lifecycle');
         Route::post('/admin/agents/{agent}/agreement/send', [\App\Http\Controllers\Admin\AgentModuleController::class, 'sendAgreement'])
             ->name('admin.agents.agreement.send');
         Route::get('/admin/agents/{agent}', [\App\Http\Controllers\Admin\AgentModuleController::class, 'show'])
-            ->name('admin.agents.show');
+            ->withTrashed()->name('admin.agents.show');
         Route::get('/admin/agents/{agent}/agreement/preview', [\App\Http\Controllers\Admin\AgentModuleController::class, 'previewAgreement'])
             ->name('admin.agents.agreement.preview');
         Route::post('/admin/agents/{agent}/agreement/generate', [\App\Http\Controllers\Admin\AgentModuleController::class, 'generateAgreement'])
@@ -676,6 +698,8 @@ Route::middleware(['auth'])->group(function () {
             ->name('consultancy-verification.request-changes');
         Route::post('/consultancy-verification/{lead}/verify', [\App\Http\Controllers\ConsultancyVerificationController::class, 'verify'])
             ->name('consultancy-verification.verify');
+        Route::delete('/consultancy-verification/{lead}/draft', [\App\Http\Controllers\ConsultancyVerificationController::class, 'deleteDraft'])
+            ->name('consultancy-verification.draft.delete');
         Route::post('/consultancy-verification/{lead}/draft', [\App\Http\Controllers\ConsultancyVerificationController::class, 'draft'])
             ->name('consultancy-verification.draft');
         Route::post('/consultancy-verification/{lead}/approve', [\App\Http\Controllers\ConsultancyVerificationController::class, 'approve'])
@@ -731,12 +755,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/admin/availability/{id}', [AvailabilityController::class, 'update']);
         Route::delete('/admin/availability/{id}', [AvailabilityController::class, 'destroy']);
 
-        Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users');
-        Route::post('/admin/users', [UserController::class, 'store']);
-        Route::post('/admin/users/{id}', [UserController::class, 'update']);
-        Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
-        Route::post('/admin/users/{id}/restore', [UserController::class, 'restore']);
-        Route::post('/admin/users/{id}/toggle-active', [UserController::class, 'toggleActive']);
+        Route::middleware('can:administer-accounts')->group(function () {
+            Route::get('/admin/users', [UserController::class, 'index'])->name('admin.users');
+            Route::post('/admin/users', [UserController::class, 'store']);
+            Route::post('/admin/users/{id}', [UserController::class, 'update']);
+            Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
+            Route::post('/admin/users/{id}/restore', [UserController::class, 'restore']);
+            Route::post('/admin/users/{id}/toggle-active', [UserController::class, 'toggleActive']);
+        });
 
         Route::get('/admin/activity-logs', [ActivityLogController::class, 'index'])->name('admin.activity-logs');
 
@@ -839,6 +865,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');
         Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
         Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
+        Route::get('/social/marketing/posts/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'show'])->whereUuid('id')->middleware('throttle:60,1');
         Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
         Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
         Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');
@@ -2096,6 +2123,8 @@ Route::middleware(['auth'])->group(function () {
             // to use LeadController::show via /admin/leads/{id}.
             Route::get('/cases/{lead}/profile', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'show'])
                 ->name('cases.profile');
+            Route::post('/cases/{lead}/documents/other', [\App\Http\Controllers\Immigration\OtherCaseDocumentController::class, 'store'])
+                ->name('cases.documents.other');
             Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
                 ->whereNumber('document')->name('cases.documents.recent-visa');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.

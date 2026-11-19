@@ -12,6 +12,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class MarketingPostController extends Controller
@@ -38,7 +39,12 @@ class MarketingPostController extends Controller
             'service' => $post->service, 'caption' => $post->caption, 'status' => $post->status,
             'schedule_date' => $nz?->toDateString(), 'schedule_time' => $nz?->format('H:i'),
             'scheduled_at' => $post->scheduled_at?->utc()->toIso8601String(),
-            'image_url' => $post->media_path ? route('marketing.posts.media', ['id' => $post->id]) : null,
+            'image_url' => $post->media_path && ! str_starts_with($post->media_mime ?? '', 'video/') ? route('marketing.posts.media', ['id' => $post->id]) : null,
+            'media_url' => $post->media_path ? route('marketing.posts.media', ['id' => $post->id]) : null,
+            'media_mime' => $post->media_mime, 'post_type' => $post->post_type ?: 'post',
+            'first_comment' => $post->first_comment ?? '', 'publish_now' => (bool) $post->publish_now,
+            'calendar_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
+            'calendar_time' => $post->scheduled_at?->setTimezone('Asia/Manila')->format('H:i'),
             'review_note' => $post->review_note, 'ghl_post_id' => $post->ghl_post_id,
             'updated_at' => $post->updated_at?->toIso8601String(), 'approved_by' => $post->approved_by];
     }
@@ -65,29 +71,44 @@ class MarketingPostController extends Controller
             'ghl_user_configured' => trim((string) Setting::get('ghl_connector.user_id', '')) !== '']);
     }
 
+    public function show(Request $request, string $id)
+    {
+        $this->authorizeUser($request);
+
+        return response()->json(['post' => $this->shape($this->find($id)), 'can_approve' => $request->user()->isSuperAdmin()], 200, ['Cache-Control' => 'private, no-store']);
+    }
+
     public function store(Request $request)
     {
         $this->authorizeUser($request);
-        $this->exactFields($request, ['id', 'version', 'campaign', 'service', 'caption', 'schedule_date', 'schedule_time', 'media']);
+        $this->exactFields($request, ['id', 'version', 'campaign', 'service', 'caption', 'schedule_date', 'schedule_time', 'schedule_timezone', 'media', 'remove_media', 'post_type', 'first_comment', 'publish_now']);
         $data = $request->validate(['id' => ['nullable', 'uuid'], 'version' => ['required_with:id', 'integer', 'min:1'],
             'campaign' => ['required', 'string', 'max:200'], 'service' => ['required', 'string', 'max:200'],
-            'caption' => ['required', 'string', 'max:12000'], 'schedule_date' => ['nullable', 'required_with:schedule_time', 'date_format:Y-m-d'],
+            'caption' => ['nullable', 'required_unless:post_type,story', 'string', 'max:12000'],
+            'post_type' => ['sometimes', Rule::in(['post', 'reel', 'story'])], 'first_comment' => ['nullable', 'string', 'max:8000'],
+            'publish_now' => ['sometimes', 'boolean'], 'remove_media' => ['sometimes', 'boolean'],
+            'schedule_timezone' => ['sometimes', Rule::in(['Asia/Manila', 'Pacific/Auckland'])], 'schedule_date' => ['nullable', 'required_with:schedule_time', 'date_format:Y-m-d'],
             'schedule_time' => ['nullable', 'required_with:schedule_date', 'date_format:H:i'],
-            'media' => ['nullable', 'file', 'image', 'mimetypes:image/png,image/jpeg,image/webp', 'max:10239', 'dimensions:min_width=1,min_height=1,max_width=8192,max_height=8192']]);
+            'media' => ['nullable', 'file', 'mimetypes:image/png,image/jpeg,image/webp,image/gif,video/mp4', 'max:51199']]);
         $scheduledAt = null;
         if (! empty($data['schedule_date']) && ! empty($data['schedule_time'])) {
             $local = $data['schedule_date'].' '.$data['schedule_time'];
-            $scheduledAt = CarbonImmutable::createFromFormat('!Y-m-d H:i', $local, 'Pacific/Auckland');
+            $scheduledAt = CarbonImmutable::createFromFormat('!Y-m-d H:i', $local, $data['schedule_timezone'] ?? 'Pacific/Auckland');
             if ($scheduledAt->format('Y-m-d H:i') !== $local) {
-                throw ValidationException::withMessages(['schedule_time' => 'This time does not exist in New Zealand.']);
+                throw ValidationException::withMessages(['schedule_time' => 'This time does not exist in the selected timezone.']);
             }
         }
         $file = $request->file('media');
-        if ($file) {
+        if ($file && ! str_starts_with($file->getMimeType(), 'video/')) {
             $pixels = @getimagesize($file->getRealPath());
-            if (! $pixels || ($pixels[0] * $pixels[1]) > 40000000 || ! in_array($pixels['mime'] ?? '', ['image/png', 'image/jpeg', 'image/webp'], true) || $pixels['mime'] !== $file->getMimeType() || $file->getSize() >= 10 * 1024 * 1024) {
-                throw ValidationException::withMessages(['media' => 'Upload a valid PNG, JPEG or WebP under 10MB and 40 megapixels.']);
+            if (! $pixels || $pixels[0] > 8192 || $pixels[1] > 8192 || ($pixels[0] * $pixels[1]) > 40000000
+                || ! in_array($pixels['mime'] ?? '', ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], true)
+                || $pixels['mime'] !== $file->getMimeType() || $file->getSize() >= 10 * 1024 * 1024) {
+                throw ValidationException::withMessages(['media' => 'Upload a valid image under 10MB, 8192px per side and 40 megapixels.']);
             }
+        }
+        if ($file && $request->boolean('remove_media')) {
+            throw ValidationException::withMessages(['media' => 'Choose a replacement or remove the current media.']);
         }
         $newPath = null;
         try {
@@ -100,6 +121,9 @@ class MarketingPostController extends Controller
                     $this->checkVersion($post, (int) $data['version']);
                     abort_if(in_array($post->status, self::FROZEN, true), 409, 'Scheduled or uncertain posts cannot be edited.');
                 }
+                if ($request->boolean('remove_media')) {
+                    $post->media_path = $post->media_mime = $post->media_hash = null;
+                }
                 if ($file) {
                     $newPath = $file->store('marketing-posts', 'local');
                     if (! $newPath) {
@@ -109,7 +133,10 @@ class MarketingPostController extends Controller
                     $post->media_mime = $file->getMimeType();
                     $post->media_hash = hash_file('sha256', $file->getRealPath());
                 }
-                $post->fill(['campaign' => $data['campaign'], 'service' => $data['service'], 'caption' => $data['caption'],
+                $post->fill(['campaign' => $data['campaign'], 'service' => $data['service'], 'caption' => $data['caption'] ?? '',
+                    'post_type' => $data['post_type'] ?? $post->post_type ?? 'post',
+                    'first_comment' => array_key_exists('first_comment', $data) ? ($data['first_comment'] === '' ? null : $data['first_comment']) : $post->first_comment,
+                    'publish_now' => $data['publish_now'] ?? $post->publish_now ?? false,
                     'scheduled_at' => $scheduledAt?->utc(), 'status' => 'draft', 'review_note' => null,
                     'approved_by' => null, 'approved_version' => null, 'approval_fingerprint' => null,
                     'version' => $post->version + 1]);
@@ -145,6 +172,9 @@ class MarketingPostController extends Controller
             $post->approved_by = $action === 'approve' ? $request->user()->id : null;
             $post->approved_version = $action === 'approve' ? $post->version : null;
             $post->approval_fingerprint = $action === 'approve' ? $post->fingerprint() : null;
+            if ($action === 'submit') {
+                $this->validatePostContent($post);
+            }
             $post->save();
 
             return $post;
@@ -180,6 +210,9 @@ class MarketingPostController extends Controller
         $post = DB::transaction(function () use ($id, $data) {
             $post = $this->find($id, true);
             $this->assertSchedulable($post, (int) $data['version']);
+            if ($post->publish_now) {
+                $post->scheduled_at = now()->addMinutes(2)->utc();
+            }
             $post->status = 'scheduling';
             $post->version++;
             $post->save();
@@ -204,14 +237,32 @@ class MarketingPostController extends Controller
     {
         $this->checkVersion($post, $version);
         abort_unless($post->status === 'approved' && $post->approved_version === $post->version && $post->hasCurrentApproval(), 409, 'This exact version must be approved first.');
-        if (! $post->scheduled_at || ! $post->scheduled_at->isFuture() || $post->scheduled_at->greaterThan(now()->addYear())) {
-            throw ValidationException::withMessages(['schedule_date' => 'Approve a future NZ date and time within one year.']);
+        $this->validatePostContent($post);
+        if (! $post->publish_now && (! $post->scheduled_at || $post->scheduled_at->lessThan(now()->addMinute()) || $post->scheduled_at->greaterThan(now()->addYear()))) {
+            throw ValidationException::withMessages(['schedule_date' => 'Approve a time at least one minute in the future and within one year.']);
         }
-        if ($post->media_path && (! in_array($post->media_mime, ['image/png', 'image/jpeg'], true) || ! $this->mediaMatches($post))) {
-            throw ValidationException::withMessages(['media' => 'GHL scheduling requires the approved PNG or JPEG file.']);
+        if ($post->media_path && (! in_array($post->media_mime, ['image/png', 'image/jpeg', 'image/gif', 'video/mp4'], true) || ! $this->mediaMatches($post))) {
+            throw ValidationException::withMessages(['media' => 'GHL scheduling requires the approved PNG, JPEG, GIF or MP4 file.']);
         }
         if ($post->media_path && parse_url(route('marketing.media.shared', ['id' => $post->id]), PHP_URL_SCHEME) !== 'https') {
             throw ValidationException::withMessages(['media' => 'A public HTTPS media endpoint must be configured before scheduling.']);
+        }
+    }
+
+    private function validatePostContent(MarketingPost $post): void
+    {
+        $type = $post->post_type ?: 'post';
+        if ($type === 'story' && (trim($post->caption) !== '' || trim($post->first_comment ?? '') !== '')) {
+            throw ValidationException::withMessages(['caption' => 'Facebook Stories do not support captions or first comments.']);
+        }
+        if ($type === 'reel' && $post->media_mime !== 'video/mp4') {
+            throw ValidationException::withMessages(['media' => 'A Reel requires one MP4 video.']);
+        }
+        if ($type === 'story' && (! $post->media_path || (! Storage::disk('local')->exists($post->media_path) || ($post->media_mime !== 'video/mp4' && Storage::disk('local')->size($post->media_path) > 4 * 1024 * 1024)))) {
+            throw ValidationException::withMessages(['media' => 'A Story requires one image up to 4MB or one MP4 video.']);
+        }
+        if ($type !== 'story' && trim($post->caption) === '') {
+            throw ValidationException::withMessages(['caption' => 'Add a caption before submitting this post.']);
         }
     }
 
@@ -226,6 +277,11 @@ class MarketingPostController extends Controller
     private function mediaResponse(MarketingPost $post)
     {
         abort_unless($this->mediaMatches($post), 404);
+
+        if ($post->media_mime === 'video/mp4') {
+            return response()->file(Storage::disk('local')->path($post->media_path),
+                ['Content-Type' => $post->media_mime, 'Cache-Control' => 'no-store, private', 'X-Content-Type-Options' => 'nosniff']);
+        }
 
         return Storage::disk('local')->response($post->media_path, null,
             ['Content-Type' => $post->media_mime, 'Cache-Control' => 'no-store, private', 'X-Content-Type-Options' => 'nosniff']);

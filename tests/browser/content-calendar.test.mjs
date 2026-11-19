@@ -45,7 +45,7 @@ const article = {
 };
 const articlesPath = '/admin/content-calendar/articles';
 
-async function withCalendar(run, { canPublish = false, topics = [article] } = {}) {
+async function withCalendar(run, { canPublish = false, topics = [article], ghlPosts = [] } = {}) {
     const channel = process.env.PLAYWRIGHT_CHANNEL;
     const browser = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
     try {
@@ -56,6 +56,7 @@ async function withCalendar(run, { canPublish = false, topics = [article] } = {}
             body: '<div id="root"></div>',
         }));
         await page.route('http://calendar.test' + articlesPath + '/1', route => route.fulfill({ json: article }));
+        await page.route('http://calendar.test/social/ghl/posts?*', route => route.fulfill({ json: { posts: ghlPosts, page: 1, has_more: false, synced_at: '2026-11-19T02:00:00Z' } }));
         await page.goto('http://calendar.test/admin/content-calendar');
         await page.addScriptTag({ content: bundle.outputFiles[0].text });
         await page.addStyleTag({ content: calendarCss });
@@ -71,14 +72,37 @@ async function withCalendar(run, { canPublish = false, topics = [article] } = {}
     }
 }
 
+test('GHL posts appear in Manila time with a responsive read-only preview', async () => {
+    await withCalendar(async page => {
+        const post = page.getByRole('button', { name: /Plan your next chapter.*GHL/ });
+        await post.waitFor();
+        assert.equal(await post.locator('..').locator('..').locator('..').locator('time').getAttribute('datetime'), '2026-11-01');
+        await post.click();
+        const modal = page.getByRole('dialog', { name: 'GHL social post' });
+        await modal.waitFor();
+        assert.equal(await modal.locator('input,textarea').count(), 0);
+        assert.equal(await modal.getByRole('link', { name: /Open GHL Social Planner/ }).count(), 1);
+        for (const width of [1440, 768, 390, 320]) {
+            await page.setViewportSize({ width, height: 844 });
+            const box = await modal.boundingBox();
+            assert.ok(box.x >= 0 && box.x + box.width <= width, 'GHL preview fits viewport');
+            const footer = await modal.locator('footer').boundingBox();
+            assert.ok(footer.y + footer.height <= 844, 'GHL actions remain visible');
+        }
+        await page.getByRole('button', { name: 'Close GHL post' }).click();
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+        assert.equal(await post.evaluate(node => node === document.activeElement), true);
+    }, { ghlPosts: [{ id: 'ghl-post', caption: 'Plan your next chapter with EP.', status: 'published', date: '2026-10-31T16:05:00Z', post_type: 'post', media: [], account_name: 'Luv, Ep' }] });
+});
+
 test('the month shows dated and undated topics and supports keyboard entry and dismissal', async () => {
     await withCalendar(async page => {
         await page.getByRole('heading', { name: 'November 2026' }).waitFor();
         await page.getByText('Mon', { exact: true }).waitFor();
         assert.equal(await page.locator('time[datetime]:visible').count(), 42);
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.getByText('Mon', { exact: true }).waitFor({ state: 'hidden' });
-        assert.equal(await page.locator('time[datetime]:visible').count(), 1);
+        await page.getByText('Mon', { exact: true }).waitFor();
+        assert.equal(await page.locator('time[datetime]:visible').count(), 42);
         assert.equal(await page.getByRole('link', { name: 'Previous month' }).getAttribute('href'), '/admin/content-calendar?month=2026-10');
         assert.equal(await page.getByRole('link', { name: 'Next month' }).getAttribute('href'), '/admin/content-calendar?month=2026-12');
         await page.getByRole('region', { name: 'Undated drafts' }).getByRole('button', { name: /Unscheduled article/ }).waitFor();
@@ -147,6 +171,8 @@ test('review uses the saved revision and hides approval from a staff editor', as
 
 test('dragging a draft moves its planned date and a draft with a live version stays locked', async () => {
     await withCalendar(async page => {
+        // Keep both drag endpoints visible; Chromium can cancel native drags on target autoscroll.
+        await page.setViewportSize({ width: 1280, height: 1200 });
         let requested = false;
         await page.route('http://calendar.test' + articlesPath + '/1/planned-date', async route => {
             assert.equal(route.request().method(), 'PATCH');

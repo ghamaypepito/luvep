@@ -6,15 +6,16 @@ const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/hr/dtr' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+HTMLElement.prototype.scrollIntoView = function () {};
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react'), { act } = React, { createRoot } = require('react-dom/client');
 const requests = [], reads = [];
-let preview = false, fetchFails = false;
+let preview = false, fetchFails = false, declarationProcessing = false, draftProcessing = false;
 const inertia = {
     Head: () => null, Link: ({children,...props}) => React.createElement('a',props,children), usePage: () => ({ props: { hr: { preview } } }), router: { reload() {}, get: (url, data) => requests.push({ url, data }) },
     useForm(initial) {
         const [data, setData] = React.useState(initial), [errors, setErrors] = React.useState({});
-        return { data, errors, processing: false, isDirty: JSON.stringify(initial) !== JSON.stringify(data),
+        return { data, errors, processing: Object.hasOwn(initial, 'declaration') ? declarationProcessing : draftProcessing, isDirty: JSON.stringify(initial) !== JSON.stringify(data),
             setData: (key, value) => setData(old => ({ ...old, [key]: value })), reset: () => setData(initial), clearErrors: () => setErrors({}),
             post: (url, options) => requests.push({ url, data, options, fail: messages => setErrors(messages) }),
         };
@@ -31,13 +32,40 @@ const Dtr = loaded.exports.default, root = createRoot(document.getElementById('r
 const task = { task: 'Client coordination', status: 'done', category: 'client', start: '08:00', end: '09:00', reference: 'Synthetic', seconds: 3600 };
 const old = { id: 17, hr_version: 5, work_date: '2026-11-02', hr_status: 'draft', can_edit: true, time_in: '08:00', time_out: '16:00', tasks: [task], work_location: 'Office', working_seconds: 27000, break_seconds: 1800 };
 const today = { ...old, id: 19, work_date: '2026-11-04', hr_version: 2 };
-const render = async entries => act(async () => root.render(React.createElement(Dtr, { entries, weeks: [], today: '2026-11-04' })));
+const creativeRequests = [{ id: 9, request_ref: 'CR-SAMPLE', title: 'Creative project', types: ['Poster / flyer'], attachment_count: 3, asset_attachment_count: 2, status: 'not_started', deadline: null, url: '/creative-requests/9' }];
+const render = async entries => act(async () => root.render(React.createElement(Dtr, { entries, weeks: [], today: '2026-11-04', creativeRequests })));
 const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
 const click = async node => { assert.ok(node, 'Control exists'); await act(async () => node.dispatchEvent(new MouseEvent('click', { bubbles: true }))); };
 const input = async (node, value) => act(async () => { const prototype = node.tagName === 'SELECT' ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value').set.call(node, value); node.dispatchEvent(new Event(node.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); });
 const toggleHistory = async () => act(async () => { const details = document.querySelector('.hr-dtr-history'); details.open = !details.open; details.dispatchEvent(new Event('toggle')); });
 (async () => {
     await render([today, old]);
+    assert.match(document.querySelector('[aria-label="Assigned creative requests"]').textContent, /No deadline/);
+    assert.match(document.querySelector('[aria-label="Assigned creative requests"]').textContent, /1 reference file.*2 curated assets/);
+    await click(button('Add to daily record'));
+    assert.equal(requests.length, 0, 'Adding a creative request never saves a record or clocks time');
+    assert.equal(document.querySelectorAll('.hr-task-editor').length, 2, 'Existing report tasks are preserved');
+    const creativeTask = [...document.querySelectorAll('.hr-task-editor')].at(-1);
+    assert.equal(creativeTask.querySelector('textarea').value, 'Creative project');
+    assert.equal(document.activeElement, creativeTask.querySelector('textarea'));
+    assert.deepEqual([...creativeTask.querySelectorAll('input[type=time]')].map(n => n.value), ['', ''], 'Only actual work times may be entered by the employee');
+    assert.equal(creativeTask.querySelector('input:not([type=time])').value, 'CR-SAMPLE');
+    await click(button('Add to daily record')); assert.equal(document.querySelectorAll('.hr-task-editor').length, 2, 'Repeated clicks focus the existing reference instead of duplicating it');
+    await input(creativeTask.querySelectorAll('input[type=time]')[0], '09:00');
+    await input(creativeTask.querySelectorAll('input[type=time]')[1], '10:00');
+    await act(async () => button('Save draft').closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    assert.equal(requests.at(-1).url, '/portal/hr/dtr');
+    assert.equal(requests.at(-1).data.work_date, '2026-11-04');
+    assert.equal(requests.at(-1).data.tasks[1].reference, 'CR-SAMPLE');
+    assert.equal(requests.at(-1).data.tasks[1].start, '09:00');
+    await click(button('Cancel editing'));
+    for (const declarationBusy of [true, false]) {
+        declarationProcessing = declarationBusy; draftProcessing = !declarationBusy;
+        await render([today, old]); await click(button('Add to daily record'));
+        assert.equal(document.querySelectorAll('.hr-task-editor').length, 0, 'Save/submit in flight blocks adding unsaved work');
+        assert.match(document.querySelector('[role=status]').textContent, /being saved or submitted/);
+    }
+    declarationProcessing = false; draftProcessing = false; await render([today, old]);
     await input(document.querySelector('select'), '17');
     await click(button('Edit draft'));
     assert.match(document.body.textContent, /work for 2026-11-02/);
@@ -76,11 +104,13 @@ const toggleHistory = async () => act(async () => { const details = document.que
     assert.match(document.querySelector('[role="alert"]').textContent, /Unable to load/);
     fetchFails = false; await click(button('Retry history')); assert.equal(document.querySelector('[role="alert"]'), null);
     await render([today, { ...old, hr_version: 7, hr_status: 'submitted', can_edit: false }]);
+    assert.equal(button('Add to daily record'), undefined);
     assert.equal(button('Edit draft'), undefined); assert.equal(button('Submit daily report'), undefined);
     const findDate = document.querySelector('input[type=date]'); await input(findDate, '2026-08-01');
     await act(async () => findDate.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
     assert.equal(requests.at(-1).url, '/portal/hr/dtr'); assert.equal(requests.at(-1).data.date, '2026-08-01');
     preview = true; await render([today, { ...old, hr_version: 8 }]);
+    assert.equal(button('Add to daily record'), undefined);
     assert.equal(button('Edit draft'), undefined); assert.equal(document.querySelector('.hr-dtr-history'), null);
     await act(async () => root.unmount()); dom.window.close();
     console.log('DTR selected-date editing, save/version/declaration, validation retention, locks, lazy before/after history, pagination and retry verified.');

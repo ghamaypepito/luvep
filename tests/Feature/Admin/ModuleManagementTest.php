@@ -29,14 +29,14 @@ class ModuleManagementTest extends TestCase
         $super = User::factory()->create(['role' => 'super_admin']);
         $admin = User::factory()->create(['role' => 'admin']);
 
-        $this->assertFalse($admin->canSeeModule('agents'));
+        $this->assertFalse($admin->canSeeModule('referral_students'));
 
         $this->actingAs($super)
-            ->post("/admin/module-management/{$admin->id}", ['modules' => ['agents']])
+            ->post("/admin/module-management/{$admin->id}", ['modules' => ['referral_students']])
             ->assertRedirect();
 
-        $this->assertTrue($admin->fresh()->canSeeModule('agents'));
-        $this->assertContains('agents', $admin->fresh()->grantedModules());
+        $this->assertTrue($admin->fresh()->canSeeModule('referral_students'));
+        $this->assertContains('referral_students', $admin->fresh()->grantedModules());
     }
 
     public function test_client_pathways_can_be_granted_individually_without_changing_roles_or_portals(): void
@@ -85,11 +85,13 @@ class ModuleManagementTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
 
         // super-only restricted modules stay hidden until granted…
-        $this->assertFalse($admin->canSeeModule('agents'));
-        $this->assertNotContains('agents', $admin->grantedModules());
+        $this->assertFalse($admin->canSeeModule('referral_students'));
+        $this->assertNotContains('referral_students', $admin->grantedModules());
 
         // …but admin_default modules (DTR, Portal Invitations, Program
         // Verification) are always visible to admins.
+        $this->assertTrue($admin->canSeeModule('agents'));
+        $this->assertContains('agents', $admin->grantedModules());
         $this->assertTrue($admin->canSeeModule('dtr'));
         $this->assertTrue($admin->canSeeModule('portal_invitation'));
         $this->assertTrue($admin->canSeeModule('program_verification'));

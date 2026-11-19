@@ -136,14 +136,14 @@ class GhlSocialReader
         return ['media' => $items, 'image' => $image, 'thumbnail' => $thumbnail];
     }
 
-    public function posts(string $from, string $to, int $page = 1, string $type = 'all'): array
+    public function posts(string $from, string $to, int $page = 1, string $type = 'all', string $timezone = 'Pacific/Auckland'): array
     {
         $a = $this->selected();
         if (! $a['ok']) {
             return $a;
         }
-        $start = CarbonImmutable::parse($from, 'Pacific/Auckland')->startOfDay()->utc();
-        $end = CarbonImmutable::parse($to, 'Pacific/Auckland')->endOfDay()->utc();
+        $start = CarbonImmutable::parse($from, $timezone)->startOfDay()->utc();
+        $end = CarbonImmutable::parse($to, $timezone)->endOfDay()->utc();
         $r = $this->request('POST', GhlConnection::LOCATION.'/posts/list', ['type' => $type, 'accounts' => self::ACCOUNT, 'skip' => (string) (($page - 1) * 100), 'limit' => '100', 'fromDate' => $start->toIso8601String(), 'toDate' => $end->toIso8601String(), 'includeUsers' => 'false']);
         if (! $r['ok']) {
             return $r;
@@ -172,11 +172,14 @@ class GhlSocialReader
             }
             $insights = $p['insights'] ?? [];
             $media = $this->media($p);
-            $safe[] = ['id' => mb_substr($id, 0, 255), 'caption' => mb_substr(is_string($p['summary'] ?? null) ? $p['summary'] : '', 0, 12000), 'status' => mb_substr((string) ($p['status'] ?? 'unknown'), 0, 40), 'date' => $this->date($p['scheduleDate'] ?? $p['publishedAt'] ?? $p['displayDate'] ?? null), 'image' => $media['image'], 'thumbnail' => $media['thumbnail'], 'media' => $media['media'], 'preview_url' => $this->url($p['previewLink'] ?? null), 'account_name' => $a['account']['name'], 'platform' => $a['account']['platform'], 'insights' => ['likes' => $this->number($insights['like'] ?? null), 'comments' => $this->number($insights['comment'] ?? null), 'shares' => $this->number($insights['share'] ?? null)]];
+            $date = ($p['status'] ?? '') === 'published'
+                ? $p['publishedAt'] ?? $p['displayDate'] ?? $p['scheduleDate'] ?? null
+                : $p['scheduleDate'] ?? $p['displayDate'] ?? null;
+            $safe[] = ['id' => mb_substr($id, 0, 255), 'parent_id' => is_string($p['parentPostId'] ?? null) ? mb_substr($p['parentPostId'], 0, 255) : null, 'post_type' => in_array($p['type'] ?? null, ['post', 'reel', 'story'], true) ? $p['type'] : 'post', 'caption' => mb_substr(is_string($p['summary'] ?? null) ? $p['summary'] : '', 0, 12000), 'status' => mb_substr((string) ($p['status'] ?? 'unknown'), 0, 40), 'date' => $this->date($date), 'image' => $media['image'], 'thumbnail' => $media['thumbnail'], 'media' => $media['media'], 'preview_url' => $this->url($p['previewLink'] ?? null), 'account_name' => $a['account']['name'], 'platform' => $a['account']['platform'], 'insights' => ['likes' => $this->number($insights['like'] ?? null), 'comments' => $this->number($insights['comment'] ?? null), 'shares' => $this->number($insights['share'] ?? null)]];
         }
         $count = $excluded ? null : $this->number($r['data']['results']['count'] ?? null);
 
-        return ['ok' => true, 'posts' => $safe, 'total' => $count, 'page' => $page, 'has_more' => count($rows) === 100 && ($count === null || $count > $page * 100), 'from' => $from, 'to' => $to, 'timezone' => 'Pacific/Auckland', 'synced_at' => now()->toIso8601String()];
+        return ['ok' => true, 'posts' => $safe, 'total' => $count, 'page' => $page, 'has_more' => count($rows) === 100 && ($count === null || $count > $page * 100), 'from' => $from, 'to' => $to, 'timezone' => $timezone, 'synced_at' => now()->toIso8601String()];
     }
 
     public function insights(int $days): array

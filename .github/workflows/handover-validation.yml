@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Verify PDF worker build compatibility
-        run: node --test tests/js/pdf-worker-build.test.mjs
+        run: node --test tests/js/pdf-worker-build.test.mjs tests/js/critical-dependencies.test.mjs
       - name: Configure isolated test environment
         run: |
           cp .env.example .env
@@ -36,8 +36,10 @@ jobs:
         run: php -d memory_limit=1G vendor/bin/phpunit
       - name: Verify workspace interactions and installation
         run: |
+          node tests/Frontend/accommodation-carousel.cjs
           node tests/Frontend/brief-references.cjs
           node tests/Frontend/marketing-workflow-save.cjs
+          node tests/Frontend/calendar-social-post.cjs
           node tests/Frontend/ghl-calendar.cjs
           node tests/Frontend/ghl-post-media.cjs
           node tests/Frontend/workspace-install.cjs
@@ -46,15 +48,21 @@ jobs:
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/agreement-custom-description.cjs
+          node tests/Frontend/consultancy-draft-delete.cjs
+          node tests/Frontend/confirm-dialog-keyboard.cjs
           node tests/Frontend/offer-of-place-inbox.cjs
           node tests/Frontend/affiliate-performance.cjs
+          node tests/Frontend/affiliate-onboarding.cjs
           node tests/Frontend/engagement-email-review.cjs
+          node tests/Frontend/engagement-search.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
           node tests/Frontend/hr-work-insights.cjs
           node tests/Frontend/hr-report-changes.cjs
           node tests/Frontend/hr-team.cjs
           node tests/Frontend/hr-my-info.cjs
+          node tests/Frontend/hr-navigation.cjs
+          node tests/Frontend/hr-overview.cjs
           node tests/Frontend/portal-layout-navigation.cjs
           node tests/Frontend/client-conversation-errors.cjs
           node scripts/test-education-theme.mjs
@@ -63,7 +71,10 @@ jobs:
           node tests/Frontend/ticket-attachments.cjs
           node tests/Frontend/ticket-request-edit.cjs
           node tests/Frontend/ticket-board-actions.cjs
+          node tests/Frontend/ticket-analytics.cjs
+          node tests/Frontend/creative-analytics.cjs
           node tests/Frontend/creative-request-actions.cjs
+          node tests/Frontend/creative-request-popup.cjs
           node tests/Frontend/media-drive.cjs
           node tests/Frontend/education-note-activity.cjs
           node tests/Frontend/education-report.cjs
@@ -73,5 +84,6 @@ jobs:
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
           node tests/Frontend/recent-visa.cjs
+          node tests/Frontend/other-case-documents.cjs
           node tests/Frontend/education-personal-report.cjs
           node --test tests/Frontend/ep-admin.test.cjs tests/js/ep-admin.test.mjs tests/js/ep-admin-time.test.mjs tests/Frontend/ep-agent.test.cjs tests/Frontend/ep-manager.test.cjs tests/Frontend/ep-navigation.test.cjs tests/js/ep-agent-client.test.mjs tests/Frontend/assessment-notes.cjs tests/js/task-comments.test.mjs tests/js/case-thread-replies.test.mjs tests/js/http-client-csrf.test.mjs tests/js/compose-message-panel.test.mjs tests/js/payment-proof-upload.test.mjs tests/js/payment-proof-review.test.mjs

@@ -92,13 +92,13 @@ function FeaturedImage({ url, alt }) {
     );
 }
 
-export default function ArticleDialog({ articleId, canPublish, onClose, onSaved }) {
+export default function ArticleDialog({ articleId, canPublish, onClose, onSaved, initialDate = '' }) {
     const dialog = useRef(null);
     const closeButton = useRef(null);
     const titleInput = useRef(null);
     const feedback = useRef(null);
     const [article, setArticle] = useState(null);
-    const [form, setForm] = useState(emptyDraft);
+    const [form, setForm] = useState(() => ({ ...emptyDraft, planned_date: initialDate }));
     const [loadAttempt, setLoadAttempt] = useState(0);
     const [loading, setLoading] = useState(Boolean(articleId));
     const [loadError, setLoadError] = useState('');

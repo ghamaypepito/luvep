@@ -45,7 +45,6 @@ export function ConfirmHost() {
         if (!state) return;
         const onKey = (e) => {
             if (e.key === "Escape") settle(false);
-            if (e.key === "Enter") settle(true);
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);

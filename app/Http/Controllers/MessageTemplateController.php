@@ -597,6 +597,9 @@ class MessageTemplateController extends Controller
      */
     private function context(Request $request): array
     {
+        // External partners use approved templates through Compose; staff manage the library.
+        abort_if(in_array($request->user()->role, ['agent', \App\Models\User::ROLE_SUB_AGENT], true), 403);
+
         $name = (string) $request->route()?->getName();
         $department = null;
         if (str_starts_with($name, 'portal.')) {

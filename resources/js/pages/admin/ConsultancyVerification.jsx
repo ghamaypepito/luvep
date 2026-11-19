@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import { toast } from "sonner";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import {
     BadgeCheck, Check, AlertCircle, Loader2, ChevronRight, ExternalLink,
     X, Flag, Send, MessageSquarePlus, FileText, Eye, Download,
@@ -89,6 +90,21 @@ function Panel({ p, leadBase }) {
     const metaUpdate = (patch, key) => post(`${base}/meta`, { meta: patch }, key);
     const approve = (opts) => post(`${base}/approve`, opts, opts.verify_all ? "verify-all" : opts.send_email === false ? "approve-noemail" : "approve");
     const draft = () => post(`${base}/draft`, {}, "draft");
+    const deleteDraft = async () => {
+        if (busy || !p.delete_token) return;
+        const confirmed = await confirmDialog({
+            title: "Delete draft?", message: `Remove the draft review for ${p.name}? Previously issued documents will be retained.`,
+            confirmText: "Delete draft", tone: "danger",
+        });
+        if (!confirmed) return;
+        setBusy("delete");
+        router.delete(`${base}/draft`, {
+            data: { delete_token: p.delete_token }, preserveScroll: true,
+            onError: (errors) => toast.error(Object.values(errors || {})[0] || "Could not delete this draft. Refresh and try again."),
+            onFinish: () => setBusy(null),
+        });
+    };
+
 
     return (
         <div className="flex-1 min-w-0 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -114,18 +130,22 @@ function Panel({ p, leadBase }) {
                         </Link>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                    {p.delete_token && <button type="button" onClick={deleteDraft} disabled={!!busy}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-rose-200 text-rose-700 text-[12px] font-semibold hover:bg-rose-50 disabled:opacity-40">
+                        {busy === "delete" ? "Deleting…" : "Delete draft"}
+                    </button>}
                     <button type="button" onClick={draft}
-                        disabled={busy === "draft" || p.status === "approved"}
+                        disabled={!!busy || p.status === "approved"}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 disabled:opacity-40">
                         {busy === "draft" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Draft
                     </button>
-                    <button type="button" onClick={() => setRequesting(true)}
+                    <button type="button" onClick={() => setRequesting(true)} disabled={!!busy}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50">
                         Request changes
                     </button>
                     <button type="button" onClick={() => approve({ verify_all: true, send_email: true })}
-                        disabled={!p.can_approve || busy === "verify-all" || p.status === "approved"}
+                        disabled={!p.can_approve || !!busy || p.status === "approved"}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gray-900 text-white text-[12px] font-bold hover:bg-black disabled:opacity-40">
                         {busy === "verify-all" ? <Loader2 size={14} className="animate-spin" /> : <BadgeCheck size={14} />} Approve
                     </button>
@@ -276,7 +296,7 @@ function AgreementReviewModal({ p, onClose, metaUpdate, approve, busy, onRequest
                                 </div>
                             ) : p.items.map((it) => (
                                 <ItemEditor
-                                    key={it.key} item={it} currency={p.currency_symbol}
+                                    key={it.key} item={it} currency={it.currency_symbol || p.currency_symbol}
                                     onAmount={(amount) => metaUpdate({ [it.key]: { amount } }, `row-${it.key}`)}
                                 />
                             ))}

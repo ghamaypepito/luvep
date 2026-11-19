@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay } from 'swiper';
+import { Autoplay } from 'swiper/modules';
 import 'swiper/css';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -173,7 +173,6 @@ const Accommodation = ({ properties = [], bookingTimezone = 'Pacific/Auckland' }
               spaceBetween={24}
               slidesPerView={1.2}
               loop={true}
-              loopAdditionalSlides={4}
               speed={800}
               autoplay={{ delay: 2500, disableOnInteraction: false, pauseOnMouseEnter: true }}
               breakpoints={{

@@ -27,7 +27,13 @@ class GhlPublisher
     /** Exactly one create request. Any uncertain result requires manual reconciliation. */
     public function schedule(MarketingPost $post): ?string
     {
-        $payload = ['summary' => $post->caption];
+        $payload = ['summary' => $post->caption, 'type' => $post->post_type ?: 'post'];
+        if ($post->first_comment !== null && $post->first_comment !== '') {
+            $payload['followUpComment'] = $post->first_comment;
+        }
+        if ($post->post_type && $post->post_type !== 'post') {
+            $payload['facebookPostDetails'] = ['type' => $post->post_type];
+        }
         if ($post->media_path) {
             $url = URL::temporarySignedRoute('marketing.media.shared', $post->scheduled_at->addDays(30), [
                 'id' => $post->id, 'version' => $post->approved_version, 'hash' => $post->media_hash,
@@ -37,6 +43,7 @@ class GhlPublisher
             }
             $payload['media'] = [['url' => $url, 'type' => $post->media_mime]];
         }
+
         return $this->schedulePost($payload, $post->scheduled_at->utc()->toIso8601String());
     }
 
@@ -48,12 +55,11 @@ class GhlPublisher
     private function schedulePost(array $content, string $scheduledAt): ?string
     {
         $payload = [
-            'type' => 'post',
             'accountIds' => [GhlSocialReader::ACCOUNT],
             'userId' => (string) Setting::get('ghl_connector.user_id'),
             'status' => 'scheduled',
             'scheduleDate' => $scheduledAt,
-        ] + $content;
+        ] + $content + ['type' => 'post'];
         try {
             $response = Http::withToken($this->connection->token())->acceptJson()
                 ->withHeaders(['Version' => 'v3'])->withOptions(['allow_redirects' => false])
