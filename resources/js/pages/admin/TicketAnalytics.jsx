@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { ArrowUpRight, CheckCheck, Clock3, Inbox, SlidersHorizontal, UserRound } from "lucide-react";
+import { TicketTrendChart as TrendChart, TicketStatusChart as StatusChart, TicketDataTable as Table } from "@/components/tickets/TicketCharts";
 import TicketTypeTabs from "@/components/creative/TicketTypeTabs";
 
 const label = (s) => String(s ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const number = (v, hours = false) => v == null ? "Unavailable" : `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 })}${hours ? " h" : ""}`;
-const colors = ["#214f43", "#adc978", "#e9b861", "#a59bcc", "#83b9b7", "#bd8c7d"];
 const metricLabels = { documentation_coverage: "Resolution report coverage", first_response_avg_hours: "First response · average", first_response_median_hours: "First response · median", assignment_avg_hours: "Assignment · average", resolution_avg_hours: "Resolution · average", resolution_median_hours: "Resolution · median", overdue_response: "Responses over target", total_with_response_target: "Tickets with response target" };
 
 export default function TicketAnalytics({ filters = {}, options = {}, metrics = {}, trends = [], groups = {}, workload = [], timings = [], errors = {} }) {
@@ -39,31 +39,8 @@ export default function TicketAnalytics({ filters = {}, options = {}, metrics = 
     </div>;
 }
 
-function TrendChart({ trends: recordedWeeks }) {
-    // The report omits inactive weeks; keep elapsed time honest in the chart.
-    const trends = [];
-    if (recordedWeeks.length) {
-        const byPeriod = new Map(recordedWeeks.map((week) => [week.period, week]));
-        const last = new Date(`${recordedWeeks.at(-1).period}T00:00:00Z`);
-        for (const date = new Date(`${recordedWeeks[0].period}T00:00:00Z`); date <= last; date.setUTCDate(date.getUTCDate() + 7)) {
-            const period = date.toISOString().slice(0, 10);
-            trends.push(byPeriod.get(period) ?? { period, created: 0, resolved: 0 });
-        }
-    }
-    const max = Math.max(1, ...trends.flatMap((t) => [Number(t.created), Number(t.resolved)]));
-    return <section className="tw-card tw-trend"><div className="tw-section-heading"><div><h2>Tickets over time</h2><p>Creation and resolution weeks for the filtered tickets</p></div><span className="tw-weekly">Weekly</span></div><div className="tw-legend"><span><i style={{ background: colors[0] }} />Created</span><span><i style={{ background: colors[1] }} />Resolved</span></div>
-        {trends.length ? <><div className="tw-chart-scroll" tabIndex={0} role="region" aria-label="Weekly ticket chart; scroll for more weeks"><div className="tw-bars" style={{ minWidth: `${Math.max(260, trends.length * 76)}px` }} aria-hidden="true">{trends.map((t) => <div className="tw-week" key={t.period}><div className="tw-bar-pair">{["created", "resolved"].map((key, i) => <div className="tw-bar-column" key={key}><span>{number(t[key])}</span><div style={{ height: `${Number(t[key]) / max * 150}px`, background: colors[i] }} /></div>)}</div><time dateTime={t.period}>{new Date(`${t.period}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></div>)}</div></div><details className="tw-chart-data"><summary>View weekly data table</summary><Table columns={["Week starting", "Created", "Resolved"]} rows={trends.map((t) => [t.period, number(t.created), number(t.resolved)])} /></details></> : <p className="tw-empty">No matching tickets for this period.</p>}
-    </section>;
-}
-function StatusChart({ rows }) {
-    const total = rows.reduce((sum, row) => sum + Number(row.count), 0);
-    let position = 0;
-    const segments = rows.map((row, i) => { const start = position; position += total ? Number(row.count) / total * 100 : 0; return `${colors[i % colors.length]} ${start}% ${position}%`; });
-    return <section className="tw-card tw-status"><div className="tw-section-heading"><div><h2>Status overview</h2><p>All tickets matching your filters</p></div></div>{total ? <><div className="tw-donut" style={{ background: `conic-gradient(${segments.join(",")})` }} aria-hidden="true"><div><strong>{number(total)}</strong><span>Total tickets</span></div></div><ul className="tw-status-legend">{rows.map((row, i) => <li key={row.label}><span><i style={{ background: colors[i % colors.length] }} />{label(row.label)}</span><strong>{number(row.count)}</strong></li>)}</ul></> : <p className="tw-empty">No matching tickets.</p>}</section>;
-}
 function Breakdown({ title, rows }) {
     const max = Math.max(1, ...rows.map((r) => Number(r.count)));
     return <section className="tw-card tw-breakdown"><h2>{title}</h2>{rows.length ? <ul>{rows.map((row, i) => <li key={`${row.label}-${i}`}><div><span>{label(row.label) || "Unspecified"}</span><strong>{number(row.count)}</strong></div><div className="tw-track" aria-hidden="true"><div style={{ width: `${Number(row.count) / max * 100}%` }} /></div></li>)}</ul> : <p className="tw-empty">No matching tickets.</p>}</section>;
 }
 function durationList(values) { return values && Object.keys(values).length ? Object.entries(values).map(([k, v]) => `${label(k)}: ${number(v, true)}`).join("; ") : "Unavailable"; }
-function Table({ title, description, columns, rows }) { return <section className="tw-card tw-table-card">{title && <div className="tw-section-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div></div>}<div className="tw-table-scroll" tabIndex={0} role="region" aria-label={title ?? "Weekly ticket data"}><table><thead><tr>{columns.map((c) => <th key={c} scope="col">{c}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>) : <tr><td colSpan={columns.length} className="tw-empty">No matching tickets.</td></tr>}</tbody></table></div></section>; }
