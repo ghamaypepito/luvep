@@ -301,4 +301,64 @@ class AssignedCaseHelperTest extends TestCase
             $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
         }
     }
+
+    public function test_unknown_and_financial_request_origins_fail_closed_on_every_helper_surface(): void
+    {
+        $agent = $this->agent();
+        $case = $this->caseFor($agent);
+        $files = [];
+        foreach (['Finance', 'finance.payment', 'finance', 'invoice', 'payment', 'engagement', 'Manual', 'RFI', '', 'unknown'] as $origin) {
+            $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'origin' => $origin, 'label' => 'Additional evidence']);
+            $files[] = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
+        }
+        $this->actingAs($agent)->get('/portal/agent/assigned-cases')->assertInertia(fn ($p) => $p->has('cases.data', 1)->missing('documents')->missing('requests'));
+        $this->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 0)->has('requests', 0));
+        $before = LeadDocument::count();
+        $paths = Storage::disk('local')->allFiles();
+        foreach ($files as $doc) {
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertNotFound();
+            $this->postJson($this->base($case).'/uploads', ['request_id' => $doc->request_id,
+                'file' => UploadedFile::fake()->create('evidence.pdf', 1, 'application/pdf')])->assertUnprocessable()->assertJsonValidationErrors('request_id');
+        }
+        $this->assertSame($before, LeadDocument::count());
+        $this->assertSame($paths, Storage::disk('local')->allFiles());
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_known_manual_and_rfi_request_origins_keep_requested_evidence_access(): void
+    {
+        $agent = $this->agent();
+        $case = $this->caseFor($agent);
+        $files = [];
+        foreach ([null, 'manual', 'rfi'] as $origin) {
+            $request = LeadDocumentRequest::create(['lead_id' => $case->id, 'origin' => $origin, 'label' => 'Additional evidence']);
+            $files[] = $this->file($case, ['request_id' => $request->id, 'checklist_key' => null, 'status' => 'Submitted']);
+        }
+        $this->actingAs($agent)->get($this->base($case))->assertInertia(fn ($p) => $p->has('documents', 3)->has('requests', 3));
+        foreach ($files as $doc) {
+            $this->get($this->base($case).'/documents/'.$doc->id.'/download')->assertDownload($doc->original_name);
+            $this->post($this->base($case).'/uploads', ['request_id' => $doc->request_id,
+                'file' => UploadedFile::fake()->create('evidence.pdf', 1, 'application/pdf')])->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertSame(2, LeadDocument::where('request_id', $doc->request_id)->count());
+        }
+    }
+
+    public function test_referral_case_picker_keeps_own_referrals_without_exposing_other_or_helper_only_cases(): void
+    {
+        $agent = $this->agent(['module_permissions' => ['referral_cases', 'assigned_immigration_cases']]);
+        $own = $this->caseFor(null, ['agent_id' => $agent->id, 'first_name' => 'Own A']);
+        $otherOwn = $this->caseFor(null, ['agent_id' => $agent->id, 'first_name' => 'Own B']);
+        $other = $this->caseFor(null, ['first_name' => 'PRIVATE-OTHER-CASE']);
+        $helperOnly = $this->caseFor($agent, ['first_name' => 'PRIVATE-HELPER-ONLY']);
+        $this->caseFor(null, ['agent_id' => $agent->id, 'first_name' => 'Archived'])->delete();
+        $this->caseFor(null, ['agent_id' => $agent->id, 'is_immigration_case' => false, 'immigration_stage' => null]);
+        $this->actingAs($agent)->get('/portal/agent/cases/'.$own->id.'/profile')->assertOk()
+            ->assertInertia(fn ($p) => $p->has('caseOptions', 2)->where('caseOptions.0.id', $own->id)->where('caseOptions.1.id', $otherOwn->id));
+        foreach (['immigration_manager', 'admin'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]))
+                ->get('/portal/immigration/cases/'.$own->id.'/profile')->assertOk()
+                ->assertInertia(fn ($p) => $p->has('caseOptions', 4)->where('caseOptions', fn ($options) => collect($options)->pluck('id')->sort()->values()->all()
+                    === collect([$own->id, $otherOwn->id, $other->id, $helperOnly->id])->sort()->values()->all()));
+        }
+    }
 }

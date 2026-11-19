@@ -82,7 +82,9 @@ class AssignedCaseAccess
 
     public function allowedRequest(LeadDocumentRequest $request): bool
     {
-        return filled($request->label) && ! in_array($request->origin, ['finance', 'invoice', 'payment', 'engagement'], true)
+        // Only known client-evidence workflows establish a safe request purpose.
+        // Unknown origins (including differently cased/namespaced finance) fail closed.
+        return filled($request->label) && in_array($request->origin, [null, 'manual', 'rfi'], true)
             && $this->safePurpose('', $request->label);
     }
 
