@@ -2095,6 +2095,7 @@ class LeadDocumentController extends Controller
                 // 'rfi' groups these under a "Request Information" section the
                 // client uploads their INZ-requested documents into.
                 'origin' => $r->origin,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id),
                 'requested_at' => $r->requested_at,
                 'latest_document' => $r->latestDocument ? $this->docSerialize($r->latestDocument) : null,
             ]);
@@ -2184,7 +2185,8 @@ class LeadDocumentController extends Controller
 
         $request->validate([
             'files' => 'required|array|min:1|max:10',
-            'files.*' => UploadValidation::document(),
+            'files.*' => app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $key)
+                ? UploadValidation::pdfDocument() : UploadValidation::document(),
         ]);
 
         try {
@@ -2266,7 +2268,9 @@ class LeadDocumentController extends Controller
 
         abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
 
-        $request->validate(['file' => 'required|'.UploadValidation::document()]);
+        $rule = app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $doc)
+            ? UploadValidation::pdfDocument() : UploadValidation::document();
+        $request->validate(['file' => 'required|'.$rule]);
         $file = $request->file('file');
         [$path, $displayName] = $this->storeChecklistFile($file, $lead, $doc->checklist_key ?? 'other');
 
@@ -2376,11 +2380,19 @@ class LeadDocumentController extends Controller
             abort_unless($req, 403, 'Request does not belong to you.');
         }
 
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        $pdfOnly = isset($req) && $checklist->requestRequiresPdf($lead, $req->id);
+        $boundKeys = $pdfOnly ? $checklist->requestChecklistKeys($lead, $req->id) : [];
+        if ($pdfOnly) {
+            $request->validate(['file' => 'required|'.UploadValidation::pdfDocument()]);
+        }
+
         $path = $request->file('file')->store("lead-documents/{$lead->id}", self::DISK);
 
         $document = LeadDocument::create([
             'lead_id' => $lead->id,
             'request_id' => $request->input('request_id'),
+            'checklist_key' => count($boundKeys) === 1 ? $boundKeys[0] : null,
             'original_name' => $request->file('file')->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $request->file('file')->getMimeType(),

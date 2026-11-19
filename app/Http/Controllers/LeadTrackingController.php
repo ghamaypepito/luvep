@@ -392,9 +392,10 @@ class LeadTrackingController extends Controller
         // except the Face Image, which must be a JPEG — keeps the case file
         // consistent for INZ lodgement.
         $isFaceImage = str_contains(strtolower((string) $checklistKey), 'face');
-        $fileRule = $isFaceImage
+        $pdfOnly = app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $checklistKey);
+        $fileRule = $pdfOnly ? UploadValidation::pdfDocument() : ($isFaceImage
             ? 'file|mimes:jpg,jpeg|max:'.UploadValidation::DOCUMENT_MAX_KB
-            : 'file|mimes:pdf|max:'.UploadValidation::DOCUMENT_MAX_KB;
+            : 'file|mimes:pdf|max:'.UploadValidation::DOCUMENT_MAX_KB);
 
         // Validate the collected files — one OR many against a single
         // checklist item (a 6-month bank statement or multi-page scan often
@@ -495,8 +496,12 @@ class LeadTrackingController extends Controller
 
         abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
 
+        $request->validate(['checklist_key' => 'nullable|string|max:80']);
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        $pdfOnly = $checklist->documentRequiresPdf($lead, $doc)
+            || $checklist->clientRequiresPdf($lead, $request->input('checklist_key'));
         $request->validate([
-            'file' => 'nullable|'.UploadValidation::document(),
+            'file' => 'nullable|'.($pdfOnly ? UploadValidation::pdfDocument() : UploadValidation::document()),
             'checklist_key' => 'nullable|string|max:80',
         ]);
 
@@ -910,6 +915,7 @@ class LeadTrackingController extends Controller
                 'id' => $d->id,
                 'original_name' => $d->original_name,
                 'checklist_key' => $d->checklist_key,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d),
                 'size' => $d->size,
                 'mime' => $d->mime,
                 // Client-safe: the manager's internal "Checked" reads as "Under
@@ -1368,7 +1374,7 @@ class LeadTrackingController extends Controller
                 ->all();
         }
 
-        $decorated = collect($items)->map(function ($item) use ($docsByKey) {
+        $decorated = collect($items)->map(function ($item) use ($docsByKey, $lead) {
             $key = $item['key'] ?? null;
             $docs = collect(array_merge([$key], $item['aliases'] ?? []))->flatMap(fn ($uploadKey) => $docsByKey->get($uploadKey) ?? collect());
 
@@ -1387,6 +1393,7 @@ class LeadTrackingController extends Controller
 
             return [
                 'key' => $key,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $key),
                 'aliases' => $item['aliases'] ?? [],
                 'label' => $item['label'] ?? '',
                 // Section heading. Null for visas saved before Section became
