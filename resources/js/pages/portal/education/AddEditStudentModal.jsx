@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { router } from "@inertiajs/react";
 import { EDUCATION_DISPOSITIONS } from "../../../lib/educationDispositions";
+import { buildProgramIntakes, isIntakeDate } from "../../../lib/programIntakes";
 import { X, Save, AlertTriangle, GraduationCap, ChevronDown, Search, UserPlus, Users, Briefcase, Check } from "lucide-react";
 
 // Add / edit student modal — used from the Students page.
@@ -104,7 +105,7 @@ const blankForm = () => ({
     // for that department's list. Default department is education.
     department: "education", stage: "", assignee: "",
     date_of_engagement: "",
-    program_text: "", internal_note: "",
+    program_text: "", program_intakes: [], internal_note: "",
     payment: "", intake: "", actual_course_started_on: "", school_id: "", school_text: "",
     coop: "", oop: "", english_test: "",
 });
@@ -150,7 +151,7 @@ export default function AddEditStudentModal({
                 const raw = localStorage.getItem(DRAFT_KEY);
                 if (raw) draft = JSON.parse(raw);
             } catch { /* malformed JSON in storage — ignore */ }
-            setForm({ ...blankForm(), ...(draft || {}) });
+            setForm({ ...blankForm(), ...(draft || {}), program_intakes: buildProgramIntakes(draft?.program_text, draft?.program_intakes, draft?.intake) });
             setSchoolByProgram(buildSchoolMap(draft?.program_text || "", null, programOptions, schoolOptions));
             setMode("new");
             setLinkedLead(null);
@@ -190,6 +191,7 @@ export default function AddEditStudentModal({
             assignee:        seedAssignee,
             date_of_engagement: student.date_engaged                    ?? "",
             program_text:    student.program ?? "",
+            program_intakes: buildProgramIntakes(student.program, student.program_intakes, student.intake),
             internal_note:   student.comments                           ?? "",
             payment:         student.payment                            ?? "",
             intake:          student.intake                             ?? "",
@@ -285,7 +287,13 @@ export default function AddEditStudentModal({
     // school (schoolByProgram, keyed by title). Adding a program auto-fills its
     // catalogue school when it has one; removing a program drops its school.
     const setProgramTitles = (titles) => {
-        setForm((f) => ({ ...f, program_text: titles.join(PROGRAM_DELIM) }));
+        setForm((f) => {
+            const entries = buildProgramIntakes(titles.join(PROGRAM_DELIM), f.program_intakes);
+            // A new first selection may use an explicitly entered unassigned
+            // intake; adding later programs never copies the first date.
+            if (!f.program_text && titles.length && f.intake) entries[0].intake = f.intake;
+            return { ...f, program_text: titles.join(PROGRAM_DELIM), program_intakes: entries, intake: titles.length ? entries[0].intake : "" };
+        });
         setSchoolByProgram((prev) => {
             const next = {};
             titles.forEach((t) => { next[t] = (t in prev) ? prev[t] : catalogSchoolFor(t); });
@@ -293,6 +301,11 @@ export default function AddEditStudentModal({
         });
     };
     const setProgramSchool = (title, name) => setSchoolByProgram((prev) => ({ ...prev, [title]: name }));
+    const setProgramIntake = (title, value) => setForm(f => ({
+        ...f,
+        program_intakes: f.program_intakes.map(row => row.program === title ? { ...row, intake: value } : row),
+        intake: programTitles[0] === title ? value : f.intake,
+    }));
 
     const submit = (e) => {
         e?.preventDefault?.();
@@ -315,7 +328,7 @@ export default function AddEditStudentModal({
         // pick are sent as null so a department switch in edit mode
         // clears the previous track's stage, except during a hold edit.
         const cfg = STAGES_BY_DEPARTMENT[form.department] || STAGES_BY_DEPARTMENT.education;
-        const { department, stage, assignee, ...rest } = form;
+        const { department, stage, assignee, program_intakes, ...rest } = form;
         const payload = {
             ...rest,
             education_stage:   cfg.field === "education_stage"   ? (stage || null) : null,
@@ -350,6 +363,10 @@ export default function AddEditStudentModal({
         const schoolUnion = Array.from(new Set(programSchools.filter(Boolean)));
         const firstSchool = schoolUnion[0];
         payload.program_schools = programSchools;
+        if (programTitles.length || (editing && Array.isArray(student.program_intakes))) {
+            payload.program_intakes = buildProgramIntakes(form.program_text, program_intakes)
+                .map(row => ({ program: row.program, intake: row.intake || null }));
+        }
         payload.school_text = schoolUnion.join(SCHOOL_DELIM) || null;
         payload.school_id = firstSchool
             ? (schoolOptions.find((s) => s.name?.toLowerCase() === firstSchool.toLowerCase())?.id ?? null)
@@ -639,7 +656,7 @@ export default function AddEditStudentModal({
                             <Field label="Date engaged" hint="When they became engaged · optional">
                                 <input type="date" value={form.date_of_engagement} onChange={set("date_of_engagement")} className={ICls} />
                             </Field>
-                            <Field label="Program offered" hint="Search or select one or more — each program gets its own school below">
+                            <Field label="Program offered" hint="Search or select one or more — each program gets its own school and planned intake below">
                                 <ProgramMultiSelect
                                     value={form.program_text}
                                     delim={PROGRAM_DELIM}
@@ -648,18 +665,21 @@ export default function AddEditStudentModal({
                                 />
                             </Field>
                             <div className="sm:col-span-2 lg:col-span-3">
-                                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">School per program</label>
+                                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">School and intake per program</label>
                                 <SchoolsPerProgram
                                     programs={programTitles}
                                     value={schoolByProgram}
                                     options={schoolOptions}
                                     onChange={setProgramSchool}
+                                    intakes={form.program_intakes}
+                                    onIntakeChange={setProgramIntake}
                                 />
                                 <p className="mt-1 text-[10.5px] text-gray-400">Auto-filled from each program's catalogue school when it has one — type to set or change any.</p>
+                                {programTitles.length > 0 && <p className="mt-1 text-[10.5px] text-gray-400">Set each program's planned intake separately. The first program supplies the primary intake shown in existing monitoring views. Additional dates are not guessed.</p>}
                             </div>
-                            <Field label="Planned intake" hint="Scheduled course start · optional">
+                            {programTitles.length === 0 && <Field label="Planned intake" hint="Scheduled course start · optional">
                                 <input type="date" aria-label="Planned intake" value={form.intake} onChange={set("intake")} className={ICls} />
-                            </Field>
+                            </Field>}
                             <Field label="Actual course start date" hint="When the student started · optional">
                                 <input type="date" aria-label="Actual course start date" value={form.actual_course_started_on} onChange={set("actual_course_started_on")} className={ICls} />
                             </Field>
@@ -835,7 +855,7 @@ function ProgramMultiSelect({ value = "", delim = " · ", options = [], onChange
 // Per-program school editor — one row per selected program with an editable
 // school field (native datalist typeahead over the catalogue, free text
 // allowed). Values are held in the parent as a { programTitle: school } map.
-function SchoolsPerProgram({ programs = [], value = {}, options = [], onChange }) {
+function SchoolsPerProgram({ programs = [], value = {}, options = [], onChange, intakes = [], onIntakeChange }) {
     if (programs.length === 0) {
         return <p className="text-[12px] text-gray-400 rounded-xl border border-dashed border-gray-200 px-3 py-3">Add a program above to assign its school.</p>;
     }
@@ -845,9 +865,10 @@ function SchoolsPerProgram({ programs = [], value = {}, options = [], onChange }
                 {options.map((s) => <option key={s.id} value={s.name} />)}
             </datalist>
             {programs.map((t, i) => (
-                <div key={`${t}-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2 bg-white">
-                    <span className="text-[12.5px] font-semibold text-gray-800 sm:w-1/2 min-w-0 truncate" title={t}>{t}</span>
+                <div key={`${t}-${i}`} className="grid grid-cols-1 sm:grid-cols-3 items-start gap-2 px-3 py-2 bg-white">
+                    <span className="text-[12.5px] font-semibold text-gray-800 min-w-0 break-words" title={t}>{t}</span>
                     <input
+                        aria-label={"School for " + t}
                         list="spp-school-options"
                         value={value[t] || ""}
                         onChange={(e) => onChange(t, e.target.value)}
@@ -855,6 +876,16 @@ function SchoolsPerProgram({ programs = [], value = {}, options = [], onChange }
                         maxLength={191}
                         className="flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-800 outline-none focus:border-[#436235] focus:ring-1 focus:ring-[#436235]"
                     />
+                    <label className="text-[10.5px] text-gray-500">Planned intake
+                        <input type="date" aria-label={"Planned intake for " + t}
+                            value={isIntakeDate(intakes.find(row => row.program === t)?.intake) ? intakes.find(row => row.program === t).intake : ""}
+                            onChange={event => onIntakeChange(t, event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-800" />
+                        {intakes.find(row => row.program === t)?.intake && !isIntakeDate(intakes.find(row => row.program === t).intake) &&
+                            <span className="block">Saved intake: {intakes.find(row => row.program === t).intake}. Choose a date to replace it.
+                                <button type="button" aria-label={"Clear saved intake for " + t} onClick={() => onIntakeChange(t, "")} className="ml-1 text-blue-700">Clear saved intake</button>
+                            </span>}
+                    </label>
                 </div>
             ))}
         </div>

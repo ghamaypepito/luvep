@@ -14,6 +14,8 @@ import {
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import AddEditStudentModal from "./AddEditStudentModal";
 import { studentReferralLabel } from "../../../lib/studentReferral";
+import ProgramIntakeDates from "../../../components/education/ProgramIntakeDates";
+import { buildProgramIntakes } from "../../../lib/programIntakes";
 import CaseFilesModal from "@/components/immigration/CaseFilesModal";
 import { priorityRing } from "@/utils/priority";
 
@@ -978,7 +980,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
 
                                             {/* Intake */}
                                             <td className="px-3 py-2.5 whitespace-nowrap">
-                                                {s.intake ? <span className="text-gray-700">{fmtIntake(s.intake)}</span> : <span className="text-gray-300">—</span>}
+                                                <ProgramIntakeDates student={s} format={fmtIntake} />
                                             </td>
 
                                             {/* Updated — last staff activity on this record:
@@ -1226,7 +1228,9 @@ function StudentDashboardPanel({ student: s }) {
                     {/* Row 1 — academic */}
                     <ReadOnlyField icon={BookOpen}  label="Program"     value={s.program ? `${s.program}${s.level ? ` · ${s.level}` : ""}` : null} />
                     <ReadOnlyField icon={School}    label="School"      value={schoolDisplay} />
-                    <ReadOnlyField icon={Calendar}  label="Planned intake" value={fmtIntake(s.intake)} />
+                    <ReadOnlyField icon={Calendar} label="Planned intakes" value={Array.isArray(s.program_intakes) && s.program_intakes.length
+                        ? buildProgramIntakes(s.program, s.program_intakes).map(row => `${row.program}: ${row.intake ? fmtIntake(row.intake) : "Not set"}`).join("; ")
+                        : fmtIntake(s.intake)} />
                     <ReadOnlyField icon={Languages} label="PTE / IELTS" value={englishTest} />
                     <ReadOnlyField icon={Calendar} label="Actual course start" value={fmtIntake(s.actual_course_started_on)} />
 
