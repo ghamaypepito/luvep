@@ -11,6 +11,7 @@ const React = require('react');
 const { act } = React;
 const { createRoot } = require('react-dom/client');
 const empty = () => null;
+let clientSave;
 function load(file, extra = '') {
     const compiled = buildSync({
         stdin: { contents: fs.readFileSync(file, 'utf8') + extra, resolveDir: path.dirname(path.resolve(file)), loader: 'jsx' },
@@ -19,9 +20,10 @@ function load(file, extra = '') {
     }).outputFiles[0].text;
     const component = new Module(path.resolve('resident-evidence-test.cjs'), module);
     component.require = (name) => {
-        if (name === '@inertiajs/react') return { Head: empty, Link: empty, router: {}, useForm: empty, usePage: () => ({ props: {} }) };
+        if (name === '@inertiajs/react') return { Head: empty, Link: empty, router: { post: (_url, payload) => { clientSave = payload; } }, useForm: empty, usePage: () => ({ props: {} }) };
         if (name === 'sonner') return { toast: { success: empty, error: empty } };
         if (name === 'lucide-react') return new Proxy({}, { get: () => empty });
+        if (name.endsWith('/data/assessmentSections')) return { ASSESSMENT_SECTIONS: { resident: [{ title: 'English & Family', fields: [['english_evidence', 'English Language Evidence'], ['english_test_score', 'Score'], ['job_title', 'Job']] }] }, fieldKind: () => 'text' };
         if (name.startsWith('@/')) return Object.assign(empty, { default: empty, AiAssessmentReviewModal: empty });
         return module.require(name);
     };
@@ -31,6 +33,7 @@ function load(file, extra = '') {
 }
 const { IntakeViewModal } = load('resources/js/pages/portal/immigration/Assessments.jsx');
 const { StepEnglishFamily } = load('resources/js/pages/visa/ResidentIntakePage.jsx', '\nexport { StepEnglishFamily };');
+const ClientAssessment = load('resources/js/pages/portal/lead/VisaAssessment.jsx').default;
 const field = { key: 'english_evidence', label: 'English Language Evidence', raw: 'IELTS', value: 'IELTS', provided: true, editable: true, options: ['IELTS', 'Qualification(s)', 'Not Required'] };
 const data = { ai_review: {}, notes: [], sections: [{ title: 'English & Family', fields: [field] }] };
 const button = (name) => [...document.querySelectorAll('button')].find((el) => el.textContent.trim() === name);
@@ -74,6 +77,17 @@ async function change(element, value) {
     assert.match(document.body.textContent, /Not Required — recorded by staff/);
     assert.equal(button('IELTS'), undefined);
     assert.equal(button('Qualification(s)'), undefined);
+    await act(async () => root.unmount());
+    root = createRoot(document.getElementById('root'));
+    await act(async () => root.render(React.createElement(ClientAssessment, { assessment: {
+        type: 'resident', values: { english_evidence: 'Not Required', english_test_score: '', job_title: 'Chef' },
+        read_only_fields: ['english_evidence', 'english_test_score', 'english_test_date'], save_url: '/portal/lead/visa-assessment',
+    } })));
+    assert.equal(document.querySelectorAll('input').length, 1);
+    assert.equal(document.querySelector('input').value, 'Chef');
+    assert.match(document.body.textContent, /Not Required · Recorded by staff/);
+    await act(async () => button('Save changes').click());
+    assert.deepEqual(clientSave, { field_values: { job_title: 'Chef' } });
     await act(async () => root.unmount());
     console.log('Resident English evidence: required reason, save/errors/history and public read-only controls passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

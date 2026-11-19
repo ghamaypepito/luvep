@@ -274,9 +274,7 @@ class ResidentIntakeController extends Controller
 
             $intake = ResidentIntake::whereKey($intake->id)->lockForUpdate()->firstOrFail();
             // Applicant edits cannot replace a staff decision, including a stale form opened before it.
-            if ($intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED) {
-                unset($validated['english_evidence'], $validated['english_test_score'], $validated['english_test_date']);
-            }
+            $validated = \Illuminate\Support\Arr::except($validated, $intake->applicantReadOnlyFields());
 
             $existingFiles = is_array($intake->document_files) ? $intake->document_files : [];
             [$mergedFiles, $documents] = $this->persistUploadedFiles($request, $intake->intake_id, $existingFiles, $documents);

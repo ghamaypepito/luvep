@@ -18,6 +18,15 @@ class ResidentIntake extends Model
 
     public const ENGLISH_NOT_REQUIRED = 'Not Required';
 
+    public function applicantReadOnlyFields(): array
+    {
+        return [
+            'english_evidence_exception', 'english_evidence_reason',
+            ...($this->english_evidence === self::ENGLISH_NOT_REQUIRED
+                ? ['english_evidence', 'english_test_score', 'english_test_date'] : []),
+        ];
+    }
+
     protected $fillable = [
         'intake_id',
         'payment_status',
