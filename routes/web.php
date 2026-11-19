@@ -698,6 +698,8 @@ Route::middleware(['auth'])->group(function () {
             ->name('consultancy-verification.request-changes');
         Route::post('/consultancy-verification/{lead}/verify', [\App\Http\Controllers\ConsultancyVerificationController::class, 'verify'])
             ->name('consultancy-verification.verify');
+        Route::delete('/consultancy-verification/{lead}/draft', [\App\Http\Controllers\ConsultancyVerificationController::class, 'deleteDraft'])
+            ->name('consultancy-verification.draft.delete');
         Route::post('/consultancy-verification/{lead}/draft', [\App\Http\Controllers\ConsultancyVerificationController::class, 'draft'])
             ->name('consultancy-verification.draft');
         Route::post('/consultancy-verification/{lead}/approve', [\App\Http\Controllers\ConsultancyVerificationController::class, 'approve'])

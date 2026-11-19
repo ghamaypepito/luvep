@@ -42,4 +42,15 @@ class ConsultancySubmitAutomationTest extends TestCase
         $this->assertSame('pending', $lead->refresh()->consultancy_review['status']);
         Mail::assertQueued(TemplatedMessage::class, fn ($m) => $m->hasTo('emma@example.com'));
     }
+
+    public function test_english_submit_automation_excludes_separate_usd_exam_fee(): void
+    {
+        $this->mock(\App\Services\EmailAutomationService::class)->shouldReceive('fire')->once()
+            ->with('education.consultancy.submitted', \Mockery::type(Lead::class), \Mockery::on(fn ($context) => $context['total_amount'] === 14500));
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client']);
+        $this->actingAs(User::factory()->create(['role' => 'admin']))
+            ->post("/admin/leads/{$lead->id}/generate/english_engagement", ['english_fee' => 14500, 'pte_fee' => 240])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(240, $lead->fresh()->consultancy_review['items']['pte_exam']['amount']);
+    }
 }

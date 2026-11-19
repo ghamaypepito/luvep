@@ -48,13 +48,13 @@ class EditorialCalendarController extends Controller
     private function socialPosts()
     {
         return MarketingPost::where('location_id', GhlConnection::LOCATION)->where('account_id', GhlSocialReader::ACCOUNT)
-            ->select('id', 'campaign', 'service', 'status', 'scheduled_at', 'updated_at', 'post_type', 'publish_now');
+            ->select('id', 'campaign', 'service', 'status', 'scheduled_at', 'updated_at', 'post_type', 'publish_now', 'ghl_post_id');
     }
 
     private function socialSummary(MarketingPost $post): array
     {
         return ['id' => $post->id, 'title' => $post->campaign, 'pillar' => $post->service,
-            'status' => $post->status, 'post_type' => $post->post_type ?: 'post', 'publish_now' => (bool) $post->publish_now,
+            'status' => $post->status, 'ghl_post_id' => $post->ghl_post_id, 'post_type' => $post->post_type ?: 'post', 'publish_now' => (bool) $post->publish_now,
             'planned_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
             'planned_time' => $post->scheduled_at?->setTimezone('Asia/Manila')->format('H:i')];
     }
