@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import { useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -125,14 +126,16 @@ function AssessmentEditor({ assessment }) {
     const sections = ASSESSMENT_SECTIONS[assessment.type] || [];
     const [values, setValues] = useState(assessment.values || {});
     const [saving, setSaving] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
     const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
     const save = () => {
         setSaving(true);
+        setFieldErrors({});
         router.post(assessment.save_url, { field_values: values }, {
             preserveScroll: true,
             onSuccess: () => toast.success("Saved — your Visa Information Form has been updated"),
-            onError: (e) => toast.error(Object.values(e)[0] || "Could not save"),
+            onError: (e) => { setFieldErrors(Object.fromEntries(Object.entries(e).map(([key, value]) => [key.replace(/^field_values\./, ""), value]))); toast.error(Object.values(e)[0] || "Could not save"); },
             onFinish: () => setSaving(false),
         });
     };
@@ -178,6 +181,8 @@ function AssessmentEditor({ assessment }) {
                     </section>
                 ))}
             </div>
+
+            <div className="p-6"><VifSupplementFields type={assessment.type} values={values} onChange={setField} errors={fieldErrors} /></div>
 
             {/* Save (again, at the bottom for long forms) */}
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end bg-gray-50/50">

@@ -69,6 +69,11 @@ class WorkIntakeController extends Controller
             ->all());
 
         $validated = $request->validate($this->rules());
+        $visaLabel = ($validated['vif_answers']['work_visa_category'] ?? '') === 'Post-Study Work Visa' ? 'Post-Study Work Visa' : 'Work Visa (AEWV)';
+        if (($validated['vif_answers']['work_visa_category'] ?? '') === 'Post-Study Work Visa'
+            && ! \App\Models\VisaType::whereIn('code', ['POST_STUDY_WORK', 'PSWV'])->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['vif_answers.work_visa_category' => 'The Post-Study Work Visa form is not configured yet. Please contact the Immigration team.']);
+        }
 
         try {
             DB::beginTransaction();
@@ -92,7 +97,9 @@ class WorkIntakeController extends Controller
             // paired Assessment to hang journey state on. Pay/Book
             // redirect stays commented; payment intake is dormant until
             // Stripe is wired up in a future build.
-            $visaType = IntakeVisaTypeMap::resolve(WorkIntake::class);
+            $visaType = ($intake->vif_answers['work_visa_category'] ?? '') === 'Post-Study Work Visa'
+                ? \App\Models\VisaType::whereIn('code', ['POST_STUDY_WORK', 'PSWV'])->first()
+                : IntakeVisaTypeMap::resolve(WorkIntake::class);
             if (! $visaType) {
                 Log::warning('VisaType not found for Work intake; skipping Assessment creation.', [
                     'intake_id' => $intake->id,
@@ -104,15 +111,15 @@ class WorkIntakeController extends Controller
 
             DB::commit();
 
-            $this->fireEnquiryCaptured($intake, 'Work Visa (AEWV)');
+            $this->fireEnquiryCaptured($intake, $visaLabel);
 
-            $this->syncIntakeToExistingCase($intake, 'Work Visa (AEWV)');
+            $this->syncIntakeToExistingCase($intake, $visaLabel);
 
             // return redirect()->route('assessment.pay', $assessment->token);
             // Stay on the form page and flip it to the persistent
             // thank-you modal — the visa label is carried so the modal
             // can mention it by name.
-            return back()->with('intake_submitted', 'Work Visa (AEWV)');
+            return back()->with('intake_submitted', $visaLabel);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Work intake storage failed', ['error' => $e->getMessage()]);
@@ -126,6 +133,7 @@ class WorkIntakeController extends Controller
     private function rules(): array
     {
         return [
+            ...\App\Support\VifSupplement::rules('work'),
             'family_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'other_names' => 'nullable|string|max:255',

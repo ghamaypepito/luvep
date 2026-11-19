@@ -264,7 +264,7 @@ class LeadPortalController extends Controller
         if ($type && $intake) {
             $assessment = [
                 'type' => $type,
-                'values' => $this->assessmentValues($intake, $type),
+                'values' => array_merge($this->assessmentValues($intake, $type), \App\Support\VifSupplement::values($intake, $type)),
                 'stats' => \App\Support\AssessmentFormSchema::stats($intake, $type),
                 'save_url' => '/portal/lead/visa-assessment',
             ];
@@ -372,6 +372,18 @@ class LeadPortalController extends Controller
         return back()->with('success', 'Your Visa Information Form has been generated.');
     }
 
+    /** Refresh only already-generated VIFs linked by the exact assessment FK. */
+    public function refreshStoredVifForIntake(string $type, $intake): void
+    {
+        $assessmentIds = \App\Models\Assessment::where('intakeable_type', $intake::class)
+            ->where('intakeable_id', $intake->id)->pluck('id');
+        foreach (Lead::whereIn('assessment_id', $assessmentIds)->get() as $lead) {
+            if (\App\Models\LeadDocument::where('lead_id', $lead->id)->where('source_variant', 'vif')->exists()) {
+                $this->buildAndStoreVif($lead, $type, $intake);
+            }
+        }
+    }
+
     /** Build the VIF PDF from an intake and store it as the lead's VIF document. */
     private function buildAndStoreVif(Lead $lead, string $type, $intake): void
     {
@@ -430,11 +442,12 @@ class LeadPortalController extends Controller
         abort_unless($type && $intake, 422, 'There is no assessment to edit on this case.');
 
         $data = $request->validate([
+            ...\App\Support\VifSupplement::rules($type, 'field_values.'),
             'field_values' => 'present|array',
             'field_values.*' => 'nullable',
         ]);
 
-        $allowed = array_flip(\App\Support\AssessmentFormSchema::fields($type));
+        $allowed = array_flip(array_merge(\App\Support\AssessmentFormSchema::fields($type), \App\Support\VifSupplement::rootKeys($type), ['vif_answers']));
         $fillable = array_flip($intake->getFillable());
         $casts = $intake->getCasts();
 
@@ -449,7 +462,8 @@ class LeadPortalController extends Controller
             if (in_array($casts[$key] ?? null, ['bool', 'boolean'], true)) {
                 $value = in_array(strtolower((string) $value), ['yes', '1', 'true', 'on'], true);
             }
-            $intake->{$key} = $value;
+            $intake->{$key} = $key === 'vif_answers' && is_array($value)
+                ? array_replace($intake->vif_answers ?? [], $value) : $value;
         }
         $intake->save();
 

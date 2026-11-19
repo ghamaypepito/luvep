@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 class StudentIntake extends Model
 {
     protected $fillable = [
+        'vif_answers',
         'intake_id', 'status', 'edit_token',
         'family_name', 'first_name', 'other_names', 'gender', 'dob',
         'country_of_birth', 'place_of_birth', 'current_address', 'overseas_address',
@@ -36,6 +37,7 @@ class StudentIntake extends Model
     ];
 
     protected $casts = [
+        'vif_answers' => 'array',
         'documents' => 'array',
         'document_files' => 'array',
         'dob' => 'date',

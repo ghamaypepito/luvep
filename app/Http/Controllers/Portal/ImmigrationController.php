@@ -3364,10 +3364,13 @@ class ImmigrationController extends Controller
         abort_unless(isset($modelMap[$type]), 404, 'Unknown intake type.');
 
         $intake = $modelMap[$type]::findOrFail($id);
+        $request->validate(\App\Support\VifSupplement::rules($type, 'fields.'));
 
         // Whitelist: only the real form fields for this visa type may be written.
         $allowed = collect($this->intakeSectionSchema($type))->flatten()->filter()->all();
+        $allowed = array_merge($allowed, \App\Support\VifSupplement::rootKeys($type), ['vif_answers']);
         $attrs = $intake->getAttributes();
+        $beforeVif = \App\Support\VifSupplement::values($intake, $type);
 
         $changed = false;
         foreach ((array) $data['fields'] as $key => $val) {
@@ -3375,12 +3378,21 @@ class ImmigrationController extends Controller
                 continue; // silently drop anything that isn't a whitelisted field
             }
             // A blank clears the field back to null.
-            $intake->{$key} = ($val === '' || $val === null) ? null : $val;
+            $intake->{$key} = $key === 'vif_answers' && is_array($val)
+                ? array_replace($intake->vif_answers ?? [], $val)
+                : (($val === '' || $val === null) ? null : $val);
             $changed = true;
         }
 
         if ($changed) {
-            $intake->save();
+            \Illuminate\Support\Facades\DB::transaction(function () use ($intake, $type, $data, $beforeVif) {
+                $intake->save();
+                $additionalKeys = array_merge(['vif_answers'], \App\Support\VifSupplement::rootKeys($type));
+                if (array_intersect(array_keys($data['fields']), $additionalKeys)
+                    && $beforeVif != \App\Support\VifSupplement::values($intake, $type)) {
+                    app(\App\Http\Controllers\LeadPortalController::class)->refreshStoredVifForIntake($type, $intake);
+                }
+            });
         }
 
         return $this->intakeData($type, $id);
@@ -3411,7 +3423,7 @@ class ImmigrationController extends Controller
             'user_agent', 'first_name', 'last_name', 'family_name', 'email', 'phone',
             'payment_status', 'payment_amount', 'payment_ref', 'paid', 'paid_at',
             'payment_session_id', 'payment_amount_cents', 'payment_currency', 'booking_id',
-            'terms_accepted',
+            'terms_accepted', 'vif_answers',
         ];
 
         // Mirror the PUBLIC landing-page form for this visa type: identical
@@ -3505,13 +3517,15 @@ class ImmigrationController extends Controller
             'email' => $intake->email,
             'phone' => $intake->phone,
             'reference' => $intake->intake_id,
-            'visa_label' => \App\Support\IntakeVisaTypeMap::label($intake::class),
+            'visa_label' => $type === 'work' && ($intake->vif_answers['work_visa_category'] ?? '') === 'Post-Study Work Visa'
+                ? 'Post-Study Work Visa' : \App\Support\IntakeVisaTypeMap::label($intake::class),
             'submitted_at' => optional($intake->created_at)->toIso8601String(),
             'documents_count' => $documentsCount,
             'documents' => $documents,
             'detail_url' => $type === 'resident'
                 ? "/admin/immigration/resident-intakes/{$intake->id}"
                 : "/portal/immigration/intakes/{$type}/{$intake->id}",
+            'vif_values' => \App\Support\VifSupplement::values($intake, $type),
             'sections' => $sections,
             // Deterministic adviser-style checks on the actual data (passport /
             // visa expiry, English level…) — reliable, computed, not AI-guessed.
@@ -4053,6 +4067,14 @@ class ImmigrationController extends Controller
             ];
             $letterCode++;
         }
+
+        $declarationIndex = collect($sections)->search(fn ($section) => $section['bare'] ?? false);
+        $additional = array_map(fn ($section) => ['bare' => false, ...$section], \App\Support\VifSupplement::sections($type, $data));
+        array_splice($sections, $declarationIndex === false ? count($sections) : $declarationIndex, 0, $additional);
+        foreach ($sections as $index => &$section) {
+            $section['letter'] = chr(ord('A') + $index);
+        }
+        unset($section);
 
         return $sections;
     }

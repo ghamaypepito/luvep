@@ -1,0 +1,1895 @@
+{
+  "work": [
+    {
+      "title": "Work visa category",
+      "fields": [
+        {
+          "key": "work_visa_category",
+          "label": "Which work visa is this information for?",
+          "type": "select",
+          "options": [
+            "Accredited Employer Work Visa",
+            "Post-Study Work Visa"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Additional identity and contact details",
+      "fields": [
+        {
+          "key": "middle_name",
+          "label": "Middle name(s) as shown in your passport",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "title": "Additional NZ immigration and contact details",
+      "fields": [
+        {
+          "key": "previous_client_number",
+          "label": "Previous Immigration New Zealand client number",
+          "type": "text"
+        },
+        {
+          "key": "postal_same_as_physical",
+          "label": "Is your postal address the same as your physical address?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "postal_address",
+          "label": "Postal address, if different",
+          "type": "textarea"
+        },
+        {
+          "key": "overseas_country",
+          "label": "Country of your most recent overseas address",
+          "type": "text"
+        },
+        {
+          "key": "overseas_address",
+          "label": "Most recent overseas address",
+          "type": "textarea"
+        }
+      ]
+    },
+    {
+      "title": "AEWV employer and position details",
+      "fields": [
+        {
+          "key": "employer_nzbn",
+          "label": "Employer New Zealand Business Number (NZBN)",
+          "type": "text"
+        },
+        {
+          "key": "employer_name_correct",
+          "label": "Is the employer name shown correctly in your employment agreement?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "occupation_code",
+          "label": "ANZSCO or NOL occupation/code for the job",
+          "type": "text"
+        },
+        {
+          "key": "minimum_skills_basis",
+          "label": "How do you meet the minimum skills requirements?",
+          "type": "textarea"
+        }
+      ],
+      "when": {
+        "key": "work_visa_category",
+        "not": "Post-Study Work Visa"
+      }
+    },
+    {
+      "title": "Post-Study Work Visa details",
+      "fields": [
+        {
+          "key": "birth_region",
+          "label": "State/province/region of birth",
+          "type": "text"
+        },
+        {
+          "key": "landline",
+          "label": "Telephone (landline)",
+          "type": "text"
+        },
+        {
+          "key": "job_requires_registration",
+          "label": "Do you have a job offer that requires New Zealand registration?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "total_nz_stay",
+          "label": "How long do you plan to stay in New Zealand in total, including time already spent?",
+          "type": "text"
+        },
+        {
+          "key": "student_visa_before_20220511",
+          "label": "Did you hold, or had you applied for, your student visa on or before 11 May 2022?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "border_exception_cohort4",
+          "label": "Did you apply for your student visa as part of cohort 4 of the border exception for new and returning students?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_post_study_work_visa",
+          "label": "Have you previously been granted a post-study work visa?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "nz_bachelor_or_level8",
+          "label": "Have you gained a Bachelor’s degree or a qualification at level 8 or above in New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ],
+      "when": {
+        "key": "work_visa_category",
+        "equals": "Post-Study Work Visa"
+      }
+    },
+    {
+      "title": "Police-certificate history",
+      "fields": [
+        {
+          "key": "previous_passport_country_police_certificate",
+          "label": "Have you provided a police certificate from your passport country with a previous New Zealand visa application?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "police_certificate_issued_24_months",
+          "label": "Was that police certificate issued in the last 24 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Medical-certificate history",
+      "fields": [
+        {
+          "key": "previous_xray_certificate",
+          "label": "Have you previously provided a chest X-ray certificate?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "xray_issued_36_months",
+          "label": "Was your chest X-ray certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "countries_6_months_since_xray",
+          "label": "Have you visited or lived in countries other than New Zealand for more than 6 consecutive months since the chest X-ray certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_general_medical",
+          "label": "Have you previously provided a General Medical Certificate (INZ 1007) or Limited Medical Certificate (INZ 1201)?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "medical_issued_36_months",
+          "label": "Was your medical certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_deteriorated",
+          "label": "Has your health become worse since the medical certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "inz_requested_medical",
+          "label": "When you applied for your last visa, what medical information did INZ ask you to provide?",
+          "type": "textarea"
+        }
+      ],
+      "when": {
+        "key": "work_visa_category",
+        "equals": "Post-Study Work Visa"
+      }
+    },
+    {
+      "title": "Countries visited or lived in",
+      "fields": [
+        {
+          "key": "health_countries",
+          "label": "Countries visited or lived in for more than 3 months within the last 5 years",
+          "type": "list",
+          "fields": [
+            {
+              "key": "country",
+              "label": "Country/territory",
+              "type": "text"
+            },
+            {
+              "key": "from",
+              "label": "From",
+              "type": "date"
+            },
+            {
+              "key": "to",
+              "label": "To",
+              "type": "date"
+            }
+          ]
+        }
+      ],
+      "when": {
+        "key": "work_visa_category",
+        "equals": "Post-Study Work Visa"
+      }
+    }
+  ],
+  "student": [
+    {
+      "title": "Additional identity and contact details",
+      "fields": [
+        {
+          "key": "middle_name",
+          "label": "Middle name(s) as shown in your passport",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "title": "NZ immigration history",
+      "fields": [
+        {
+          "key": "previous_nz_visa",
+          "label": "Have you previously applied for a New Zealand visa?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_nzeta",
+          "label": "Have you previously requested an NZeTA?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "address_region",
+          "label": "State/province/region of your current address",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "title": "Your situation and study plans",
+      "fields": [
+        {
+          "key": "home_commitments",
+          "label": "Family, financial, employment or other commitments in your home country",
+          "type": "textarea"
+        },
+        {
+          "key": "study_related",
+          "label": "Does your planned study relate to your previous study or work?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "study_related_details",
+          "label": "Explain how the planned study relates to previous study or work",
+          "type": "textarea"
+        },
+        {
+          "key": "why_new_zealand",
+          "label": "Why do you want to come to New Zealand to study?",
+          "type": "textarea"
+        },
+        {
+          "key": "why_provider",
+          "label": "Why have you chosen this education provider?",
+          "type": "textarea"
+        },
+        {
+          "key": "study_benefit",
+          "label": "How will studying this course benefit you?",
+          "type": "textarea"
+        },
+        {
+          "key": "after_study_plans",
+          "label": "What are you planning to do when you finish this study?",
+          "type": "textarea"
+        }
+      ]
+    },
+    {
+      "title": "Education history",
+      "fields": [
+        {
+          "key": "has_tertiary",
+          "label": "Have you undertaken any tertiary education?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "qualifications",
+          "label": "Tertiary qualifications",
+          "type": "list",
+          "fields": [
+            {
+              "key": "qualification",
+              "label": "Qualification or programme",
+              "type": "text",
+              "aliases": [
+                "name",
+                "major",
+                "title"
+              ]
+            },
+            {
+              "key": "start_date",
+              "label": "Start date",
+              "type": "date",
+              "aliases": [
+                "from",
+                "start"
+              ]
+            },
+            {
+              "key": "finish_date",
+              "label": "End date",
+              "type": "date",
+              "aliases": [
+                "to",
+                "end",
+                "finish"
+              ]
+            },
+            {
+              "key": "school_name",
+              "label": "Institution",
+              "type": "text",
+              "aliases": [
+                "school",
+                "institution",
+                "provider"
+              ]
+            },
+            {
+              "key": "country",
+              "label": "Country",
+              "type": "text"
+            },
+            {
+              "key": "region",
+              "label": "Region",
+              "type": "text"
+            },
+            {
+              "key": "city",
+              "label": "Town/city",
+              "type": "text"
+            },
+            {
+              "key": "completed",
+              "label": "Was the qualification awarded?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            }
+          ],
+          "storage": "root"
+        }
+      ]
+    },
+    {
+      "title": "Previous employment and other activities",
+      "fields": [
+        {
+          "key": "has_previous_employment",
+          "label": "Have you had previous employment or self-employment?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_employment",
+          "label": "Previous employment or self-employment",
+          "type": "list",
+          "fields": [
+            {
+              "key": "from",
+              "label": "Start date",
+              "type": "date"
+            },
+            {
+              "key": "to",
+              "label": "End date",
+              "type": "date"
+            },
+            {
+              "key": "title",
+              "label": "Role/job title",
+              "type": "text"
+            },
+            {
+              "key": "duties",
+              "label": "Detailed duties",
+              "type": "textarea"
+            },
+            {
+              "key": "country",
+              "label": "Country of work",
+              "type": "text"
+            },
+            {
+              "key": "region",
+              "label": "Region of work",
+              "type": "text"
+            },
+            {
+              "key": "supervisor",
+              "label": "Direct supervisor",
+              "type": "text"
+            },
+            {
+              "key": "employer",
+              "label": "Organisation/employer",
+              "type": "text"
+            },
+            {
+              "key": "industry",
+              "label": "Organisation’s field/industry",
+              "type": "text"
+            },
+            {
+              "key": "employer_country",
+              "label": "Country where organisation is based",
+              "type": "text"
+            },
+            {
+              "key": "employer_region",
+              "label": "Organisation’s region",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "key": "unemployed_or_not_studying",
+          "label": "Have you spent time unemployed or not in education?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "unemployment_details",
+          "label": "If yes, give dates and details",
+          "type": "textarea"
+        }
+      ]
+    },
+    {
+      "title": "Family and partner details",
+      "fields": [
+        {
+          "key": "family_members",
+          "label": "Family members (including current partner)",
+          "type": "list",
+          "fields": [
+            {
+              "key": "relationship",
+              "label": "Relationship to you",
+              "type": "text"
+            },
+            {
+              "key": "name",
+              "label": "Full name",
+              "type": "text",
+              "aliases": [
+                "full_name"
+              ]
+            },
+            {
+              "key": "gender",
+              "label": "Gender",
+              "type": "text"
+            },
+            {
+              "key": "dob",
+              "label": "Date of birth",
+              "type": "date"
+            },
+            {
+              "key": "partnership_status",
+              "label": "Partnership status",
+              "type": "text"
+            },
+            {
+              "key": "country_of_birth",
+              "label": "Country of birth",
+              "type": "text"
+            },
+            {
+              "key": "birth_region",
+              "label": "Birth region",
+              "type": "text"
+            },
+            {
+              "key": "birth_city",
+              "label": "Birth town/city",
+              "type": "text"
+            },
+            {
+              "key": "country_of_citizenship",
+              "label": "Citizenship",
+              "type": "text",
+              "aliases": [
+                "citizenship"
+              ]
+            },
+            {
+              "key": "country_of_residence",
+              "label": "Country of residence",
+              "type": "text",
+              "aliases": [
+                "residence"
+              ]
+            },
+            {
+              "key": "occupation",
+              "label": "Occupation",
+              "type": "text"
+            }
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "has_former_partners",
+          "label": "Do you have former partners, including deceased, divorced or separated partners?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "former_partner_details",
+          "label": "Former partner details, if applicable",
+          "type": "textarea"
+        },
+        {
+          "key": "has_children",
+          "label": "Do you have any children?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "New Zealand contacts",
+      "fields": [
+        {
+          "key": "has_nz_contacts",
+          "label": "Do you have any contacts in New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "nz_contacts",
+          "label": "New Zealand contacts",
+          "type": "list",
+          "fields": [
+            {
+              "key": "first_name",
+              "label": "First name",
+              "type": "text"
+            },
+            {
+              "key": "family_name",
+              "label": "Family name",
+              "type": "text",
+              "aliases": [
+                "last_name"
+              ]
+            },
+            {
+              "key": "relationship",
+              "label": "Relationship to you",
+              "type": "text"
+            },
+            {
+              "key": "dob",
+              "label": "Date of birth",
+              "type": "date"
+            },
+            {
+              "key": "address",
+              "label": "Address",
+              "type": "textarea"
+            },
+            {
+              "key": "phone",
+              "label": "Contact number",
+              "type": "text",
+              "aliases": [
+                "contact_number",
+                "number"
+              ]
+            }
+          ],
+          "storage": "root"
+        }
+      ]
+    },
+    {
+      "title": "Background details",
+      "fields": [
+        {
+          "key": "intelligence_association",
+          "label": "Have you been associated with an intelligence group or law-enforcement agency?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "violent_group_association",
+          "label": "Have you been associated with a group that used or promoted violence or human-rights abuses to further its aims?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "war_crimes_involvement",
+          "label": "Have you committed or been involved in war crimes, crimes against humanity or human-rights abuses?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "english_test_for_entry",
+          "label": "Have you taken an English language test to meet course entry requirements?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Military and travel history",
+      "fields": [
+        {
+          "key": "military_compulsory",
+          "label": "Has military service been compulsory in your home country?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "military_undertaken",
+          "label": "Have you undertaken military service in any country?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "military_details",
+          "label": "Military service details, if applicable",
+          "type": "textarea",
+          "storage": "root"
+        },
+        {
+          "key": "travelled_internationally",
+          "label": "Have you travelled internationally within the last 5 years, excluding to and from New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "travel_trips",
+          "label": "International travel in the last 5 years",
+          "type": "list",
+          "storage": "root",
+          "fields": [
+            {
+              "key": "country",
+              "label": "Country",
+              "type": "text"
+            },
+            {
+              "key": "from",
+              "label": "Date entered",
+              "type": "date"
+            },
+            {
+              "key": "to",
+              "label": "Date exited",
+              "type": "date"
+            },
+            {
+              "key": "purpose",
+              "label": "Purpose of travel / visa type",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "visitor": [
+    {
+      "title": "Additional identity and contact details",
+      "fields": [
+        {
+          "key": "middle_name",
+          "label": "Middle name(s) as shown in your passport",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "title": "New Zealand contacts",
+      "fields": [
+        {
+          "key": "has_nz_contacts",
+          "label": "Do you have any contacts in New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "storage": "root"
+        },
+        {
+          "key": "nz_contacts",
+          "label": "New Zealand contacts",
+          "type": "list",
+          "fields": [
+            {
+              "key": "first_name",
+              "label": "First name",
+              "type": "text"
+            },
+            {
+              "key": "family_name",
+              "label": "Family name",
+              "type": "text",
+              "aliases": [
+                "last_name"
+              ]
+            },
+            {
+              "key": "relationship",
+              "label": "Relationship to you",
+              "type": "text"
+            },
+            {
+              "key": "dob",
+              "label": "Date of birth",
+              "type": "date"
+            },
+            {
+              "key": "address",
+              "label": "Address",
+              "type": "textarea"
+            },
+            {
+              "key": "phone",
+              "label": "Contact number",
+              "type": "text",
+              "aliases": [
+                "contact_number",
+                "number"
+              ]
+            }
+          ],
+          "storage": "root"
+        }
+      ]
+    },
+    {
+      "title": "Financial support and family",
+      "fields": [
+        {
+          "key": "outside_nz",
+          "label": "Are you outside New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "financially_support_self",
+          "label": "Can you financially support yourself during your stay, including onward travel?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "nz_sponsor",
+          "label": "Do you have a New Zealand person or organisation sponsoring your stay?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "multiple_journey_visa",
+          "label": "Do you require a multiple journey visa?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "partner_included",
+          "label": "Is your partner included in this application?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "partner_occupation",
+          "label": "Partner’s occupation",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "resident": [
+    {
+      "title": "Identity and contact details",
+      "fields": [
+        {
+          "key": "middle_name",
+          "label": "Middle name(s) as shown in your passport",
+          "type": "text"
+        },
+        {
+          "key": "other_names",
+          "label": "Other names you have used",
+          "type": "text"
+        },
+        {
+          "key": "gender",
+          "label": "Gender",
+          "type": "select",
+          "options": [
+            "Male",
+            "Female",
+            "Gender diverse"
+          ]
+        },
+        {
+          "key": "partnership_status",
+          "label": "Partnership status",
+          "type": "select",
+          "options": [
+            "Single",
+            "Married",
+            "Partnership",
+            "Engaged",
+            "Never married",
+            "Divorced",
+            "Separated",
+            "Widowed"
+          ]
+        },
+        {
+          "key": "country_of_birth",
+          "label": "Country of birth",
+          "type": "text"
+        },
+        {
+          "key": "other_citizenships",
+          "label": "Other citizenships you hold",
+          "type": "text"
+        },
+        {
+          "key": "current_address",
+          "label": "Current residential address (building, unit, street, suburb, town/city, region, country)",
+          "type": "textarea"
+        }
+      ]
+    },
+    {
+      "title": "Medical-certificate history",
+      "fields": [
+        {
+          "key": "previous_xray_certificate",
+          "label": "Have you previously provided a chest X-ray certificate?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "xray_issued_36_months",
+          "label": "Was your chest X-ray certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "countries_6_months_since_xray",
+          "label": "Have you visited or lived in countries other than New Zealand for more than 6 consecutive months since the chest X-ray certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_general_medical",
+          "label": "Have you previously provided a General Medical Certificate (INZ 1007) or Limited Medical Certificate (INZ 1201)?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "medical_issued_36_months",
+          "label": "Was your medical certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_deteriorated",
+          "label": "Has your health become worse since the medical certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "inz_requested_medical",
+          "label": "When you applied for your last visa, what medical information did INZ ask you to provide?",
+          "type": "textarea"
+        }
+      ]
+    },
+    {
+      "title": "Additional character details",
+      "fields": [
+        {
+          "key": "character_terrorism",
+          "label": "Have you ever been a member of, supported or adhered to any terrorist organisation?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_racial_speech",
+          "label": "Have you publicly argued racial superiority/inferiority or encouraged hostility or ill will based on colour, race, ethnicity or national origin?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_hostile_group",
+          "label": "Have you been a member of a group with principles based on racial superiority/inferiority or hostility towards people based on colour, race, ethnicity or national origin?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_war_crimes_association",
+          "label": "Have you been associated with a government, regime, group or agency that advocated or committed war crimes, crimes against humanity or other gross human rights abuses?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_arrest_warrant",
+          "label": "Do you have an outstanding arrest warrant in any country, including New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Health details",
+      "fields": [
+        {
+          "key": "health_tb",
+          "label": "Do you currently have any form of tuberculosis?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_resistant_tb",
+          "label": "Have you had multidrug-resistant or extensively drug-resistant tuberculosis in the past?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_renal",
+          "label": "Do you have a medical condition requiring renal dialysis?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_haemophilia",
+          "label": "Do you have severe haemophilia?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_full_time_care",
+          "label": "Do you have a physical, intellectual, cognitive or sensory incapacity requiring full-time care, including care in the community?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_hospital",
+          "label": "Do you have a condition that needs, or may need, hospital care in New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_pregnant",
+          "label": "Are you pregnant?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No",
+            "Not applicable"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Character and residence history",
+      "fields": [
+        {
+          "key": "character_prison_5_years",
+          "label": "Have you ever been convicted and sentenced to a prison term of 5 years or more, including suspended/deferred/indeterminate sentences?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_prison_12_months",
+          "label": "Have you been convicted and sentenced to 12 months or more in prison within the last 10 years, including suspended/deferred/indeterminate sentences?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_convicted",
+          "label": "Have you ever been convicted of any offence, including driving offences and overseas convictions cleared by clean-slate legislation?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_investigation",
+          "label": "Are you under investigation, wanted for questioning or facing charges in any country?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_deported",
+          "label": "Have you ever been removed, deported or excluded from any country, including New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_deportation_liability",
+          "label": "Are you liable for deportation or have you been served a deportation liability notice?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_visa_refused",
+          "label": "Have you ever been refused a visa by a country other than New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "residence_countries",
+          "label": "All countries, including citizenship country, lived in for 12 months or more within the last 10 years",
+          "type": "list",
+          "fields": [
+            {
+              "key": "country",
+              "label": "Country",
+              "type": "text"
+            },
+            {
+              "key": "from",
+              "label": "From",
+              "type": "date"
+            },
+            {
+              "key": "to",
+              "label": "To",
+              "type": "date"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Skilled employment and English details",
+      "fields": [
+        {
+          "key": "occupation_code",
+          "label": "ANZSCO occupation or six-digit code matching your skilled job/job offer",
+          "type": "text"
+        },
+        {
+          "key": "smc_pathway",
+          "label": "Which Skilled Migrant Category pathway are you applying under?",
+          "type": "select",
+          "options": [
+            "Points-based pathway",
+            "Skilled Work Experience pathway"
+          ]
+        },
+        {
+          "key": "english_qualification_level",
+          "label": "Qualification equivalent on the NZQCF",
+          "type": "select",
+          "options": [
+            "New Zealand level 7 Bachelor’s degree",
+            "New Zealand qualification at level 8 or above",
+            "None of the above"
+          ]
+        },
+        {
+          "key": "english_academic_year",
+          "label": "Did you study for at least one academic year while physically located in a listed English-speaking country to obtain your qualification?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Family information",
+      "fields": [
+        {
+          "key": "relationship_timeline",
+          "label": "Timeline of your relationship, if including a partner",
+          "type": "textarea",
+          "max": 1500
+        },
+        {
+          "key": "partner_close_relatives",
+          "label": "Are you and your partner close relatives?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "family_details",
+          "label": "Additional details for family members included in the application",
+          "type": "list",
+          "fields": [
+            {
+              "key": "name",
+              "label": "Full name (identify the existing family member)",
+              "type": "text",
+              "aliases": [
+                "full_name"
+              ]
+            },
+            {
+              "key": "partnership_status",
+              "label": "Partnership status",
+              "type": "text"
+            },
+            {
+              "key": "country_of_citizenship",
+              "label": "Country of citizenship",
+              "type": "text",
+              "aliases": [
+                "citizenship"
+              ]
+            },
+            {
+              "key": "country_of_birth",
+              "label": "Country of birth",
+              "type": "text"
+            },
+            {
+              "key": "dependent_child_category",
+              "label": "Dependent-child residence category",
+              "type": "text"
+            },
+            {
+              "key": "parental_permission",
+              "label": "Parental permission / travelling with one or both parents",
+              "type": "text"
+            },
+            {
+              "key": "previous_xray_certificate",
+              "label": "Family member: Have you previously provided a chest X-ray certificate?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "xray_issued_36_months",
+              "label": "Family member: Was your chest X-ray certificate issued in the last 36 months?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "countries_6_months_since_xray",
+              "label": "Family member: Have you visited or lived in countries other than New Zealand for more than 6 consecutive months since the chest X-ray certificate was issued?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "previous_general_medical",
+              "label": "Family member: Have you previously provided a General Medical Certificate (INZ 1007) or Limited Medical Certificate (INZ 1201)?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "medical_issued_36_months",
+              "label": "Family member: Was your medical certificate issued in the last 36 months?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_deteriorated",
+              "label": "Family member: Has your health become worse since the medical certificate was issued?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "inz_requested_medical",
+              "label": "Family member: When you applied for your last visa, what medical information did INZ ask you to provide?",
+              "type": "textarea"
+            },
+            {
+              "key": "character_terrorism",
+              "label": "Family member: Have you ever been a member of, supported or adhered to any terrorist organisation?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_racial_speech",
+              "label": "Family member: Have you publicly argued racial superiority/inferiority or encouraged hostility or ill will based on colour, race, ethnicity or national origin?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_hostile_group",
+              "label": "Family member: Have you been a member of a group with principles based on racial superiority/inferiority or hostility towards people based on colour, race, ethnicity or national origin?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_war_crimes_association",
+              "label": "Family member: Have you been associated with a government, regime, group or agency that advocated or committed war crimes, crimes against humanity or other gross human rights abuses?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_arrest_warrant",
+              "label": "Family member: Do you have an outstanding arrest warrant in any country, including New Zealand?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_tb",
+              "label": "Family member: Do you currently have any form of tuberculosis?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_resistant_tb",
+              "label": "Family member: Have you had multidrug-resistant or extensively drug-resistant tuberculosis in the past?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_renal",
+              "label": "Family member: Do you have a medical condition requiring renal dialysis?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_haemophilia",
+              "label": "Family member: Do you have severe haemophilia?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_full_time_care",
+              "label": "Family member: Do you have a physical, intellectual, cognitive or sensory incapacity requiring full-time care, including care in the community?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_hospital",
+              "label": "Family member: Do you have a condition that needs, or may need, hospital care in New Zealand?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "health_pregnant",
+              "label": "Family member: Are you pregnant?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No",
+                "Not applicable"
+              ]
+            },
+            {
+              "key": "character_prison_5_years",
+              "label": "Family member: Have you ever been convicted and sentenced to a prison term of 5 years or more, including suspended/deferred/indeterminate sentences?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_prison_12_months",
+              "label": "Family member: Have you been convicted and sentenced to 12 months or more in prison within the last 10 years, including suspended/deferred/indeterminate sentences?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_convicted",
+              "label": "Family member: Have you ever been convicted of any offence, including driving offences and overseas convictions cleared by clean-slate legislation?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_investigation",
+              "label": "Family member: Are you under investigation, wanted for questioning or facing charges in any country?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_deported",
+              "label": "Family member: Have you ever been removed, deported or excluded from any country, including New Zealand?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_deportation_liability",
+              "label": "Family member: Are you liable for deportation or have you been served a deportation liability notice?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "character_visa_refused",
+              "label": "Family member: Have you ever been refused a visa by a country other than New Zealand?",
+              "type": "select",
+              "options": [
+                "Yes",
+                "No"
+              ]
+            },
+            {
+              "key": "english_basis",
+              "type": "textarea",
+              "label": "How does this family member meet the minimum English language standard?",
+              "max": 2000
+            }
+          ]
+        },
+        {
+          "key": "has_additional_family",
+          "label": "Do you have additional family members to declare (excluding those already included or deceased)?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "additional_family_members",
+          "label": "Additional family members",
+          "type": "list",
+          "fields": [
+            {
+              "key": "related_to",
+              "label": "Who are they related to?",
+              "type": "text"
+            },
+            {
+              "key": "relationship",
+              "label": "Relationship",
+              "type": "text"
+            },
+            {
+              "key": "name",
+              "label": "Name",
+              "type": "text",
+              "aliases": [
+                "full_name"
+              ]
+            },
+            {
+              "key": "dob",
+              "label": "Date of birth",
+              "type": "date"
+            },
+            {
+              "key": "citizenship",
+              "label": "Citizenship",
+              "type": "text"
+            },
+            {
+              "key": "residence",
+              "label": "Country of residence",
+              "type": "text"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "family": [
+    {
+      "title": "Additional identity and contact details",
+      "fields": [
+        {
+          "key": "middle_name",
+          "label": "Middle name(s) as shown in your passport",
+          "type": "text"
+        }
+      ],
+      "familyChildOnly": true
+    },
+    {
+      "title": "Medical-certificate history",
+      "fields": [
+        {
+          "key": "xray_issued_36_months",
+          "label": "Was your chest X-ray certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "countries_6_months_since_xray",
+          "label": "Have you visited or lived in countries other than New Zealand for more than 6 consecutive months since the chest X-ray certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "medical_issued_36_months",
+          "label": "Was your medical certificate issued in the last 36 months?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "health_deteriorated",
+          "label": "Has your health become worse since the medical certificate was issued?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "inz_requested_medical",
+          "label": "When you applied for your last visa, what medical information did INZ ask you to provide?",
+          "type": "textarea"
+        }
+      ],
+      "familyChildOnly": true
+    },
+    {
+      "title": "Dependent-child residence details",
+      "fields": [
+        {
+          "key": "parent_nz_citizen_or_resident",
+          "label": "Is your parent a New Zealand citizen or resident?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "dependent_child_category",
+          "label": "How do you qualify for residence as a dependent child?",
+          "type": "select",
+          "options": [
+            "17 or under",
+            "18 to 20, single with no children",
+            "21 to 24, single with no children and financially dependent on parents"
+          ]
+        },
+        {
+          "key": "child_single",
+          "label": "Are you single?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "both_parents_nz_citizens_or_residents",
+          "label": "Are both your parents New Zealand citizens or residents?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "supporting_parent_relationship",
+          "label": "Supporting person’s relationship to you",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_family_name",
+          "label": "Supporting parent’s family/last name",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_first_name",
+          "label": "Supporting parent’s given/first name(s)",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_middle_name",
+          "label": "Supporting parent’s middle name(s)",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_title",
+          "label": "Supporting parent’s title",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_gender",
+          "label": "Supporting parent’s gender",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_dob",
+          "label": "Supporting parent’s date of birth",
+          "type": "date"
+        },
+        {
+          "key": "supporting_parent_birth_country",
+          "label": "Supporting parent’s country/territory of birth",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_birth_region",
+          "label": "Supporting parent’s state/province/region of birth",
+          "type": "text"
+        },
+        {
+          "key": "supporting_parent_birth_city",
+          "label": "Supporting parent’s town/city of birth",
+          "type": "text"
+        },
+        {
+          "key": "special_education_services",
+          "label": "Have you been identified as a person who requires special education services?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "previous_residence_eligibility",
+          "label": "Were you eligible to be included in a previous New Zealand residence application?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "lived_12_months_10_years",
+          "label": "Have you lived in any country for more than 12 months in the past 10 years since age 17, excluding your country of citizenship?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "lived_12_months_countries",
+          "label": "If yes, list the countries and dates",
+          "type": "textarea"
+        }
+      ],
+      "familyChildOnly": true
+    },
+    {
+      "title": "Additional character details",
+      "fields": [
+        {
+          "key": "character_terrorism",
+          "label": "Have you ever been a member of, supported or adhered to any terrorist organisation?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_racial_speech",
+          "label": "Have you publicly argued racial superiority/inferiority or encouraged hostility or ill will based on colour, race, ethnicity or national origin?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_hostile_group",
+          "label": "Have you been a member of a group with principles based on racial superiority/inferiority or hostility towards people based on colour, race, ethnicity or national origin?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_war_crimes_association",
+          "label": "Have you been associated with a government, regime, group or agency that advocated or committed war crimes, crimes against humanity or other gross human rights abuses?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "key": "character_arrest_warrant",
+          "label": "Do you have an outstanding arrest warrant in any country, including New Zealand?",
+          "type": "select",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ],
+      "familyChildOnly": true
+    }
+  ]
+}
