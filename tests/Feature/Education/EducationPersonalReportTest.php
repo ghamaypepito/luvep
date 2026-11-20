@@ -375,4 +375,41 @@ class EducationPersonalReportTest extends TestCase
         $this->assertDatabaseCount('education_report_activities', 1);
         $this->actingAs($this->staff(['role' => 'finance']))->postJson('/portal/education/reports/activities', array_merge($payload, ['submission_key' => (string) Str::uuid()]))->assertForbidden();
     }
+    public function test_daily_counts_cover_all_pages_and_follow_owner_range_kind_and_deletion_scope(): void
+    {
+        $owner=$this->staff();$other=$this->staff();$student=$this->client();
+        for($i=0;$i<35;$i++) EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'kind'=>'called','occurred_on'=>'2026-11-12']));
+        for($i=0;$i<2;$i++) EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'kind'=>'messaged','occurred_on'=>'2026-11-11']));
+        EducationReportActivity::create($this->payload($student,['user_id'=>$other->id,'kind'=>'called','occurred_on'=>'2026-11-12']));
+        EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'occurred_on'=>'2026-11-08']));
+        EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'occurred_on'=>'2026-11-13']));
+        EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'kind'=>'called','occurred_on'=>'2026-11-12']))->delete();
+        $first=$this->report($owner)['personalReport'];$next=$this->report($owner,'?preset=this_week&activity_page=2')['personalReport'];
+        $this->assertEquals(['2026-11-12'=>35,'2026-11-11'=>2],$first['daily_counts']);
+        $this->assertSame($first['daily_counts'],$next['daily_counts']);$this->assertCount(30,$first['entries']['data']);$this->assertCount(7,$next['entries']['data']);
+        $filtered=$this->report($owner,'?preset=this_week&activity_kind=called&activity_page=2')['personalReport'];
+        $this->assertSame(['2026-11-12'=>35],$filtered['daily_counts']);$this->assertCount(5,$filtered['entries']['data']);
+        $this->assertSame(35,$filtered['counts']['called']['events']);$this->assertSame(2,$filtered['counts']['messaged']['events']);
+        $this->assertSame(['2026-11-12'=>35],$this->report($owner,'?preset=today')['personalReport']['daily_counts']);
+        $this->assertSame(['2026-11-12'=>1],$this->report($other)['personalReport']['daily_counts']);
+    }
+    public function test_daily_counts_refresh_when_an_owner_moves_or_removes_an_activity(): void
+    {
+        $owner=$this->staff();$student=$this->client();
+        $one=EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'kind'=>'called','occurred_on'=>'2026-11-12']));
+        EducationReportActivity::create($this->payload($student,['user_id'=>$owner->id,'kind'=>'called','occurred_on'=>'2026-11-11']));
+        $this->assertEquals(['2026-11-12'=>1,'2026-11-11'=>1],$this->report($owner)['personalReport']['daily_counts']);
+        $this->patch('/portal/education/reports/activities/'.$one->id,['kind'=>'called','occurred_on'=>'2026-11-11','details'=>'Corrected date','edit_version'=>$one->editVersion()])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame(['2026-11-11'=>2],$this->report($owner)['personalReport']['daily_counts']);
+        $this->delete('/portal/education/reports/activities/'.$one->id)->assertRedirect();
+        $this->assertSame(['2026-11-11'=>1],$this->report($owner)['personalReport']['daily_counts']);
+    }
+    public function test_no_matching_entries_returns_no_daily_counts(): void
+    {
+        $owner=$this->staff();$this->assertSame([],$this->report($owner)['personalReport']['daily_counts']);
+        EducationReportActivity::create($this->payload($this->client(),['user_id'=>$owner->id,'occurred_on'=>'2026-11-12']));
+        $this->assertSame([],$this->report($owner,'?preset=last_week')['personalReport']['daily_counts']);
+    }
+
 }
