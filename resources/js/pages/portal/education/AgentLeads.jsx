@@ -7,5 +7,5 @@
 import AgentLeadsView from '@/pages/portal/sales/AgentLeads';
 
 export default function EducationAgentLeads(props) {
-    return <AgentLeadsView {...props} />;
+    return <AgentLeadsView {...props} showProfileUpdates />;
 }
