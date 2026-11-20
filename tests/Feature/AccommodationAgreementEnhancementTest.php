@@ -311,6 +311,123 @@ class AccommodationAgreementEnhancementTest extends TestCase
         Mail::assertQueued(AccommodationSignedCopy::class, 1);
     }
 
+    public function test_transient_inclusive_rent_does_not_add_separate_utilities(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $agreement = $this->generate($source, $data, 'transient_flatmate');
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $tenant = Tenant::findOrFail($agreement->fresh()->tenant_id);
+        $this->assertSame('700.00', $tenant->weekly_total_due);
+        $this->assertNull($tenant->weekly_utilities_nzd);
+    }
+
+    public function test_partial_signatures_and_freshly_completed_agreements_cannot_be_deleted(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $data['subtenants'][] = ['first_name' => 'Second', 'last_name' => 'Tenant'];
+        $agreement = $this->generate($source, $data);
+        $stale = $agreement->fresh();
+        $this->sign($agreement)->assertRedirect();
+        $url = '/portal/accommodation/forms/agreements/'.$agreement->id;
+        $this->delete($url)->assertSessionHas('error');
+        $this->assertCount(1, $agreement->fresh()->data['tenant_signatures']);
+        Storage::disk('local')->assertExists($agreement->pdf_path);
+        $this->fakeSignedPdf();
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', ['signer_name' => 'Second Tenant', 'signer_index' => 1, 'signature_data' => self::PNG, 'terms_accepted' => true])->assertRedirect();
+        // Route binding may have happened before the signature committed.
+        app(\App\Http\Controllers\Portal\AccommodationAgreementController::class)->destroy($stale);
+        $this->assertNotNull($agreement->fresh());
+        Storage::disk('local')->assertExists($agreement->pdf_path);
+        Storage::disk('local')->assertExists($agreement->fresh()->signed_pdf_path);
+    }
+
+    public function test_standalone_payment_review_activates_once_and_generic_edits_cannot_activate(): void
+    {
+        [, , $property, $source, $data] = $this->setupAgreement();
+        $agreement = $this->generate($source, $data);
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $tenant = Tenant::findOrFail($agreement->fresh()->tenant_id);
+        $url = '/portal/accommodation/tenants/'.$tenant->id;
+        $this->get($url)->assertInertia(fn (Assert $page) => $page->where('canActivate', true));
+        $this->put($url, ['property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'current_status' => 'active'])->assertSessionHasErrors('current_status');
+        $this->post($url.'/activate', [])->assertSessionHasErrors('payment_confirmed');
+        $this->assertSame(0, $property->fresh()->rooms_occupied);
+        $this->post($url.'/activate', ['payment_confirmed' => true])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('active', $tenant->fresh()->current_status);
+        $this->assertSame(1, $property->fresh()->rooms_occupied);
+        $this->post($url.'/activate', ['payment_confirmed' => true])->assertStatus(422);
+        $this->assertSame(1, Tenant::count());
+    }
+
+    public function test_conversion_reloads_stale_source_link_before_creating_a_tenant(): void
+    {
+        [, , $property, , $data] = $this->setupAgreement();
+        $source = $this->onboardingSource($property);
+        $this->post('/portal/accommodation/forms/agreements/generate', ['source' => 'onboarding', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $data])->assertSessionHasNoErrors();
+        $agreement = AccommodationAgreement::latest('id')->firstOrFail();
+        $source->update(['status' => 'payment_confirmed']);
+        $stale = $source->fresh();
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $tenantId = $agreement->fresh()->tenant_id;
+        $source->refresh()->update(['status' => 'payment_confirmed']);
+        $request = \Mockery::mock(\App\Http\Requests\Onboarding\ConvertToTenantRequest::class);
+        $request->shouldReceive('validated')->andReturn(['property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'contract_start' => '2026-11-18', 'contract_end' => '2026-12-17']);
+        app(\App\Http\Controllers\Portal\EoiSubmissionController::class)->convertToTenant($request, $stale);
+        $this->assertSame(1, Tenant::count());
+        $this->assertSame($tenantId, $source->fresh()->converted_to_tenant_id);
+        $this->assertSame('active', Tenant::findOrFail($tenantId)->current_status);
+    }
+
+    public function test_onboarding_tenant_cannot_use_standalone_activation_or_expose_signing_link_to_other_roles(): void
+    {
+        [, , $property, , $data] = $this->setupAgreement();
+        $source = $this->onboardingSource($property);
+        $this->post('/portal/accommodation/forms/agreements/generate', ['source' => 'onboarding', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $data])->assertSessionHasNoErrors();
+        $agreement = AccommodationAgreement::latest('id')->firstOrFail();
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $tenantId = $agreement->fresh()->tenant_id;
+        $this->get('/portal/accommodation/tenants/'.$tenantId)->assertInertia(fn (Assert $page) => $page->where('canActivate', false));
+        $this->post('/portal/accommodation/tenants/'.$tenantId.'/activate', ['payment_confirmed' => true])->assertStatus(422);
+        $this->assertSame('pending_payment', Tenant::findOrFail($tenantId)->current_status);
+        $this->actingAs(User::factory()->create(['role' => 'education', 'portal_access' => ['accommodation']]))
+            ->get('/portal/accommodation/applications/'.$source->id)->assertInertia(fn (Assert $page) => $page->where('agreement', null));
+    }
+
+    public function test_signer_name_must_match_the_selected_party_and_pending_lifecycle_is_protected(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $agreement = $this->generate($source, $data);
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', ['signer_name' => 'Different Person', 'signature_data' => self::PNG, 'terms_accepted' => true])
+            ->assertSessionHasErrors('signer_name');
+        $this->assertSame([], $agreement->fresh()->data['tenant_signatures']);
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $url = '/portal/accommodation/tenants/'.$agreement->fresh()->tenant_id;
+        $this->post($url.'/vacate', ['vacate_date' => '2026-11-20'])->assertStatus(422);
+        $this->post($url.'/renew', ['new_contract_start' => '2026-12-18', 'new_contract_end' => '2027-12-17'])->assertStatus(422);
+        $this->actingAs(User::factory()->create(['role' => 'education', 'portal_access' => ['accommodation']]))
+            ->post($url.'/activate', ['payment_confirmed' => true])->assertForbidden();
+    }
+
+    private function onboardingSource(Property $property): EoiSubmission
+    {
+        return EoiSubmission::create([
+            'full_legal_name' => 'Synthetic Tenant', 'email' => 'onboarding@example.test', 'mobile' => '000',
+            'id_number' => 'synthetic', 'visa_status' => 'Work Visa', 'nationality' => 'Synthetic',
+            'preferred_name' => 'Synthetic', 'age' => 30, 'room_type_interest' => 'single',
+            'tenancy_start_date' => '2026-11-18', 'stay_duration' => '1 month', 'occupants' => '1',
+            'occupant_ages' => '30', 'employment_status' => 'Employed', 'current_address' => 'Synthetic',
+            'current_address_duration' => '1 year', 'living_situation' => 'Renting', 'reason_for_moving' => 'Synthetic',
+            'drinks_alcohol' => 'No', 'work_hours' => 'Day', 'flatmate_description' => 'Synthetic',
+            'preferred_viewing_time' => 'Any', 'status' => 'pre_tenancy_form_completed',
+            'pre_tenancy_form_data' => ['main' => ['full_legal_name' => 'Synthetic Tenant']], 'property_id' => $property->id,
+        ]);
+    }
+
     public function test_conflicting_link_rolls_back_the_last_signature_and_removes_its_pdf(): void
     {
         [, , , $source, $data] = $this->setupAgreement();

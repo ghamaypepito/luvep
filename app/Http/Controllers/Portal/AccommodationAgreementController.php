@@ -261,13 +261,24 @@ class AccommodationAgreementController extends Controller
     public function destroy(AccommodationAgreement $agreement)
     {
         \App\Models\TenantDocument::authorizeStaff(request()->user());
-        if ($agreement->status === AccommodationAgreement::STATUS_SIGNED || $agreement->tenant_id) {
-            return back()->with('error', 'Signed or tenant-linked agreements must be retained.');
+        $result = \Illuminate\Support\Facades\DB::transaction(function () use ($agreement) {
+            $current = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            if ($current->status === AccommodationAgreement::STATUS_SIGNED || $current->tenant_id
+                || ! empty($current->data['tenant_signatures'])) {
+                return null;
+            }
+            $path = $current->pdf_path;
+            $current->delete();
+
+            return ['path' => $path];
+        });
+        if ($result === null) {
+            return back()->with('error', 'Signed, partially signed or tenant-linked agreements must be retained.');
         }
-        if ($agreement->pdf_path && Storage::disk('local')->exists($agreement->pdf_path)) {
-            Storage::disk('local')->delete($agreement->pdf_path);
+        // A failed/rolled-back delete must never remove the agreement's evidence.
+        if ($result['path']) {
+            Storage::disk('local')->delete($result['path']);
         }
-        $agreement->delete();
 
         return back()->with('success', 'Agreement deleted.');
     }

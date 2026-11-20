@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal\Accommodation;
 
 use App\Http\Controllers\Controller;
 use App\Models\AccommodationPurchaseInvoice;
+use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\Property;
 use App\Models\Tenant;
@@ -29,26 +30,34 @@ class PurchaseInvoiceController extends Controller
         $tenant = isset($filters['tenant']) ? Tenant::withTrashed()->findOrFail($filters['tenant']) : null;
         $property = isset($filters['property']) ? Property::findOrFail($filters['property']) : null;
 
+        $invoices = AccommodationPurchaseInvoice::query()
+            ->when($tenant, fn ($query) => $query->where('tenant_id', $tenant->id))
+            ->when($property, fn ($query) => $query->where('property_id', $property->id))
+            ->orderByDesc('issue_date')->orderByDesc('id')->paginate(20)->withQueryString();
+        // Invoice folders are independent roots. Batch their complete trees so
+        // organizing receipts into subfolders never hides them from history.
+        $roots = $invoices->pluck('folder_id');
+        $folders = MediaFolder::whereIn('id', $roots)->orWhereIn('root_id', $roots)->get(['id', 'root_id']);
+        $owners = $folders->mapWithKeys(fn ($folder) => [$folder->id => $folder->root_id ?? $folder->id]);
+        $files = MediaFile::whereIn('folder_id', $folders->pluck('id'))->get(['id', 'folder_id', 'original_name'])
+            ->groupBy(fn ($file) => $owners[$file->folder_id]);
+
         return inertia('portal/accommodation/PurchaseInvoices', [
             'max_upload_mb' => min(10, Limits::maxUploadMb()),
             'tenant' => $tenant ? ['id' => $tenant->id, 'name' => $tenant->display_name, 'can_create' => ! $tenant->trashed()] : null,
             'property' => $property ? ['id' => $property->id, 'name' => $property->address ?: $property->name] : null,
-            'invoices' => AccommodationPurchaseInvoice::query()
-                ->when($tenant, fn ($query) => $query->where('tenant_id', $tenant->id))
-                ->when($property, fn ($query) => $query->where('property_id', $property->id))
-                ->with('folder.files:id,folder_id,original_name')->orderByDesc('issue_date')->orderByDesc('id')
-                ->paginate(20)->withQueryString()->through(fn (AccommodationPurchaseInvoice $invoice) => [
-                    'id' => $invoice->id,
-                    'reference' => $invoice->reference,
-                    'tenant_name' => $invoice->tenant_name,
-                    'property_address' => $invoice->property_address,
-                    'issue_date' => $invoice->issue_date->toDateString(),
-                    'due_date' => $invoice->due_date?->toDateString(),
-                    'total' => $invoice->total,
-                    'folder_id' => $invoice->folder_id,
-                    'files' => $invoice->folder->files->sortByDesc(fn ($file) => $file->id === $invoice->invoice_file_id)
-                        ->values()->map(fn ($file) => ['id' => $file->id, 'name' => $file->original_name, 'is_invoice' => $file->id === $invoice->invoice_file_id]),
-                ]),
+            'invoices' => $invoices->through(fn (AccommodationPurchaseInvoice $invoice) => [
+                'id' => $invoice->id,
+                'reference' => $invoice->reference,
+                'tenant_name' => $invoice->tenant_name,
+                'property_address' => $invoice->property_address,
+                'issue_date' => $invoice->issue_date->toDateString(),
+                'due_date' => $invoice->due_date?->toDateString(),
+                'total' => $invoice->total,
+                'folder_id' => $invoice->folder_id,
+                'files' => ($files[$invoice->folder_id] ?? collect())->sortByDesc(fn ($file) => $file->id === $invoice->invoice_file_id)
+                    ->values()->map(fn ($file) => ['id' => $file->id, 'name' => $file->original_name, 'is_invoice' => $file->id === $invoice->invoice_file_id]),
+            ]),
         ]);
     }
 
@@ -178,6 +187,8 @@ class PurchaseInvoiceController extends Controller
     {
         TenantDocument::authorizeStaff($request->user());
 
-        return $library->stream($invoice->folder->files()->findOrFail($file), $request->boolean('inline'));
+        $receipt = MediaFile::whereIn('folder_id', $invoice->folder->subtree()->select('id'))->findOrFail($file);
+
+        return $library->stream($receipt, $request->boolean('inline'));
     }
 }

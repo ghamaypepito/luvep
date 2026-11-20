@@ -39,7 +39,8 @@ class SignedAgreementTenant
                 'email' => $person['email'] ?? $source->email, 'phone' => $person['mobile'] ?? $source->mobile,
                 'contract_type' => 'fixed_term', 'contract_start' => $t['commence_date'], 'contract_end' => $t['end_date'],
                 'weekly_rent_nzd' => $t['weekly_rent'],
-                'weekly_utilities_nzd' => ($t['utility_option'] ?? '') === '1' ? ($t['utility_amount'] ?? null) : null,
+                'weekly_utilities_nzd' => $agreement->agreement_type !== 'transient_flatmate' && ($t['utility_option'] ?? '') === '1'
+                    ? ($t['utility_amount'] ?? null) : null,
                 'current_status' => 'pending_payment',
                 'converted_from_viewer_id' => $source instanceof EoiSubmission ? $source->id : null,
                 'notes' => 'Created from signed agreement #'.$agreement->id.'. Payment and move-in are not confirmed.',

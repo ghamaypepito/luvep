@@ -137,7 +137,8 @@ export default function SignAgreement({ token, clientName, typeLabel, documentUr
 
                     <div>
                         <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-gray-500">Type your full legal name</label>
-                        <input type="text" value={signerName} onChange={(e) => setSignerName(e.target.value)} maxLength={200} placeholder="e.g. Maria Cruz" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none" />
+                        <input type="text" value={signerName} readOnly={signers.length > 0} onChange={(e) => setSignerName(e.target.value)} maxLength={200} placeholder="e.g. Maria Cruz" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:outline-none" />
+                        {signers.length > 0 && <p className="mt-1 text-xs text-gray-500">This name is printed on the issued agreement. Ask staff for a corrected agreement before signing if it is wrong.</p>}
                         {errors.signer_name && <p className="mt-1 text-xs text-red-700">{errors.signer_name}</p>}
                     </div>
 

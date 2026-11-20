@@ -47,6 +47,11 @@ class CompleteAgreement
                 $index = (int) ($data['signer_index'] ?? 0);
                 $snapshot = $agreement->data;
                 abort_unless(isset($snapshot['subtenants'][$index]), 422, 'Select a tenant listed on the issued agreement.');
+                $person = $snapshot['subtenants'][$index];
+                $expectedName = trim($person['first_name'].' '.($person['last_name'] ?? ''));
+                if (mb_strtolower(Str::squish($data['signer_name'])) !== mb_strtolower(Str::squish($expectedName))) {
+                    throw ValidationException::withMessages(['signer_name' => 'The signer must match the selected tenant on the issued agreement. Ask staff to correct the agreement if the name is wrong.']);
+                }
                 $signatures = $snapshot['tenant_signatures'] ?? [];
                 abort_if(isset($signatures[$index]), 409, 'This tenant has already signed.');
                 $signatures[$index] = [
