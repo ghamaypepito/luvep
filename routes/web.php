@@ -1787,6 +1787,10 @@ Route::middleware(['auth'])->group(function () {
         // page. Admins satisfy every portal:* check via canAccessPortal(), so
         // they can view any role's dashboard.
         Route::middleware('portal:education')->prefix('education')->name('portal.education.')->group(function () {
+            Route::get('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'index']);
+            Route::get('/cost-breakdowns/rates', [\App\Http\Controllers\EducationCostBreakdownController::class, 'rates'])->middleware('throttle:60,1');
+            Route::post('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'generate']);
+
             Route::get('/dashboard', [EducationController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [EducationController::class, 'leads'])->name('leads');
             Route::get('/leads/proposals-agreements', [SalesController::class, 'proposalsAgreementsPage'])->name('leads.proposals-agreements');
