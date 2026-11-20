@@ -98,6 +98,41 @@ class AccommodationPurchaseInvoiceTest extends TestCase
             ->get($download)->assertForbidden();
     }
 
+    public function test_nested_receipts_appear_in_invoice_history_and_download_only_from_their_invoice(): void
+    {
+        $this->withoutVite();
+        Storage::fake('local');
+        Mail::fake();
+        $tenant = $this->tenant('Synthetic property');
+        $this->actingAs(User::factory()->create(['role' => 'accommodation']));
+        $invoices = [];
+        foreach (['ONE', 'TWO'] as $reference) {
+            $this->post('/portal/accommodation/tenants/'.$tenant->id.'/purchase-invoices', [
+                'source' => 'upload', 'submission_key' => (string) Str::uuid(), 'reference' => $reference,
+                'issue_date' => '2026-11-20', 'total' => '10.00',
+                'invoice' => UploadedFile::fake()->create('invoice.pdf', 10, 'application/pdf'),
+            ])->assertSessionHasNoErrors();
+            $invoices[] = AccommodationPurchaseInvoice::latest('id')->firstOrFail();
+        }
+        [$invoice, $other] = $invoices;
+        $folder = $this->postJson('/media-drive/api/folders', ['parent_id' => $invoice->folder_id, 'name' => 'Supporting receipts'])->assertCreated()->json('folder.id');
+        $nested = $this->postJson('/media-drive/api/folders', ['parent_id' => $folder, 'name' => 'November'])->assertCreated()->json('folder.id');
+        $receipt = $this->postJson('/media-drive/api/folders/'.$nested.'/files', ['upload_key' => (string) Str::uuid(), 'file' => UploadedFile::fake()->create('nested-receipt.pdf', 5, 'application/pdf')])->assertCreated()->json('file.id');
+        $base = '/portal/accommodation/purchase-invoices';
+        foreach (['tenant='.$tenant->id, 'property='.$tenant->property_id] as $filter) {
+            $this->get($base.'?'.$filter)->assertInertia(fn (Assert $page) => $page->where('invoices.data', function ($rows) use ($invoice, $receipt, $other) {
+                $rows = collect($rows)->keyBy('id');
+                $this->assertContains($receipt, collect($rows[$invoice->id]['files'])->pluck('id'));
+                $this->assertNotContains($receipt, collect($rows[$other->id]['files'])->pluck('id'));
+
+                return true;
+            }));
+        }
+        $this->get($base.'/'.$invoice->id.'/files/'.$receipt)->assertDownload('nested-receipt.pdf');
+        $this->get($base.'/'.$other->id.'/files/'.$receipt)->assertNotFound();
+        Mail::assertNothingOutgoing();
+    }
+
     private function verifyShare(string $path, string $email): void
     {
         $challenge = $this->postJson($path.'/code', ['email' => $email])->assertOk();

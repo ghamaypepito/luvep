@@ -26,7 +26,7 @@ class AccommodationAgreement extends Model
     public const STATUS_SIGNED = 'signed';
 
     protected $fillable = [
-        'agreement_type', 'pre_tenancy_form_id', 'eoi_submission_id',
+        'agreement_type', 'pre_tenancy_form_id', 'eoi_submission_id', 'property_id', 'tenant_id',
         'client_name', 'property_address', 'data', 'status',
         'pdf_path', 'signing_token', 'signed_pdf_path', 'signer_name',
         'signature_data', 'signer_ip', 'signer_user_agent',

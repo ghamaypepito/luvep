@@ -2346,6 +2346,7 @@ Route::middleware(['auth'])->group(function () {
             // the resource so it isn't captured as /tenants/{tenant}.
             Route::get('/tenants/export', [TenantController::class, 'export'])->name('tenants.export');
             Route::post('/tenants/{tenant}/notice', [TenantController::class, 'markNoticeGiven'])->name('tenants.notice');
+            Route::post('/tenants/{tenant}/activate', [TenantController::class, 'activate'])->name('tenants.activate');
             Route::post('/tenants/{tenant}/vacate', [TenantController::class, 'markVacated'])->name('tenants.vacate');
             Route::post('/tenants/{tenant}/renew', [TenantController::class, 'markRenewed'])->name('tenants.renew');
             Route::post('/tenants/{tenant}/move', [TenantController::class, 'moveToProperty'])->name('tenants.move');

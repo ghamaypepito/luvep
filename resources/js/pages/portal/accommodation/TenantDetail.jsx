@@ -1,5 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Head, Link, useForm, router } from "@inertiajs/react";
 import {
     ArrowLeft, Pencil, Users, FileText, Wallet, IdCard, ClipboardCheck,
@@ -7,11 +7,13 @@ import {
 } from "lucide-react";
 
 const STATUS_STYLES = {
+    pending_payment: "bg-amber-50 text-amber-800",
     active: "bg-emerald-50 text-emerald-700", notice_given: "bg-amber-50 text-amber-700",
     vacating: "bg-orange-50 text-orange-700", vacated: "bg-gray-100 text-gray-500",
     breached: "bg-rose-50 text-rose-600",
 };
 const STATUS_LABEL = {
+    pending_payment: "Pending payment",
     active: "Active", notice_given: "Notice given", vacating: "Vacating", vacated: "Vacated", breached: "Breached",
 };
 const CONTRACT_STATUS_LABEL = {
@@ -55,7 +57,7 @@ function Modal({ title, onClose, children }) {
 const FIELD = "w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
 const LABEL = "block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5";
 
-export default function TenantDetail({ tenant, historical = [], properties = [], documents = [] }) {
+export default function TenantDetail({ tenant, historical = [], properties = [], documents = [], signedAgreements = [], canActivate = false, onboardingUrl = null }) {
     const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null); // notice | vacate | renew | move
     const isVacated = tenant.current_status === "vacated";
@@ -106,7 +108,8 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
                 <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/portal/accommodation/purchase-invoices?tenant=${tenant.id}`} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><FileText size={15} /> Invoices &amp; Receipts</Link>
                     <Link href={`/portal/accommodation/tenants/${tenant.id}/edit`} className="inline-flex items-center gap-2 rounded-full bg-[#1F5A8B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#184A73]"><Pencil size={15} /> Edit</Link>
-                    {!isVacated && <>
+                    {canActivate && <button onClick={() => setModal('activate')} className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">Complete payment review</button>}
+                    {!isVacated && tenant.current_status !== 'pending_payment' && <>
                         <button onClick={() => setModal("notice")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><BellRing size={15} /> Notice</button>
                         <button onClick={() => setModal("renew")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><RefreshCw size={15} /> Renew</button>
                         <button onClick={() => setModal("move")} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><MoveRight size={15} /> Move</button>
@@ -114,6 +117,11 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
                     </>}
                 </div>
             </div>
+
+            {tenant.current_status === 'pending_payment' && <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+                This signed tenant is awaiting payment and move-in review.
+                {onboardingUrl && <> <Link href={onboardingUrl} className="font-semibold underline">Complete move-in in Onboarding</Link>.</>}
+            </p>}
 
             {/* Tabs */}
             <div className="flex gap-1 border-b border-gray-100 overflow-x-auto">
@@ -191,15 +199,51 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
 
             {tab === "rent" && <Placeholder icon={<Receipt size={40} />} title="Rent payments coming soon" text="Rent payment history will appear here once the Rent & Utilities module is built." />}
             {tab === "comms" && <Placeholder icon={<MessageSquare size={40} />} title="Communication log coming soon" text="Email and message log will appear here once the Communication module is built." />}
-            {tab === "docs" && <TenantDocuments tenant={tenant} documents={documents} />}
+            {tab === "docs" && <>
+                {signedAgreements.length > 0 && <Card title="Signed agreements" icon={<FileText size={18} />}>
+                    {signedAgreements.map(a => <a key={a.id} className="block py-2 text-sm font-semibold text-blue-700 underline" href={`/portal/accommodation/forms/agreements/${a.id}/download`}>Signed agreement #{a.id} · {fmtDate(a.signed_at)}</a>)}
+                </Card>}
+                <TenantDocuments tenant={tenant} documents={documents} />
+            </>}
             {tab === "activity" && <Placeholder icon={<Activity size={40} />} title="Activity log coming soon" text="Status changes, contract updates and notes will be shown here once the audit presentation layer is built." />}
 
             {modal === "notice" && <NoticeModal tenant={tenant} onClose={() => setModal(null)} />}
             {modal === "vacate" && <VacateModal tenant={tenant} onClose={() => setModal(null)} />}
             {modal === "renew" && <RenewModal tenant={tenant} onClose={() => setModal(null)} />}
             {modal === "move" && <MoveModal tenant={tenant} properties={properties} onClose={() => setModal(null)} />}
+            {modal === 'activate' && <ActivationModal tenant={tenant} onClose={() => setModal(null)} />}
         </div>
     );
+}
+
+function ActivationModal({ tenant, onClose }) {
+    const dialog = useRef(null);
+    useEffect(() => {
+        const trigger = document.activeElement;
+        const element = dialog.current;
+        element.showModal();
+        return () => { element.close(); trigger?.focus(); };
+    }, []);
+    const { data, setData, post, processing, errors } = useForm({ payment_confirmed: false });
+    const submit = (event) => {
+        event.preventDefault();
+        post(`/portal/accommodation/tenants/${tenant.id}/activate`, { preserveScroll: true, onSuccess: onClose });
+    };
+    return <dialog ref={dialog} role="dialog" aria-label="Complete payment review" onCancel={onClose} className="m-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-xl backdrop:bg-black/40">
+        <h3 className="mb-4 text-lg font-bold text-gray-900">Complete payment review</h3>
+        <form onSubmit={submit} className="space-y-4">
+            <p className="text-sm text-gray-600">Review the recorded payments and move-in arrangements for {tenant.display_name}. Confirming activates this existing tenant in occupancy and the rent roll.</p>
+            <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" autoFocus checked={data.payment_confirmed} onChange={event => setData('payment_confirmed', event.target.checked)} />
+                I have confirmed payment and approved move-in.
+            </label>
+            {errors.payment_confirmed && <p role="alert" className="text-sm text-rose-700">{errors.payment_confirmed}</p>}
+            <div className="flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="rounded-full border px-4 py-2 text-sm">Cancel</button>
+                <button type="submit" disabled={processing || !data.payment_confirmed} className="rounded-full bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Activate tenant</button>
+            </div>
+        </form>
+    </dialog>;
 }
 
 function Placeholder({ icon, title, text }) {
