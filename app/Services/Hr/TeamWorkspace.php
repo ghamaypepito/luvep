@@ -8,6 +8,7 @@ use App\Models\HrDtrAcknowledgement;
 use App\Models\HrEmployee;
 use App\Models\HrShift;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 
 class TeamWorkspace
 {
@@ -26,16 +27,19 @@ class TeamWorkspace
             ->whereDoesntHave('schedule', fn ($q) => $q->whereNotNull('archived_at'))
             ->when(! $global, fn ($q) => $q->where('user_id', '!=', $actor->id)->where(fn ($q) => $q->where('manager_user_id', $actor->id)->orWhere('reviewer_user_id', $actor->id)))
             ->get();
-        $shifts = HrShift::with(['breaks' => fn ($q) => $q->whereNull('ended_at')->latest('started_at')])
+        $shifts = HrShift::with(['breaks' => fn ($q) => $q->latest('started_at')])
             ->whereIn('hr_employee_id', $employees->pluck('id'))->whereNull('ended_at')->latest('started_at')->get()->unique('hr_employee_id')->keyBy('hr_employee_id');
-        $members = $employees->sortBy(fn ($employee) => mb_strtolower($employee->user->name))->map(function ($employee) use ($shifts) {
+        $now = CarbonImmutable::instance(now());
+        $clock = app(ClockService::class);
+        $members = $employees->sortBy(fn ($employee) => mb_strtolower($employee->user->name))->map(function ($employee) use ($shifts, $now, $clock) {
             $shift = $shifts->get($employee->id);
-            $break = $shift?->breaks->first();
+            $break = $shift?->breaks->first(fn ($pause) => $pause->ended_at === null);
 
             return ['id' => $employee->id, 'name' => $employee->user->name, 'department' => $employee->department,
                 'status' => $break ? 'on_break' : ($shift ? 'working' : 'off_shift'),
                 'started_at' => $shift?->started_at?->toISOString(), 'break_started_at' => $break?->started_at?->toISOString(),
-                'timezone' => $shift?->timezone ?? $employee->schedule?->timezone ?? config('app.timezone', 'UTC')];
+                'timezone' => $shift?->timezone ?? $employee->schedule?->timezone ?? config('app.timezone', 'UTC'),
+                ...($shift ? $clock->totals($shift, $now) : ['working_seconds' => 0, 'break_seconds' => 0])];
         })->values();
 
         $canReviewLeave = $permissions['leave.review'] || $permissions['leave.fallback'] || $permissions['leave.emergency'];
@@ -45,7 +49,6 @@ class TeamWorkspace
             && ($canReviewLeave || ($assignedReviewer && $employee->manager_user_id === $actor->id)))->pluck('user_id');
         $dtrIds = $employees->filter(fn ($employee) => $employee->user_id !== $actor->id
             && ($canReviewDtr || ($assignedReviewer && $employee->reviewer_user_id === $actor->id)))->pluck('user_id');
-        $now = now();
         $today = $now->toDateString();
         $acknowledgementUserIds = $employees->filter(fn ($employee) => $employee->user_id !== $actor->id && ($canReviewDtr
             || ($assignedReviewer && ($employee->manager_user_id === $actor->id || $employee->reviewer_user_id === $actor->id))))->pluck('user_id');

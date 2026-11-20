@@ -13,6 +13,8 @@ const inertia={Head:()=>null,Link:({children,...p})=>React.createElement('a',p,c
 }};
 const source=buildSync({entryPoints:['resources/js/pages/hr/DtrChanges.jsx'],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',alias:{'@':path.resolve('resources/js')},external:['react','react-dom','@inertiajs/react']}).outputFiles[0].text;
 const mod=new Module(path.resolve('hr-report-changes-test.cjs'),module);mod.filename=path.resolve('hr-report-changes-test.cjs');mod.paths=module.paths;mod.require=n=>n==='@inertiajs/react'?inertia:module.require(n);mod._compile(source,mod.filename);
+const AckSource=buildSync({entryPoints:['resources/js/components/hr/DtrAcknowledgement.jsx'],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',alias:{'@':path.resolve('resources/js')},external:['react','react-dom','@inertiajs/react']}).outputFiles[0].text;
+const ackMod=new Module(path.resolve('hr-ack-test.cjs'),module);ackMod.filename=path.resolve('hr-ack-test.cjs');ackMod.paths=module.paths;ackMod.require=mod.require;ackMod._compile(AckSource,ackMod.filename);
 const Page=mod.exports.default,root=createRoot(document.getElementById('root'));
 const entry={id:7,work_date:'2026-11-18',hr_version:4,hr_status:'reviewed',can_change_report:true,work_location:'Office',tasks:[],meetings:1,people_assisted:2,blockers:'',tomorrow:'',remarks:'Updated client report',report_baseline:{work_location:'Office',tasks:[],meetings:1,people_assisted:2,blockers:'',tomorrow:'',remarks:'Original note'}};
 const button=t=>[...document.querySelectorAll('button')].find(e=>e.textContent.trim()===t);
@@ -46,7 +48,7 @@ const render=props=>act(async()=>root.render(React.createElement(Page,props)));
  assert.equal(button('Submit to Department Head').disabled,true);assert.match(document.body.textContent,/Not assigned/);
  await render({mode:'mine',entries:[entry],departmentHead:{id:2,name:'Assigned Head'},acknowledgements:[{id:10,dtr_entry_id:7,report_version:4,version:1,status:'pending',reason:'Correct report',changes:{},head_name:'Assigned Head'}]});
  assert.equal(button('Submit to Department Head').disabled,true,'Duplicate pending submission disabled');assert.equal(button('Record response'),undefined,'Employee cannot acknowledge own changes');
- await render({mode:'team',records:{data:[]},acknowledgements:[{id:10,dtr_entry_id:7,version:1,status:'pending',can_decide:true,changes:{},reason:'Correct report'}]});
+ await act(async()=>root.render(React.createElement(ackMod.exports.default,{item:{id:10,dtr_entry_id:7,version:1,status:'pending',can_decide:true,changes:{},reason:'Correct report'}})));
  assert.ok(button('Record response'),'Assigned Head can respond');
  await act(async()=>button('Record response').closest('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(requests.at(-1).url,'/portal/hr/dtr/acknowledgements/10/decision');assert.equal(requests.at(-1).data.version,1);

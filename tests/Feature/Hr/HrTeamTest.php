@@ -64,6 +64,27 @@ class HrTeamTest extends TestCase
             ->where('teamOverview.summary.working', 1)->where('teamOverview.summary.on_break', 1)->where('teamOverview.summary.off_shift', 1));
     }
 
+    public function test_team_timers_use_the_same_net_work_and_break_totals_as_the_employee_clock(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-11-19T04:00:00Z'));
+        $working = $this->employee([], ['name' => 'A Working']);
+        $paused = $this->employee([], ['name' => 'B Break']);
+        $out = $this->employee([], ['name' => 'C Out']);
+        $shift = $this->shift($working, ['started_at' => now()->subHours(3)]);
+        HrBreak::create(['hr_shift_id' => $shift->id, 'started_at' => now()->subHours(2), 'ended_at' => now()->subHours(2)->addMinutes(15), 'active_guard' => null]);
+        $pauseShift = $this->shift($paused, ['started_at' => now()->subHours(3)]);
+        HrBreak::create(['hr_shift_id' => $pauseShift->id, 'started_at' => now()->subHours(2), 'ended_at' => now()->subHours(2)->addMinutes(15), 'active_guard' => null]);
+        HrBreak::create(['hr_shift_id' => $pauseShift->id, 'started_at' => now()->subMinutes(10)]);
+        $this->shift($out, ['ended_at' => now()->subHour()]);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->get('/portal/hr/team')->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('members.0.status', 'working')->where('members.0.break_started_at', null)
+            ->where('members.0.working_seconds', 9900)->where('members.0.break_seconds', 900)
+            ->where('members.1.status', 'on_break')->where('members.1.working_seconds', 9300)->where('members.1.break_seconds', 1500)
+            ->where('members.2.status', 'off_shift')->where('members.2.working_seconds', 0)->where('members.2.break_seconds', 0)
+            ->where('asOf', now()->toISOString()));
+    }
+
     public function test_assigned_head_and_reviewer_only_see_their_active_team(): void
     {
         $head = $this->employee();

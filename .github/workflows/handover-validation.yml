@@ -39,18 +39,22 @@ jobs:
           node tests/Frontend/accommodation-carousel.cjs
           node tests/Frontend/accommodation-agreements.cjs
           node tests/Frontend/brief-references.cjs
+          node tests/Frontend/compose-studio.cjs
+          node tests/Frontend/compose-video.cjs
           node tests/Frontend/marketing-workflow-save.cjs
           node tests/Frontend/calendar-social-post.cjs
           node tests/Frontend/ghl-calendar.cjs
           node tests/Frontend/ghl-post-media.cjs
           node tests/Frontend/workspace-install.cjs
           node tests/Frontend/assigned-task-focus.cjs
+          node tests/Frontend/assigned-case-helper.cjs
           node tests/Frontend/client-pathway-menu.cjs
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/agreement-custom-description.cjs
           node tests/Frontend/consultancy-draft-delete.cjs
           node tests/Frontend/confirm-dialog-keyboard.cjs
+          node tests/Frontend/education-cost-breakdown.cjs
           node tests/Frontend/offer-of-place-inbox.cjs
           node tests/Frontend/affiliate-performance.cjs
           node tests/Frontend/affiliate-onboarding.cjs
@@ -63,6 +67,7 @@ jobs:
           node tests/Frontend/dtr-draft-history.cjs
           node tests/Frontend/hr-work-insights.cjs
           node tests/Frontend/hr-report-changes.cjs
+          node tests/Frontend/hr-dtr-calendar.cjs
           node tests/Frontend/hr-team.cjs
           node tests/Frontend/hr-my-info.cjs
           node tests/Frontend/hr-navigation.cjs
@@ -88,6 +93,7 @@ jobs:
           node tests/Frontend/education-dispositions.cjs
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
+          node tests/Frontend/nbi-client-pdf.cjs
           node tests/Frontend/recent-visa.cjs
           node tests/Frontend/resident-english-exception.cjs
           node tests/Frontend/other-case-documents.cjs
@@ -95,4 +101,8 @@ jobs:
           node tests/Frontend/education-personal-report.cjs
           node tests/Frontend/education-dated-notes.cjs
           node tests/Frontend/education-intake-monitoring.cjs
+          node tests/Frontend/education-application-forms.cjs
+          node tests/Frontend/education-note-documents.cjs
+          node tests/Frontend/education-activity-days.cjs
+          node tests/Frontend/education-age.cjs
           node --test tests/Frontend/ep-admin.test.cjs tests/js/ep-admin.test.mjs tests/js/ep-admin-time.test.mjs tests/Frontend/ep-agent.test.cjs tests/Frontend/ep-manager.test.cjs tests/Frontend/ep-navigation.test.cjs tests/js/ep-agent-client.test.mjs tests/Frontend/assessment-notes.cjs tests/js/task-comments.test.mjs tests/js/case-thread-replies.test.mjs tests/js/http-client-csrf.test.mjs tests/js/compose-message-panel.test.mjs tests/js/payment-proof-upload.test.mjs tests/js/payment-proof-review.test.mjs

@@ -105,6 +105,10 @@ const submit = node => act(async () => node.dispatchEvent(new Event("submit", { 
     await click(button("Discard unsaved notes"));
     assert.equal(byLabel("Weekly accomplishments").value, "");
 
+    const activityDay = document.querySelector('details[data-activity-day="2026-11-10"]');
+    assert.equal(activityDay.open, false);
+    await click(activityDay.querySelector("summary"));
+    assert.equal(activityDay.open, true);
     await click(byLabel("Edit activity 1"));
     const edit = byLabel("Edit accomplishment");
     const editField = label => edit.querySelector('[aria-label="' + label + '"]');

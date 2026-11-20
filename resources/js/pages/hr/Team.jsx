@@ -7,18 +7,35 @@ import { hrPath } from "@/lib/hrPath";
 const states = { working: "Active", on_break: "On break", off_shift: "Out" };
 const clockTime = (value, timezone) => value ? new Date(value).toLocaleString(undefined, { timeZone: timezone, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
+const duration = seconds => Number.isFinite(seconds)
+    ? [Math.floor(Math.max(0, seconds) / 3600), Math.floor(Math.max(0, seconds) % 3600 / 60), Math.floor(Math.max(0, seconds) % 60)].map(value => String(value).padStart(2, "0")).join(":")
+    : "—";
+
 export default function Team({ members = [], asOf, reviews = {}, absences = [] }) {
     const { hr } = usePage().props;
     const [filter, setFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [refreshing, setRefreshing] = useState(false);
     const [refreshError, setRefreshError] = useState(false);
+    const [elapsed, setElapsed] = useState(0);
+    useEffect(() => {
+        const receivedAt = window.performance.now();
+        const tick = () => {
+            if (document.visibilityState === "visible") setElapsed(Math.max(0, Math.floor((window.performance.now() - receivedAt) / 1000)));
+        };
+        setElapsed(0);
+        const timer = window.setInterval(tick, 1000);
+        document.addEventListener("visibilitychange", tick);
+        return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
+    }, [asOf]);
+    const stale = elapsed > 120;
+    const liveSeconds = Math.min(elapsed, 120);
     const inFlight = useRef(false);
-    const lastRefresh = useRef(Date.now());
+    const lastRefresh = useRef(window.performance.now());
     const refresh = useCallback(() => {
         if (inFlight.current || document.visibilityState !== "visible") return;
         inFlight.current = true;
-        lastRefresh.current = Date.now();
+        lastRefresh.current = window.performance.now();
         setRefreshing(true);
         router.reload({ only: ["members", "asOf", "reviews", "absences"], preserveScroll: true, headers: { "X-Luvep-HR-Status": "1" },
             onSuccess: () => setRefreshError(false),
@@ -40,7 +57,7 @@ export default function Team({ members = [], asOf, reviews = {}, absences = [] }
         return () => { stopInvalid(); stopException(); };
     }, []);
     useEffect(() => {
-        const poll = () => { if (Date.now() - lastRefresh.current >= 60000) refresh(); };
+        const poll = () => { if (window.performance.now() - lastRefresh.current >= 60000) refresh(); };
         const timer = window.setInterval(poll, 60000);
         document.addEventListener("visibilitychange", poll);
         return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
@@ -68,11 +85,15 @@ export default function Team({ members = [], asOf, reviews = {}, absences = [] }
                 {[["all", "Everyone"], ...Object.entries(states)].map(([key, label]) => <button type="button" key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}><span>{label}</span><strong>{key === "all" ? members.length : members.filter(member => member.status === key).length}</strong></button>)}
             </div>
             <label className="hr-staff-search"><Search size={17} aria-hidden="true" /><input type="search" aria-label="Find personnel" placeholder="Find a person or department" value={search} onChange={event => setSearch(event.target.value)} /></label>
-            <div className="hr-table-wrap"><table className="hr-staff-table"><thead><tr><th>Personnel</th><th>Department</th><th>Clock state</th><th>Since</th><th>Time zone</th></tr></thead><tbody>{visible.map(member => <tr key={member.id}><th scope="row"><span className="hr-person-cell"><span className="hr-avatar" aria-hidden="true">{member.name.split(" ").map(part => part[0]).slice(0, 2).join("")}</span>{member.name}</span></th><td>{member.department || "—"}</td><td><span className={`hr-staff-state hr-staff-${member.status}`}>{states[member.status]}</span></td><td>{clockTime(member.break_started_at || member.started_at, member.timezone)}</td><td>{member.timezone}</td></tr>)}</tbody></table></div>
+            <div className="hr-table-wrap"><table className="hr-staff-table"><thead><tr><th>Personnel</th><th>Department</th><th>Clock state</th><th>Work / break time</th><th>Since</th><th>Time zone</th></tr></thead><tbody>{visible.map(member => <tr key={member.id}><th scope="row"><span className="hr-person-cell"><span className="hr-avatar" aria-hidden="true">{member.name.split(" ").map(part => part[0]).slice(0, 2).join("")}</span>{member.name}</span></th><td>{member.department || "—"}</td><td><span className={`hr-staff-state hr-staff-${member.status}`}>{states[member.status]}</span></td><td>{member.status === "off_shift" ? "—" : <div className="hr-staff-timers">
+                <span>Work <output aria-live="off" aria-label={`${member.name} work time`}>{duration(member.working_seconds + (member.status === "working" ? liveSeconds : 0))}</output></span>
+                <span>Break <output aria-live="off" aria-label={`${member.name} break time`}>{duration(member.break_seconds + (member.status === "on_break" ? liveSeconds : 0))}</output></span>
+            </div>}</td><td>{clockTime(member.break_started_at || member.started_at, member.timezone)}</td><td>{member.timezone}</td></tr>)}</tbody></table></div>
             {!visible.length && <div className="hr-empty"><UsersRound size={24} aria-hidden="true" /><p>{members.length ? "No personnel match your filters." : "No active personnel in your team scope."}</p>{members.length > 0 && <button className="hr-text-link" type="button" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</button>}</div>}
             <p className="hr-staff-refresh" role="status">Last refreshed {asOf ? new Date(asOf).toLocaleString() : "—"} · Refreshes every minute while visible.</p>
+            {stale && <p role="alert" className="hr-error">Clock status is out of date. Timers are paused; refresh status to continue.</p>}
             {refreshError && <p role="alert" className="hr-error">Could not refresh staff status. Showing the last confirmed clock states.</p>}
-            <p className="hr-staff-refresh">Active = open shift · On break = running break · Out = no open shift. These states do not indicate browser activity.</p>
+            <p className="hr-staff-refresh">Work time excludes breaks. Timers update each second from the last confirmed status; clock states refresh every minute. Active = open shift · On break = running break · Out = no open shift. These states do not indicate browser activity.</p>
         </section>
         {hr.permissions["leave.review"] && <AbsenceCalendar absences={absences} />}
     </>;

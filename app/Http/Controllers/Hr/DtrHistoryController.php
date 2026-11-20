@@ -31,19 +31,12 @@ class DtrHistoryController extends Controller
         }
         $team = $history->team($request->user());
         abort_unless((clone $team)->exists() || app(\App\Services\Hr\HrAccess::class)->allows($request->user(), 'dtr.review'), 403);
-        $records = DtrEntry::with('user:id,name')->whereIn('user_id', $team->select('user_id'))
-            ->orderByDesc('work_date')->orderByDesc('id')->paginate(30)
-            ->through(fn ($entry) => ['id' => $entry->id, 'employee_name' => $entry->user?->name,
-                'work_date' => $entry->work_date->toDateString(), 'hr_status' => $entry->hr_status,
-                'hr_version' => $entry->hr_version, 'submitted_at' => $entry->submitted_at]);
+        $filters = app(\App\Services\Hr\DtrCalendar::class)->filters($request);
+        $employees = app(\App\Services\Hr\DtrCalendar::class)->employees($team->get(), $filters);
+        $records = ['data' => app(\App\Services\Hr\DtrCalendar::class)->records($request->user(), $employees, $filters)];
+        $oldestPending = app(\App\Services\Hr\DtrCalendar::class)->oldestPendingAcknowledgement($request->user(), $employees);
 
-        $acknowledgements = HrDtrAcknowledgement::with('entry.user', 'head')
-            ->whereHas('entry', fn ($q) => $q->whereIn('user_id', (clone $team)->select('user_id')))
-            ->when(! app(\App\Services\Hr\HrAccess::class)->allows($request->user(), 'dtr.review'), fn ($q) => $q->where('head_user_id', $request->user()->id))
-            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")->orderByDesc('id')->limit(200)->get()
-            ->map(fn ($ack) => $history->acknowledgementRow($ack, $request->user()));
-
-        return Inertia::render('hr/DtrChanges', ['mode' => 'team', 'records' => $records, 'acknowledgements' => $acknowledgements])->toResponse($request)
+        return Inertia::render('hr/DtrChanges', ['mode' => 'team', 'records' => $records, 'filters' => $filters, 'oldestPending' => $oldestPending])->toResponse($request)
             ->header('Cache-Control', 'private, no-store');
     }
 
@@ -84,6 +77,19 @@ class DtrHistoryController extends Controller
                 'created_at' => $revision->created_at, 'changes' => $revision->changes,
             ]);
 
-        return response()->json(['history' => $revisions])->header('Cache-Control', 'private, no-store');
+        $details = [];
+        if ($request->boolean('details')) {
+            $employee = \App\Models\HrEmployee::where('user_id', $entry->user_id)->firstOrFail();
+            $acknowledgements = HrDtrAcknowledgement::with('entry.user', 'head')->where('dtr_entry_id', $entry->id)
+                ->when($entry->user_id !== $request->user()->id && ! app(\App\Services\Hr\HrAccess::class)->allows($request->user(), 'dtr.review'), fn ($q) => $q->where('head_user_id', $request->user()->id))
+                ->latest('id')->paginate(10, ['*'], 'ack_page')->through(fn ($ack) => $history->acknowledgementRow($ack, $request->user()));
+            $details = ['entry' => [...app(DtrService::class)->row($entry),
+                'employee_name' => $entry->user->name, 'employee_id' => $employee->id,
+                'can_print' => $entry->user_id === $request->user()->id || app(\App\Services\Hr\HrAccess::class)->allows($request->user(), 'dtr.review', $employee),
+                'can_review' => $entry->hr_status === 'submitted' && app(\App\Services\Hr\HrAccess::class)->allows($request->user(), 'dtr.review', $employee)],
+                'acknowledgements' => $acknowledgements];
+        }
+
+        return response()->json(['history' => $revisions, ...$details])->header('Cache-Control', 'private, no-store');
     }
 }
