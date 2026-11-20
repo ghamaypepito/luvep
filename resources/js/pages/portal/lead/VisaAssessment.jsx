@@ -125,11 +125,12 @@ function AssessmentEditor({ assessment }) {
     const sections = ASSESSMENT_SECTIONS[assessment.type] || [];
     const [values, setValues] = useState(assessment.values || {});
     const [saving, setSaving] = useState(false);
+    const readOnly = assessment.read_only_fields || [];
     const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
     const save = () => {
         setSaving(true);
-        router.post(assessment.save_url, { field_values: values }, {
+        router.post(assessment.save_url, { field_values: Object.fromEntries(Object.entries(values).filter(([key]) => !readOnly.includes(key))) }, {
             preserveScroll: true,
             onSuccess: () => toast.success("Saved — your Visa Information Form has been updated"),
             onError: (e) => toast.error(Object.values(e)[0] || "Could not save"),
@@ -172,7 +173,7 @@ function AssessmentEditor({ assessment }) {
                         <h3 className="text-[13px] font-bold text-gray-900 mb-3 pb-2 border-b border-gray-100">{sec.title}</h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                             {sec.fields.map(([key, label]) => (
-                                <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} onChange={(v) => setField(key, v)} />
+                                <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} readOnly={readOnly.includes(key)} onChange={(v) => setField(key, v)} />
                             ))}
                         </div>
                     </section>
@@ -191,7 +192,7 @@ function AssessmentEditor({ assessment }) {
     );
 }
 
-function FieldInput({ fieldKey, label, value, onChange }) {
+function FieldInput({ fieldKey, label, value, onChange, readOnly = false }) {
     const kind = fieldKind(fieldKey);
     // Arrays (rare) fall back to a read-only summary — they aren't hand-editable here.
     const isArray = Array.isArray(value);
@@ -199,7 +200,9 @@ function FieldInput({ fieldKey, label, value, onChange }) {
     return (
         <div className={kind === "textarea" ? "sm:col-span-2" : ""}>
             <label className="block text-[12px] font-medium text-gray-600 mb-1">{label}</label>
-            {isArray ? (
+            {readOnly ? (
+                <p className="text-[13px] text-gray-600 py-2">{value || "—"} · Recorded by staff. Contact your adviser to change this evidence record.</p>
+            ) : isArray ? (
                 <p className="text-[13px] text-gray-400 py-2">{value.length ? `${value.length} entries — edit with your adviser` : "—"}</p>
             ) : kind === "yesno" ? (
                 <select value={value} onChange={(e) => onChange(e.target.value)} className={IC}>

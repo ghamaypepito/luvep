@@ -20,8 +20,7 @@ class Uploads
     {
         $actor = $user ? 'user:'.$user->id : 'share:'.$share->id;
         $hash = hash_file('sha256', $file->getRealPath());
-        $name = mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 255);
-        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?: 'file';
+        $name = self::safeName($file->getClientOriginalName());
         $existing = MediaFile::where('upload_key', $key)->first();
         if ($existing) {
             if ($user) {
@@ -76,6 +75,13 @@ class Uploads
             }
             throw $e;
         }
+    }
+
+    public static function safeName(string $name): string
+    {
+        $name = mb_substr(basename(str_replace('\\', '/', $name)), 0, 255);
+
+        return preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?: 'file';
     }
 
     private function assertRetry(MediaFile $file, MediaFolder $folder, string $actor, string $hash, string $name): void

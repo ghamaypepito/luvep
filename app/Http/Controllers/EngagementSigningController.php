@@ -266,9 +266,7 @@ class EngagementSigningController extends Controller
         }
 
         $overrides = ['signer_id' => $doc->engagement_signer_id];
-        if (! empty($doc->notes['engagement_payload'])) {
-            $overrides['payload_snapshot'] = $doc->notes['engagement_payload'];
-        }
+        $overrides['payload_snapshot'] = $doc->notes['engagement_payload'] ?? [];
         if ($clientSig) {
             $overrides['client_signature'] = $clientSig;
             $overrides['client_signed_date'] = $doc->client_signed_at?->format('d/m/Y');
@@ -325,7 +323,7 @@ class EngagementSigningController extends Controller
             'signer_id' => $doc->engagement_signer_id,
             'client_signature' => $clientSig,
             'client_signed_date' => now()->format('d/m/Y'),
-            ...(! empty($doc->notes['engagement_payload']) ? ['payload_snapshot' => $doc->notes['engagement_payload']] : []),
+            'payload_snapshot' => $doc->notes['engagement_payload'] ?? [],
         ]);
         Storage::disk('local')->put($doc->file_path, $pdf);
 

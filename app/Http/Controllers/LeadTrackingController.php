@@ -392,9 +392,10 @@ class LeadTrackingController extends Controller
         // except the Face Image, which must be a JPEG — keeps the case file
         // consistent for INZ lodgement.
         $isFaceImage = str_contains(strtolower((string) $checklistKey), 'face');
-        $fileRule = $isFaceImage
+        $pdfOnly = app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $checklistKey);
+        $fileRule = $pdfOnly ? UploadValidation::pdfDocument() : ($isFaceImage
             ? 'file|mimes:jpg,jpeg|max:'.UploadValidation::DOCUMENT_MAX_KB
-            : 'file|mimes:pdf|max:'.UploadValidation::DOCUMENT_MAX_KB;
+            : 'file|mimes:pdf|max:'.UploadValidation::DOCUMENT_MAX_KB);
 
         // Validate the collected files — one OR many against a single
         // checklist item (a 6-month bank statement or multi-page scan often
@@ -495,10 +496,15 @@ class LeadTrackingController extends Controller
 
         abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
 
+        $request->validate(['checklist_key' => 'nullable|string|max:80']);
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        $pdfKeys = $checklist->clientPdfKeys($lead);
+        $destination = $request->filled('checklist_key') ? $request->input('checklist_key') : $doc->checklist_key;
+        $enteringPdfSlot = in_array($destination, $pdfKeys, true) && ! in_array($doc->checklist_key, $pdfKeys, true);
+        $pdfOnly = in_array($destination, $pdfKeys, true) || $checklist->documentRequiresPdf($lead, $doc, $pdfKeys);
         $request->validate([
-            'file' => 'nullable|'.UploadValidation::document(),
-            'checklist_key' => 'nullable|string|max:80',
-        ]);
+            'file' => ($enteringPdfSlot ? 'required|' : 'nullable|').($pdfOnly ? UploadValidation::pdfDocument() : UploadValidation::document()),
+        ], ['file.required' => 'Upload a PDF replacement before moving this document to the Police/NBI clearance slot.']);
 
         $replacedFile = false;
         if ($request->hasFile('file')) {
@@ -898,6 +904,8 @@ class LeadTrackingController extends Controller
         // file already attached to it.
         $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
 
+        $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $requestBindings = $pdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
         return $lead->documents()
             ->orderByDesc('created_at')
             ->get()
@@ -910,6 +918,7 @@ class LeadTrackingController extends Controller
                 'id' => $d->id,
                 'original_name' => $d->original_name,
                 'checklist_key' => $d->checklist_key,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $d, $pdfKeys, $requestBindings),
                 'size' => $d->size,
                 'mime' => $d->mime,
                 // Client-safe: the manager's internal "Checked" reads as "Under
@@ -1368,7 +1377,8 @@ class LeadTrackingController extends Controller
                 ->all();
         }
 
-        $decorated = collect($items)->map(function ($item) use ($docsByKey) {
+        $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $decorated = collect($items)->map(function ($item) use ($docsByKey, $pdfKeys) {
             $key = $item['key'] ?? null;
             $docs = collect(array_merge([$key], $item['aliases'] ?? []))->flatMap(fn ($uploadKey) => $docsByKey->get($uploadKey) ?? collect());
 
@@ -1387,6 +1397,7 @@ class LeadTrackingController extends Controller
 
             return [
                 'key' => $key,
+                'client_pdf_only' => in_array($key, $pdfKeys, true),
                 'aliases' => $item['aliases'] ?? [],
                 'label' => $item['label'] ?? '',
                 // Section heading. Null for visas saved before Section became

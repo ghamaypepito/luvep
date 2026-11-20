@@ -31,6 +31,7 @@ class AssessmentReviewService
         'booking_id', 'intakeable_type', 'intakeable_id',
         'payment_status', 'payment_session_id', 'payment_amount_cents',
         'payment_currency', 'paid_at',
+        'english_evidence_exception',
     ];
 
     /**

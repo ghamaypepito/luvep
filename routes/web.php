@@ -459,6 +459,8 @@ Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegist
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the
 // separate event-registration funnel.
+Route::get('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'show'])->where('token', '[A-Za-z0-9]{48}');
+Route::post('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'ring'])->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:3,1');
 Route::get('/register', [LeadController::class, 'showRegistration'])->name('register');
 Route::post('/register', [LeadController::class, 'storeRegistration']);
 Route::get('/register/full', [LeadController::class, 'showRegistrationFull'])->name('register.full');
@@ -849,35 +851,8 @@ Route::middleware(['auth'])->group(function () {
         // Inertia page under resources/js/pages/admin/social/. The bare /social
         // entry redirects to /social/compose so the sidebar link always lands
         // on a usable screen.
-        Route::prefix('admin/content-calendar')->name('admin.editorial.')->controller(\App\Http\Controllers\Admin\EditorialCalendarController::class)->group(function () {
-            Route::get('/', 'index')->name('calendar');
-            Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');
-            Route::post('/articles', 'store')->name('store');
-            Route::put('/articles/{article}', 'update')->whereNumber('article')->name('update');
-            Route::patch('/articles/{article}/planned-date', 'move')->whereNumber('article')->name('move');
-            Route::post('/articles/{article}/submit', 'submit')->whereNumber('article')->name('submit');
-            Route::post('/articles/{article}/approve', 'approve')->whereNumber('article')->name('approve');
-            Route::post('/articles/{article}/publish', 'publish')->whereNumber('article')->name('publish');
-        });
-
-        Route::get('/social', fn () => redirect('/social/compose'))->name('social');
         Route::get('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'index'])->middleware('throttle:15,1');
         Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');
-        Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
-        Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
-        Route::get('/social/marketing/posts/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'show'])->whereUuid('id')->middleware('throttle:60,1');
-        Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
-        Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/changes', [\App\Http\Controllers\Admin\MarketingPostController::class, 'changes'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/schedule', [\App\Http\Controllers\Admin\MarketingPostController::class, 'schedule'])->middleware('throttle:15,1');
-        Route::get('/social/ghl/accounts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'accounts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/posts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'posts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/insights', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'insights'])->middleware('throttle:30,1');
-        Route::get('/social/compose', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'index'])->name('social.compose');
-        Route::get('/social/workspace-test/v1/{path}', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'asset'])->where('path', '.*');
-        Route::post('/social/workspace-test/ai/caption', \App\Http\Controllers\Admin\SocialCaptionController::class)->middleware('throttle:5,1');
-        Route::post('/social/workspace-test/ai/layout', [\App\Http\Controllers\Admin\SocialCaptionController::class, 'layout'])->middleware('throttle:5,1');
         Route::get('/social/compose/legacy', fn () => inertia('admin/social/Compose'))->name('social.compose.legacy');
         Route::get('/social/scheduled', fn () => inertia('admin/social/Scheduled'))->name('social.scheduled');
         Route::get('/social/inbox', fn () => inertia('admin/social/Inbox'))->name('social.inbox');
@@ -1498,6 +1473,13 @@ Route::middleware(['auth'])->group(function () {
         // but can't touch stage/status, convert, or delete (those stay with
         // sales/admin). Everything here is scoped to the agent's own leads.
         Route::middleware('portal:agent')->prefix('agent')->name('portal.agent.')->group(function () {
+            Route::middleware('module:assigned_immigration_cases')->group(function () {
+                $assigned = \App\Http\Controllers\Portal\AssignedCaseController::class;
+                Route::get('/assigned-cases', [$assigned, 'index'])->name('assigned-cases');
+                Route::get('/assigned-cases/{lead}', [$assigned, 'show'])->whereNumber('lead')->name('assigned-cases.show');
+                Route::get('/assigned-cases/{lead}/documents/{document}/download', [$assigned, 'download'])->whereNumber(['lead', 'document'])->name('assigned-cases.download');
+                Route::post('/assigned-cases/{lead}/uploads', [$assigned, 'upload'])->whereNumber('lead')->name('assigned-cases.upload');
+            });
             Route::get('/dashboard', [\App\Http\Controllers\Portal\AgentController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'leads'])->name('leads');
             Route::post('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'storeLead'])->name('leads.store');
@@ -1778,6 +1760,10 @@ Route::middleware(['auth'])->group(function () {
         // page. Admins satisfy every portal:* check via canAccessPortal(), so
         // they can view any role's dashboard.
         Route::middleware('portal:education')->prefix('education')->name('portal.education.')->group(function () {
+            Route::get('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'index']);
+            Route::get('/cost-breakdowns/rates', [\App\Http\Controllers\EducationCostBreakdownController::class, 'rates'])->middleware('throttle:60,1');
+            Route::post('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'generate']);
+
             Route::get('/dashboard', [EducationController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [EducationController::class, 'leads'])->name('leads');
             Route::get('/leads/proposals-agreements', [SalesController::class, 'proposalsAgreementsPage'])->name('leads.proposals-agreements');
@@ -1999,6 +1985,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/leads/{id}', [LeadController::class, 'show'])->name('leads.show');
 
             // WORK
+            Route::get('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'index'])->name('reception');
+            Route::post('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'setup']);
             Route::get('/assessments', [ImmigrationController::class, 'assessments'])->name('assessments');
             // Pre-screening (potential-client vetting) staff actions on an
             // assessment. {preScreening} resolves by its token (model route key).
@@ -2129,6 +2117,10 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.profile');
             Route::post('/cases/{lead}/documents/other', [\App\Http\Controllers\Immigration\OtherCaseDocumentController::class, 'store'])
                 ->name('cases.documents.other');
+            Route::get('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'show'])->whereNumber('lead')->name('cases.helper');
+            Route::post('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'store'])->whereNumber('lead')->name('cases.helper.store');
+            Route::post('/cases/{lead}/documents/recent-visa-category', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'addRecentVisaCategory'])
+                ->name('cases.documents.recent-visa-category');
             Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
                 ->whereNumber('document')->name('cases.documents.recent-visa');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.
@@ -2354,6 +2346,7 @@ Route::middleware(['auth'])->group(function () {
             // the resource so it isn't captured as /tenants/{tenant}.
             Route::get('/tenants/export', [TenantController::class, 'export'])->name('tenants.export');
             Route::post('/tenants/{tenant}/notice', [TenantController::class, 'markNoticeGiven'])->name('tenants.notice');
+            Route::post('/tenants/{tenant}/activate', [TenantController::class, 'activate'])->name('tenants.activate');
             Route::post('/tenants/{tenant}/vacate', [TenantController::class, 'markVacated'])->name('tenants.vacate');
             Route::post('/tenants/{tenant}/renew', [TenantController::class, 'markRenewed'])->name('tenants.renew');
             Route::post('/tenants/{tenant}/move', [TenantController::class, 'moveToProperty'])->name('tenants.move');
@@ -2536,3 +2529,5 @@ Route::get('/social/marketing/media/{id}', [\App\Http\Controllers\Admin\Marketin
 require __DIR__.'/media-drive.php';
 
 require __DIR__.'/ep-agent.php';
+
+require __DIR__.'/social-marketing.php';

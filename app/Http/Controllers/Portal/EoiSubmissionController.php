@@ -71,6 +71,7 @@ class EoiSubmissionController extends Controller
         // The generated flat/house-sharing agreement built for this client in
         // Forms → Agreements, so the Agreement stage can source & show it.
         $agreement = \App\Models\AccommodationAgreement::where('eoi_submission_id', $submission->id)
+            ->when(! (request()->user()->isAdmin() || request()->user()->hasRole('accommodation')), fn ($q) => $q->whereRaw('1 = 0'))
             ->latest()->first();
 
         return inertia('portal/accommodation/ApplicationDetails', [
@@ -162,44 +163,51 @@ class EoiSubmissionController extends Controller
 
     public function convertToTenant(ConvertToTenantRequest $request, EoiSubmission $submission)
     {
-        if (! in_array($submission->status, ['payment_confirmed', 'moved_in'], true)) {
-            return redirect()->back()->with('error', 'Conversion is only available once payment is confirmed.');
-        }
-
-        if ($submission->converted_to_tenant_id) {
-            return redirect()->back()->with('error', 'This applicant has already been converted to a tenant.');
-        }
-
         $data = $request->validated();
+        $version = $data['expected_tenant_version'] ?? null;
+        unset($data['expected_tenant_version']);
+        $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $data, $version) {
+            // Both signing and move-in acquire the source first. Never decide to
+            // create a tenant from the stale route-bound snapshot.
+            $source = EoiSubmission::whereKey($submission->id)->lockForUpdate()->firstOrFail();
+            if (! in_array($source->status, ['payment_confirmed', 'moved_in'], true)) {
+                return null;
+            }
+            if ($source->converted_to_tenant_id) {
+                $tenant = Tenant::whereKey($source->converted_to_tenant_id)->lockForUpdate()->firstOrFail();
+                if ($tenant->current_status !== 'pending_payment') {
+                    return null;
+                }
+                abort_unless($source->status === 'payment_confirmed', 422, 'Payment must be confirmed before move-in.');
+                if (! is_string($version) || ! hash_equals($tenant->move_in_version, $version)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['expected_tenant_version' => 'This tenant changed after the form opened. Close and reopen the move-in form to review the latest payments and details.']);
+                }
+                abort_unless((int) $data['property_id'] === $tenant->property_id, 422, 'Use the property linked to the signed agreement.');
+                $tenant->fill([...$data, 'current_status' => 'active'])->save();
+            } else {
+                $tenant = Tenant::create([
+                    ...$data,
+                    'email' => $data['email'] ?? $source->email,
+                    'phone' => $data['phone'] ?? $source->mobile,
+                    'nationality' => $source->nationality,
+                    'current_status' => 'active',
+                    'converted_from_viewer_id' => $source->id,
+                    'notes' => $data['notes'] ?? "Converted from EOI submission #{$source->id}",
+                ]);
+            }
+            $source->update([
+                'converted_to_tenant_id' => $tenant->id, 'status' => 'moved_in',
+                'move_in_date' => $source->move_in_date ?: $data['contract_start'],
+            ]);
 
-        $tenant = Tenant::create([
-            'property_id' => $data['property_id'],
-            'unit' => $data['unit'] ?? null,
-            'first_name' => $data['first_name'],
-            'family_name' => $data['family_name'],
-            'display_name_override' => $data['display_name_override'] ?? null,
-            'email' => $data['email'] ?? $submission->email,
-            'phone' => $data['phone'] ?? $submission->mobile,
-            'nationality' => $submission->nationality,
-            'contract_type' => $data['contract_type'],
-            'contract_start' => $data['contract_start'],
-            'contract_end' => $data['contract_end'] ?? null,
-            'weekly_rent_nzd' => $data['weekly_rent_nzd'] ?? null,
-            'weekly_utilities_nzd' => $data['weekly_utilities_nzd'] ?? null,
-            'bond_paid_nzd' => $data['bond_paid_nzd'] ?? null,
-            'advance_paid_nzd' => $data['advance_paid_nzd'] ?? null,
-            'current_status' => 'active',
-            'converted_from_viewer_id' => $submission->id, // activates the Tenants-build placeholder
-            'notes' => $data['notes'] ?? "Converted from EOI submission #{$submission->id}",
-        ]);
-
-        $submission->converted_to_tenant_id = $tenant->id;
-        $submission->status = 'moved_in';
-        $submission->move_in_date = $submission->move_in_date ?: $data['contract_start'];
-        $submission->save();
+            return $tenant;
+        });
+        if (! $tenant) {
+            return redirect()->back()->with('error', 'Conversion requires confirmed payment and an applicant who has not already moved in.');
+        }
 
         return redirect()->route('portal.accommodation.tenants.show', $tenant)
-            ->with('success', "Converted to tenant — {$tenant->display_name} is now active.");
+            ->with('success', 'Payment confirmed — the tenant is now active.');
     }
 
     public function destroy(EoiSubmission $submission)

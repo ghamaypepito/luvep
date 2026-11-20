@@ -1,3 +1,4 @@
+import CostBreakdownBuilder from '@/components/education/CostBreakdownBuilder';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -181,9 +182,13 @@ export default function ProposalsAgreements({
                         label="Agreements"
                         count={agreements.length}
                     />
+                    {portal === 'education' && <button type="button" onClick={() => setTab('breakdown')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-3 text-xs font-bold transition-colors -mb-px border-b-2 ${tab === 'breakdown' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent hover:text-gray-700'}`}>
+                        <FileText size={13} /> Breakdown Cost
+                    </button>}
                 </div>
 
-                {filtered.length === 0 ? (
+                {portal === 'education' && tab === 'breakdown' ? <CostBreakdownBuilder /> : filtered.length === 0 ? (
                     <div className="p-16 text-center text-gray-400">
                         <FileText size={26} className="mx-auto mb-2 text-gray-300" />
                         <p className="text-sm font-medium">

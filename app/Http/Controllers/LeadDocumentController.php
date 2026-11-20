@@ -52,6 +52,10 @@ class LeadDocumentController extends Controller
     private function storeChecklistFile($file, Lead $lead, string $key): array
     {
         $dir = "lead-documents/{$lead->id}";
+        $driveName = app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, Auth::user());
+        if ($driveName !== null) {
+            return [$file->store($dir, self::DISK), $driveName];
+        }
         $desired = app(CaseChecklistService::class)
             ->uploadFileNameFor($lead, $key, $file->getClientOriginalName());
 
@@ -423,7 +427,8 @@ class LeadDocumentController extends Controller
         LeadDocument::create([
             'lead_id' => $lead->id,
             'request_id' => null,
-            'original_name' => $request->file('file')->getClientOriginalName(),
+            'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $request->file('file'), $request->user())
+                ?? $request->file('file')->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $request->file('file')->getMimeType(),
             'size' => $request->file('file')->getSize(),
@@ -586,7 +591,8 @@ class LeadDocumentController extends Controller
                 LeadDocument::create([
                     'lead_id' => $lead->id,
                     'request_id' => $docRequest->id,
-                    'original_name' => $file->getClientOriginalName(),
+                    'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                        ?? $file->getClientOriginalName(),
                     'file_path' => $path,
                     'mime' => $file->getMimeType(),
                     'size' => $file->getSize(),
@@ -1523,8 +1529,8 @@ class LeadDocumentController extends Controller
             if (in_array($request->query('fee_location'), \App\Models\VisaType::FEE_LOCATIONS, true)) {
                 $engOverrides['fee_location'] = $request->query('fee_location');
             }
-            if (filter_var($request->query('include_gst'), FILTER_VALIDATE_BOOLEAN)) {
-                $engOverrides['include_gst'] = true;
+            if ($request->query->has('include_gst')) {
+                $engOverrides['include_gst'] = $request->boolean('include_gst');
             }
             $profFee = $request->query('professional_fee');
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
@@ -1555,8 +1561,8 @@ class LeadDocumentController extends Controller
             if (in_array($location, \App\Models\VisaType::FEE_LOCATIONS, true)) {
                 $opts['fee_location'] = $location;
             }
-            if (filter_var($request->query('include_gst'), FILTER_VALIDATE_BOOLEAN)) {
-                $opts['include_gst'] = true;
+            if ($request->query->has('include_gst')) {
+                $opts['include_gst'] = $request->boolean('include_gst');
             }
             $profFee = $request->query('professional_fee');
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
@@ -2077,6 +2083,8 @@ class LeadDocumentController extends Controller
         $lead = $this->portalLead();
         abort_unless($lead, 403);
 
+        $clientPdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $requestBindings = $clientPdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
         $requests = $lead->documentRequests()
             ->with('latestDocument')
             ->orderByDesc('created_at')
@@ -2089,6 +2097,7 @@ class LeadDocumentController extends Controller
                 // 'rfi' groups these under a "Request Information" section the
                 // client uploads their INZ-requested documents into.
                 'origin' => $r->origin,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id, $clientPdfKeys, $requestBindings),
                 'requested_at' => $r->requested_at,
                 'latest_document' => $r->latestDocument ? $this->docSerialize($r->latestDocument) : null,
             ]);
@@ -2178,7 +2187,8 @@ class LeadDocumentController extends Controller
 
         $request->validate([
             'files' => 'required|array|min:1|max:10',
-            'files.*' => UploadValidation::document(),
+            'files.*' => app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $key)
+                ? UploadValidation::pdfDocument() : UploadValidation::document(),
         ]);
 
         try {
@@ -2260,7 +2270,9 @@ class LeadDocumentController extends Controller
 
         abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
 
-        $request->validate(['file' => 'required|'.UploadValidation::document()]);
+        $rule = app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $doc)
+            ? UploadValidation::pdfDocument() : UploadValidation::document();
+        $request->validate(['file' => 'required|'.$rule]);
         $file = $request->file('file');
         [$path, $displayName] = $this->storeChecklistFile($file, $lead, $doc->checklist_key ?? 'other');
 
@@ -2370,11 +2382,19 @@ class LeadDocumentController extends Controller
             abort_unless($req, 403, 'Request does not belong to you.');
         }
 
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        $pdfOnly = isset($req) && $checklist->requestRequiresPdf($lead, $req->id);
+        $boundKeys = $pdfOnly ? $checklist->requestChecklistKeys($lead, $req->id) : [];
+        if ($pdfOnly) {
+            $request->validate(['file' => 'required|'.UploadValidation::pdfDocument()]);
+        }
+
         $path = $request->file('file')->store("lead-documents/{$lead->id}", self::DISK);
 
         $document = LeadDocument::create([
             'lead_id' => $lead->id,
             'request_id' => $request->input('request_id'),
+            'checklist_key' => count($boundKeys) === 1 ? $boundKeys[0] : null,
             'original_name' => $request->file('file')->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $request->file('file')->getMimeType(),

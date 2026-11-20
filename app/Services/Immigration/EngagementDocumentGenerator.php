@@ -166,6 +166,9 @@ class EngagementDocumentGenerator
             // Remember which adviser signed so a client-signed re-render
             // reproduces the same adviser signature block.
             'engagement_signer_id' => $overrides['signer_id'] ?? null,
+            'notes' => in_array($type, ['initial_consultation', 'oia'], true)
+                ? ['engagement_payload' => array_diff_key($payload, array_flip(['logo_data', 'cover_bg_data']))]
+                : null,
             'uploaded_by' => Auth::id(),
         ]);
     }
@@ -203,7 +206,8 @@ class EngagementDocumentGenerator
         }
 
         if (in_array($type, ['initial_consultation', 'oia'], true)) {
-            $payload['service_fee'] = number_format(self::servicePricing($type, $overrides)['professional_excl'], 2);
+            $payload['service_pricing'] = self::servicePricing($type, $overrides);
+            $payload['service_fee'] = number_format($payload['service_pricing']['professional_excl'], 2);
             $payload['client']['dob'] = $lead->dob ? \Illuminate\Support\Carbon::parse($lead->dob)->format('d/m/Y') : null;
             $payload['client']['passport'] = $lead->passport_number;
             $payload['consultation'] = array_intersect_key($overrides, array_flip([
@@ -213,6 +217,10 @@ class EngagementDocumentGenerator
         // Signing reproduces the exact case/adviser/fee details saved in the draft.
         if (isset($overrides['payload_snapshot'])) {
             $payload = array_replace($payload, $overrides['payload_snapshot']);
+            // Issued service agreements retain their original fee wording when signed.
+            if (! isset($overrides['payload_snapshot']['service_pricing'])) {
+                unset($payload['service_pricing']);
+            }
             $payload['client']['signature'] = $overrides['client_signature'] ?? null;
         }
         $payload['client_signed_date'] = $overrides['client_signed_date'] ?? null;
@@ -252,11 +260,13 @@ class EngagementDocumentGenerator
             return null;
         }
 
-        $fee = (float) ($settings['service_fee'] ?? $default);
-        $gst = $type === 'oia' ? round($fee * VisaType::GST_RATE, 2) : 0;
+        $fee = round((float) ($settings['service_fee'] ?? $default), 2);
+        $includeGst = $settings['include_gst'] ?? ($type === 'oia');
+        $gst = $includeGst ? round($fee * VisaType::GST_RATE, 2) : 0;
 
         return [
             'professional_excl' => $fee,
+            'include_gst' => (bool) $includeGst,
             'gst' => $gst,
             'grand_total' => round($fee + $gst, 2),
             'currency' => $type === 'oia' ? 'NZD' : 'USD',

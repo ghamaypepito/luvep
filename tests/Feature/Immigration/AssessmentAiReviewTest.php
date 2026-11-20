@@ -87,6 +87,26 @@ class AssessmentAiReviewTest extends TestCase
         $this->assertCount(1, $review->checklist); // 2nd (no document) dropped
     }
 
+    public function test_resident_private_staff_reason_is_not_sent_to_the_ai_provider(): void
+    {
+        config(['services.openrouter.api_key' => 'test-key', 'services.openrouter.model' => 'test/model']);
+        Http::fake(['*/chat/completions' => Http::response([
+            'choices' => [['message' => ['content' => '{"summary":"Synthetic review"}']]],
+        ])]);
+        $intake = \App\Models\ResidentIntake::create([
+            'intake_id' => 'RI-AI-STAFF', 'first_name' => 'Synthetic', 'last_name' => 'Applicant',
+            'email' => 'synthetic@example.test', 'english_evidence' => 'Not Required',
+            'english_evidence_exception' => ['reason' => 'PRIVATE_STAFF_REASON', 'actor_name' => 'PRIVATE_STAFF_ACTOR'],
+        ]);
+        $this->actingAs($this->staff())->postJson("/portal/immigration/assessments/resident/{$intake->id}/ai-review")->assertOk();
+        Http::assertSent(function ($request) {
+            $payload = json_encode($request->data());
+
+            return ! str_contains($payload, 'PRIVATE_STAFF_REASON') && ! str_contains($payload, 'PRIVATE_STAFF_ACTOR');
+        });
+        $this->assertSame('Not Required', $intake->fresh()->english_evidence);
+    }
+
     public function test_show_returns_the_latest_stored_review(): void
     {
         $intake = $this->intake();
