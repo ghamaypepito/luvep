@@ -28,7 +28,7 @@ function SocialButton({ post, onClick }) {
         <span className="calendar-event-compact" aria-hidden="true">S</span><span className="calendar-event-title">{post.title}</span><small className="calendar-event-meta">{post.planned_time} · {socialStatus[post.status] || post.status}{post.source === 'ghl' && ' · GHL'}</small>
     </button>;
 }
-export default function ContentCalendar({ month, topics = [], undated = [], canPublish, socialPosts = [], undatedSocialPosts = [] }) {
+export default function ContentCalendar({ month, topics = [], undated = [], canPublish, canApproveSocialPosts = false, canPublishSocialPosts = false, socialPosts = [], undatedSocialPosts = [] }) {
     const [selection, setSelection] = useState(() => {
         const id = new URLSearchParams(window.location.search).get('social_post');
         return id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? { kind: 'social', id } : null;
@@ -136,7 +136,7 @@ export default function ContentCalendar({ month, topics = [], undated = [], canP
         <section className="calendar-undated" aria-labelledby="undated-drafts"><h2 id="undated-drafts"><CalendarDays size={18} aria-hidden="true" /> Undated drafts</h2>{undated.length ? <ul>{undated.map(topic => <li key={topic.id}><TopicButton topic={topic} onClick={event => openArticle(event, topic.id)} onDragStart={startDrag} onDragEnd={endDrag} /></li>)}</ul> : <p>Drafts without a planned date appear here.</p>}</section>
         {!!undatedSocials.length && <section className="calendar-undated"><h2>Undated social posts</h2><p>Latest 100 Luvep posts without a planned time, and loaded GHL posts without a date.</p><ul>{undatedSocials.map(post => <li key={(post.source || 'local') + post.id}><SocialButton post={post} onClick={event => openPost(event, post)} /></li>)}</ul></section>}
         {choosingDate && <ContentTypeDialog date={choosingDate} onClose={close} onChoose={kind => { setChoosingDate(null); setSelection({ kind, id: null, date: choosingDate }); }} />}
-        {selection?.kind === 'social' && <SocialPostDialog key={selection.id || 'new-social'} postId={selection.id} initialDate={selection.date} canPublish={canPublish} onClose={close} onSaved={() => router.reload({ only: ['socialPosts', 'undatedSocialPosts'] })} />}
+        {selection?.kind === 'social' && <SocialPostDialog key={selection.id || 'new-social'} postId={selection.id} initialDate={selection.date} canApprove={canApproveSocialPosts} canPublish={canPublishSocialPosts} onClose={close} onSaved={() => router.reload({ only: ['socialPosts', 'undatedSocialPosts'] })} />}
         {selection?.kind === 'ghl' && <GhlPostDialog post={selection.post} onClose={close} onOpenLocal={id => setSelection({ kind: 'social', id })} />}
         {selection?.kind === 'article' && <ArticleDialog key={selection.id || 'new-article'} articleId={selection.id} initialDate={selection.date} canPublish={canPublish} onClose={close} onSaved={() => router.reload({ only: ['topics', 'undated'] })} />}
     </div>;

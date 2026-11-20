@@ -34,6 +34,10 @@ class MarketingPost extends Model
             $content[] = ['first_comment' => $this->first_comment];
         }
 
+        if ($this->brief) {
+            $content[] = ['brief' => $this->brief];
+        }
+
         return hash('sha256', json_encode($content, JSON_THROW_ON_ERROR));
     }
 

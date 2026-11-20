@@ -42,6 +42,8 @@ class EditorialCalendarController extends Controller
             'socialPosts' => $this->socialPosts()->whereBetween('scheduled_at', [$start->utc(), $start->endOfMonth()->utc()])->orderBy('scheduled_at')->get()->map(fn ($post) => $this->socialSummary($post)),
             'undatedSocialPosts' => $this->socialPosts()->whereNull('scheduled_at')->latest('updated_at')->limit(100)->get()->map(fn ($post) => $this->socialSummary($post)),
             'canPublish' => $request->user()->isSuperAdmin(),
+            'canApproveSocialPosts' => $request->user()->canApproveSocialPosts(),
+            'canPublishSocialPosts' => $request->user()->canPublishSocialPosts(),
         ]);
     }
 

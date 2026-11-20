@@ -26,6 +26,15 @@ return [
     |
     */
     'restricted' => [
+        'social_marketing' => [
+            'label' => 'Social & Marketing — Digital team',
+            'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Admins can approve social posts. Publishing requires the separate Social Post Publishing permission.',
+            'admin_default' => true,
+        ],
+        'social_publishing' => [
+            'label' => 'Social Post Publishing',
+            'description' => 'Send only the current approved social post version to GHL. Requires Social & Marketing access; does not grant approval or connection settings.',
+        ],
         'client_pathways' => [
             'label' => 'Add client pathways',
             'description' => 'Allow lead-handling staff to add Student, Immigration, English or Accommodation pathways from List of Leads. Does not grant access to other department portals.',
