@@ -19,12 +19,16 @@ const priorityLabel = (p) => (p ? `Priority: ${p[0].toUpperCase()}${p.slice(1)}`
 // same table design as the main Leads table (Open opportunities). Reached
 // from the Agents tab on /portal/sales/leads via the "View leads" action.
 //
-export default function AgentLeads({ agent, leads = [], statuses = [], portalBase = '/portal/sales' }) {
+export default function AgentLeads({ agent, leads = [], statuses = [], portalBase = '/portal/sales', showProfileUpdates = false }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [openStageId, setOpenStageId] = useState(null);
     const [savingId, setSavingId] = useState(null);
     const [expandedId, setExpandedId] = useState(null);
     const [rows, setRows] = useState(leads);
+    // Education preserves this page after writes. Use the returned server rows
+    // so the update date/author do not remain frozen in the initial state.
+    const rowsForView = showProfileUpdates ? leads : rows;
+    const columnCount = showProfileUpdates ? 8 : 7;
     const toggleExpand = (id) => setExpandedId(expandedId === id ? null : id);
 
     const changeStage = (lead, stage) => {
@@ -40,14 +44,14 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
 
     const filtered = useMemo(() => {
         const q = searchTerm.trim().toLowerCase();
-        const matched = ! q ? rows : rows.filter((r) => {
+        const matched = ! q ? rowsForView : rowsForView.filter((r) => {
             const name = (r.name || '').toLowerCase();
             const email = (r.email || '').toLowerCase();
             return name.includes(q) || email.includes(q);
         });
         // Priority always leads: urgent → medium → low → none.
         return [...matched].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
-    }, [rows, searchTerm]);
+    }, [rowsForView, searchTerm]);
 
     return (
         <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
@@ -116,13 +120,13 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                 <SummaryTile
                     icon={<Users className="w-5 h-5" />}
                     label="Leads recruited"
-                    value={rows.length}
+                    value={rowsForView.length}
                     tone="blue"
                 />
                 <SummaryTile
                     icon={<Users className="w-5 h-5" />}
                     label="In pipeline"
-                    value={rows.filter((r) => r.status !== 'Closed' && r.status !== 'Not Qualified').length}
+                    value={rowsForView.filter((r) => r.status !== 'Closed' && r.status !== 'Not Qualified').length}
                     tone="amber"
                 />
             </div>
@@ -140,12 +144,13 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                 <th className="px-3 py-3">Location</th>
                                 <th className="px-3 py-3">Note</th>
                                 <th className="px-3 py-3">Added</th>
+                                {showProfileUpdates && <th className="px-3 py-3">Updated</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                                    <td colSpan={columnCount} className="px-6 py-16 text-center text-gray-400">
                                         <Users size={26} className="mx-auto mb-2 text-gray-300" />
                                         <p className="text-sm font-medium">No leads yet</p>
                                         <p className="text-xs text-gray-400 mt-1">
@@ -182,7 +187,11 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                                         {initials(r.name)}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="font-semibold text-gray-900 text-xs truncate">{r.name}</div>
+                                                        {showProfileUpdates ? (
+                                                            <Link href={`${portalBase}/leads/${r.id}`} className="block font-semibold text-gray-900 text-xs truncate hover:text-blue-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600" title={`Open ${r.name}'s profile`}>
+                                                                {r.name}
+                                                            </Link>
+                                                        ) : <div className="font-semibold text-gray-900 text-xs truncate">{r.name}</div>}
                                                         {r.lead_id && (
                                                             <div className="text-[10px] text-gray-400 font-mono truncate">{r.lead_id}</div>
                                                         )}
@@ -253,11 +262,17 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                                 <div className="text-gray-600">{fmtDateShort(r.created_at)}</div>
                                                 <div className="text-[10px] text-gray-400">{fmtTime(r.created_at)}</div>
                                             </td>
+                                            {showProfileUpdates && <td className="px-3 py-2.5 max-w-[200px]">
+                                                <div className="text-gray-600 whitespace-nowrap">{fmtDateShort(r.updated_at)}</div>
+                                                <div className="text-[10px] text-gray-400">{fmtTime(r.updated_at)}</div>
+                                                {r.updated_by && <div className="text-[10px] text-gray-500 truncate" title={r.updated_by}>by {r.updated_by}</div>}
+                                                {r.updated_desc && <div className="text-[10px] text-gray-400 truncate" title={r.updated_desc}>{r.updated_desc}</div>}
+                                            </td>}
                                         </tr>
 
                                         {isExpanded && (
                                             <tr className="bg-blue-50/20 border-t border-blue-100/60">
-                                                <td colSpan={7} className="px-6 py-4">
+                                                <td colSpan={columnCount} className="px-6 py-4">
                                                     <LeadDashboardPanel lead={r} portalBase={portalBase} />
                                                 </td>
                                             </tr>
