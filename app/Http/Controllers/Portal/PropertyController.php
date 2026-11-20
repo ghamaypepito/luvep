@@ -204,6 +204,9 @@ class PropertyController extends Controller
 
     public function destroy(Property $property)
     {
+        if (\App\Models\AccommodationAgreement::where('property_id', $property->id)->exists()) {
+            return back()->with('error', 'This property has issued agreements. Archive it to preserve those records.');
+        }
         // A property with active tenants cannot be removed — they must be
         // vacated/moved first. (The model enforces this too, for safety.)
         if ($property->activeTenants()->exists()) {

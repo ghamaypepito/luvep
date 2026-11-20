@@ -32,7 +32,9 @@ class AccommodationAgreementSigningController extends Controller
         $agreement = AccommodationAgreement::where('signing_token', $token)->firstOrFail();
 
         if ($agreement->status === AccommodationAgreement::STATUS_SENT) {
-            $agreement->update(['status' => AccommodationAgreement::STATUS_VIEWED, 'viewed_at' => now()]);
+            AccommodationAgreement::whereKey($agreement->id)->where('status', AccommodationAgreement::STATUS_SENT)
+                ->update(['status' => AccommodationAgreement::STATUS_VIEWED, 'viewed_at' => now()]);
+            $agreement->refresh();
         }
 
         return inertia('accommodation/SignAgreement', [
@@ -41,6 +43,11 @@ class AccommodationAgreementSigningController extends Controller
             'typeLabel' => $agreement->typeLabel(),
             'documentUrl' => route('agreement.sign.document', $token),
             'signed' => $agreement->status === AccommodationAgreement::STATUS_SIGNED,
+            'signers' => ($agreement->data['workflow_version'] ?? null) === 2
+                ? collect($agreement->data['subtenants'])->map(fn ($person, $index) => [
+                    'index' => $index, 'name' => trim($person['first_name'].' '.($person['last_name'] ?? '')),
+                    'signed' => isset($agreement->data['tenant_signatures'][$index]),
+                ])->values()->all() : [],
         ]);
     }
 
@@ -61,6 +68,24 @@ class AccommodationAgreementSigningController extends Controller
             'signature_data' => ['required', 'string', 'max:5000000'],
             'terms_accepted' => ['required', 'accepted'],
         ]);
+
+        if (($agreement->data['workflow_version'] ?? null) === 2) {
+            $agreement = app(\App\Services\Accommodation\CompleteAgreement::class)->sign(
+                $request, $token, fn ($signed) => $this->renderHtml($signed, preview: false, signed: true)
+            );
+            if ($agreement->status !== AccommodationAgreement::STATUS_SIGNED) {
+                return redirect()->route('agreement.sign.show', $token);
+            }
+            try {
+                \Illuminate\Support\Facades\Mail::to($agreement->data['recipient_email'])
+                    ->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
+            } catch (\Throwable $e) {
+                Log::error('Signed accommodation copy could not be queued', ['agreement' => $agreement->id, 'error' => $e->getMessage()]);
+            }
+            $this->notifyStaff($agreement);
+
+            return redirect()->route('agreement.sign.signed', $token);
+        }
 
         // State/idempotency guard — only an unsigned, sent/viewed agreement signs.
         abort_unless(
@@ -108,6 +133,7 @@ class AccommodationAgreementSigningController extends Controller
         return inertia('accommodation/AgreementSigned', [
             'clientName' => $agreement->client_name,
             'typeLabel' => $agreement->typeLabel(),
+            'downloadUrl' => $agreement->signed_pdf_path ? route('agreement.sign.signed-pdf', $token) : null,
         ]);
     }
 

@@ -7,11 +7,16 @@ use App\Http\Requests\MoveTenantRequest;
 use App\Http\Requests\RenewTenantRequest;
 use App\Http\Requests\StoreTenantRequest;
 use App\Http\Requests\UpdateTenantRequest;
+use App\Models\AccommodationAgreement;
+use App\Models\EoiSubmission;
+use App\Models\PreTenancyForm;
 use App\Models\Property;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Validation\ValidationException;
 
 class TenantController extends Controller
 {
@@ -53,7 +58,13 @@ class TenantController extends Controller
 
         return inertia('portal/accommodation/TenantDetail', [
             'tenant' => $tenant,
+            'canActivate' => $tenant->current_status === 'pending_payment' && ! $this->hasOnboardingSource($tenant)
+                && $this->standaloneAgreements($tenant)->exists(),
+            'onboardingUrl' => ($source = EoiSubmission::where('converted_to_tenant_id', $tenant->id)->first(['id']))
+                ? route('portal.accommodation.applications.show', $source) : null,
             'documents' => $tenant->documents()->latest()->get(['id', 'tenant_id', 'name', 'category', 'size', 'created_at']),
+            'signedAgreements' => \App\Models\AccommodationAgreement::where('tenant_id', $tenant->id)
+                ->where('status', 'signed')->latest('signed_at')->get(['id', 'agreement_type', 'signed_at']),
             'historical' => $historical,
             'properties' => $this->propertyOptions(), // for the "move" modal
         ]);
@@ -89,10 +100,58 @@ class TenantController extends Controller
 
     public function update(UpdateTenantRequest $request, Tenant $tenant)
     {
-        $tenant->update($this->cleanData($request, false));
+        $data = $this->cleanData($request, false);
+        DB::transaction(function () use ($tenant, $data) {
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            if (($current->current_status === 'pending_payment' || ($data['current_status'] ?? null) === 'pending_payment')
+                && array_key_exists('current_status', $data) && $data['current_status'] !== $current->current_status) {
+                throw ValidationException::withMessages(['current_status' => 'Use the payment and move-in review to activate a signed tenant.']);
+            }
+            if ($current->current_status === 'pending_payment' && (int) $data['property_id'] !== $current->property_id) {
+                throw ValidationException::withMessages(['property_id' => 'Keep the property on the signed agreement until payment and move-in are reviewed.']);
+            }
+            $current->update($data);
+        });
 
         return redirect()->route('portal.accommodation.tenants.show', $tenant)
             ->with('success', 'Tenant updated successfully.');
+    }
+
+    public function activate(Request $request, Tenant $tenant)
+    {
+        \App\Models\TenantDocument::authorizeStaff($request->user());
+        $request->validate(['payment_confirmed' => ['required', 'accepted']]);
+        $agreement = $this->standaloneAgreements($tenant)->first();
+        abort_unless($agreement, 422, 'Use the onboarding payment-confirmed move-in flow for this tenant.');
+        DB::transaction(function () use ($agreement, $tenant, $request) {
+            // Match signing's source -> agreement -> property -> tenant lock order.
+            PreTenancyForm::whereKey($agreement->pre_tenancy_form_id)->lockForUpdate()->firstOrFail();
+            $signed = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            $property = Property::whereKey($signed->property_id)->lockForUpdate()->firstOrFail();
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            abort_unless($signed->status === 'signed' && $signed->tenant_id === $current->id
+                && $current->current_status === 'pending_payment' && ! $this->hasOnboardingSource($current)
+                && $property->is_active && $current->property_id === $property->id, 422, 'This tenant is not eligible for standalone payment review.');
+            $current->update([
+                'current_status' => 'active',
+                'notes' => $this->appendNote($current->notes, 'Payment and move-in reviewed by '.$request->user()->name.' at '.now()->toIso8601String()),
+            ]);
+        });
+
+        return back()->with('success', 'Payment reviewed — the existing tenant is now active.');
+    }
+
+    private function hasOnboardingSource(Tenant $tenant): bool
+    {
+        return $tenant->converted_from_viewer_id !== null
+            || EoiSubmission::withTrashed()->where('converted_to_tenant_id', $tenant->id)->exists();
+    }
+
+    private function standaloneAgreements(Tenant $tenant)
+    {
+        return AccommodationAgreement::where('tenant_id', $tenant->id)->where('status', 'signed')
+            ->where('data->workflow_version', 2)
+            ->whereNotNull('pre_tenancy_form_id')->whereNull('eoi_submission_id')->latest('id');
     }
 
     public function destroy(Tenant $tenant)
@@ -128,6 +187,7 @@ class TenantController extends Controller
 
     public function markNoticeGiven(Tenant $tenant, Request $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validate(['reason' => 'required|string|max:1000']);
 
         $tenant->update([
@@ -140,6 +200,7 @@ class TenantController extends Controller
 
     public function markVacated(Tenant $tenant, Request $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validate([
             'vacate_date' => 'required|date',
             'reason' => 'nullable|string|max:1000',
@@ -161,6 +222,7 @@ class TenantController extends Controller
 
     public function markRenewed(Tenant $tenant, RenewTenantRequest $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validated();
 
         $tenant->update([
@@ -178,6 +240,7 @@ class TenantController extends Controller
 
     public function moveToProperty(Tenant $tenant, MoveTenantRequest $request)
     {
+        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validated();
 
         // Close out the current tenancy. ended_at is non-fillable — set directly.

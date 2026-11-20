@@ -27,24 +27,26 @@ function SubHeading({ children }) {
  */
 export default function ConvertTenantModal({ submission, properties = [], contractTypes = [], onClose }) {
     const { first, family } = splitName(submission.full_legal_name);
-    const start = (submission.move_in_date ? String(submission.move_in_date).slice(0, 10) : "") || today();
+    const existing = submission.converted_tenant?.current_status === 'pending_payment' ? submission.converted_tenant : null;
+    const start = (existing?.contract_start ? String(existing.contract_start).slice(0, 10) : "") || (submission.move_in_date ? String(submission.move_in_date).slice(0, 10) : "") || today();
 
     const { data, setData, post, processing, errors } = useForm({
-        property_id: submission.property_id ?? "",
-        unit: "",
-        first_name: first,
-        family_name: family,
-        display_name_override: "",
-        email: submission.email ?? "",
-        phone: submission.mobile ?? "",
-        contract_type: "fixed_term",
+        expected_tenant_version: existing?.move_in_version ?? null,
+        property_id: existing?.property_id ?? submission.property_id ?? "",
+        unit: existing?.unit ?? "",
+        first_name: existing?.first_name ?? first,
+        family_name: existing?.family_name ?? family,
+        display_name_override: existing?.display_name_override ?? "",
+        email: existing?.email ?? submission.email ?? "",
+        phone: existing?.phone ?? submission.mobile ?? "",
+        contract_type: existing?.contract_type ?? "fixed_term",
         contract_start: start,
-        contract_end: addYear(start),
-        weekly_rent_nzd: "",
-        weekly_utilities_nzd: "",
-        bond_paid_nzd: submission.invoice_amount_nzd ?? "",
-        advance_paid_nzd: "",
-        notes: `Converted from EOI submission #${submission.id}`,
+        contract_end: existing?.contract_end ? String(existing.contract_end).slice(0, 10) : addYear(start),
+        weekly_rent_nzd: existing?.weekly_rent_nzd ?? "",
+        weekly_utilities_nzd: existing?.weekly_utilities_nzd ?? "",
+        bond_paid_nzd: existing?.bond_paid_nzd ?? "",
+        advance_paid_nzd: existing?.advance_paid_nzd ?? "",
+        notes: existing?.notes ?? `Converted from EOI submission #${submission.id}`,
     });
 
     const submit = (e) => {
@@ -70,7 +72,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
                 {/* Sticky header */}
                 <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
                     <div>
-                        <h3 className="text-lg font-bold text-gray-900">Convert to tenant</h3>
+                        <h3 className="text-lg font-bold text-gray-900">{existing ? 'Complete move-in for existing tenant' : 'Convert to tenant'}</h3>
                         <p className="text-xs text-gray-500">{submission.full_legal_name}</p>
                     </div>
                     <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><X size={18} /></button>
@@ -78,6 +80,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
 
                 {/* Scrollable body */}
                 <div className="grid flex-1 grid-cols-1 gap-x-4 gap-y-3 overflow-y-auto px-6 py-5 sm:grid-cols-2">
+                    {errors.expected_tenant_version && <p role="alert" className="sm:col-span-2 text-sm text-rose-700">{errors.expected_tenant_version}</p>}
                     <SubHeading>Property</SubHeading>
                     <div className="sm:col-span-2">
                         <label className={LABEL}>Property</label>
@@ -125,7 +128,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
                 <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 px-6 py-4">
                     <button type="button" onClick={onClose} className="rounded-full px-5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100">Cancel</button>
                     <button type="submit" disabled={processing} className="rounded-full bg-[#1F5A8B] px-6 py-2 text-sm font-semibold text-white hover:bg-[#184A73] disabled:opacity-50">
-                        {processing ? "Converting…" : "Convert to tenant"}
+                        {processing ? "Saving…" : existing ? "Complete move-in" : "Convert to tenant"}
                     </button>
                 </div>
             </form>

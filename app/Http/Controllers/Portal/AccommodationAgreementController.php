@@ -7,6 +7,7 @@ use App\Mail\AgreementSigningLink;
 use App\Models\AccommodationAgreement;
 use App\Models\EoiSubmission;
 use App\Services\Accommodation\AgreementBuilder;
+use App\Services\Accommodation\AgreementTerms;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -36,6 +37,7 @@ class AccommodationAgreementController extends Controller
 
     public function index()
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         $agreements = AccommodationAgreement::with('creator')->latest()->get()->map(fn ($a) => [
             'id' => $a->id,
             'type' => $a->agreement_type,
@@ -44,18 +46,20 @@ class AccommodationAgreementController extends Controller
             'status' => $a->status,
             'signing_url' => $a->signingUrl(),
             'signed' => $a->status === AccommodationAgreement::STATUS_SIGNED,
+            'can_resend_copy' => $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
             'created_at' => optional($a->created_at)->toIso8601String(),
             'created_by' => optional($a->creator)->name,
         ]);
 
         $properties = \App\Models\Property::where('is_active', true)
-            ->get()->map(fn ($p) => $p->address ?: $p->name)->filter()->unique()->values()->all();
+            ->get()->map(fn ($p) => ['id' => $p->id, 'label' => $p->address ?: $p->name])->values()->all();
 
         return inertia('portal/accommodation/forms/Agreements', [
             'clients' => $this->builder->clients(),
             'agreements' => $agreements,
             'types' => AccommodationAgreement::TYPES,
             'properties' => $properties,
+            'signatoryReady' => app(AgreementTerms::class)->signatory() !== null,
             // Immigration visa catalogue — drives the per-sub-tenant Visa Type dropdown.
             'visaTypes' => \App\Models\VisaType::where('active', true)->orderBy('name')->pluck('name')->values()->all(),
         ]);
@@ -64,6 +68,7 @@ class AccommodationAgreementController extends Controller
     /** JSON: auto-fill data for a chosen client (source + id). */
     public function prefill(Request $request)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         $v = $request->validate([
             'source' => 'required|in:general,onboarding',
             'id' => 'required|integer',
@@ -78,22 +83,26 @@ class AccommodationAgreementController extends Controller
     /** Live HTML preview of the agreement for the current (edited) fields. */
     public function preview(Request $request)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         $v = $request->validate([
             'agreement_type' => 'required|in:'.implode(',', array_keys(self::TITLES)),
             'data' => 'nullable|array',
         ]);
 
+        $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
+        $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
-            'data' => $v['data'] ?? [],
+            'data' => $data,
             'titles' => self::TITLES,
             'preview' => true,
-            // Exalt Property Admin signatory — the generating user's saved signature.
-            'adminSignature' => $request->user()->signatureDataUriTrimmed(),
-            'adminName' => $request->user()->name,
+            // Confirmed Exalt signatory, independent of the generating staff account.
+            'adminSignature' => $signatory?->signatureDataUriTrimmed(),
+            'adminName' => AgreementTerms::SIGNATORY,
         ])->render();
 
-        return response($html)->header('Content-Type', 'text/html');
+        return $request->expectsJson() ? response()->json(['html' => $html, 'data' => $data])
+            : response($html)->header('Content-Type', 'text/html');
     }
 
     /**
@@ -103,6 +112,7 @@ class AccommodationAgreementController extends Controller
      */
     public function generate(Request $request, OnboardingTransitionService $transition)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         $v = $request->validate([
             'agreement_type' => 'required|in:'.implode(',', array_keys(self::TITLES)),
             'source' => 'required|in:general,onboarding',
@@ -113,16 +123,27 @@ class AccommodationAgreementController extends Controller
         $ctx = $this->builder->resolve($v['source'], (int) $v['source_id']);
         abort_if($ctx === null, 404);
 
+        $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
+        $signatory = app(AgreementTerms::class)->signatory();
+        if (! $signatory) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
+        }
+        if (! filter_var($ctx['email'], FILTER_VALIDATE_EMAIL)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Add a valid client email to the pre-tenancy source before issuing the agreement.']);
+        }
+
+        $adminSignature = $signatory->signatureDataUriTrimmed();
+        if (! $adminSignature) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'The approved Exalt signature is unavailable. Restore it before issuing an agreement.']);
+        }
+
         try {
-            // Bake the generating user's saved signature onto the Exalt Property
-            // Admin signatory, and snapshot it in `data` so the signed PDF re-render
-            // (and any later re-render) reproduces the same admin signature.
-            $admin = $request->user();
-            $adminSignature = $admin->signatureDataUriTrimmed();
-            $adminName = $admin->name;
-            $data = $v['data'];
+            // Snapshot the confirmed Exalt signatory so later profile changes cannot alter this agreement.
+            $adminName = AgreementTerms::SIGNATORY;
             $data['admin_signature'] = $adminSignature;
             $data['admin_name'] = $adminName;
+            $data['admin_user_id'] = $signatory->id;
+            $data['recipient_email'] = $ctx['email'];
 
             $pdf = Pdf::loadView('agreements.flatmate.agreement', [
                 'agreementType' => $v['agreement_type'],
@@ -135,12 +156,15 @@ class AccommodationAgreementController extends Controller
 
             $name = Str::slug(($ctx['name'] ?: 'client').'-'.$v['agreement_type']);
             $path = "accommodation-agreements/{$name}-".Str::random(6).'.pdf';
-            Storage::disk('local')->put($path, $pdf);
+            if (! Storage::disk('local')->put($path, $pdf)) {
+                throw new \RuntimeException('Agreement PDF could not be stored.');
+            }
 
             $agreement = AccommodationAgreement::create([
                 'agreement_type' => $v['agreement_type'],
                 'pre_tenancy_form_id' => $ctx['pre_tenancy_form_id'],
                 'eoi_submission_id' => $ctx['eoi_submission_id'],
+                'property_id' => $data['property_id'],
                 'client_name' => $ctx['name'],
                 'property_address' => $data['property_address'] ?? $ctx['property_address'],
                 'data' => $data,
@@ -181,6 +205,9 @@ class AccommodationAgreementController extends Controller
 
             return redirect()->route('portal.accommodation.forms.agreements')->with('success', $msg);
         } catch (\Throwable $e) {
+            if (isset($path) && ! isset($agreement)) {
+                Storage::disk('local')->delete($path);
+            }
             Log::error('Accommodation agreement generate failed', ['error' => $e->getMessage()]);
 
             return back()->with('error', 'Could not generate the agreement. Please try again.');
@@ -190,6 +217,13 @@ class AccommodationAgreementController extends Controller
     /** Re-send the signing link to the client. */
     public function resend(AccommodationAgreement $agreement)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
+        if ($agreement->status === AccommodationAgreement::STATUS_SIGNED && ($agreement->data['workflow_version'] ?? null) === 2) {
+            abort_unless($agreement->signed_pdf_path && Storage::disk('local')->exists($agreement->signed_pdf_path), 404);
+            Mail::to($agreement->data['recipient_email'])->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
+
+            return back()->with('success', 'Signed agreement copy queued for the original client recipient.');
+        }
         $email = $agreement->eoiSubmission?->email
             ?? $agreement->preTenancyForm?->email;
 
@@ -207,6 +241,7 @@ class AccommodationAgreementController extends Controller
 
     public function download(Request $request, AccommodationAgreement $agreement)
     {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
         // Prefer the signed PDF (with the embedded signature + audit block).
         $path = ($agreement->signed_pdf_path && Storage::disk('local')->exists($agreement->signed_pdf_path))
             ? $agreement->signed_pdf_path
@@ -229,10 +264,25 @@ class AccommodationAgreementController extends Controller
 
     public function destroy(AccommodationAgreement $agreement)
     {
-        if ($agreement->pdf_path && Storage::disk('local')->exists($agreement->pdf_path)) {
-            Storage::disk('local')->delete($agreement->pdf_path);
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
+        $result = \Illuminate\Support\Facades\DB::transaction(function () use ($agreement) {
+            $current = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            if ($current->status === AccommodationAgreement::STATUS_SIGNED || $current->tenant_id
+                || ! empty($current->data['tenant_signatures'])) {
+                return null;
+            }
+            $path = $current->pdf_path;
+            $current->delete();
+
+            return ['path' => $path];
+        });
+        if ($result === null) {
+            return back()->with('error', 'Signed, partially signed or tenant-linked agreements must be retained.');
         }
-        $agreement->delete();
+        // A failed/rolled-back delete must never remove the agreement's evidence.
+        if ($result['path']) {
+            Storage::disk('local')->delete($result['path']);
+        }
 
         return back()->with('success', 'Agreement deleted.');
     }
