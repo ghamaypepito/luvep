@@ -407,6 +407,13 @@ Route::middleware(['throttle:tracker', 'tracker.enabled'])->group(function () {
     Route::get('/track/{code}/agreements/{token}/signed', [\App\Http\Controllers\Tracker\TrackerAgreementController::class, 'signedConfirmation'])->name('track.agreements.signed');
 });
 
+// Password-free access to one issued English agreement; never the case tracker.
+Route::middleware(['signed', 'throttle:tracker'])->group(function () {
+    Route::get('/english-agreements/{document}', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'show'])->whereNumber('document')->name('english-agreement.show');
+    Route::get('/english-agreements/{document}/pdf', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'download'])->whereNumber('document')->name('english-agreement.download');
+    Route::post('/english-agreements/{document}/sign', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'sign'])->whereNumber('document')->name('english-agreement.sign');
+});
+
 // Standalone engagement-signing surface. The per-lead token
 // (leads.engagement_signing_token) is the bearer credential; it grants access
 // to ONLY that lead's engagement-pack documents (not the whole case), so it is
