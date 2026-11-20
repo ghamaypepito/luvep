@@ -1668,6 +1668,8 @@ class LeadController extends Controller
 
         return inertia($page, [
             'portalBase' => $portalBase,
+            ...(($portalBase === '/portal/education' || ($portalBase === '/admin' && auth()->user()?->role === 'education'))
+                ? ['ageReferenceDate' => now()->toDateString()] : []),
             'writeBase' => $writeBase,
             'overview' => $this->buildOverview($lead, $proposal, $notes),
             'lead' => $lead,
