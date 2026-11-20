@@ -1,0 +1,123 @@
+/* The shared staff drive uses EP's existing palette and Urbanist type. */
+.media-drive-workspace {
+    --workspace-green: #436235;
+    --workspace-ink: #26352d;
+    --workspace-muted: #637169;
+    --workspace-line: #dce3d9;
+    --workspace-lime: #d6ec9d;
+    background: #eef2e9;
+    color: var(--workspace-ink);
+    font-family: var(--font-urbanist), sans-serif;
+    padding: 16px;
+    gap: 0;
+}
+.media-drive-workspace .md-workspace-sidebar {
+    width: 224px;
+    padding: 0;
+    height: auto;
+    background: transparent;
+}
+.media-drive-workspace .md-workspace-sidebar > div {
+    border: 1px solid var(--workspace-line);
+    border-right: 0;
+    border-radius: 24px 0 0 24px;
+    box-shadow: none;
+    background: #f8faf5;
+}
+.media-drive-workspace .md-workspace-brand-row { padding: 24px 24px 16px; }
+.media-drive-workspace .md-workspace-brand { display: block; width: 96px; height: 58px; object-fit: contain; object-position: left; }
+.media-drive-workspace .md-workspace-brand + p { margin-top: 8px; color: var(--workspace-muted); font-size: 11px; letter-spacing: .04em; }
+.media-drive-workspace .md-workspace-sidebar a[aria-current="page"] { background: var(--workspace-lime); color: var(--workspace-ink); box-shadow: none; }
+.media-drive-workspace .md-workspace-sidebar a[aria-current="page"] > div { color: var(--workspace-green); }
+.media-drive-workspace > .flex-col.flex-1 { border: 1px solid var(--workspace-line); border-radius: 0 24px 24px 0; background: #f5f7f1; }
+.media-drive-workspace .md-workspace-topbar { min-height: 90px; padding: 16px 28px; background: #fafbf8; border-bottom: 1px solid var(--workspace-line); gap: 16px; }
+.media-drive-workspace .md-workspace-topbar > .mt-2 { margin-top: 0; gap: 12px; }
+.media-drive-workspace .md-workspace-context { white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--workspace-ink); }
+.media-drive-workspace .md-workspace-context span { margin-left: 8px; font-weight: 400; color: var(--workspace-muted); }
+.media-drive-workspace .md-workspace-main { padding: 32px 28px; }
+.media-drive-workspace :focus-visible { outline: 2px solid var(--workspace-green); outline-offset: 3px; }
+.md-staff-drive { font-family: var(--font-urbanist), sans-serif; max-width: 1440px; }
+.md-staff-drive .md-page-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 28px; }
+.md-staff-drive .md-page-heading h1 { font-size: clamp(28px, 3vw, 38px); font-weight: 650; letter-spacing: -.04em; }
+.md-staff-drive .md-page-heading p { margin-top: 8px; color: var(--md-muted); font-size: 15px; }
+.md-staff-drive .md-page-heading > .md-primary { min-height: 44px; padding: 12px 18px; border-radius: 12px; }
+.md-staff-drive .md-drive-main { border: 1px solid var(--md-line); border-radius: 20px; padding: 24px; min-height: 520px; background: #fff; }
+.md-workspace-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--md-line); }
+.md-library-views { display: flex; gap: 4px; flex-wrap: wrap; }
+.md-library-views button { display: inline-flex; gap: 8px; align-items: center; border: 0; border-radius: 10px; background: transparent; padding: 10px 12px; color: var(--md-muted); font-weight: 550; cursor: pointer; }
+.md-library-views button:hover { background: #f3f6ee; }
+.md-library-views button[aria-pressed="true"] { background: #eaf2dd; color: #36532d; }
+.md-staff-drive .md-toolbar { margin: 0; flex: 1; justify-content: flex-end; min-width: 240px; gap: 12px; }
+.md-staff-drive .md-toolbar > .md-search { background: #f8faf6; max-width: 300px; min-height: 42px; border-color: #e4e9df; border-radius: 10px; padding: 10px 12px; }
+.md-staff-drive .md-layout-switch { background: #f3f6ef; border: 1px solid #e4e9df; border-radius: 10px; padding: 3px; }
+.md-staff-drive .md-layout-switch .md-icon { width: 32px; height: 32px; }
+.md-staff-drive .md-layout-switch button[aria-pressed="true"] { background: white; color: var(--md-green); box-shadow: 0 1px 4px #26352d12; }
+.md-staff-drive .md-root-heading { padding-top: 24px; align-items: flex-start; margin-bottom: 22px; }
+.md-staff-drive .md-root-heading h2 { font-size: 20px; letter-spacing: -.025em; font-weight: 650; }
+.md-staff-drive .md-root-heading p { color: var(--md-muted); font-size: 13px; margin-top: 5px; }
+.md-staff-drive .md-root-heading > .md-caption { padding: 5px 10px; border-radius: 7px; background: #f2f5ed; color: #49603d; white-space: nowrap; }
+.md-client-folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 16px; }
+.md-client-folder-card { display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'icon access' 'info info' 'footer footer'; grid-template-rows: 44px 1fr auto; align-content: start; gap: 20px 12px; min-width: 0; padding: 20px; border: 1px solid #e2e8dc; border-radius: 16px; background: #fff; text-align: left; cursor: pointer; color: var(--md-ink); transition: border-color .15s, background-color .15s; }
+.md-client-folder-card:hover { background: #fbfcf8; border-color: #a9bd94; }
+.md-client-folder-icon { grid-area: icon; display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 44px; border-radius: 12px; background: #edf4df; color: var(--md-green); }
+.md-folder-access { grid-area: access; align-self: start; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; line-height: 1.5; color: #596553; background: #f2f4ee; border-radius: 6px; padding: 4px 7px; white-space: nowrap; }
+.md-folder-access-shared { background: #e5f0de; color: #365c2b; }
+.md-client-folder-info { grid-area: info; min-width: 0; }
+.md-client-folder-info strong { display: block; font-size: 16px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.md-client-folder-info small { display: block; color: var(--md-muted); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+.md-client-folder-footer { grid-area: footer; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #edf0e9; padding-top: 14px; color: var(--md-muted); font-size: 12px; }
+.md-client-folder-footer svg { color: var(--md-green); }
+.md-client-folders-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.md-client-folders-list .md-client-folder-card { grid-template-columns: 44px minmax(0, 1fr) auto 90px; grid-template-areas: 'icon info access footer'; grid-template-rows: auto; gap: 16px; align-items: center; padding: 14px 16px; border-radius: 12px; }
+.md-client-folders-list .md-client-folder-icon { width: 40px; height: 40px; border-radius: 10px; }
+.md-client-folders-list .md-client-folder-info strong { font-size: 14px; }
+.md-client-folders-list .md-folder-access { align-self: center; }
+.md-client-folders-list .md-client-folder-footer { border-top: 0; padding-top: 0; }
+.md-workspace-privacy { display: flex; align-items: flex-start; gap: 8px; padding-top: 22px; margin-top: 24px; border-top: 1px solid var(--md-line); color: var(--md-muted); font-size: 12px; }
+.md-workspace-privacy svg { flex-shrink: 0; margin-top: 2px; }
+.md-staff-drive .md-breadcrumbs { padding-top: 20px; }
+.md-staff-drive .md-folder-heading { padding-top: 12px; }
+.md-staff-drive .md-breadcrumbs + .md-folder-heading { padding-top: 0; }
+.md-staff-drive .md-file-table { min-width: 580px; }
+.md-staff-drive .md-small-folders > button { background: #f8faf4; border-radius: 10px; }
+.md-staff-drive .md-selected-toolbar { background: #edf4df; }
+@media (min-width: 1280px) { .md-client-folders:not(.md-client-folders-list) { grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); } }
+@media (max-width: 1200px) {
+    .media-drive-workspace { padding: 12px; }
+    .media-drive-workspace .md-workspace-topbar { padding: 16px 20px; }
+    .media-drive-workspace .md-workspace-context span { display: none; }
+    .media-drive-workspace .md-workspace-main { padding: 28px 20px; }
+    .md-staff-drive .md-drive-main { padding: 20px; }
+    .md-workspace-toolbar { align-items: stretch; gap: 16px; }
+    .md-staff-drive .md-toolbar { min-width: min(100%, 260px); }
+}
+@media (max-width: 1023px) {
+    .media-drive-workspace { padding: 0; }
+    .media-drive-workspace > .flex-col.flex-1 { border: 0; border-radius: 0; }
+    .media-drive-workspace .md-workspace-topbar { min-height: 72px; padding: 12px 16px; }
+    .media-drive-workspace .md-workspace-main { padding: 24px 20px; }
+}
+@media (max-width: 600px) {
+    .media-drive-workspace .md-workspace-topbar button[title="View as user"] { padding: 10px; min-width: 40px; min-height: 40px; flex-shrink: 0; }
+    .media-drive-workspace .md-workspace-topbar button[title="View as user"] > span { display: none; }
+    .media-drive-workspace .md-workspace-main { padding: 20px 12px; }
+    .md-staff-drive .md-page-heading { align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .md-staff-drive .md-page-heading p { font-size: 14px; }
+    .md-staff-drive .md-page-heading > .md-primary { min-height: 42px; padding: 10px 14px; font-size: 13px; }
+    .md-staff-drive .md-drive-main { padding: 16px; border-radius: 16px; }
+    .md-workspace-toolbar { flex-direction: column; gap: 16px; padding-bottom: 20px; }
+    .md-library-views { gap: 4px; flex-wrap: nowrap; }
+    .md-library-views button { flex: 1; justify-content: center; padding: 10px 8px; font-size: 12px; }
+    .md-library-views button svg { width: 15px; flex-shrink: 0; }
+    .md-staff-drive .md-toolbar { min-width: 0; width: 100%; }
+    .md-staff-drive .md-toolbar > .md-search { max-width: none; }
+    .md-staff-drive .md-root-heading { gap: 10px; padding-top: 20px; }
+    .md-staff-drive .md-root-heading h2 { font-size: 18px; }
+    .md-client-folders { gap: 12px; grid-template-columns: minmax(0, 1fr); }
+    .md-client-folder-card { gap: 16px 12px; padding: 18px; }
+    .md-client-folders-list .md-client-folder-card { grid-template-columns: 36px minmax(0, 1fr) auto; grid-template-areas: 'icon info access' 'icon footer footer'; grid-template-rows: auto auto; gap: 8px 12px; padding: 14px; }
+    .md-client-folders-list .md-client-folder-icon { width: 36px; height: 36px; }
+    .md-client-folders-list .md-client-folder-footer { justify-content: flex-start; gap: 16px; }
+    .md-client-folders-list .md-client-folder-info strong { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .md-client-folder-card { transition: none; } }

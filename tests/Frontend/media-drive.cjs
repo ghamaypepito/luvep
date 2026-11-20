@@ -67,5 +67,22 @@ const input=async(n,value)=>act(async()=>{Object.getOwnPropertyDescriptor(dom.wi
  assert.equal(document.querySelector('input[type=file]'),null,'Viewer has no upload control');
  permission='editor';await render(Shared,{verified:true,base:'/shared/media/synthetic',email_hint:'s•••@example.test'});assert.ok(document.querySelector('input[type=file]'),'Editor may upload');
  await render(Shared,{unavailable:'This link has expired.'}); assert.match(document.body.textContent,/expired/); assert.equal(document.querySelector('input'),null);
+ dom.reconfigure({url:'https://luvep.test/admin/media-drive'});
+ await render(Drive,{can_share:true});
+ assert.ok(document.querySelector('.md-client-folders'));
+ assert.match(document.querySelector('.md-client-folder-card').textContent,/Client files.*Synthetic Client/,'Custom folder titles retain the actual linked client name');
+ assert.equal(document.querySelector('[aria-label="Grid view"]').getAttribute('aria-pressed'),'true','Client folders start in the reference grid');
+ await click(document.querySelector('[aria-label="List view"]'));
+ assert.ok(document.querySelector('.md-client-folders-list'),'The root List view changes the folder layout');
+ await click(document.querySelector('.md-client-folder-card'));
+ assert.ok(document.querySelector('.md-file-table'),'Files retain their own default list view');
+ await click(document.querySelector('[aria-label="Grid view"]'));
+ assert.ok(document.querySelector('.md-file-grid'));
+ await click(button('All client folders'));
+ assert.ok(document.querySelector('.md-client-folders-list'),'Root folder view survives a visit inside a folder');
+ await click(button('Shared with clients'));
+ assert.equal(requests.filter(r=>r.method==='get'&&r.url.endsWith('/folders')).at(-1).options.params.shared,1,'Shared view remains server-scoped');
+ assert.equal(button('Shared with clients').getAttribute('aria-pressed'),'true');
+
  await act(async()=>root.unmount()); console.log('Media Drive UI: scoped selection, preserved review, queued upload error/retry identity, invited-email verification and Viewer/Editor controls verified.');
 })().catch(async error=>{console.error(error);await act(async()=>root.unmount());process.exitCode=1;});
