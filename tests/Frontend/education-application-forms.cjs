@@ -1,0 +1,24 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const Module = require('node:module');
+const path = require('node:path');
+const compiled = buildSync({ stdin: { contents: `export { educationDocumentSections } from './resources/js/components/education/educationDocumentSections.js'; export { CHECKLIST } from './resources/js/data/leadDocumentChecklist.js';`, resolveDir: process.cwd(), loader: 'js' }, bundle: true, write: false, format: 'cjs', platform: 'node' }).outputFiles[0].text;
+const loaded = new Module(path.resolve('education-application-forms-test.cjs'), module);
+loaded.filename = path.resolve('education-application-forms-test.cjs'); loaded.paths = module.paths; loaded._compile(compiled, loaded.filename);
+const { CHECKLIST, educationDocumentSections } = loaded.exports;
+function freeze(value) { Object.freeze(value); for (const child of Object.values(value)) if (child && typeof child === 'object' && !Object.isFrozen(child)) freeze(child); return value; }
+freeze(CHECKLIST);
+const before = JSON.stringify(CHECKLIST);
+const education = educationDocumentSections(CHECKLIST, true);
+const academic = education.find(section => section.key === 'academic');
+const forms = academic.items.filter(item => item.id === 'acad.application_forms');
+assert.equal(forms.length, 1); assert.equal(forms[0].name, 'Application Forms');
+assert.equal(academic.section, 'Offer and Academic Documents');
+assert.equal(forms[0].system, undefined, 'Application Forms uses the ordinary upload/review row');
+assert.deepEqual(academic.items.filter(item => item.id !== 'acad.application_forms'), CHECKLIST.find(section => section.key === 'academic').items, 'Existing academic keys/order remain intact');
+assert.equal(JSON.stringify(CHECKLIST), before, 'Shared/client checklist catalogue must not be mutated');
+assert.equal(educationDocumentSections(CHECKLIST, false), CHECKLIST, 'Non-Education profiles retain the exact original catalogue');
+for (const section of CHECKLIST.filter(section => section.key !== 'academic')) assert.equal(education.find(item => item.key === section.key), section, 'Unrelated sections stay unchanged');
+assert.equal(educationDocumentSections(education, true).find(section => section.key === 'academic').items.filter(item => item.id === 'acad.application_forms').length, 1, 'Refreshing must not add duplicate rows');
+assert.equal(education.flatMap(section => section.items).filter(item => item.id === 'acad.application_forms').length, 1);
+console.log('Education Application Forms: ordinary academic upload row, unchanged existing keys/order, no shared catalogue mutation, non-Education isolation and no duplicate rows passed.');
