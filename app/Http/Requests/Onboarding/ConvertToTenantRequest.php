@@ -20,6 +20,7 @@ class ConvertToTenantRequest extends FormRequest
             || ($tenant->contract_start && $tenant->contract_end && $tenant->contract_start->equalTo($tenant->contract_end)));
 
         return [
+            'expected_tenant_version' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/D'],
             'property_id' => ['required', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
             'unit' => ['nullable', 'string', 'max:50'],
             'first_name' => ['required', 'string', 'max:100'],

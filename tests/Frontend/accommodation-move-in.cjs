@@ -35,11 +35,13 @@ const root = createRoot(document.getElementById('root'));
 const button = label => [...document.querySelectorAll('button')].find(el => el.textContent.trim() === label);
 const click = el => act(async () => { assert.ok(el); el.click(); });
 const tenant = { id: 7, property_id: 3, first_name: 'Synthetic', family_name: 'Tenant', display_name: 'Synthetic Tenant',
+    move_in_version: 'a'.repeat(64),
     current_status: 'pending_payment', email: 'signed@example.test', phone: 'signed-phone', contract_type: 'fixed_term',
     contract_start: '2026-11-18', contract_end: '2026-12-17', bond_paid_nzd: '700.00', advance_paid_nzd: '1400.00' };
 (async () => {
     await act(async () => root.render(React.createElement(Convert, { submission: { id: 5, full_legal_name: 'Source Name', email: 'source@example.test', mobile: 'source-phone', converted_tenant: tenant }, onClose() {} })));
     for (const key of ['email', 'phone', 'bond_paid_nzd', 'advance_paid_nzd']) assert.equal(formData[key], tenant[key], `Preserve ${key}`);
+    assert.equal(formData.expected_tenant_version, tenant.move_in_version);
     assert.ok([...document.querySelectorAll('input')].some(el => el.value === '700.00'));
     await act(async () => root.render(React.createElement(Convert, { key: 'unpaid', submission: { id: 6, full_legal_name: 'Synthetic Tenant', invoice_amount_nzd: '9999.00' }, onClose() {} })));
     assert.equal(formData.bond_paid_nzd, '', 'An invoice is not evidence of payment');

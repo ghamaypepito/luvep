@@ -164,7 +164,9 @@ class EoiSubmissionController extends Controller
     public function convertToTenant(ConvertToTenantRequest $request, EoiSubmission $submission)
     {
         $data = $request->validated();
-        $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $data) {
+        $version = $data['expected_tenant_version'] ?? null;
+        unset($data['expected_tenant_version']);
+        $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $data, $version) {
             // Both signing and move-in acquire the source first. Never decide to
             // create a tenant from the stale route-bound snapshot.
             $source = EoiSubmission::whereKey($submission->id)->lockForUpdate()->firstOrFail();
@@ -177,6 +179,9 @@ class EoiSubmissionController extends Controller
                     return null;
                 }
                 abort_unless($source->status === 'payment_confirmed', 422, 'Payment must be confirmed before move-in.');
+                if (! is_string($version) || ! hash_equals($tenant->move_in_version, $version)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['expected_tenant_version' => 'This tenant changed after the form opened. Close and reopen the move-in form to review the latest payments and details.']);
+                }
                 abort_unless((int) $data['property_id'] === $tenant->property_id, 422, 'Use the property linked to the signed agreement.');
                 $tenant->fill([...$data, 'current_status' => 'active'])->save();
             } else {

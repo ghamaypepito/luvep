@@ -216,7 +216,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $tenantId = $agreement->fresh()->tenant_id;
         $this->assertSame($tenantId, $source->fresh()->converted_to_tenant_id);
         $this->assertSame('agreement_signed', $source->fresh()->status);
-        $payload = ['property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'contract_start' => '2026-11-18', 'contract_end' => '2026-11-18'];
+        $payload = ['expected_tenant_version' => Tenant::findOrFail($tenantId)->move_in_version, 'property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'contract_start' => '2026-11-18', 'contract_end' => '2026-11-18'];
         $url = '/portal/accommodation/applications/'.$source->id;
         $this->post($url.'/convert', $payload)->assertSessionHas('error');
         $this->assertSame('pending_payment', Tenant::find($tenantId)->current_status);
@@ -374,7 +374,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $tenantId = $agreement->fresh()->tenant_id;
         $source->refresh()->update(['status' => 'payment_confirmed']);
         $request = \Mockery::mock(\App\Http\Requests\Onboarding\ConvertToTenantRequest::class);
-        $request->shouldReceive('validated')->andReturn(['property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'contract_start' => '2026-11-18', 'contract_end' => '2026-12-17']);
+        $request->shouldReceive('validated')->andReturn(['expected_tenant_version' => Tenant::findOrFail($tenantId)->move_in_version, 'property_id' => $property->id, 'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term', 'contract_start' => '2026-11-18', 'contract_end' => '2026-12-17']);
         app(\App\Http\Controllers\Portal\EoiSubmissionController::class)->convertToTenant($request, $stale);
         $this->assertSame(1, Tenant::count());
         $this->assertSame($tenantId, $source->fresh()->converted_to_tenant_id);
@@ -411,6 +411,35 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->post($url.'/renew', ['new_contract_start' => '2026-12-18', 'new_contract_end' => '2027-12-17'])->assertStatus(422);
         $this->actingAs(User::factory()->create(['role' => 'education', 'portal_access' => ['accommodation']]))
             ->post($url.'/activate', ['payment_confirmed' => true])->assertForbidden();
+    }
+
+    public function test_stale_move_in_form_cannot_erase_newly_recorded_payments_or_contacts(): void
+    {
+        [, , $property, , $data] = $this->setupAgreement();
+        $source = $this->onboardingSource($property);
+        $this->post('/portal/accommodation/forms/agreements/generate', ['source' => 'onboarding', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $data])->assertSessionHasNoErrors();
+        $agreement = AccommodationAgreement::latest('id')->firstOrFail();
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $tenant = Tenant::findOrFail($agreement->fresh()->tenant_id);
+        $payload = ['expected_tenant_version' => $tenant->move_in_version, 'property_id' => $property->id,
+            'first_name' => 'Synthetic', 'family_name' => 'Tenant', 'contract_type' => 'fixed_term',
+            'contract_start' => '2026-11-18', 'contract_end' => '2026-12-17', 'bond_paid_nzd' => '',
+            'advance_paid_nzd' => '', 'email' => $tenant->email];
+        $source->refresh()->update(['status' => 'payment_confirmed']);
+        $tenant->update(['bond_paid_nzd' => 700, 'advance_paid_nzd' => 350, 'email' => 'corrected@example.test']);
+        $url = '/portal/accommodation/applications/'.$source->id.'/convert';
+        $this->post($url, $payload)->assertSessionHasErrors('expected_tenant_version');
+        $tenant->refresh();
+        $this->assertSame('700.00', $tenant->bond_paid_nzd);
+        $this->assertSame('350.00', $tenant->advance_paid_nzd);
+        $this->assertSame('corrected@example.test', $tenant->email);
+        $this->assertSame('pending_payment', $tenant->current_status);
+        $this->post($url, [...$payload, 'expected_tenant_version' => $tenant->move_in_version,
+            'bond_paid_nzd' => $tenant->bond_paid_nzd, 'advance_paid_nzd' => $tenant->advance_paid_nzd,
+            'email' => $tenant->email])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('active', $tenant->fresh()->current_status);
+        $this->assertSame('700.00', $tenant->fresh()->bond_paid_nzd);
     }
 
     private function onboardingSource(Property $property): EoiSubmission

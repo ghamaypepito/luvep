@@ -31,6 +31,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
     const start = (existing?.contract_start ? String(existing.contract_start).slice(0, 10) : "") || (submission.move_in_date ? String(submission.move_in_date).slice(0, 10) : "") || today();
 
     const { data, setData, post, processing, errors } = useForm({
+        expected_tenant_version: existing?.move_in_version ?? null,
         property_id: existing?.property_id ?? submission.property_id ?? "",
         unit: existing?.unit ?? "",
         first_name: existing?.first_name ?? first,
@@ -79,6 +80,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
 
                 {/* Scrollable body */}
                 <div className="grid flex-1 grid-cols-1 gap-x-4 gap-y-3 overflow-y-auto px-6 py-5 sm:grid-cols-2">
+                    {errors.expected_tenant_version && <p role="alert" className="sm:col-span-2 text-sm text-rose-700">{errors.expected_tenant_version}</p>}
                     <SubHeading>Property</SubHeading>
                     <div className="sm:col-span-2">
                         <label className={LABEL}>Property</label>
