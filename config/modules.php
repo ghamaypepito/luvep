@@ -28,7 +28,7 @@ return [
     'restricted' => [
         'social_marketing' => [
             'label' => 'Social & Marketing — Digital team',
-            'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Approval and publishing remain Super Admin only.',
+            'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Admins can approve social posts. Publishing remains Super Admin only.',
             'admin_default' => true,
         ],
         'client_pathways' => [

@@ -64,19 +64,43 @@ class MarketingPostWorkflowTest extends TestCase
         });
     }
 
-    public function test_saved_workflow_requires_super_admin_for_review_and_every_edit_invalidates_approval(): void
+    public function test_admins_including_eireen_can_review_but_cannot_publish_and_edits_invalidate_approval(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'admin']));
-        $p = $this->draft();
-        foreach (['approve', 'changes', 'schedule'] as $action) {
-            $this->postJson("/social/marketing/posts/{$p['id']}/$action", ['version' => $p['version']])->assertForbidden();
+        foreach (['admin@example.test', 'eireen@dimmigration.co'] as $email) {
+            $admin = User::factory()->create(['role' => 'admin', 'email' => $email]);
+            $this->actingAs($admin);
+            $p = $this->draft();
+            $this->getJson('/social/marketing/posts')->assertOk()->assertJsonPath('can_approve', true)->assertJsonPath('can_publish', false);
+            $p = $this->postJson("/social/marketing/posts/{$p['id']}/submit", ['version' => $p['version']])->assertOk()->json('post');
+            $this->getJson("/social/marketing/posts/{$p['id']}")->assertOk()->assertJsonPath('can_approve', true)->assertJsonPath('can_publish', false);
+            $p = $this->postJson("/social/marketing/posts/{$p['id']}/changes", ['version' => $p['version'], 'note' => 'Clarify the next step.'])->assertOk()->assertJsonPath('post.status', 'changes_requested')->json('post');
+            $p = $this->approve($p);
+            $this->assertSame($admin->id, $p['approved_by']);
+            $this->assertTrue(MarketingPost::find($p['id'])->hasCurrentApproval());
+            $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertForbidden();
+            $this->getJson('/social/marketing/identity')->assertForbidden();
+            $edited = $this->draft(['id' => $p['id'], 'version' => $p['version'], 'caption' => 'Edited caption']);
+            $this->assertSame('draft', $edited['status']);
+            $this->assertNull($edited['approved_by']);
+            $this->assertFalse(MarketingPost::find($p['id'])->hasCurrentApproval());
         }
-        $this->actingAs(User::factory()->create(['role' => 'super_admin']));
-        $p = $this->approve($p);
-        $edited = $this->draft(['id' => $p['id'], 'version' => $p['version'], 'caption' => 'Edited caption']);
-        $this->assertSame('draft', $edited['status']);
-        $this->assertNull($edited['approved_by']);
-        $this->postJson("/social/marketing/posts/{$p['id']}/schedule", ['version' => $p['version']])->assertConflict();
+        Http::assertNothingSent();
+    }
+
+    public function test_social_access_alone_and_inactive_admins_cannot_review_posts(): void
+    {
+        $p = $this->draft();
+        $p = $this->postJson("/social/marketing/posts/{$p['id']}/submit", ['version' => $p['version']])->assertOk()->json('post');
+        foreach ([['role' => 'education', 'module_permissions' => ['social_marketing']], ['role' => 'lead', 'module_permissions' => ['social_marketing']], ['role' => 'admin', 'is_active' => false]] as $attributes) {
+            $user = User::factory()->create($attributes);
+            $this->assertFalse($user->canApproveSocialPosts());
+            $this->actingAs($user);
+            foreach (['approve', 'changes', 'schedule'] as $action) {
+                $this->actingAs($user);
+                $this->postJson("/social/marketing/posts/{$p['id']}/$action", ['version' => $p['version'], 'note' => 'Needs revisions.'])->assertForbidden();
+            }
+        }
+        $this->assertSame('in_review', MarketingPost::find($p['id'])->status);
         Http::assertNothingSent();
     }
 
@@ -152,7 +176,7 @@ class MarketingPostWorkflowTest extends TestCase
         $this->postJson('/social/marketing/posts', ['campaign' => 'x', 'service' => 'x', 'caption' => 'x', 'media' => 'https://example.org/a.png'])->assertUnprocessable();
         $this->postJson('/social/marketing/posts', ['campaign' => 'x', 'service' => 'x', 'caption' => 'x', 'image_url' => 'https://example.org/a.png'])->assertUnprocessable();
         $p = $this->draft();
-        $this->getJson('/social/marketing/posts')->assertOk()->assertJsonPath('can_approve', true)->assertJsonPath('ghl_user_configured', false)->assertDontSee('media_path')->assertDontSee('approval_fingerprint')->assertDontSee('location_id');
+        $this->getJson('/social/marketing/posts')->assertOk()->assertJsonPath('can_approve', true)->assertJsonPath('can_publish', true)->assertJsonPath('ghl_user_configured', false)->assertDontSee('media_path')->assertDontSee('approval_fingerprint')->assertDontSee('location_id');
         $this->postJson('/social/marketing/posts', ['campaign' => 'x', 'service' => 'x', 'caption' => 'x', 'media' => UploadedFile::fake()->image('large.png', 9000, 1)])->assertUnprocessable();
         $this->actingAs(User::factory()->create(['role' => 'sales']));
         $this->getJson('/social/marketing/posts')->assertForbidden();

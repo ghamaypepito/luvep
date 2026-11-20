@@ -10,7 +10,7 @@ socialSettings.innerHTML=`<h2>Settings & resources</h2><p class="section-descrip
 $('main').append(socialSettings);if(typeof identityButton!=='undefined')socialSettings.append(identityButton);
 socialNav.querySelector('.nav-count').textContent=String(marketingPosts.filter(post=>post.status==='in_review').length);
 const socialCanConfigure=document.documentElement.dataset.socialAdmin==='true';socialNav.querySelectorAll('[data-admin-tool]').forEach(node=>node.hidden=!socialCanConfigure);socialSettings.querySelectorAll('[data-admin-settings]').forEach(node=>node.hidden=!socialCanConfigure);
-function socialRefreshCapabilities(){socialSettings.querySelectorAll('[data-super-settings]').forEach(node=>node.hidden=!marketingCanApprove);}socialRefreshCapabilities();
+function socialRefreshCapabilities(){socialSettings.querySelectorAll('[data-super-settings]').forEach(node=>node.hidden=!marketingCanPublish);}socialRefreshCapabilities();
 const socialBaseView=view,socialReviewRenderer=marketingRenderReview;
 marketingRenderReview=()=>socialReviewRenderer(socialQueueStatus);
 const socialStepTitles={brief:['Brief & draft','Start with the brief, prepare the artwork and caption, then save a draft.'],drafts:['Drafts','Saved drafts ready to submit for approval.'],approval:['Approval','Review the saved brief, artwork and caption. Approve or request revisions.'],revisions:['Revisions','Update the draft from feedback, then send it back to Approval.'],posting:['For posting','Approved content ready to schedule and save to Social Drive.'],drive:['Social Drive','Private social assets, ready to find and reuse.'],settings:['Settings','Connections, resources and workspace settings.']};

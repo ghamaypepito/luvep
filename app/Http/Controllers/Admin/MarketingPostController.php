@@ -67,7 +67,7 @@ class MarketingPostController extends Controller
         $posts = MarketingPost::where('location_id', GhlConnection::LOCATION)->where('account_id', GhlSocialReader::ACCOUNT)
             ->latest('updated_at')->limit(200)->get()->map(fn ($p) => $this->shape($p));
 
-        return response()->json(['posts' => $posts, 'can_approve' => $request->user()->isSuperAdmin(),
+        return response()->json(['posts' => $posts, 'can_approve' => $request->user()->canApproveSocialPosts(), 'can_publish' => $request->user()->isSuperAdmin(),
             'ghl_user_configured' => trim((string) Setting::get('ghl_connector.user_id', '')) !== '']);
     }
 
@@ -75,7 +75,7 @@ class MarketingPostController extends Controller
     {
         $this->authorizeUser($request);
 
-        return response()->json(['post' => $this->shape($this->find($id)), 'can_approve' => $request->user()->isSuperAdmin()], 200, ['Cache-Control' => 'private, no-store']);
+        return response()->json(['post' => $this->shape($this->find($id)), 'can_approve' => $request->user()->canApproveSocialPosts(), 'can_publish' => $request->user()->isSuperAdmin()], 200, ['Cache-Control' => 'private, no-store']);
     }
 
     public function store(Request $request)
@@ -149,7 +149,8 @@ class MarketingPostController extends Controller
 
     private function review(Request $request, string $id, string $action)
     {
-        $this->authorizeUser($request, $action !== 'submit');
+        $this->authorizeUser($request);
+        abort_unless($action === 'submit' || $request->user()->canApproveSocialPosts(), 403);
         $this->exactFields($request, $action === 'changes' ? ['version', 'note'] : ['version']);
         $data = $request->validate(['version' => ['required', 'integer', 'min:1'], 'note' => [$action === 'changes' ? 'required' : 'nullable', 'string', 'max:2000']]);
         $post = DB::transaction(function () use ($request, $id, $action, $data) {

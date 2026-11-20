@@ -357,6 +357,11 @@ class User extends Authenticatable
         return $this->is_active && in_array($this->role, config('hr.internal_roles'), true) && $this->canSeeModule('social_marketing');
     }
 
+    public function canApproveSocialPosts(): bool
+    {
+        return $this->canUseSocialMarketing() && $this->isAdmin();
+    }
+
     /**
      * Whether this user is an admin (full access to /admin and every portal).
      * Super-admins implicitly satisfy any admin check.
