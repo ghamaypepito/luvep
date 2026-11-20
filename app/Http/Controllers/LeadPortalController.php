@@ -968,11 +968,17 @@ class LeadPortalController extends Controller
         // buildTrackerPayload builds shared-document URLs against the no-login
         // /track/{code} route. A signed-in client must go through their own
         // authenticated portal route instead — the /track route can 404 here
-        // (tracker gating / no code context). Rewrite view + download links.
+        // (tracker gating / no code context). Rewrite preview/signing too.
         $payload['shared_documents'] = collect($payload['shared_documents'] ?? [])
             ->map(function (array $d) {
                 $d['view_url'] = "/portal/lead/documents/{$d['id']}/download?inline=1";
                 $d['download_url'] = "/portal/lead/documents/{$d['id']}/download";
+                if (! empty($d['preview_url'])) {
+                    $d['preview_url'] = "/portal/lead/documents/{$d['id']}/preview";
+                }
+                if (! empty($d['sign_url'])) {
+                    $d['sign_url'] = "/portal/lead/documents/{$d['id']}/sign";
+                }
 
                 return $d;
             })->all();
