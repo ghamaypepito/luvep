@@ -39,6 +39,7 @@ class TeamWorkspace
                 'status' => $break ? 'on_break' : ($shift ? 'working' : 'off_shift'),
                 'started_at' => $shift?->started_at?->toISOString(), 'break_started_at' => $break?->started_at?->toISOString(),
                 'timezone' => $shift?->timezone ?? $employee->schedule?->timezone ?? config('app.timezone', 'UTC'),
+                'max_working_seconds' => $shift?->schedule_snapshot['max_working_seconds'] ?? null,
                 ...($shift ? $clock->totals($shift, $now) : ['working_seconds' => 0, 'break_seconds' => 0])];
         })->values();
 

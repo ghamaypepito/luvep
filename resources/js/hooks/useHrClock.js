@@ -119,8 +119,9 @@ export default function useHrClock({ enabled, preview, endpoint }) {
                       Date.parse(state.server_now) + Math.min(age, 30000),
                   ).toISOString(),
                   display_working_seconds:
-                      state.working_seconds +
-                      (state.status === "working" ? elapsed : 0),
+                      state.status === "working"
+                          ? Math.min(state.working_seconds + elapsed, state.max_working_seconds ?? Infinity)
+                          : state.working_seconds,
                   display_break_seconds:
                       state.break_seconds +
                       (state.status === "on_break" ? elapsed : 0),

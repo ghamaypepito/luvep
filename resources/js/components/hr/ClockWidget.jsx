@@ -74,6 +74,8 @@ function Attendance({ clock, variant, overview }) {
     const hero = variant === "hero";
     const disabled = pending || stale || !state;
     const status = state?.status;
+    const limitReached = status === "working" && state?.max_working_seconds != null
+        && state.display_working_seconds >= state.max_working_seconds;
     const label = {
         working: "Working",
         on_break: "On break",
@@ -93,7 +95,7 @@ function Attendance({ clock, variant, overview }) {
             <button
                 type="button"
                 className={hero ? "hr-button" : "hr-button-secondary"}
-                disabled={disabled}
+                disabled={disabled || limitReached}
                 onClick={() => transition(status === "on_break" ? "break_in" : "break_out")}
             >
                 {hero && (status === "on_break" ? <Play size={16} /> : <Coffee size={16} />)}
@@ -147,11 +149,14 @@ function Attendance({ clock, variant, overview }) {
                 <div className="hr-clock-times">{workAndBreak}</div>
                 {actions}
             </div>}
-            {state?.completed_today && (
+            {(state?.completed_today || state?.automatically_clocked_out) && (
                 <p className="hr-clock-paused">
-                    Your shift is complete. Open My time records to finish your DTR, or ask HR for a clock correction.
+                    {state.automatically_clocked_out ? "Automatically clocked out after 10 hours of work." : "Your shift is complete."} Open My time records to finish your DTR, or ask HR for a clock correction.
                 </p>
             )}
+            {status && status !== "off_shift" && state?.max_working_seconds != null && <p className="hr-clock-paused" role="status">
+                {limitReached ? "10-hour work limit reached. Waiting for the server to confirm automatic clock-out." : "Automatic clock-out after 10 hours of work. Break time does not count toward this limit."}
+            </p>}
             {status === "on_break" && <p className="hr-clock-paused">Work time is paused.</p>}
             {(error || stale) && <div className="hr-clock-error" role="alert">
                 <span>{stale ? staleMessage : error}</span>
