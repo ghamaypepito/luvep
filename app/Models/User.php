@@ -357,6 +357,11 @@ class User extends Authenticatable
         return $this->is_active && in_array($this->role, config('hr.internal_roles'), true) && $this->canSeeModule('social_marketing');
     }
 
+    public function canPublishSocialPosts(): bool
+    {
+        return $this->canUseSocialMarketing() && $this->canSeeModule('social_publishing');
+    }
+
     public function canApproveSocialPosts(): bool
     {
         return $this->canUseSocialMarketing() && $this->isAdmin();

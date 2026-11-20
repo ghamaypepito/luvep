@@ -104,6 +104,40 @@ class MarketingPostWorkflowTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_granted_social_publisher_can_send_only_the_current_approved_version(): void
+    {
+        $this->connected();
+        $publisher = User::factory()->create(['role' => 'admin', 'module_permissions' => ['social_publishing']]);
+        $draft = $this->draft();
+        $submitted = $this->postJson("/social/marketing/posts/{$draft['id']}/submit", ['version' => $draft['version']])->assertOk()->json('post');
+        $this->actingAs($publisher);
+        foreach ([$draft, $submitted] as $post) {
+            $this->postJson("/social/marketing/posts/{$post['id']}/schedule", ['version' => $post['version']])->assertConflict();
+        }
+        Http::assertNothingSent();
+        $this->getJson('/social/marketing/posts')->assertOk()->assertJsonPath('can_publish', true)->assertJsonPath('can_manage_identity', false);
+        $this->getJson('/social/marketing/identity')->assertForbidden();
+        $approved = $this->postJson("/social/marketing/posts/{$submitted['id']}/approve", ['version' => $submitted['version']])->assertOk()->json('post');
+        $this->postJson("/social/marketing/posts/{$approved['id']}/schedule", ['version' => $submitted['version']])->assertConflict();
+        $this->postJson("/social/marketing/posts/{$approved['id']}/schedule", ['version' => $approved['version'], 'caption' => 'Override'])->assertUnprocessable();
+        Http::assertNothingSent();
+        $this->postJson("/social/marketing/posts/{$approved['id']}/schedule", ['version' => $approved['version']])->assertOk()->assertJsonPath('post.status', 'scheduled');
+        $this->assertSame(1, $this->writes);
+        $this->postJson("/social/marketing/posts/{$approved['id']}/schedule", ['version' => $approved['version']])->assertConflict();
+        $this->assertSame(1, $this->writes);
+    }
+
+    public function test_publish_grant_does_not_imply_review_workspace_or_external_access(): void
+    {
+        foreach ([['role' => 'education', 'module_permissions' => ['social_publishing']], ['role' => 'lead', 'module_permissions' => ['social_marketing', 'social_publishing']], ['role' => 'admin', 'is_active' => false, 'module_permissions' => ['social_publishing']]] as $attributes) {
+            $this->assertFalse(User::factory()->create($attributes)->canPublishSocialPosts());
+        }
+        $user = User::factory()->create(['role' => 'education', 'module_permissions' => ['social_marketing', 'social_publishing']]);
+        $this->assertTrue($user->canPublishSocialPosts());
+        $this->assertFalse($user->canApproveSocialPosts());
+        $this->assertFalse(User::factory()->create(['role' => 'admin'])->canPublishSocialPosts());
+    }
+
     public function test_stale_review_and_unsubmitted_approval_are_rejected(): void
     {
         $p = $this->draft();

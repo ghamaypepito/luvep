@@ -96,6 +96,11 @@ const approved = { id: 'post-1', version: 9, status: 'approved', campaign: 'Appr
     assert.equal(field('Caption').value, stored.caption, 'Marketing workspace links open the saved calendar post');
     assert.ok(button('Approve this version'), 'Calendar passes social approval separately from article publishing');
     assert.equal(button('Schedule through GHL'), undefined);
+    stored = { ...approved, id: stored.id };
+    await act(async () => root.render(React.createElement(Calendar, { key: ++generation, month: '2026-11', topics: [], undated: [], canPublish: false, canApproveSocialPosts: true, canPublishSocialPosts: true })));
+    assert.ok(button('Schedule through GHL'), 'Social publishers can post from Calendar without article publishing permission');
+    const beforePublisherConfirm = requests.length; await click(button('Schedule through GHL'));
+    assert.equal(requests.length, beforePublisherConfirm, 'A publisher still confirms the exact approved delivery before sending');
     dom.window.history.replaceState({}, '', '/admin/content-calendar');
     const remote = { id: 'ghl-child', parent_id: 'ghl-parent', caption: 'Already published from GHL', status: 'published', post_type: 'post', date: '2026-10-31T16:05:00Z', media: [], account_name: 'Luv, Ep' };
     const local = { id: 'local-linked', ghl_post_id: 'ghl-parent', title: 'Old scheduled local title', status: 'scheduled', planned_date: '2026-11-02', planned_time: '10:00' };

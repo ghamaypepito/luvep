@@ -6,7 +6,7 @@ import { chromium } from '@playwright/test';
 
 const assets=path.resolve('resources/social-workspace');
 const sample={headline:'Your next chapter starts here.',supporting_copy:'Explore study planning with EP.',cta:'Talk to our team',caption:'Start with a conversation.',layout:'photo-top'};
-async function withStudio(run,{mp4Supported=true,posts=[],driveAssets=[],canPublish=true}={}){
+async function withStudio(run,{mp4Supported=true,posts=[],driveAssets=[],canPublish=true,canManageIdentity=canPublish}={}){
     const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
     try{
         const driveWrites=[];
@@ -20,7 +20,7 @@ async function withStudio(run,{mp4Supported=true,posts=[],driveAssets=[],canPubl
                 const data=request.postDataJSON();writes.push(data);
                 await route.fulfill({json:{design:{...sample,captions:Object.fromEntries(data.channels.map(channel=>[channel,`${channel}: Explore your next step with EP. Talk to our team.`]))},draft:true}});return;
             }
-            if(url.pathname==='/social/marketing/posts'){assert.equal(request.method(),'GET');await route.fulfill({json:{posts,can_approve:true,can_publish:canPublish,ghl_user_configured:true}});return;}
+            if(url.pathname==='/social/marketing/posts'){assert.equal(request.method(),'GET');await route.fulfill({json:{posts,can_approve:true,can_publish:canPublish,can_manage_identity:canManageIdentity,ghl_user_configured:true}});return;}
             if(url.pathname==='/social/ghl/accounts'){await route.fulfill({json:{publishing_enabled:true,accounts:[{selected:true,name:'Luv, Ep',platform:'facebook',active:true}]}});return;}
             if(url.pathname.startsWith('/social/drive/posts/')){driveWrites.push(request.postDataJSON());await route.fulfill({json:{asset:{id:'asset-1'}}});return;}
             if(url.pathname==='/social/drive/assets'){await route.fulfill({json:{assets:{data:driveAssets,current_page:1,last_page:1,total:driveAssets.length}}});return;}
@@ -166,4 +166,16 @@ test('admin approvers see review actions without publishing or identity controls
         await page.getByRole('button',{name:'5 For posting',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Schedule in GHL',exact:true}).count(),0);
         await page.getByRole('button',{name:'Settings',exact:true}).click();assert.equal(await page.getByRole('button',{name:/GHL identity configured|Choose GHL scheduling identity/}).isVisible(),false);assert.equal(await page.getByRole('link',{name:'Digital team access ↗',exact:true}).isVisible(),false);
     },{posts,canPublish:false});
+});
+
+
+test('granted publisher can schedule approved content without identity settings',async()=>{
+    const posts=[{id:'approved-one',version:3,campaign:'Approved example',status:'approved',caption:'Approved copy',service:'General',scheduled_at:'2099-11-22T00:00:00Z'}];
+    await withStudio(async(page)=>{
+        await page.getByRole('button',{name:'5 For posting',exact:true}).click();
+        await page.getByRole('button',{name:'Schedule in GHL',exact:true}).waitFor();
+        await page.getByRole('button',{name:'Settings',exact:true}).click();
+        assert.equal(await page.getByRole('button',{name:/GHL identity configured|Choose GHL scheduling identity/}).isVisible(),false);
+        assert.equal(await page.getByRole('link',{name:'Digital team access ↗',exact:true}).isVisible(),false);
+    },{posts,canPublish:true,canManageIdentity:false});
 });

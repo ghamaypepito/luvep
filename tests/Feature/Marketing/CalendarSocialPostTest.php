@@ -28,7 +28,9 @@ class CalendarSocialPostTest extends TestCase
         MarketingPost::create([...$base, 'scheduled_at' => null]);
         $this->actingAs($admin)->get('/admin/content-calendar?month=2026-11')->assertOk()->assertDontSee('PRIVATE_CAPTION_NOT_FOR_CALENDAR')->assertInertia(fn (Assert $p) => $p
             ->has('socialPosts', 1)->where('socialPosts.0.planned_date', '2026-11-01')->where('socialPosts.0.planned_time', '01:00')->where('socialPosts.0.post_type', 'post')
-            ->has('undatedSocialPosts', 1)->where('canPublish', false)->where('canApproveSocialPosts', true));
+            ->has('undatedSocialPosts', 1)->where('canPublish', false)->where('canApproveSocialPosts', true)->where('canPublishSocialPosts', false));
+        $admin->update(['module_permissions' => ['social_publishing']]);
+        $this->get('/admin/content-calendar?month=2026-11')->assertOk()->assertInertia(fn (Assert $p) => $p->where('canPublish', false)->where('canApproveSocialPosts', true)->where('canPublishSocialPosts', true));
         Http::assertNothingSent();
     }
 }
