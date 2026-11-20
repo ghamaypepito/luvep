@@ -2510,6 +2510,8 @@ Route::middleware(['auth'])->group(function () {
             // Engagement Agreement terms" — sets / clears the timestamp.
             Route::post('/documents/agreements/acknowledge', [LeadDocumentController::class, 'leadAcknowledgeAgreements'])->name('documents.agreements.acknowledge');
             Route::get('/documents/{docId}/download', [LeadDocumentController::class, 'download'])->name('documents.download');
+            Route::get('/documents/{docId}/preview', [LeadTrackingController::class, 'previewOwnDocument'])->whereNumber('docId')->name('documents.preview');
+            Route::post('/documents/{docId}/sign', [LeadTrackingController::class, 'signOwnDocument'])->whereNumber('docId')->middleware('throttle:20,1')->name('documents.sign');
             // Client edits their own uploads from the portal (private, owner-scoped).
             Route::post('/documents/{docId}/replace', [LeadDocumentController::class, 'leadReplace'])->name('documents.replace');
             Route::delete('/documents/{docId}', [LeadDocumentController::class, 'leadDestroy'])->name('documents.destroy');
