@@ -53,8 +53,13 @@ class EducationPersonalReport
                 ->filter()->unique()->count(),
         ]);
         $kind = array_key_exists($kind ?? '', self::KINDS) ? $kind : null;
-        $entries = (clone $base)->when($kind, fn ($q) => $q->where('kind', $kind))
-            ->with('lead:id,first_name,last_name')->orderByDesc('occurred_on')->orderByDesc('id');
+        $entries = (clone $base)->when($kind, fn ($q) => $q->where('kind', $kind));
+        // Same personal/date/kind scope as the list, before pagination. A day
+        // can span pages, so its heading must not count just the 30 loaded rows.
+        $dailyCounts = (clone $entries)->reorder()->select('occurred_on')
+            ->selectRaw('COUNT(*) as activity_count')->groupBy('occurred_on')
+            ->get()->mapWithKeys(fn ($row) => [$row->occurred_on->toDateString() => (int) $row->activity_count])->all();
+        $entries->with('lead:id,first_name,last_name')->orderByDesc('occurred_on')->orderByDesc('id');
         $page = (clone $entries)->paginate(30, ['*'], 'activity_page')->withQueryString();
         if ($page->currentPage() > $page->lastPage()) {
             // Removing the last row on the last page must not strand the reader.
@@ -85,13 +90,14 @@ class EducationPersonalReport
         }
 
         return [
-            'kinds' => self::KINDS, 'entries' => $page, 'statuses' => Lead::EDUCATION_STAGES, 'activity_kind' => $kind ?? '',
+            'kinds' => self::KINDS, 'entries' => $page, 'daily_counts' => $dailyCounts, 'statuses' => Lead::EDUCATION_STAGES, 'activity_kind' => $kind ?? '',
             'counts' => collect(self::KINDS)->map(fn ($label, $kind) => [
                 'label' => $label, 'events' => (int) ($counts[$kind]['events'] ?? 0),
                 'clients' => (int) ($counts[$kind]['clients'] ?? 0),
             ])->all(),
             'contacts' => $this->contacts($period, $user),
             'notes' => $fields, 'notes_week_start' => $monday,
+            'dated_notes' => EducationDatedNotes::forPeriod($period, $user),
             'today' => $period->now->toDateString(),
         ];
     }

@@ -32,13 +32,18 @@ class ReportController extends Controller
             abort_unless($s->employees($r->user(), $type)->contains('id', $subject->id), 404);
             $filters['employee_id'] = $subject->id;
         }
-        $rows = $s->rows($actor, $type, $filters)->take(501)->values()->all();
+        $calendarRecords = in_array($type, ['attendance', 'approved_hours'], true)
+            ? app(\App\Services\Hr\DtrCalendar::class)->records($actor, $s->employees($actor, $type), $type === 'approved_hours' ? [...$filters, 'status' => 'reviewed'] : $filters) : null;
+        if ($preview && $calendarRecords !== null) {
+            $calendarRecords = $calendarRecords->map(fn ($record) => [...$record, 'can_view_details' => false]);
+        }
+        $rows = $calendarRecords !== null ? [] : $s->rows($actor, $type, $filters)->take(501)->values()->all();
         $truncated = count($rows) > 500;
         $rows = array_slice($rows, 0, 500);
         $employees = $s->employees($actor, $type)->when($preview, fn ($items) => $items->where('id', $c->subject($r)->id))->values()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user->name, 'department' => $e->department]);
         $exports = $preview ? [] : HrExport::where('user_id', $actor->id)->latest('id')->limit(20)->get()->map(fn ($x) => ['id' => $x->id, 'type' => $x->type, 'status' => $x->status === 'ready' && ! $s->authorized($x) ? 'revoked' : $x->status, 'created_at' => $x->created_at, 'expires_at' => $x->expires_at]);
 
-        return Inertia::render('hr/Reports', ['type' => $type, 'types' => $preview ? array_values(array_filter(ReportService::TYPES, fn ($t) => $s->employees($r->user(), $t)->contains('id', $c->subject($r)->id))) : ReportService::TYPES, 'filters' => $filters, 'rows' => $rows, 'truncated' => $truncated, 'employees' => $employees, 'exports' => $exports, 'preview' => $preview, 'preset' => $week?->preset, 'weeklyReport' => $week && ! $preview ? $week->notes('hr:'.$actor->id) : null]);
+        return Inertia::render('hr/Reports', ['type' => $type, 'types' => $preview ? array_values(array_filter(ReportService::TYPES, fn ($t) => $s->employees($r->user(), $t)->contains('id', $c->subject($r)->id))) : ReportService::TYPES, 'filters' => $filters, 'rows' => $rows, 'truncated' => $truncated, 'employees' => $employees, 'exports' => $exports, 'preview' => $preview, 'preset' => $week?->preset, 'calendarRecords' => $calendarRecords, 'weeklyReport' => $week && ! $preview ? $week->notes('hr:'.$actor->id) : null]);
     }
 
     public function saveWeeklyNote(Request $request)

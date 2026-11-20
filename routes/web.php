@@ -459,6 +459,8 @@ Route::post('/affiliate/register/{code}', [\App\Http\Controllers\AffiliateRegist
 // Public "Quick Registration" — short marketing lead-capture form (a trimmed
 // Free Assessment). Exact /register; the {event_code} variants below are the
 // separate event-registration funnel.
+Route::get('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'show'])->where('token', '[A-Za-z0-9]{48}');
+Route::post('/reception/{token}', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'ring'])->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:3,1');
 Route::get('/register', [LeadController::class, 'showRegistration'])->name('register');
 Route::post('/register', [LeadController::class, 'storeRegistration']);
 Route::get('/register/full', [LeadController::class, 'showRegistrationFull'])->name('register.full');
@@ -1471,6 +1473,13 @@ Route::middleware(['auth'])->group(function () {
         // but can't touch stage/status, convert, or delete (those stay with
         // sales/admin). Everything here is scoped to the agent's own leads.
         Route::middleware('portal:agent')->prefix('agent')->name('portal.agent.')->group(function () {
+            Route::middleware('module:assigned_immigration_cases')->group(function () {
+                $assigned = \App\Http\Controllers\Portal\AssignedCaseController::class;
+                Route::get('/assigned-cases', [$assigned, 'index'])->name('assigned-cases');
+                Route::get('/assigned-cases/{lead}', [$assigned, 'show'])->whereNumber('lead')->name('assigned-cases.show');
+                Route::get('/assigned-cases/{lead}/documents/{document}/download', [$assigned, 'download'])->whereNumber(['lead', 'document'])->name('assigned-cases.download');
+                Route::post('/assigned-cases/{lead}/uploads', [$assigned, 'upload'])->whereNumber('lead')->name('assigned-cases.upload');
+            });
             Route::get('/dashboard', [\App\Http\Controllers\Portal\AgentController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'leads'])->name('leads');
             Route::post('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'storeLead'])->name('leads.store');
@@ -1751,6 +1760,10 @@ Route::middleware(['auth'])->group(function () {
         // page. Admins satisfy every portal:* check via canAccessPortal(), so
         // they can view any role's dashboard.
         Route::middleware('portal:education')->prefix('education')->name('portal.education.')->group(function () {
+            Route::get('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'index']);
+            Route::get('/cost-breakdowns/rates', [\App\Http\Controllers\EducationCostBreakdownController::class, 'rates'])->middleware('throttle:60,1');
+            Route::post('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'generate']);
+
             Route::get('/dashboard', [EducationController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [EducationController::class, 'leads'])->name('leads');
             Route::get('/leads/proposals-agreements', [SalesController::class, 'proposalsAgreementsPage'])->name('leads.proposals-agreements');
@@ -1847,6 +1860,9 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'update'])->whereNumber('activity')->name('reports.activities.update');
             Route::delete('/reports/activities/{activity}', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'destroy'])->whereNumber('activity')->name('reports.activities.destroy');
             Route::post('/reports/personal-notes', [\App\Http\Controllers\Portal\EducationReportActivityController::class, 'notes'])->name('reports.personal-notes');
+            Route::post('/reports/dated-notes', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'store'])->name('reports.dated-notes.store');
+            Route::patch('/reports/dated-notes/{note}', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'update'])->whereNumber('note')->name('reports.dated-notes.update');
+            Route::delete('/reports/dated-notes/{note}', [\App\Http\Controllers\Portal\EducationDatedNoteController::class, 'destroy'])->whereNumber('note')->name('reports.dated-notes.destroy');
 
             // ACCOUNT
             Route::get('/profile', [EducationController::class, 'profile'])->name('profile');
@@ -1969,6 +1985,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/leads/{id}', [LeadController::class, 'show'])->name('leads.show');
 
             // WORK
+            Route::get('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'index'])->name('reception');
+            Route::post('/reception', [\App\Http\Controllers\Immigration\ReceptionDoorbellController::class, 'setup']);
             Route::get('/assessments', [ImmigrationController::class, 'assessments'])->name('assessments');
             // Pre-screening (potential-client vetting) staff actions on an
             // assessment. {preScreening} resolves by its token (model route key).
@@ -2060,6 +2078,7 @@ Route::middleware(['auth'])->group(function () {
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
             Route::get('/cases/engagement', [ImmigrationController::class, 'engagement'])->name('cases.engagement');
+            Route::post('/engagement/documents/{document}/signature', [\App\Http\Controllers\StaffEngagementSignatureController::class, 'store'])->whereNumber('document')->middleware('throttle:20,1');
             Route::get('/cases/invoice', [ImmigrationController::class, 'invoice'])->name('cases.invoice');
             // INZ Forms console — generate/send INZ forms across all cases.
             Route::get('/cases/inz-forms', [ImmigrationController::class, 'caseInzForms'])->name('cases.inz-forms');
@@ -2098,6 +2117,10 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.profile');
             Route::post('/cases/{lead}/documents/other', [\App\Http\Controllers\Immigration\OtherCaseDocumentController::class, 'store'])
                 ->name('cases.documents.other');
+            Route::get('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'show'])->whereNumber('lead')->name('cases.helper');
+            Route::post('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'store'])->whereNumber('lead')->name('cases.helper.store');
+            Route::post('/cases/{lead}/documents/recent-visa-category', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'addRecentVisaCategory'])
+                ->name('cases.documents.recent-visa-category');
             Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
                 ->whereNumber('document')->name('cases.documents.recent-visa');
             // Edit the applicant's personal details from the Case Profile "Personal" tab.

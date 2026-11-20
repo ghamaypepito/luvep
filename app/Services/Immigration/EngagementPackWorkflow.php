@@ -54,7 +54,7 @@ class EngagementPackWorkflow
                     : 'Initial visa consultation - non-refundable booking fee, credited toward a subsequent visa processing engagement',
                 'quantity' => 1, 'unit_price' => $pricing['professional_excl'],
             ]];
-            if ($type === 'oia') {
+            if ($pricing['include_gst']) {
                 $items[] = ['description' => 'GST (15%)', 'quantity' => 1, 'unit_price' => $pricing['gst']];
             }
 
@@ -78,9 +78,7 @@ class EngagementPackWorkflow
     public function prepare(Lead $lead, array $settings): array
     {
         $type = $settings['engagement_type'];
-        if ($type !== 'immigration_advice') {
-            $settings['include_gst'] = $type === 'oia';
-        }
+        $settings['include_gst'] = (bool) ($settings['include_gst'] ?? ($type === 'oia'));
         $signer = User::findOrFail($settings['signer_id']);
         if (! $signer->holdsCurrentLicence()) {
             $this->fail('Choose a signing adviser with a current IAA licence.');

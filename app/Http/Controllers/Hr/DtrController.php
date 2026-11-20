@@ -97,12 +97,20 @@ class DtrController extends Controller
         }
         $ids = $scope->pluck('user_id');
         abort_unless($access->internal($actor) && ($access->allows($actor, 'dtr.review') || $ids->isNotEmpty()), 403);
-        $entries = DtrEntry::with('user')->whereIn('user_id', $ids)->where('hr_status', 'submitted')->orderBy('work_date')->limit(200)->get()
-            ->map(fn ($e) => [...app(DtrService::class)->row($e), 'employee_name' => $e->user->name, 'employee_id' => HrEmployee::where('user_id', $e->user_id)->value('id')]);
-        $weeks = HrWeeklySignoff::with('employee.user')->whereIn('hr_employee_id', (clone $scope)->pluck('id'))->where('status', 'submitted')->orderBy('week_start')->limit(100)->get()
-            ->map(fn ($w) => [...$w->only(['id', 'week_start', 'version', 'status', 'signed_at']), 'employee_name' => $w->employee->user->name, 'employee_id' => $w->hr_employee_id]);
+        $calendar = app(\App\Services\Hr\DtrCalendar::class);
+        $filters = $calendar->filters($request);
+        $employees = $calendar->employees((clone $scope)->with('user')->whereHas('user')->get(), $filters);
+        $entries = $calendar->records($actor, $employees, [...$filters, 'status' => 'submitted']);
+        $weeks = HrWeeklySignoff::with('employee.user')->whereIn('hr_employee_id', $employees->pluck('id'))->where('status', 'submitted')
+            ->whereDate('week_start', '<=', $filters['to'])->whereDate('week_start', '>=', \Carbon\CarbonImmutable::parse($filters['from'])->startOfWeek()->toDateString())
+            ->orderBy('week_start')->get()
+            ->map(fn ($w) => [...$w->only(['id', 'week_start', 'version', 'status', 'signed_at']), 'employee_name' => $w->employee->user->name, 'employee_id' => $w->hr_employee_id, 'department' => $w->employee->department, 'employee_number' => $w->employee->employee_number]);
+        $oldestWeek = HrWeeklySignoff::whereIn('hr_employee_id', $employees->pluck('id'))->where('status', 'submitted')->min('week_start');
+        $oldestDay = DtrEntry::whereIn('user_id', $employees->pluck('user_id'))->where('hr_status', 'submitted')->min('work_date');
+        $oldestPending = collect([$oldestWeek, $oldestDay])->filter()->map(fn ($date) => \Carbon\CarbonImmutable::parse($date)->toDateString())->min();
 
-        return Inertia::render('hr/DtrReview', compact('entries', 'weeks'));
+        return Inertia::render('hr/DtrReview', compact('entries', 'weeks', 'filters', 'oldestPending'))->toResponse($request)
+            ->header('Cache-Control', 'private, no-store');
     }
 
     private function result(Request $request, DtrEntry $entry)

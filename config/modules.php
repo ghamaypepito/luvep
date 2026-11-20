@@ -109,6 +109,10 @@ return [
             'label' => 'Cases (referral portal)',
             'description' => "Let a recruiting agent see a list of the immigration cases their own referrals became. Read-only — scoped to that agent's referrals.",
         ],
+        'assigned_immigration_cases' => [
+            'label' => 'Assigned Immigration cases (Agent helper)',
+            'description' => 'Only explicitly helper-assigned cases: summaries, visible uploaded files and requested uploads. No finance, notes, stages, signatures or approvals. Existing referral access is separate.',
+        ],
     ],
 
 ];

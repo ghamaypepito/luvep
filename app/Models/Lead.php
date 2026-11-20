@@ -502,7 +502,12 @@ class Lead extends Model
         'meets_184_day_rule_two_years',
     ];
 
+    // Assigned-helper access is granted only by its dedicated staff operation.
+    // Do not add this FK to fillable or generic lead/client serialization.
+    protected $hidden = ['immigration_helper_id'];
+
     protected $casts = [
+        'immigration_helper_id' => 'integer',
         'referred_at' => 'datetime',
         'work_info' => 'array',
         'event_response' => 'array',
@@ -848,13 +853,14 @@ class Lead extends Model
         static::updating(fn (Lead $lead) => $lead->stampLastActivity());
 
         // Older handoffs can qualify for Cases by education_stage alone.
-        // Retain that existing membership when selecting an Education disposition;
-        // do not invent a conversion date or change the Immigration stage.
+        // Retain that existing membership when Education resumes or changes stage.
+        // Do not invent a conversion date, change the Immigration stage, or
+        // override a deliberate case-flag change by an explicit operation.
         static::updating(function (Lead $lead) {
             if ($lead->isDirty('education_stage')
-                && in_array($lead->education_stage, ['Qualified but No Funds', 'Archive'], true)
                 && in_array($lead->getOriginal('education_stage'), self::EDUCATION_STAGES_IMMIGRATION, true)
-                && ! $lead->is_immigration_case) {
+                && ! $lead->is_immigration_case
+                && ! $lead->isDirty('is_immigration_case')) {
                 $lead->is_immigration_case = true;
             }
         });

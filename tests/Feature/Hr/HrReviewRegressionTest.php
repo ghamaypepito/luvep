@@ -131,7 +131,7 @@ class HrReviewRegressionTest extends TestCase
         $this->record($other, '2026-10-19', '2026-10-19 00:00', '2026-10-19 09:00');
         $a = User::factory()->create(['role' => 'admin']);
         $url = 'https://hr.luvep.com/reports?type=attendance&from=2026-10-01&to=2026-10-31';
-        $this->actingAs($a)->withSession(['hr_preview_employee_id' => $subject->id])->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->has('rows', 1)->has('employees', 1))->assertDontSee('OTHER PRIVATE EMPLOYEE');
+        $this->actingAs($a)->withSession(['hr_preview_employee_id' => $subject->id])->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->has('calendarRecords', 1)->has('employees', 1))->assertDontSee('OTHER PRIVATE EMPLOYEE');
         $this->get($url.'&employee_id='.$other->id)->assertNotFound();
         $this->get('https://hr.luvep.com/reports?type=policy_acknowledgements&from=2026-10-01&to=2026-10-31')->assertNotFound();
     }

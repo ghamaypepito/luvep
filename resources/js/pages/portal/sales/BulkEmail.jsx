@@ -132,6 +132,9 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
     const [action, setAction] = useState("send_now");
     const [scheduledAt, setScheduledAt] = useState("");
     const [sending, setSending] = useState(false);
+    const educationEmail = !isSms && basePath.startsWith("/portal/education/");
+    const [sendErrors, setSendErrors] = useState({});
+
 
     useEffect(() => {
         if (templates.length > 0) {
@@ -219,18 +222,29 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
         });
     };
 
-    const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || scheduledAt) && !sending;
+    const futureSchedule = scheduledAt && Date.parse(`${scheduledAt}Z`) > Date.now();
+    const canSend = name.trim() && templateId && visibleSelection.size > 0 && (action === "send_now" || (scheduledAt && (!educationEmail || futureSchedule))) && !sending;
+    const missingRequirements = [
+        !name.trim() && "Enter a campaign name (the example text is only a placeholder).",
+        !templateId && "Choose an active email template.",
+        visibleSelection.size === 0 && "Select at least one recipient matching the current filters.",
+        action === "schedule" && !scheduledAt && "Choose a scheduled date and time.",
+        action === "schedule" && scheduledAt && !futureSchedule && "Choose a future scheduled date and time (UTC).",
+    ].filter(Boolean);
+
 
     const submit = () => {
         if (!canSend) return;
         setSending(true);
+        setSendErrors({});
         router.post(basePath, {
             name, template_id: templateId, recipient_lead_ids: [...visibleSelection],
             ...(newLeadsOnly ? { new_leads_only: true } : {}),
             action, scheduled_at: action === "schedule" ? scheduledAt : null,
         }, {
             preserveScroll: true,
-            onError: (e) => toast.error(Object.values(e)[0] || "Could not start the campaign."),
+            onSuccess: (page) => { if (educationEmail && page.props.flash?.error) setSendErrors({ campaign: page.props.flash.error }); },
+            onError: (e) => { if (educationEmail) setSendErrors(e); toast.error(Object.values(e)[0] || "Could not start the campaign."); },
             onFinish: () => setSending(false),
         });
     };
@@ -241,8 +255,8 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
             <div className="space-y-5">
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
                     <label className="block">
-                        <span className="block text-xs font-semibold text-gray-600 mb-1">Campaign name <span className="text-gray-400 font-normal">(internal)</span></span>
-                        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="June re-engagement" className={inp} />
+                        <span className="block text-xs font-semibold text-gray-600 mb-1">Campaign name <span className="text-gray-400 font-normal">{educationEmail ? "(required, internal)" : "(internal)"}</span></span>
+                        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="June re-engagement" required={educationEmail} maxLength={educationEmail ? 160 : undefined} aria-describedby={educationEmail ? "education-bulk-send-help" : undefined} className={inp} />
                     </label>
                     <label className="block">
                         <span className="block text-xs font-semibold text-gray-600 mb-1">Template</span>
@@ -265,11 +279,19 @@ function Compose({ templates, recipients, basePath, isSms = false, events = [], 
                             </button>
                         </div>
                         {action === "schedule" && (
-                            <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inp} />
+                            <label className="block text-xs text-gray-600">
+                                {educationEmail && "Scheduled date and time (UTC)"}
+                                <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inp} />
+                            </label>
                         )}
                     </div>
 
-                    <button onClick={submit} disabled={!canSend} className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {educationEmail && <div id="education-bulk-send-help" role="status" aria-live="polite" className="rounded-lg bg-gray-50 p-3 text-xs text-gray-700">
+                        <p>Send now selects the timing. The blue Send button starts the campaign.</p>
+                        {sending ? <p className="mt-1 font-semibold">Starting campaign...</p> : missingRequirements.length ? <ul className="mt-1 list-disc pl-4">{missingRequirements.map((reason) => <li key={reason}>{reason}</li>)}</ul> : <p className="mt-1 font-semibold">Ready to {action === "schedule" ? "schedule" : "send"}. Review the template and recipients before continuing.</p>}
+                    </div>}
+                    {educationEmail && Object.keys(sendErrors).length > 0 && <div role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{Object.entries(sendErrors).map(([field, error]) => <p key={field}>{error}</p>)}</div>}
+                    <button type="button" aria-describedby={educationEmail ? "education-bulk-send-help" : undefined} onClick={submit} disabled={!canSend} className="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                         {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                         {action === "schedule" ? "Schedule campaign" : "Send"} {visibleSelection.size > 0 && `· ${visibleSelection.size} lead${visibleSelection.size === 1 ? "" : "s"}`}
                     </button>

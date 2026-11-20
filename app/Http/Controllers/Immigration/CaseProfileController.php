@@ -157,6 +157,7 @@ class CaseProfileController extends Controller
             // Cases the dependant can be related to (defaults to this case).
             'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
             'caseOptions' => Lead::immigrationCase()
+                ->when($user->role === 'agent', fn ($query) => $query->where('agent_id', $user->id))
                 ->orderBy('first_name')->limit(500)
                 ->get(['id', 'lead_id', 'first_name', 'last_name'])
                 ->map(fn ($l) => [
@@ -716,7 +717,8 @@ class CaseProfileController extends Controller
             'lead_id' => $lead->id,
             'dependent_id' => $dependent->id,
             'checklist_key' => $data['checklist_key'] ?? null,
-            'original_name' => $file->getClientOriginalName(),
+            'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $user)
+                ?? $file->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $file->getClientMimeType(),
             'size' => $file->getSize(),
@@ -1487,6 +1489,17 @@ class CaseProfileController extends Controller
         }
 
         return back()->with('success', 'Partner recommendation saved.');
+    }
+
+    /** Explicitly add an empty optional client upload category for this case. */
+    public function addRecentVisaCategory(Request $request, Lead $lead, RecentVisaDocuments $recentVisas)
+    {
+        $user = $request->user();
+        abort_unless($user->is_active && ($user->isAdmin() || $user->role === 'immigration'
+            || in_array($user->role, User::IMMIGRATION_ROLES, true)), 403);
+        $added = $recentVisas->addCategory($lead);
+
+        return back()->with('success', $added ? 'Recent visa / eVisa upload category added.' : 'Recent visa / eVisa category already exists.');
     }
 
     /** Explicitly classify an unmatched upload without replacing its file. */

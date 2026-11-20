@@ -965,6 +965,7 @@ class ImmigrationController extends Controller
                         'signed' => (bool) $signedAt,
                         'signed_at' => optional($signedAt)?->toIso8601String(),
                         'signer_name' => optional($waDoc)->client_signer_name,
+                        'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         // Audit trail for the Written Agreement — who sent it, who
                         // signed, and when (drives the Audit trail modal).
                         'audit' => [
@@ -978,6 +979,7 @@ class ImmigrationController extends Controller
                             'client_email' => $lead?->email,
                             'signer_name' => optional($waDoc)->client_signer_name,
                             'signed_at' => optional($signedAt)?->toIso8601String(),
+                            'signature_uploaded_by' => $waDoc?->notes['staff_signature_upload']['uploaded_by_name'] ?? null,
                         ],
                         'documents' => $docs->concat($packInvoice ? [$packInvoice] : [])->map(fn ($d) => [
                             'id' => $d->id,
@@ -1018,6 +1020,8 @@ class ImmigrationController extends Controller
                 'default_signer_id' => $this->defaultSignerId(),
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
+                'canUploadSignature' => \App\Services\Immigration\StaffEngagementSignature::permitted(auth()->user()),
+                'internalSignatureNotificationsReady' => app(\App\Services\Immigration\StaffEngagementSignature::class)->internalRecipients()->isNotEmpty(),
                 'search' => $search,
             ]);
         } catch (\Throwable $e) {
@@ -1583,7 +1587,8 @@ class ImmigrationController extends Controller
             $doc = \App\Models\LeadDocument::create([
                 'lead_id' => $lead->id,
                 'checklist_key' => null,
-                'original_name' => $file->getClientOriginalName() ?: 'Visa decline letter',
+                'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: 'Visa decline letter'),
                 'file_path' => $path,
                 'mime' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
@@ -1675,7 +1680,8 @@ class ImmigrationController extends Controller
             $doc = \App\Models\LeadDocument::create([
                 'lead_id' => $lead->id,
                 'checklist_key' => null,
-                'original_name' => $file->getClientOriginalName() ?: ($stage.' document'),
+                'original_name' => app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: ($stage.' document')),
                 'file_path' => $path,
                 'mime' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
@@ -1870,7 +1876,8 @@ class ImmigrationController extends Controller
                     throw new \RuntimeException('Could not store the INZ notice.');
                 }
                 $storedPaths[] = $path;
-                $name = $file->getClientOriginalName() ?: 'RFI document.pdf';
+                $name = app(\App\Services\MediaDrive\UploadNames::class)->forUpload($lead, $file, $request->user())
+                    ?? ($file->getClientOriginalName() ?: 'RFI document.pdf');
                 $document = \App\Models\LeadDocument::create([
                     'lead_id' => $lead->id,
                     // The staff RFI file is a NOTIFICATION ("here's what INZ wants") —
@@ -3106,6 +3113,20 @@ class ImmigrationController extends Controller
 
             return $out;
         };
+        // Imported objects, single records and keyed/list records coexist on
+        // older Leads. Only number actual records, never their string keys.
+        $records = function ($stored, array $keys) use ($asArray) {
+            $stored = $asArray($stored);
+            $schema = array_flip($keys);
+            $out = array_intersect_key($stored, $schema) ? [$stored] : [];
+            foreach ($stored as $record) {
+                if (is_array($record) && array_intersect_key($record, $schema)) {
+                    $out[] = $record;
+                }
+            }
+
+            return $out;
+        };
 
         $edu = $asArray($l->education_notes);
         $plan = $l->studyPlans->first();
@@ -3159,10 +3180,18 @@ class ImmigrationController extends Controller
 
         $work = $asArray($l->work_info);
         $workFields = [];
-        if (empty($work)) {
+        // CSV imports store a summary rather than an employment-history row;
+        // a later import may also merge it alongside existing job records.
+        foreach (['current_job' => 'Current Job / Occupation', 'current_location' => 'Current Location'] as $key => $label) {
+            if (array_key_exists($key, $work)) {
+                $workFields[] = $field($key, $label, $work[$key]);
+            }
+        }
+        $jobs = $records($work, ['company_name', 'job_title', 'start_date', 'end_date', 'is_current', 'duties']);
+        if (empty($jobs) && empty($workFields)) {
             $workFields[] = $field('work_none', 'Work Experience', null);
         } else {
-            foreach ($work as $i => $job) {
+            foreach ($jobs as $i => $job) {
                 $n = $i + 1;
                 $workFields[] = $field("work_{$i}_company", "Job {$n} — Company", $job['company_name'] ?? null);
                 $workFields[] = $field("work_{$i}_title", "Job {$n} — Title", $job['job_title'] ?? null);
@@ -3225,14 +3254,14 @@ class ImmigrationController extends Controller
             'is_pregnant' => 'Is Pregnant',
         ], $l->health_info)];
 
-        $members = $asArray($l->family_info)['members'] ?? [];
+        $members = $records($asArray($l->family_info)['members'] ?? [], ['relation', 'first_name', 'family_name', 'dob', 'partnership_status', 'country_of_residence', 'occupation']);
         $famFields = [];
-        if (empty($members) || ! is_array($members)) {
+        if (empty($members)) {
             $famFields[] = $field('family_none', 'Family Members', null);
         } else {
             foreach ($members as $i => $m) {
-                $rel = $m['relation'] ?? ('Member '.($i + 1));
-                $name = trim(($m['first_name'] ?? '').' '.($m['family_name'] ?? ''));
+                $rel = is_string($m['relation'] ?? null) && $m['relation'] !== '' ? $m['relation'] : ('Member '.($i + 1));
+                $name = trim((is_scalar($m['first_name'] ?? null) ? $m['first_name'] : '').' '.(is_scalar($m['family_name'] ?? null) ? $m['family_name'] : ''));
                 $famFields[] = $field("fam_{$i}_name", "{$rel} — Name", $name);
                 $famFields[] = $field("fam_{$i}_dob", "{$rel} — Date of Birth", $m['dob'] ?? null);
                 $famFields[] = $field("fam_{$i}_status", "{$rel} — Partnership Status", $m['partnership_status'] ?? null);
@@ -3330,6 +3359,7 @@ class ImmigrationController extends Controller
     public function updateIntakeFields(Request $request, string $type, int $id)
     {
         $data = $request->validate(['fields' => 'required|array']);
+        $request->validate(['fields.english_evidence_exception' => 'prohibited']);
 
         // Free assessment — a Lead, not an intake. Its editable Personal-detail
         // fields map 1:1 to Lead columns (whitelisted), so update those directly.
@@ -3359,27 +3389,70 @@ class ImmigrationController extends Controller
         ];
         abort_unless(isset($modelMap[$type]), 404, 'Unknown intake type.');
 
-        $intake = $modelMap[$type]::findOrFail($id);
-
-        // Whitelist: only the real form fields for this visa type may be written.
-        $allowed = collect($this->intakeSectionSchema($type))->flatten()->filter()->all();
-        $attrs = $intake->getAttributes();
-
-        $changed = false;
-        foreach ((array) $data['fields'] as $key => $val) {
-            if (! in_array($key, $allowed, true) || ! array_key_exists($key, $attrs)) {
-                continue; // silently drop anything that isn't a whitelisted field
+        DB::transaction(function () use ($request, $type, $id, $modelMap, $data) {
+            $intake = $modelMap[$type]::whereKey($id)->lockForUpdate()->firstOrFail();
+            $fields = $data['fields'];
+            $beforeEnglish = null;
+            if ($type === 'resident' && (array_key_exists('english_evidence', $fields) || array_key_exists('english_evidence_reason', $fields))) {
+                $beforeEnglish = ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception];
+                $isException = ($fields['english_evidence'] ?? null) === ResidentIntake::ENGLISH_NOT_REQUIRED;
+                if ($isException || $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED || array_key_exists('english_evidence_reason', $fields)) {
+                    abort_unless($this->canRecordResidentEnglishException(), 403);
+                }
+                $validated = $request->validate([
+                    'fields.english_evidence' => ['required', 'string', Rule::in([...ResidentIntake::ENGLISH_EVIDENCE, ResidentIntake::ENGLISH_NOT_REQUIRED])],
+                    'fields.english_evidence_reason' => [$isException ? 'required' : 'nullable', 'string', 'max:2000'],
+                ])['fields'];
+                $intake->english_evidence = $validated['english_evidence'];
+                if ($isException) {
+                    $reason = trim($validated['english_evidence_reason']);
+                    if ($beforeEnglish['evidence'] !== ResidentIntake::ENGLISH_NOT_REQUIRED || ($intake->english_evidence_exception['reason'] ?? null) !== $reason) {
+                        $actor = $request->attributes->get('user_view_actor') ?? $request->user();
+                        $intake->english_evidence_exception = [
+                            'reason' => $reason, 'actor_id' => $actor->id,
+                            'actor_name' => $actor->name, 'actor_role' => $actor->role,
+                            'recorded_at' => now()->toIso8601String(),
+                        ];
+                    }
+                    $intake->english_test_score = null;
+                    $intake->english_test_date = null;
+                } else {
+                    $intake->english_evidence_exception = null;
+                }
+                unset($fields['english_evidence'], $fields['english_evidence_reason']);
             }
-            // A blank clears the field back to null.
-            $intake->{$key} = ($val === '' || $val === null) ? null : $val;
-            $changed = true;
-        }
-
-        if ($changed) {
-            $intake->save();
-        }
+            // Whitelist: only the real form fields for this visa type may be written.
+            $allowed = collect($this->intakeSectionSchema($type))->flatten()->filter()->all();
+            $attrs = $intake->getAttributes();
+            foreach ($fields as $key => $val) {
+                if (! in_array($key, $allowed, true) || ! array_key_exists($key, $attrs)) {
+                    continue;
+                }
+                if ($type === 'resident' && $intake->english_evidence === ResidentIntake::ENGLISH_NOT_REQUIRED && in_array($key, ['english_test_score', 'english_test_date'], true)) {
+                    continue;
+                }
+                $intake->{$key} = ($val === '' || $val === null) ? null : $val;
+            }
+            if ($intake->isDirty()) {
+                $intake->save();
+            }
+            $afterEnglish = $type === 'resident' ? ['evidence' => $intake->english_evidence, 'exception' => $intake->english_evidence_exception] : null;
+            if ($beforeEnglish !== null && $beforeEnglish !== $afterEnglish) {
+                ActivityLog::record('resident_intake.english_evidence_updated', [
+                    'description' => 'Recorded Resident English evidence; this is not an exemption approval.',
+                    'properties' => ['subject_type' => 'ResidentIntake', 'subject_id' => $intake->id, 'old' => $beforeEnglish, 'new' => $afterEnglish],
+                ]);
+            }
+        });
 
         return $this->intakeData($type, $id);
+    }
+
+    private function canRecordResidentEnglishException(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ($user->isAdmin() || $user->isImmigrationManager() || $user->isImmigrationAdviser());
     }
 
     /**
@@ -3407,7 +3480,7 @@ class ImmigrationController extends Controller
             'user_agent', 'first_name', 'last_name', 'family_name', 'email', 'phone',
             'payment_status', 'payment_amount', 'payment_ref', 'paid', 'paid_at',
             'payment_session_id', 'payment_amount_cents', 'payment_currency', 'booking_id',
-            'terms_accepted',
+            'terms_accepted', 'english_evidence_exception',
         ];
 
         // Mirror the PUBLIC landing-page form for this visa type: identical
@@ -3433,7 +3506,9 @@ class ImmigrationController extends Controller
                     'value' => $provided ? $value : '—',
                     // Raw value + editability for inline "Edit section" in the modal.
                     'raw' => $this->rawIntakeValue($rawVal),
-                    'editable' => ! is_array($rawVal),
+                    'editable' => ! is_array($rawVal) && ! ($type === 'resident' && $col === 'english_evidence' && $rawVal === ResidentIntake::ENGLISH_NOT_REQUIRED && ! $this->canRecordResidentEnglishException()),
+                    'options' => $type === 'resident' && $col === 'english_evidence'
+                        ? [...ResidentIntake::ENGLISH_EVIDENCE, ...($this->canRecordResidentEnglishException() ? [ResidentIntake::ENGLISH_NOT_REQUIRED] : [])] : null,
                     'provided' => $provided,
                 ];
             }
@@ -3509,6 +3584,12 @@ class ImmigrationController extends Controller
                 ? "/admin/immigration/resident-intakes/{$intake->id}"
                 : "/portal/immigration/intakes/{$type}/{$intake->id}",
             'sections' => $sections,
+            'english_evidence_exception' => $type === 'resident' ? $intake->english_evidence_exception : null,
+            'english_evidence_history' => $type === 'resident' ? ActivityLog::where('action', 'resident_intake.english_evidence_updated')
+                ->where('properties->subject_id', $intake->id)->latest('id')->get()->map(fn ($log) => [
+                    'actor' => $log->actor_name, 'at' => $log->created_at->toIso8601String(),
+                    'evidence' => $log->properties['new']['evidence'], 'reason' => $log->properties['new']['exception']['reason'] ?? null,
+                ]) : [],
             // Deterministic adviser-style checks on the actual data (passport /
             // visa expiry, English level…) — reliable, computed, not AI-guessed.
             'flags' => $flags,

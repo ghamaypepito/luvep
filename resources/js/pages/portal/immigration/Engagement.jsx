@@ -1,3 +1,4 @@
+import StaffSignatureUpload from '@/components/immigration/StaffSignatureUpload';
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Head, router, Link } from "@inertiajs/react";
@@ -183,7 +184,7 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "" }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, internalSignatureNotificationsReady = false }) {
     const [query, setQuery] = useState(search);
     useEffect(() => { setQuery(search); }, [search]);
     const searchEngagements = (value) => {
@@ -194,6 +195,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
         router.get(url.pathname + url.search, {}, { preserveState: true, preserveScroll: true, replace: true });
     };
     const [modalOpen, setModalOpen] = useState(false);
+    const [signatureFor, setSignatureFor] = useState(null);
     const [auditFor, setAuditFor] = useState(null);   // { case_name, audit } for the audit-trail modal
     const [manageFor, setManageFor] = useState(null); // the draft row being managed
     const [preselectedCase, setPreselectedCase] = useState(null);
@@ -380,7 +382,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <div className="text-[13px] font-bold text-gray-900 tabular-nums">
                                                         {c.currency || "NZD"} ${Number(c.total_amount).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
-                                                    <div className="text-[10px] text-gray-400">{c.engagement_type === "immigration_advice" || !c.engagement_type ? "incl. fees & INZ" : c.engagement_type === "oia" ? "incl. GST" : "booking fee"}</div>
+                                                    <div className="text-[10px] text-gray-400">{c.engagement_type === "immigration_advice" || !c.engagement_type ? "incl. fees & INZ" : c.include_gst ? "incl. GST" : "excl. GST"}</div>
                                                 </>
                                             ) : (
                                                 <span className="text-[11px] text-gray-300">—</span>
@@ -398,6 +400,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                                         <Check size={11} /> Signed
                                                     </span>
+                                                    {c.signature_uploaded_by && <p className="mt-1 text-[10px] text-gray-500">Uploaded by staff: {c.signature_uploaded_by}</p>}
                                                     {(c.signer_name || c.signed_at) && (
                                                         <div className="text-[10px] text-gray-400 mt-1">
                                                             {c.signer_name}{c.signer_name && c.signed_at ? " · " : ""}{c.signed_at ? fmtDate(c.signed_at) : ""}
@@ -435,6 +438,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 >
                                                     <ScrollText size={13} />
                                                 </button>
+                                                {canUploadSignature && !c.signed && !c.is_draft && c.documents.some((doc) => ['written_agreement', 'initial_consultation', 'oia'].includes(doc.type_key) && !doc.signed) && <button type="button" onClick={() => setSignatureFor(c)} className="rounded-lg border px-2 py-1 text-[11px] font-semibold text-teal-800">Upload signature</button>}
                                                 <DeleteCaseDocsButton
                                                     caseId={c.case_id}
                                                     packId={c.pack_id}
@@ -477,6 +481,8 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                     )}
                 </div>
             )}
+
+            {signatureFor && <StaffSignatureUpload record={signatureFor} internalReady={internalSignatureNotificationsReady} onClose={() => setSignatureFor(null)} onSaved={() => router.reload({ preserveScroll: true })} />}
 
             {modalOpen && (
                 <NewEngagementModal
@@ -539,6 +545,7 @@ function AuditTrailModal({ caseName, audit = {}, onClose }) {
                                     {signed ? "Signed" : "Awaiting signature"}
                                 </span>
                             } />
+                            {audit.signature_uploaded_by && <Row label="Signature source" value={`Client-provided signature uploaded by ${audit.signature_uploaded_by}`} />}
                             <Row label="Status timestamp" value={<span className="whitespace-pre-line tabular-nums">{fmt(audit.status_at)} UTC</span>} />
                         </dl>
                     </section>
@@ -611,7 +618,6 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const serviceFeeOverride = specialService && serviceFee != null && serviceFee !== "" ? String(serviceFee) : null;
     const serviceFeeValid = serviceFeeOverride === null || (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(serviceFeeOverride) && Number(serviceFeeOverride) <= 9999999);
     const baseServiceFee = Number(serviceFeeOverride ?? defaultServiceFee);
-    const serviceGst = consultation ? 0 : Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100;
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
@@ -657,7 +663,13 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [feeLocation, setFeeLocation] = useState(draft?.fee_location ?? "onshore");
     // Fees are stored excluding GST; this decides whether the agreement
     // quotes that figure or the GST-inclusive RRP.
-    const [includeGst, setIncludeGst] = useState(!! draft?.include_gst);
+    const [gstSelections, setGstSelections] = useState(() => ({
+        immigration_advice: false, initial_consultation: false, oia: true,
+        [engagementType]: draft?.engagement_settings?.include_gst ?? draft?.include_gst ?? (engagementType === "oia"),
+    }));
+    const includeGst = gstSelections[engagementType];
+    const setIncludeGst = (value) => setGstSelections((previous) => ({ ...previous, [engagementType]: value }));
+    const serviceGst = includeGst ? Math.round(Math.round(baseServiceFee * 100) * GST_RATE) / 100 : 0;
     // Manual override for the (ex-GST) professional fee. "" = use the visa's fee.
     const [feeOverride, setFeeOverride] = useState(draft?.engagement_settings?.professional_fee ?? "");
     // Default the signing adviser to the draft's, else the practice's designated
@@ -1141,7 +1153,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
                                 <label className="block text-xs font-semibold">
-                                    {consultation ? "Booking fee (USD)" : "Service fee (NZD, ex GST)"}
+                                    {consultation ? "Booking fee (USD, ex GST)" : "Service fee (NZD, ex GST)"}
                                     <input type="text" inputMode="decimal" disabled={!!draft?.signed}
                                         value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
                                         onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
@@ -1151,9 +1163,21 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                 <p id="engagement-service-fee-note" className={`mt-1 text-xs ${serviceFeeValid ? "" : "text-red-700"}`}>
                                     {serviceFeeValid ? "Leave blank to use the standard fee." : "Enter an amount from 0 to 9,999,999 with up to two decimal places."}
                                 </p>
-                                {serviceFeeValid && <p className="mt-2 font-semibold tabular-nums">
-                                    {consultation ? `Total USD ${fmtFee(baseServiceFee)}` : `NZD ${fmtFee(baseServiceFee)} + ${fmtFee(serviceGst)} GST = NZD ${fmtFee(baseServiceFee + serviceGst)}`}
-                                </p>}
+                                <label className="mt-3 block text-xs font-semibold">
+                                    GST
+                                    <select value={includeGst ? "incl" : "excl"} disabled={!!draft?.signed}
+                                        onChange={(event) => setIncludeGst(event.target.value === "incl")}
+                                        className={`${ctrlCls} mt-1.5`}>
+                                        <option value="excl">Excluding GST</option>
+                                        <option value="incl">Including GST ({GST_PCT}%)</option>
+                                    </select>
+                                </label>
+                                {serviceFeeValid && <dl aria-label="Service fee summary" className="mt-3 space-y-1 text-xs tabular-nums">
+                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee)}</dd></div>
+                                    <div className="flex justify-between"><dt>GST ({GST_PCT}%)</dt><dd>{fmtFee(serviceGst)}</dd></div>
+                                    <div className="flex justify-between"><dt>Disbursements</dt><dd>{fmtFee(0)}</dd></div>
+                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
+                                </dl>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
                             </div>}

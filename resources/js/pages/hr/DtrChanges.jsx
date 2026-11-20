@@ -4,9 +4,9 @@ import { hrPath } from '@/lib/hrPath';
 import DtrHistory from '@/components/hr/DtrHistory';
 import ReportChangeSummary, { reportChanges } from '@/components/hr/ReportChangeSummary';
 import { Editor, Errors } from './Dtr';
+import DtrCalendar from '@/components/hr/DtrCalendar';
+import DtrAcknowledgement from '@/components/hr/DtrAcknowledgement';
 
-const labels = { pending: 'Pending acknowledgement', acknowledged: 'Acknowledged', clarification: 'Clarification requested', superseded: 'Superseded by a newer version' };
-const dateTime = value => value ? new Date(value).toLocaleString() : '';
 
 function SubmitChanges({ entry, departmentHead, draft, dirty, saving, acknowledgements }) {
     const form = useForm({ version: entry.hr_version, reason: '' });
@@ -33,34 +33,12 @@ function SubmitChanges({ entry, departmentHead, draft, dirty, saving, acknowledg
     </aside>;
 }
 
-function Acknowledgement({ item }) {
-    const form = useForm({ version: item.version, decision: 'acknowledged', comment: '' });
-    return <article className="hr-panel hr-acknowledgement">
-        <div className="hr-section-bar"><h3>{item.employee_name ? `${item.employee_name} · ` : ''}{item.work_date || `Report #${item.dtr_entry_id}`}</h3><span className="hr-status">{labels[item.status] || item.status}</span></div>
-        <p>Version {item.report_version} · Submitted {dateTime(item.submitted_at)} to {item.head_name || 'Department Head'}</p>
-        <p><strong>Reason:</strong> {item.reason}</p>
-        <details><summary>View submitted changes</summary><ReportChangeSummary changes={item.changes} /></details>
-        {item.comment && <p><strong>Department Head response:</strong> {item.comment}</p>}
-        {item.decided_at && <p>{dateTime(item.decided_at)}</p>}
-        {item.status === 'pending' && item.can_decide && <form className="hr-form" onSubmit={e => {
-            e.preventDefault();
-            form.post(hrPath(`/dtr/acknowledgements/${item.id}/decision`), { preserveScroll: true });
-        }}>
-            <label>Response<select value={form.data.decision} onChange={e => form.setData('decision', e.target.value)}><option value="acknowledged">Acknowledge changes</option><option value="clarification">Request clarification</option></select></label>
-            <label>Comment<textarea value={form.data.comment} required={form.data.decision === 'clarification'} maxLength={5000} onChange={e => form.setData('comment', e.target.value)} /></label>
-            <Errors errors={form.errors} />
-            <button className="hr-button" disabled={form.processing}>{form.processing ? 'Recording…' : 'Record response'}</button>
-            <small>This records your response. It does not revert saved report edits.</small>
-        </form>}
-    </article>;
-}
-
-export default function DtrChanges({ mode, records = { data: [] }, entries = [], departmentHead, acknowledgements = [] }) {
+export default function DtrChanges({ mode, records = { data: [] }, entries = [], departmentHead, acknowledgements = [], filters, oldestPending }) {
     const { hr } = usePage().props;
     const mine = mode === 'mine';
     const [selected, select] = useState(entries[0]?.id);
     const entry = entries.find(e => e.id === selected) || entries[0];
-    const history = mine ? acknowledgements.filter(a => a.dtr_entry_id === entry?.id) : acknowledgements;
+    const history = acknowledgements.filter(a => a.dtr_entry_id === entry?.id);
     return <>
         <Head title="DTR changes · Luvep" />
         {mine ? <>
@@ -71,21 +49,9 @@ export default function DtrChanges({ mode, records = { data: [] }, entries = [],
                 </> : <p>No time records yet. <Link className="hr-text-link" href={hrPath('/dtr')}>Open my time records</Link> to begin.</p>}
             </section>
         </> : null}
-        <section aria-label="Acknowledgement history"><h2 className="hr-subheading">{mine ? 'Your submission history' : 'Department Head acknowledgements'}</h2>
-            {history.length ? history.map(item => <Acknowledgement key={`${item.id}:${item.version}:${item.status}`} item={item} />) : <div className="hr-panel"><p>No report changes have been submitted for acknowledgement.</p></div>}
-        </section>
-        {!mine && <>
-            <h2 className="hr-subheading">Daily report history</h2>
-            {records.data.length ? records.data.map(record => <article className="hr-panel" key={`${record.id}:${record.hr_version}`}>
-                <div className="hr-section-bar"><h3>{record.employee_name} · {record.work_date}</h3><span className="hr-status">{record.hr_status}</span></div>
-                {record.submitted_at && <p>Submitted {dateTime(record.submitted_at)} for work date {record.work_date}.</p>}
-                <DtrHistory entry={record} />
-            </article>) : <section className="hr-panel"><p>No daily reports are available for your team yet.</p></section>}
-            {records.last_page > 1 && <nav className="hr-actions" aria-label="Team record pages">
-                {records.prev_page_url && <Link className="hr-button-secondary" href={records.prev_page_url}>Previous records</Link>}
-                <span>Page {records.current_page} of {records.last_page}</span>
-                {records.next_page_url && <Link className="hr-button-secondary" href={records.next_page_url}>Next records</Link>}
-            </nav>}
-        </>}
+        {mine && <section aria-label="Acknowledgement history"><h2 className="hr-subheading">Your submission history</h2>
+            {history.length ? history.map(item => <DtrAcknowledgement key={`${item.id}:${item.version}:${item.status}`} item={item} />) : <div className="hr-panel"><p>No report changes have been submitted for acknowledgement.</p></div>}
+        </section>}
+        {!mine && <DtrCalendar records={records.data} filters={filters} path="/dtr/changes" title="DTR reports & acknowledgements" oldestPending={oldestPending} />}
     </>;
 }
