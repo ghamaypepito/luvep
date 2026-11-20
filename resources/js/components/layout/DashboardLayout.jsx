@@ -200,7 +200,7 @@ export default function DashboardLayout({
         <>
             <div className="md-workspace-brand-row flex items-center justify-between px-6 py-5 border-b border-gray-50/50 lg:border-none">
                 <div>
-                    {isMediaDrive ? <img className="md-workspace-brand" src="/images/ep-logo.png" alt="EP" width="100" height="60"/> : <h2 className="text-2xl font-black tracking-tighter text-gray-900">{brand}</h2>}
+                    {isMediaDrive || brand === 'EP.' ? <img className="md-workspace-brand block h-[60px] w-[100px] object-contain object-left" src="/images/ep-logo.png" alt="EP" width="100" height="60"/> : <h2 className="text-2xl font-black tracking-tighter text-gray-900">{brand}</h2>}
                     {subtitle && (
                         <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">{subtitle}</p>
                     )}
