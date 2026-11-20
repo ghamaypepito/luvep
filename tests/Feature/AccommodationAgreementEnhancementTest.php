@@ -29,7 +29,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         Mail::fake();
         $this->withoutVite();
         $staff = User::factory()->create(['role' => 'accommodation']);
-        $alane = User::factory()->create(['role' => 'accommodation', 'name' => AgreementTerms::SIGNATORY, 'signature_path' => 'signatures/alane.png']);
+        $alane = User::factory()->create(['role' => 'accommodation', 'name' => 'Alane', 'email' => AgreementTerms::SIGNATORY_EMAIL, 'signature_path' => 'signatures/alane.png']);
         $image = imagecreatetruecolor(500, 80);
         imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
         imagestring($image, 5, 20, 25, 'SYNTHETIC TEST SIGNATURE', imagecolorallocate($image, 0, 0, 0));
@@ -95,6 +95,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
             $agreement = $this->generate($source, $data, $type);
             $this->assertSame($preview->json('data.costs'), $agreement->data['costs']);
             $this->assertSame($alane->id, $agreement->data['admin_user_id']);
+            $this->assertSame(AgreementTerms::SIGNATORY, $agreement->data['admin_name']);
             $this->assertNotSame($staff->id, $agreement->data['admin_user_id']);
             $this->assertStringStartsWith('%PDF-', Storage::disk('local')->get($agreement->pdf_path));
         }
@@ -162,6 +163,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $alane->update(['signature_path' => null]);
         $this->post('/portal/accommodation/forms/agreements/generate', ['source' => 'general', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $data])->assertSessionHasErrors('agreement');
         $this->assertSame(0, AccommodationAgreement::count());
+        User::factory()->create(['role' => 'accommodation', 'name' => AgreementTerms::SIGNATORY, 'signature_path' => 'signatures/alane.png']);
+        $this->assertNull(app(AgreementTerms::class)->signatory(), 'An unrelated same-name account must not substitute for the approved signer');
         $data['costs']['bond'] = '-1';
         $this->postJson('/portal/accommodation/forms/agreements/preview', ['agreement_type' => 'standard_flatmate', 'data' => $data])->assertUnprocessable()->assertJsonValidationErrors('data.costs.bond');
         $data['costs']['bond'] = '0';

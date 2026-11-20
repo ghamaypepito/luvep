@@ -14,9 +14,11 @@ class AgreementTerms
 {
     public const SIGNATORY = 'Alane Beryl Lozada';
 
+    public const SIGNATORY_EMAIL = 'alane@ferdzservices.com';
+
     public function signatory(): ?User
     {
-        $matches = User::where('name', self::SIGNATORY)->where('is_active', true)
+        $matches = User::where('email', self::SIGNATORY_EMAIL)->where('is_active', true)
             ->whereIn('role', ['accommodation', 'admin', 'super_admin'])->get();
 
         return $matches->count() === 1 && $matches->first()->hasSignature() ? $matches->first() : null;

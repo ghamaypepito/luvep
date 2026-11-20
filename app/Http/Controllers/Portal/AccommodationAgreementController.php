@@ -126,7 +126,7 @@ class AccommodationAgreementController extends Controller
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
-            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'An administrator must confirm one active Alane Beryl Lozada account with a saved signature before issuing agreements.']);
+            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
         }
         if (! filter_var($ctx['email'], FILTER_VALIDATE_EMAIL)) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Add a valid client email to the pre-tenancy source before issuing the agreement.']);
@@ -135,7 +135,7 @@ class AccommodationAgreementController extends Controller
         try {
             // Snapshot the confirmed Exalt signatory so later profile changes cannot alter this agreement.
             $adminSignature = $signatory->signatureDataUriTrimmed();
-            $adminName = $signatory->name;
+            $adminName = AgreementTerms::SIGNATORY;
             $data['admin_signature'] = $adminSignature;
             $data['admin_name'] = $adminName;
             $data['admin_user_id'] = $signatory->id;
