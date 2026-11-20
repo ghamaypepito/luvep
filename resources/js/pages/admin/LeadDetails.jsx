@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import { educationDocumentSections } from '@/components/education/educationDocumentSections';
 import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
 import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
@@ -1094,7 +1095,7 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
 
             {/* ── Documents tab ── */}
             {activeTab === 'documents' && (
-                <DocumentsPanel lead={backendLead} checklistFiles={checklistFiles} orphans={documentOrphans} currentUser={currentUser} threads={documentThreads} staffOptions={staffOptions} />
+                <DocumentsPanel lead={backendLead} checklistFiles={checklistFiles} orphans={documentOrphans} currentUser={currentUser} threads={documentThreads} staffOptions={staffOptions} education={portalBase === "/portal/education" || (portalBase === "/admin" && currentUser?.role === "education")} />
             )}
 
             {/* ── Communications tab — message history sent to this lead ── */}
@@ -4163,7 +4164,7 @@ function ChecklistNotesCell({ value, onSave }) {
     );
 }
 
-function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser = null, threads = [], staffOptions = [] }) {
+function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser = null, threads = [], staffOptions = [], education = false }) {
     const writeBase = useWriteBase();
     // Bucket document threads by the checklist item they're anchored to
     // (anchor_key = checklist_key), so each row can render its own discussion.
@@ -4224,12 +4225,14 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
     // public tracker. Immigration cases keep the full checklist (they manage
     // every section). Ordering: Personal → Offer & Academic → Agreements.
     const sections = React.useMemo(() => {
-        const base = lead?.is_immigration_case
+        const sharedBase = lead?.is_immigration_case
             ? CHECKLIST
             : ['personal', 'academic', 'agreements']
                 .map((k) => CHECKLIST.find((s) => s.key === k))
                 .filter(Boolean)
                 .map((section) => ({ ...section, items: section.items.filter((item) => item.id !== 'agree.proposal') }));
+
+        const base = educationDocumentSections(sharedBase, education);
 
         // Per-lead ad-hoc documents (leads.custom_documents) drop into the
         // folder staff chose — this lead only. Each is a custom.* item so
@@ -4257,7 +4260,7 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
             .map(([sec, items]) => ({ key: 'lead_custom_' + sec.replace(/\W+/g, '_').toLowerCase(), section: sec, items }));
 
         return [...merged, ...leftover];
-    }, [lead?.is_immigration_case, lead?.custom_documents]);
+    }, [lead?.is_immigration_case, lead?.custom_documents, education]);
 
     // Folder choices for the "Add document" modal — the standard folders plus
     // the catch-all "Additional Documents".
