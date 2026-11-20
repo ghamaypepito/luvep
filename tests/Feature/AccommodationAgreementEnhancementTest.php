@@ -172,6 +172,22 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->postJson('/portal/accommodation/forms/agreements/preview', ['agreement_type' => 'standard_flatmate', 'data' => $data])->assertUnprocessable()->assertJsonValidationErrors('data.tenancy.move_in_date');
     }
 
+    public function test_signature_removed_after_lookup_cannot_issue_a_blank_agreement(): void
+    {
+        [, $alane, , $source, $data] = $this->setupAgreement();
+        $this->partialMock(AgreementTerms::class, function ($mock) use ($alane) {
+            $mock->shouldReceive('signatory')->andReturnUsing(function () use ($alane) {
+                Storage::disk('local')->delete($alane->signature_path);
+
+                return $alane;
+            });
+        });
+        $this->post('/portal/accommodation/forms/agreements/generate', ['source' => 'general', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $data])
+            ->assertSessionHasErrors('agreement');
+        $this->assertSame(0, AccommodationAgreement::count());
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_monday_short_stay_month_end_and_dst_dates_have_explicit_results(): void
     {
         [, , , , $data] = $this->setupAgreement();

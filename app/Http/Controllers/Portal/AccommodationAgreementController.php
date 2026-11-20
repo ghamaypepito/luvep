@@ -132,9 +132,13 @@ class AccommodationAgreementController extends Controller
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Add a valid client email to the pre-tenancy source before issuing the agreement.']);
         }
 
+        $adminSignature = $signatory->signatureDataUriTrimmed();
+        if (! $adminSignature) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'The approved Exalt signature is unavailable. Restore it before issuing an agreement.']);
+        }
+
         try {
             // Snapshot the confirmed Exalt signatory so later profile changes cannot alter this agreement.
-            $adminSignature = $signatory->signatureDataUriTrimmed();
             $adminName = AgreementTerms::SIGNATORY;
             $data['admin_signature'] = $adminSignature;
             $data['admin_name'] = $adminName;
