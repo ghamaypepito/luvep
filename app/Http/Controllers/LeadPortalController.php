@@ -953,35 +953,27 @@ class LeadPortalController extends Controller
         return $this->trackerView('overview');
     }
 
-    public function previewAgreement(\Illuminate\Http\Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, $docId)
+    public function previewAgreement(\Illuminate\Http\Request $request, $docId)
     {
         $lead = $this->resolveLeadOrLogout();
         if (! $lead instanceof Lead) {
             return $lead;
         }
-        $doc = $this->portalAgreement($lead, $docId);
-        if ($doc->isEducationAgreement()) {
-            $request->query->set('inline', '1');
+        $this->portalAgreement($lead, $docId);
+        $request->query->set('inline', '1');
 
-            return app(LeadDocumentController::class)->download($request, $docId);
-        }
-
-        return app(LeadTrackingController::class)->previewDocumentForLead($request, $generator, $lead, $docId);
+        return app(LeadDocumentController::class)->download($request, $docId);
     }
 
-    public function signAgreement(\Illuminate\Http\Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, $docId)
+    public function signAgreement(\Illuminate\Http\Request $request, $docId)
     {
         $lead = $this->resolveLeadOrLogout();
         if (! $lead instanceof Lead) {
             return $lead;
         }
+        $this->portalAgreement($lead, $docId);
 
-        return \Illuminate\Support\Facades\Cache::lock("engagement:case:{$lead->id}", 90)->block(5, function () use ($request, $generator, $lead, $docId) {
-            $this->portalAgreement($lead, $docId);
-            $request->validate(['acknowledged' => 'required|accepted']);
-
-            return app(LeadTrackingController::class)->signDocumentForLead($request, $generator, $lead, $docId);
-        });
+        return app(LeadTrackingController::class)->signDocumentForLead($request, $lead, $docId);
     }
 
     private function portalAgreement(Lead $lead, $docId): LeadDocument
@@ -989,6 +981,7 @@ class LeadPortalController extends Controller
         $doc = $lead->documents()->whereKey($docId)->firstOrFail();
         abort_unless($doc->source === LeadDocument::SOURCE_GENERATED || $doc->status === LeadDocument::STATUS_STAFF_SHARED, 404);
         abort_unless($doc->source_variant === 'engagement:written_agreement' || $doc->isEducationAgreement(), 403);
+        abort_if($doc->source_variant === 'engagement:written_agreement' && ! $doc->isClientSharedWrittenAgreement(), 404);
         abort_if($doc->status === LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
         $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
         abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);

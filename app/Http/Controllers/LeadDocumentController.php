@@ -2505,6 +2505,9 @@ class LeadDocumentController extends Controller
     {
         $doc = LeadDocument::findOrFail($docId);
         $user = Auth::user();
+        if ($user->isLead() && $doc->source_variant === 'engagement:written_agreement') {
+            abort_unless($doc->lead_id === $user->lead_id && $doc->isClientSharedWrittenAgreement(), 404);
+        }
         if ($doc->media_file_id) {
             $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
             if ($user->isLead()) {

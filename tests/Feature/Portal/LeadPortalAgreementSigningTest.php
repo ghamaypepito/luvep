@@ -16,6 +16,8 @@ class LeadPortalAgreementSigningTest extends TestCase
 {
     use RefreshDatabase;
 
+    private static ?string $issuedPdf = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -23,10 +25,7 @@ class LeadPortalAgreementSigningTest extends TestCase
         Storage::fake('local');
         Mail::fake();
         Notification::fake();
-        $this->mock(EngagementDocumentGenerator::class, function ($mock) {
-            $mock->shouldReceive('renderHtml')->andReturn('<h1>Synthetic issued written agreement</h1>');
-            $mock->shouldReceive('pdfBinary')->andReturn('%PDF-synthetic-signed');
-        });
+
     }
 
     private function fixture(): array
@@ -34,7 +33,8 @@ class LeadPortalAgreementSigningTest extends TestCase
         $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client', 'is_immigration_case' => true]);
         $user = User::factory()->create(['role' => 'lead', 'lead_id' => $lead->id]);
         $path = 'lead-documents/'.$lead->id.'/written.pdf';
-        Storage::disk('local')->put($path, '%PDF-synthetic-issued');
+        self::$issuedPdf ??= \Barryvdh\DomPDF\Facade\Pdf::loadHTML('<h1>Synthetic issued written agreement</h1><p>Original approved terms.</p>')->setPaper('a4')->output();
+        Storage::disk('local')->put($path, self::$issuedPdf);
         $doc = LeadDocument::create(['lead_id' => $lead->id, 'original_name' => 'Written Agreement.pdf',
             'file_path' => $path, 'mime' => 'application/pdf', 'source' => LeadDocument::SOURCE_GENERATED,
             'source_variant' => 'engagement:written_agreement', 'status' => LeadDocument::STATUS_SUBMITTED]);
@@ -47,14 +47,13 @@ class LeadPortalAgreementSigningTest extends TestCase
     public function test_signed_in_immigration_client_can_load_the_preview_url_supplied_by_the_portal(): void
     {
         [, , , $row] = $this->fixture();
-        $this->get($row['preview_url'])->assertOk()->assertSee('Synthetic issued written agreement');
+        $this->get($row['preview_url'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
 
     public function test_signed_in_immigration_client_can_submit_to_the_sign_url_supplied_by_the_portal(): void
     {
         [, , $doc, $row] = $this->fixture();
-        $this->from('/portal/lead/tracker')->post($row['sign_url'], ['acknowledged' => 1,
-            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII='])->assertRedirect('/portal/lead/tracker')->assertSessionHasNoErrors();
+        $this->from('/portal/lead/tracker')->post($row['sign_url'], $this->signature())->assertRedirect('/portal/lead/tracker')->assertSessionHasNoErrors();
         $this->assertNotNull($doc->fresh()->client_signed_at);
     }
 
@@ -68,7 +67,9 @@ class LeadPortalAgreementSigningTest extends TestCase
         $binary = ob_get_clean();
         imagedestroy($image);
 
-        return ['acknowledged' => 1, 'signature_data' => 'data:image/png;base64,'.base64_encode($binary)];
+        $doc = LeadDocument::latest('id')->firstOrFail();
+
+        return ['acknowledged' => 1, 'issued_agreement_hash' => \App\Services\IssuedClientAgreement::checksum($doc), 'signature_data' => 'data:image/png;base64,'.base64_encode($binary)];
     }
 
     public function test_public_immigration_tracker_stays_blocked_and_the_portal_works_when_public_tracker_is_off(): void
@@ -102,14 +103,14 @@ class LeadPortalAgreementSigningTest extends TestCase
         $this->get($row['preview_url'])->assertForbidden();
         $this->post($row['sign_url'], $this->signature())->assertForbidden();
         $this->assertNull($doc->fresh()->client_signed_at);
-        $this->assertSame('%PDF-synthetic-issued', Storage::disk('local')->get($doc->file_path));
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
     }
 
     public function test_terms_signature_validation_and_duplicate_submission_preserve_the_first_signature(): void
     {
         [, , $doc, $row] = $this->fixture();
         $this->postJson($row['sign_url'], ['signature_data' => $this->signature()['signature_data']])->assertUnprocessable()->assertJsonValidationErrors('acknowledged');
-        $this->postJson($row['sign_url'], ['acknowledged' => 1])->assertRedirect()->assertSessionHasErrors();
+        $this->postJson($row['sign_url'], ['acknowledged' => 1, 'issued_agreement_hash' => $row['issued_agreement_hash']])->assertUnprocessable()->assertJsonValidationErrors('signature_data');
         $this->assertNull($doc->fresh()->client_signed_at);
         $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasNoErrors();
         $before = $doc->refresh()->getAttributes();
@@ -149,13 +150,15 @@ class LeadPortalAgreementSigningTest extends TestCase
         $this->actingAs(User::factory()->create(['role' => 'super_admin']));
         $lead->update(['first_name' => 'ChangedAfterIssue']);
         $this->actingAs($user);
-        $this->get($row['preview_url'])->assertOk()->assertSee('Synthetic')->assertDontSee('ChangedAfterIssue');
+        $this->get($row['preview_url'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasNoErrors();
         $pdf = Storage::disk('local')->get($doc->refresh()->file_path);
         $this->assertStringStartsWith('%PDF-', $pdf);
         $text = (new \Smalot\PdfParser\Parser)->parseContent($pdf)->getText();
         $this->assertStringContainsString('Synthetic', $text);
-        $this->assertStringNotContainsString('ChangedAfterIssue', $text);
+        $pages = (new \Smalot\PdfParser\Parser)->parseContent($pdf)->getPages();
+        $this->assertStringNotContainsString('ChangedAfterIssue', $pages[0]->getText());
+        $this->assertStringContainsString('Client signature confirmation', end($pages)->getText());
         $this->assertNotNull($doc->client_signed_at);
         $this->assertSame(1, LeadDocument::count());
     }
@@ -163,12 +166,12 @@ class LeadPortalAgreementSigningTest extends TestCase
     public function test_renderer_failure_does_not_change_the_record_or_leave_signature_files(): void
     {
         [, , $doc, $row] = $this->fixture();
-        $this->mock(EngagementDocumentGenerator::class)->shouldReceive('pdfBinary')->andThrow(new \RuntimeException('Synthetic render failure'));
+        \Barryvdh\DomPDF\Facade\Pdf::shouldReceive('loadView')->once()->andThrow(new \RuntimeException('Synthetic render failure'));
         $before = $doc->refresh()->getAttributes();
         $files = Storage::disk('local')->allFiles();
         $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasErrors('error');
         $this->assertSame($before, $doc->fresh()->getAttributes());
-        $this->assertSame('%PDF-synthetic-issued', Storage::disk('local')->get($doc->file_path));
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
         $this->assertSame($files, Storage::disk('local')->allFiles());
     }
 
@@ -192,6 +195,178 @@ class LeadPortalAgreementSigningTest extends TestCase
             $this->assertSame($before, $doc->fresh()->getAttributes());
             $this->assertSame($pdf, Storage::disk('local')->get($doc->file_path));
             $this->assertSame($files, Storage::disk('local')->allFiles());
+        }
+    }
+
+    public function test_review_guards_reject_base64_that_is_not_a_signature_image(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $this->postJson($row['sign_url'], [...$this->signature(), 'signature_data' => 'data:image/png;base64,'.base64_encode('not an image')])->assertUnprocessable()->assertJsonValidationErrors('signature_data');
+        $this->assertNull($doc->fresh()->client_signed_at);
+    }
+
+    public function test_review_guards_hide_unsent_modern_drafts_and_block_direct_delivery_and_signing(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $doc->update(['notes' => ['engagement_pack_id' => 'synthetic-draft']]);
+        $response = $this->get('/portal/lead/tracker')->assertOk();
+        $this->assertNull(collect($response->inertiaProps()['shared_documents'])->firstWhere('id', $doc->id));
+        $this->get($row['preview_url'])->assertNotFound();
+        $this->get($row['view_url'])->assertNotFound();
+        $this->post($row['sign_url'], $this->signature())->assertNotFound();
+    }
+
+    public function test_review_guards_do_not_report_success_when_signature_storage_returns_false(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $disk = Storage::disk('local');
+        $failing = \Mockery::mock($disk)->makePartial();
+        $failing->shouldReceive('put')->andReturn(false);
+        Storage::shouldReceive('disk')->with('local')->andReturn($failing);
+        $before = $doc->refresh()->getAttributes();
+        $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasErrors('error');
+        $this->assertSame($before, $doc->fresh()->getAttributes());
+        $this->assertSame(self::$issuedPdf, $disk->get($doc->file_path));
+    }
+
+    public function test_database_failure_rolls_back_signature_metadata_and_cleans_new_files(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $before = $doc->refresh()->getAttributes();
+        $files = Storage::disk('local')->allFiles();
+        \Illuminate\Support\Facades\Event::listen('eloquent.updated: '.LeadDocument::class, function () {
+            throw new \RuntimeException('Synthetic database failure after save');
+        });
+        $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasErrors('error');
+        $this->assertSame($before, $doc->fresh()->getAttributes());
+        $this->assertSame($files, Storage::disk('local')->allFiles());
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
+    }
+
+    public function test_oversized_or_invalid_signature_inputs_leave_the_agreement_unchanged(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $data = $this->signature();
+        foreach (['data:image/png;base64,'.base64_encode('invalid'), str_repeat('x', 2800001)] as $invalid) {
+            $this->postJson($row['sign_url'], [...$data, 'signature_data' => $invalid])->assertUnprocessable()->assertJsonValidationErrors('signature_data');
+        }
+        $image = imagecreatetruecolor(4097, 1);
+        ob_start();
+        imagepng($image);
+        $large = ob_get_clean();
+        imagedestroy($image);
+        $this->postJson($row['sign_url'], [...$data, 'signature_data' => 'data:image/png;base64,'.base64_encode($large)])->assertUnprocessable()->assertJsonValidationErrors('signature_data');
+        $this->assertNull($doc->fresh()->client_signed_at);
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
+    }
+
+    public function test_success_preserves_every_issued_page_and_only_advances_eligible_case_stages_without_mail(): void
+    {
+        [$lead, , $doc, $row] = $this->fixture();
+        $lead->forceFill(['immigration_stage' => 'Agreement Sent'])->saveQuietly();
+        $original = $doc->file_path;
+        $issuedPages = (new \Smalot\PdfParser\Parser)->parseContent(self::$issuedPdf)->getPages();
+        $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasNoErrors();
+        $doc->refresh();
+        $this->assertNotSame($original, $doc->file_path);
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($original));
+        $signedPages = (new \Smalot\PdfParser\Parser)->parseContent(Storage::disk('local')->get($doc->file_path))->getPages();
+        $this->assertCount(count($issuedPages) + 1, $signedPages);
+        foreach ($issuedPages as $i => $page) {
+            $this->assertSame(trim($page->getText()), trim($signedPages[$i]->getText()));
+        }
+        $this->assertSame('Agreement Signed', $lead->fresh()->immigration_stage);
+        Mail::assertNothingOutgoing();
+        Notification::assertNothingSent();
+    }
+
+    public function test_partial_storage_failure_cleans_the_new_signature_and_retains_the_issued_pdf(): void
+    {
+        [, , $doc, $row] = $this->fixture();
+        $disk = Storage::disk('local');
+        $before = $doc->refresh()->getAttributes();
+        $files = $disk->allFiles();
+        $data = $this->signature();
+        $failing = \Mockery::mock($disk)->makePartial();
+        $failing->shouldReceive('put')->andReturnUsing(fn ($path, $bytes) => str_starts_with($path, 'signatures/') ? $disk->put($path, $bytes) : false);
+        Storage::shouldReceive('disk')->with('local')->andReturn($failing);
+        $this->post($row['sign_url'], $data)->assertRedirect()->assertSessionHasErrors('error');
+        $this->assertSame($before, $doc->fresh()->getAttributes());
+        $this->assertSame($files, $disk->allFiles());
+        $this->assertSame(self::$issuedPdf, $disk->get($doc->file_path));
+    }
+
+    public function test_sent_or_explicitly_shared_modern_agreements_are_available_but_stale_checksums_are_rejected(): void
+    {
+        foreach ([['engagement_sent_at' => now()->toIso8601String()], []] as $sent) {
+            [, , $doc, $row] = $this->fixture();
+            $doc->update(['notes' => ['engagement_pack_id' => 'synthetic-modern'] + $sent,
+                'status' => $sent ? LeadDocument::STATUS_SUBMITTED : LeadDocument::STATUS_STAFF_SHARED]);
+            $this->get($row['preview_url'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            $this->postJson($row['sign_url'], [...$this->signature(), 'issued_agreement_hash' => str_repeat('0', 64)])->assertUnprocessable()->assertJsonValidationErrors('issued_agreement_hash');
+            $this->assertNull($doc->fresh()->client_signed_at);
+            $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNotNull($doc->fresh()->client_signed_at);
+        }
+    }
+
+    public function test_public_tracker_conversion_is_rechecked_under_the_common_signing_lock(): void
+    {
+        [$lead, , $doc] = $this->fixture();
+        $lead->forceFill(['is_immigration_case' => false])->saveQuietly();
+        $data = $this->signature();
+        $cache = \Illuminate\Support\Facades\Cache::getFacadeRoot();
+        $proxy = \Mockery::mock($cache)->makePartial();
+        \Illuminate\Support\Facades\Cache::swap($proxy);
+        $proxy->shouldReceive('lock')->once()->with('engagement:case:'.$lead->id, 90)->andReturn(new class($lead)
+        {
+            public function __construct(private Lead $lead) {}
+
+            public function block($seconds, $callback)
+            {
+                $this->lead->forceFill(['is_immigration_case' => true])->saveQuietly();
+
+                return $callback();
+            }
+        });
+        try {
+            $this->post('/track/'.$lead->tracking_code.'/documents/'.$doc->id.'/sign', $data)->assertNotFound();
+        } finally {
+            \Illuminate\Support\Facades\Cache::swap($cache);
+        }
+        $this->assertNull($doc->fresh()->client_signed_at);
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
+    }
+
+    public function test_both_channels_recheck_another_writers_signature_after_acquiring_the_case_lock(): void
+    {
+        foreach ([false, true] as $public) {
+            [$lead, , $doc, $row] = $this->fixture();
+            $lead->forceFill(['is_immigration_case' => false])->saveQuietly();
+            $data = $this->signature();
+            $files = Storage::disk('local')->allFiles();
+            $cache = \Illuminate\Support\Facades\Cache::getFacadeRoot();
+            $proxy = \Mockery::mock($cache)->makePartial();
+            \Illuminate\Support\Facades\Cache::swap($proxy);
+            $proxy->shouldReceive('lock')->once()->with('engagement:case:'.$lead->id, 90)->andReturn(new class($doc)
+            {
+                public function __construct(private LeadDocument $doc) {}
+
+                public function block($seconds, $callback)
+                {
+                    $this->doc->forceFill(['client_signed_at' => now()])->saveQuietly();
+
+                    return $callback();
+                }
+            });
+            try {
+                $this->post($public ? '/track/'.$lead->tracking_code.'/documents/'.$doc->id.'/sign' : $row['sign_url'], $data)->assertStatus(409);
+            } finally {
+                \Illuminate\Support\Facades\Cache::swap($cache);
+            }
+            $this->assertNull($doc->fresh()->client_signature_path);
+            $this->assertSame($files, Storage::disk('local')->allFiles());
+            $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
         }
     }
 }
