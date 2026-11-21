@@ -9,7 +9,7 @@ class EditorialArticle extends Model
 {
     public const PUBLIC_FIELDS = [
         'title', 'summary', 'body_html', 'primary_keyword', 'meta_title',
-        'meta_description', 'author', 'image_url', 'image_alt',
+        'meta_description', 'author', 'image_url', 'image_alt', 'featured_images',
     ];
 
     protected $fillable = [
@@ -24,6 +24,7 @@ class EditorialArticle extends Model
     {
         return [
             'brief' => 'array',
+            'featured_images' => 'array',
             'published' => 'array',
             'revision' => 'integer',
             'approved_revision' => 'integer',

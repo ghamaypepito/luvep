@@ -181,6 +181,12 @@ class EditorialCalendarController extends Controller
             $slug->ignore($article->id);
         }
         $draft = $request->validate([
+            'brief' => 'nullable|array:prompt,feature,social,leadSubject,clientSubject,assetId',
+            'brief.*' => 'nullable|string|max:6000',
+            'featured_images' => 'nullable|array|max:5',
+            'featured_images.*' => 'required|array:url,alt',
+            'featured_images.*.url' => 'required|string|url:https|max:2000',
+            'featured_images.*.alt' => 'nullable|string|max:250',
             'title' => 'required|string|max:200',
             'slug' => ['required', 'string', 'max:180', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', $slug],
             'planned_date' => 'nullable|date_format:Y-m-d',
@@ -194,6 +200,12 @@ class EditorialCalendarController extends Controller
             'image_url' => 'nullable|string|url:https|max:2000',
             'image_alt' => 'nullable|string|max:250',
         ]);
+        if (! empty($draft['featured_images'])) {
+            $draft['image_url'] = $draft['featured_images'][0]['url'];
+            $draft['image_alt'] = $draft['featured_images'][0]['alt'] ?? $draft['image_alt'] ?? '';
+        } elseif ($article && array_key_exists('image_url', $draft) && $draft['image_url'] !== $article->image_url) {
+            $draft['featured_images'] = null;
+        }
         if ($article?->published_slug && $draft['slug'] !== $article->published_slug) {
             throw ValidationException::withMessages(['slug' => 'The URL slug is fixed after first publication.']);
         }

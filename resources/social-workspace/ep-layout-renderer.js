@@ -9,8 +9,8 @@ function epDrawText(ctx,text,box,size,weight){
     let lines;do{ctx.font=`${weight} ${size}px Urbanist, sans-serif`;lines=epTextLines(ctx,text,box.w);if(lines.length*size*1.16<=box.h)break;size--}while(size>8);
     ctx.textBaseline='top';ctx.fillStyle='#ffffff';lines.forEach((line,i)=>ctx.fillText(line,box.x,box.y+i*size*1.16));
 }
-async function drawEpLayout(canvas,photoSource,design,format){
-    await document.fonts.load('700 40px Urbanist');await document.fonts.load('400 40px Urbanist');await document.fonts.ready;const photo=photoSource?await epLoadImage(photoSource):null,logo=await epLoadImage('assets/logo.png');
+async function drawEpLayout(canvas,photoSource,design,format,logoSource='assets/logo.png'){
+    await document.fonts.load('700 40px Urbanist');await document.fonts.load('400 40px Urbanist');await document.fonts.ready;const photo=photoSource?await epLoadImage(photoSource):null,logo=await epLoadImage(logoSource);
     const w=format.width,h=format.height,m=Math.min(w,h)*.055,wide=w/h>1.5;canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext('2d');ctx.imageSmoothingQuality='high';ctx.fillStyle='#214f44';ctx.fillRect(0,0,w,h);
     const bottom=design.layout==='photo-bottom';let p,t;
