@@ -333,7 +333,7 @@ class DtrController extends Controller
         }
 
         // Roster for the selected date.
-        $dayEntries = DtrEntry::whereIn('user_id', $userIds)->where('work_date', $date)->get()->keyBy('user_id');
+        $dayEntries = DtrEntry::whereIn('user_id', $userIds)->whereDate('work_date', $date)->get()->keyBy('user_id');
         $leaves = DtrLeave::where('status', 'approved')
             ->whereDate('start_date', '<=', $date)->whereDate('end_date', '>=', $date)
             ->get()->keyBy('user_id');

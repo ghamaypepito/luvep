@@ -251,4 +251,18 @@ class LegacyCandidateClockTest extends TestCase
         $this->postJson('/admin/dtr/entry', $payload)->assertStatus(409);
         $this->assertSame(0, DtrEntry::count());
     }
+
+    public function test_report_editor_receives_the_existing_record_identity_and_can_correct_it(): void
+    {
+        $employee = $this->candidate();
+        $entry = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00', 'remarks' => 'Keep current report']);
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $response = $this->actingAs($admin)->get('/admin/dtr/reports?date=2026-11-20')->assertOk();
+        $row = collect($response->inertiaProps()['roster'])->firstWhere('user_id', $employee->user_id);
+        $this->assertSame($entry->id, $row['entry_id']);
+        $this->post('/admin/dtr/entry', ['user_id' => $employee->user_id, 'work_date' => '2026-11-20',
+            'expected_entry_id' => $row['entry_id'], 'time_out' => '14:00'])->assertRedirect();
+        $this->assertSame('14:00', $entry->fresh()->time_out);
+        $this->assertSame('Keep current report', $entry->remarks);
+    }
 }
