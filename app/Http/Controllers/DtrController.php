@@ -643,7 +643,8 @@ class DtrController extends Controller
         // Preserve each row's original status when the admin didn't change its
         // text (e.g. they only fixed the clock-out time) so a to-do isn't
         // silently converted to completed. Fall back to inferring from the field.
-        $existing = DtrEntry::where('user_id', $data['user_id'])->where('work_date', $date)->first();
+        $existing = DtrEntry::where('user_id', $data['user_id'])->whereDate('work_date', $date)->first();
+        $beforeTimes = $existing?->only(['time_in', 'time_out']) ?? ['time_in' => null, 'time_out' => null];
         $existingTasks = $existing && is_array($existing->tasks) ? array_values($existing->tasks) : [];
         $incoming = array_values($data['tasks'] ?? []);
 
@@ -655,7 +656,13 @@ class DtrController extends Controller
             if (isset($existingTasks[$i])
                 && (string) ($existingTasks[$i]['task'] ?? '') === $task
                 && (string) ($existingTasks[$i]['pending'] ?? '') === $pending) {
-                $status = $existingTasks[$i]['status'] ?? null;
+                $preserved = $existingTasks[$i];
+                if ((bool) ($preserved['pending_done'] ?? false) !== (bool) ($t['pending_done'] ?? false)) {
+                    $preserved['pending_done'] = (bool) ($t['pending_done'] ?? false);
+                }
+                $tasks[] = $preserved;
+
+                continue;
             }
             if (! in_array($status, ['todo', 'done', 'carry'], true)) {
                 $status = trim($pending) !== '' ? 'carry' : 'done';
@@ -680,15 +687,22 @@ class DtrController extends Controller
             ];
         }
 
-        DtrEntry::updateOrCreate(
-            ['user_id' => $data['user_id'], 'work_date' => $date],
+        $entry = DtrEntry::whereDate('work_date', $date)->updateOrCreate(
+            ['user_id' => $data['user_id']],
             [
+                'work_date' => $date,
                 'time_in' => $data['time_in'] ?: null,
                 'time_out' => $data['time_out'] ?: null,
                 'tasks' => $tasks,
                 'remarks' => $data['remarks'] ?: null,
             ],
         );
+
+        $changedTimes = array_keys(array_filter($entry->only(['time_in', 'time_out']), fn ($value, $field) => $value !== $beforeTimes[$field], ARRAY_FILTER_USE_BOTH));
+        if ($changedTimes) {
+            \App\Models\ActivityLog::record('dtr.time_corrected', ['description' => 'Corrected legacy DTR time.',
+                'properties' => ['dtr_entry_id' => $entry->id, 'subject_user_id' => $entry->user_id, 'work_date' => $date, 'fields' => $changedTimes]]);
+        }
 
         return back()->with('success', 'DTR record updated.');
     }
@@ -1223,9 +1237,10 @@ class DtrController extends Controller
             ];
         }, $data['tasks'] ?? []));
 
-        DtrEntry::updateOrCreate(
-            ['user_id' => auth()->id(), 'work_date' => $data['work_date']],
+        DtrEntry::whereDate('work_date', $data['work_date'])->updateOrCreate(
+            ['user_id' => auth()->id()],
             [
+                'work_date' => $data['work_date'],
                 'time_in' => $data['time_in'] ?? null,
                 'time_out' => $data['time_out'] ?? null,
                 'tasks' => $tasks,
@@ -1257,7 +1272,7 @@ class DtrController extends Controller
     /** One-tap clock in — stamps the current time (in the user's DTR timezone). */
     public function timeIn()
     {
-        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+        if (config('hr.enabled') && app(\App\Services\Hr\HrAccess::class)->requiresHrDtr(auth()->id())) {
             abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
         }
         if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
@@ -1268,7 +1283,7 @@ class DtrController extends Controller
         $setting = $this->requireSetting();
         $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
-        $entry = DtrEntry::firstOrNew(['user_id' => auth()->id(), 'work_date' => $now->toDateString()]);
+        $entry = DtrEntry::whereDate('work_date', $now->toDateString())->firstOrNew(['user_id' => auth()->id()], ['work_date' => $now->toDateString()]);
         if (! $entry->time_in) {
             $entry->time_in = $now->format('H:i');
             $entry->save();
@@ -1280,7 +1295,7 @@ class DtrController extends Controller
     /** One-tap clock out — closes the latest open shift (handles cross-midnight). */
     public function timeOut()
     {
-        if (config('hr.enabled') && \App\Models\HrEmployee::where('user_id', auth()->id())->exists()) {
+        if (config('hr.enabled') && app(\App\Services\Hr\HrAccess::class)->requiresHrDtr(auth()->id())) {
             abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
         }
         if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
@@ -1293,10 +1308,15 @@ class DtrController extends Controller
 
         $entry = DtrEntry::where('user_id', auth()->id())
             ->whereNotNull('time_in')->whereNull('time_out')
-            ->where('work_date', '>=', $now->copy()->subDay()->toDateString())
+            ->where('time_source', '!=', 'live')
+            ->whereDate('work_date', '>=', $now->copy()->subDay()->toDateString())
+            ->whereDate('work_date', '<=', $now->toDateString())
             ->orderByDesc('work_date')
-            ->first()
-            ?? DtrEntry::firstOrNew(['user_id' => auth()->id(), 'work_date' => $now->toDateString()]);
+            ->lockForUpdate()->first();
+
+        if (! $entry) {
+            return back()->with('success', 'No open shift to clock out.');
+        }
 
         $entry->time_out = $now->format('H:i');
         $entry->save();

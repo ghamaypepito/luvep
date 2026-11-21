@@ -1,0 +1,9 @@
+# TKT-9ZIG6M — old DTR clock-out
+
+A draft (`candidate`) HR enrollment does not activate HR attendance. Previously the old DTR page remained visible while clock actions rejected anyone with any HR enrollment, returning403. The shared HR ownership check now keeps a genuine legacy user on that system until activation. Active/archived enrollments, archived schedules, HR shifts and live HR record history remain protected against legacy writes. No enrollment, role or permission is changed automatically.
+
+Legacy clock-out closes only the signed-in user's existing open non-live shift for today/yesterday. Row locking and the existing HR enrollment lock serialize writes with HR transitions. Repeated clock-out requests do not create an empty day or overwrite the first result. Date-aware lookups reuse existing legacy records across database date representations.
+
+Historical corrections use the existing authorized Team Daily Reports editor after the actual finish time is confirmed. The scheduled finish is not a substitute for that confirmation. Time-only corrections retain unchanged task metadata/remarks, and an actor-attributed activity event stores the entry/date and changed time-field names without copying private report text. Correction and audit commit together; an audit failure rolls back the edit. No-op saves add no correction event.
+
+Verification uses synthetic route fixtures, including the reported candidate/legacy/open-previous-day state, repeated clicks, active/live/archive/preview protections and historical correction preservation. Independent testing/review, required CI and live deployment verification precede ticket closure. Do not clock a real person's current shift merely to test the button.
