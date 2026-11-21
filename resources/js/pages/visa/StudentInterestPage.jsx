@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import React, { useState, useEffect } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -70,6 +71,7 @@ function loadDraft() {
 export default function StudentInterestPage() {
     const draft = loadDraft();
     const { data, setData, post, processing, errors: serverErrors } = useForm({
+        vif_answers: {},
         family_name: '', first_name: '', other_names: '', gender: '', dob: '',
         country_of_birth: '', place_of_birth: '', current_address: '', overseas_address: '',
         email: '', phone: '', country_of_citizenship: '', other_citizenships: '',
@@ -221,7 +223,7 @@ export default function StudentInterestPage() {
                 const badKeys = Object.keys(errs);
                 let firstInvalid = null;
                 for (const k of badKeys) {
-                    const stepNum = FIELD_TO_STEP[k];
+                    const stepNum = FIELD_TO_STEP[k] || (k.startsWith('vif_answers.') || k.startsWith('qualifications.') || k.startsWith('family_members.') || k.startsWith('nz_contacts.') ? TOTAL_STEPS : undefined);
                     if (stepNum && (firstInvalid === null || stepNum < firstInvalid)) {
                         firstInvalid = stepNum;
                     }
@@ -440,6 +442,7 @@ export default function StudentInterestPage() {
             title: 'Declaration',
             render: () => (
                 <>
+                    <VifSupplementFields type="student" values={data} onChange={setData} errors={errors} />
                     <SectionTitle title="Declaration" />
                     <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-6 text-sm text-gray-600 leading-relaxed">
                         <p className="font-bold text-[#282728] mb-2">

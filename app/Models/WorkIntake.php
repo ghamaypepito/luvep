@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 class WorkIntake extends Model
 {
     protected $fillable = [
+        'vif_answers',
         'intake_id', 'status', 'edit_token',
         'family_name', 'first_name', 'other_names', 'gender', 'dob',
         'country_of_birth', 'place_of_birth', 'current_address', 'email', 'phone',
@@ -35,6 +36,7 @@ class WorkIntake extends Model
     ];
 
     protected $casts = [
+        'vif_answers' => 'array',
         'dob' => 'date',
         'last_nz_departure' => 'date',
         'job_start_date' => 'date',

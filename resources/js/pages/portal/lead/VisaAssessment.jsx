@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import { useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import { toast } from "sonner";
@@ -124,16 +125,35 @@ function VifStatusPill({ vif }) {
 function AssessmentEditor({ assessment }) {
     const sections = ASSESSMENT_SECTIONS[assessment.type] || [];
     const [values, setValues] = useState(assessment.values || {});
+    const [baseline, setBaseline] = useState(assessment.values || {});
     const [saving, setSaving] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
     const readOnly = assessment.read_only_fields || [];
     const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
     const save = () => {
+        const changed = {};
+        for (const [key, value] of Object.entries(values)) {
+            if (readOnly.includes(key)) continue;
+            if (key === 'vif_answers') {
+                const answers = Object.fromEntries(Object.entries(value || {}).filter(([answer, next]) => JSON.stringify(next) !== JSON.stringify(baseline.vif_answers?.[answer])));
+                if (Object.keys(answers).length) changed.vif_answers = answers;
+            } else if (JSON.stringify(value) !== JSON.stringify(baseline[key])) {
+                changed[key] = value;
+            }
+        }
+        if (!Object.keys(changed).length) return;
         setSaving(true);
-        router.post(assessment.save_url, { field_values: Object.fromEntries(Object.entries(values).filter(([key]) => !readOnly.includes(key))) }, {
+        setFieldErrors({});
+        router.post(assessment.save_url, { field_values: changed }, {
             preserveScroll: true,
-            onSuccess: () => toast.success("Saved — your Visa Information Form has been updated"),
-            onError: (e) => toast.error(Object.values(e)[0] || "Could not save"),
+            onSuccess: (page) => {
+                const saved = page?.props?.assessment?.values || values;
+                setValues(saved);
+                setBaseline(saved);
+                toast.success("Assessment saved");
+            },
+            onError: (e) => { setFieldErrors(Object.fromEntries(Object.entries(e).map(([key, value]) => [key.replace(/^field_values\./, ""), value]))); toast.error(Object.values(e)[0] || "Could not save"); },
             onFinish: () => setSaving(false),
         });
     };
@@ -166,19 +186,24 @@ function AssessmentEditor({ assessment }) {
                 </div>
             </div>
 
-            {/* Fields, grouped by section */}
-            <div className="p-6 space-y-7">
-                {sections.map((sec) => (
-                    <section key={sec.title}>
-                        <h3 className="text-[13px] font-bold text-gray-900 mb-3 pb-2 border-b border-gray-100">{sec.title}</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                            {sec.fields.map(([key, label]) => (
-                                <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} readOnly={readOnly.includes(key)} onChange={(v) => setField(key, v)} />
-                            ))}
-                        </div>
-                    </section>
-                ))}
-            </div>
+            {/* Keep the submitted draft stable until the canonical response arrives. */}
+            <fieldset disabled={saving} className="min-w-0">
+                {/* Fields, grouped by section */}
+                <div className="p-6 space-y-7">
+                    {sections.map((sec) => (
+                        <section key={sec.title}>
+                            <h3 className="text-[13px] font-bold text-gray-900 mb-3 pb-2 border-b border-gray-100">{sec.title}</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                                {sec.fields.map(([key, label]) => (
+                                    <FieldInput key={key} fieldKey={key} label={label} value={values[key] ?? ""} readOnly={readOnly.includes(key)} onChange={(v) => setField(key, v)} />
+                                ))}
+                            </div>
+                        </section>
+                    ))}
+                </div>
+
+                <div className="p-6"><VifSupplementFields type={assessment.type} values={values} onChange={setField} errors={fieldErrors} /></div>
+            </fieldset>
 
             {/* Save (again, at the bottom for long forms) */}
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end bg-gray-50/50">
