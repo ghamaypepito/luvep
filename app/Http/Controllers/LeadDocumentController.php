@@ -2520,13 +2520,15 @@ class LeadDocumentController extends Controller
         if ($user->isLead() && $doc->source_variant === 'engagement:written_agreement') {
             abort_unless($doc->lead_id === $user->lead_id && $doc->isClientSharedWrittenAgreement(), 404);
         }
-        if ($doc->media_file_id && ! $doc->client_signed_at && ! $doc->client_signature_path) {
+        if ($doc->media_file_id) {
             $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
             if ($user->isLead()) {
                 $hidden=app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
                 abort_if($doc->checklist_key && in_array($doc->checklist_key,$hidden,true),404);
             }
-            return app(\App\Services\MediaDrive\Library::class)->stream($file,$request->boolean('inline'));
+            if (! $doc->client_signed_at && ! $doc->client_signature_path) {
+                return app(\App\Services\MediaDrive\Library::class)->stream($file,$request->boolean('inline'));
+            }
         }
 
         // Lead users can only download files tied to their own lead record.

@@ -409,10 +409,16 @@ class LeadPortalAgreementSigningTest extends TestCase
         $doc = LeadDocument::findOrFail($attached['document_ids'][0]);
         $doc->update(['status' => LeadDocument::STATUS_STAFF_SHARED]);
         $assetBefore = $asset->refresh()->getRawOriginal();
+        $outside = User::factory()->create(['role' => 'accommodation', 'is_active' => true]);
+        $this->actingAs($outside)->get('/admin/documents/'.$doc->id.'/download')->assertForbidden();
         $this->actingAs($user)->get('/portal/lead/documents/'.$doc->id.'/preview')->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $this->post('/portal/lead/documents/'.$doc->id.'/sign', $this->signature())->assertRedirect()->assertSessionHasNoErrors();
         $doc->refresh();
-        $response = $this->get('/portal/lead/documents/'.$doc->id.'/download?inline=1')->assertOk();
+        $this->actingAs($outside)->get('/admin/documents/'.$doc->id.'/download')->assertForbidden();
+        $this->get('/admin/documents/'.$doc->id.'/download?inline=1')->assertForbidden();
+        $authorized = $this->actingAs($staff)->get('/admin/documents/'.$doc->id.'/download?inline=1')->assertOk();
+        $this->assertSame(hash('sha256', Storage::disk('local')->get($doc->file_path)), hash_file('sha256', $authorized->baseResponse->getFile()->getPathname()));
+        $response = $this->actingAs($user)->get('/portal/lead/documents/'.$doc->id.'/download?inline=1')->assertOk();
         $download = file_get_contents($response->baseResponse->getFile()->getPathname());
         $this->assertSame(hash('sha256', Storage::disk('local')->get($doc->file_path)), hash('sha256', $download));
         $this->assertStringContainsString('Client signature confirmation', (new \Smalot\PdfParser\Parser)->parseContent($download)->getText());
