@@ -494,7 +494,7 @@ class LeadTrackingController extends Controller
             return back()->with('error', 'This document has been approved and can no longer be edited.');
         }
 
-        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
+        abort_if($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement', 409, 'Issued agreements cannot be replaced.');
 
         $request->validate(['checklist_key' => 'nullable|string|max:80']);
         $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
@@ -664,6 +664,10 @@ class LeadTrackingController extends Controller
         // under-review / rejected one.
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be deleted.');
+        }
+
+        if ($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement') {
+            return back()->with('error', 'This document was prepared for you and cannot be removed.');
         }
 
         if ($doc->file_path) {

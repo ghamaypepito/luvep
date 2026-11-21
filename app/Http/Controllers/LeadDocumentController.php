@@ -2240,7 +2240,7 @@ class LeadDocumentController extends Controller
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be removed.');
         }
-        if ($doc->source === 'generated' || $doc->isEducationAgreement()) {
+        if ($doc->source === 'generated' || $doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement') {
             return back()->with('error', 'This document was prepared for you and cannot be removed.');
         }
 
@@ -2268,7 +2268,7 @@ class LeadDocumentController extends Controller
             return back()->with('error', 'This document has been approved and can no longer be replaced.');
         }
 
-        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
+        abort_if($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement', 409, 'Issued agreements cannot be replaced.');
 
         $rule = app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $doc)
             ? UploadValidation::pdfDocument() : UploadValidation::document();

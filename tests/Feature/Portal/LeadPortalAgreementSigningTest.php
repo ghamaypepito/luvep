@@ -171,4 +171,27 @@ class LeadPortalAgreementSigningTest extends TestCase
         $this->assertSame('%PDF-synthetic-issued', Storage::disk('local')->get($doc->file_path));
         $this->assertSame($files, Storage::disk('local')->allFiles());
     }
+
+    public function test_client_upload_edit_and_delete_paths_cannot_replace_issued_written_agreements(): void
+    {
+        foreach ([false, true] as $signed) {
+            [$lead, , $doc, $row] = $this->fixture();
+            if ($signed) {
+                $this->post($row['sign_url'], $this->signature())->assertRedirect()->assertSessionHasNoErrors();
+            }
+            $lead->forceFill(['is_immigration_case' => false])->saveQuietly();
+            $before = $doc->refresh()->getAttributes();
+            $pdf = Storage::disk('local')->get($doc->file_path);
+            $files = Storage::disk('local')->allFiles();
+            foreach (['/portal/lead/documents/'.$doc->id.'/replace', '/track/'.$lead->tracking_code.'/document/'.$doc->id] as $url) {
+                $this->post($url, ['file' => \Illuminate\Http\UploadedFile::fake()->create('replacement.pdf', 10, 'application/pdf')])->assertStatus(409);
+            }
+            foreach (['/portal/lead/documents/'.$doc->id, '/track/'.$lead->tracking_code.'/document/'.$doc->id] as $url) {
+                $this->delete($url)->assertRedirect()->assertSessionHas('error');
+            }
+            $this->assertSame($before, $doc->fresh()->getAttributes());
+            $this->assertSame($pdf, Storage::disk('local')->get($doc->file_path));
+            $this->assertSame($files, Storage::disk('local')->allFiles());
+        }
+    }
 }
