@@ -519,6 +519,8 @@ Route::post('/api/sync-calendar', [App\Http\Controllers\SyncController::class, '
 // middleware nested below narrows each section ('portal:admin', 'portal:sales', …).
 Route::middleware(['auth'])->group(function () {
 
+    Route::get('/help-center', [\App\Http\Controllers\HelpCenterController::class, 'index'])->name('help-center');
+
     Route::get('/creative-requests', [\App\Http\Controllers\CreativeRequestController::class, 'index'])->name('creative.index');
     Route::get('/creative-requests/task/{task}', [\App\Http\Controllers\CreativeRequestController::class, 'forTask'])->whereNumber('task');
     Route::post('/creative-requests', [\App\Http\Controllers\CreativeRequestController::class, 'store'])->middleware('throttle:20,1');
