@@ -334,6 +334,7 @@ class EducationController extends Controller
                     // Checklist progress (submitted vs visible items) — same
                     // metric the Immigration Cases + Leads Docs column uses.
                     $checklist = $this->leadChecklistTotals($l);
+                    $educationStageHint = ! $l->education_stage && $l->immigration_stage === 'Decline Visa' ? 'Declined Visa' : null;
 
                     return [
                         'id' => $l->id,
@@ -377,8 +378,9 @@ class EducationController extends Controller
                         'agent_name' => optional($l->agent)->name,
                         // `education_stage` is the Education-team lifecycle
                         // shown as a dropdown in the Status column; falls
-                        // back to the lead's generic status only as a hint.
-                        'status' => $l->education_stage ?: $l->status,
+                        // back to an already-recorded visa decline before the generic lead hint.
+                        'status' => $l->education_stage ?: ($educationStageHint ?: $l->status),
+                        'education_stage_hint' => $educationStageHint,
                         // Lead Portal access state — drives the "Request portal
                         // access" row action so it reflects requested/sent/
                         // accepted instead of always reading as a fresh request.

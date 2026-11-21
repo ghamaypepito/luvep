@@ -272,7 +272,9 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
             if (view === "registration" && l.source_key !== "registration") return false;
             const hay = `${l.name || ""} ${l.email || ""} ${l.lead_id || ""} ${l.phone || ""} ${l.source || ""}`.toLowerCase();
             const matchSearch  = !q || hay.includes(q);
-            const matchStatus  = statusFilter === "All" || l.status === statusFilter;
+            const matchStatus = statusFilter === "All" || (statusFilter === "Consultancy Agreement"
+                ? ["Consultancy Agreement", "Consultancy Agreement Sent", "Consultancy Agreement Signed"].includes(l.status)
+                : l.status === statusFilter);
             const matchGoal    = !adv.goal_status || l.goal_setting_status === adv.goal_status;
             const matchPre     = !adv.pre_screened_by || l.pre_screened_by === adv.pre_screened_by;
             const matchProgram = !adv.program || l.program_offered === adv.program;
