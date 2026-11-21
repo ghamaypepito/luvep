@@ -254,6 +254,7 @@ class LegacyCandidateClockTest extends TestCase
 
     public function test_report_editor_receives_the_existing_record_identity_and_can_correct_it(): void
     {
+        $this->withoutVite();
         $employee = $this->candidate();
         $entry = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00', 'remarks' => 'Keep current report']);
         $admin = User::factory()->create(['role' => 'super_admin']);
