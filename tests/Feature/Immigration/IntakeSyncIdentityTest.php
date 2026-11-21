@@ -123,4 +123,39 @@ class IntakeSyncIdentityTest extends TestCase
 
         $this->assertSame($before, [$first->fresh()->getRawOriginal(), $second->fresh()->getRawOriginal()]);
     }
+
+    #[DataProvider('publicForms')]
+    public function test_handoff_only_case_also_makes_the_identity_ambiguous(string $url): void
+    {
+        $first = $this->existingCase();
+        $handoff = $this->existingCase(['is_immigration_case' => false, 'education_stage' => 'Endorsed to Immigration']);
+        $before = [$first->getRawOriginal(), $handoff->getRawOriginal()];
+
+        $this->submit($url);
+
+        $this->assertSame($before, [$first->fresh()->getRawOriginal(), $handoff->fresh()->getRawOriginal()]);
+    }
+
+    #[DataProvider('publicForms')]
+    public function test_legacy_email_whitespace_does_not_hide_an_ambiguous_case(string $url): void
+    {
+        $first = $this->existingCase();
+        $second = $this->existingCase(['email' => " \tSHARED171@example.test\r\n"]);
+        $before = [$first->getRawOriginal(), $second->getRawOriginal()];
+
+        $this->submit($url);
+
+        $this->assertSame($before, [$first->fresh()->getRawOriginal(), $second->fresh()->getRawOriginal()]);
+    }
+
+    #[DataProvider('publicForms')]
+    public function test_a_sole_handoff_only_case_is_not_newly_eligible_for_public_writes(string $url): void
+    {
+        $case = $this->existingCase(['is_immigration_case' => false, 'education_stage' => 'Endorsed to Immigration']);
+        $before = $case->getRawOriginal();
+
+        $this->submit($url);
+
+        $this->assertSame($before, $case->fresh()->getRawOriginal());
+    }
 }

@@ -26,23 +26,23 @@ trait SyncsIntakeToCase
     protected function syncIntakeToExistingCase(Model $intake, string $visaLabel): void
     {
         try {
-            $email = mb_strtolower(trim((string) ($intake->email ?? '')));
             $dob = static::caseSyncDob($intake->dob ?? null);
+            $identity = static::caseSyncIdentityKey($intake->email, $dob);
             // Email + DOB narrows candidates; it does not resolve duplicate
             // cases or conflicting applicants sharing those details.
-            if ($email === '' || $dob === null) {
+            if ($identity === null) {
                 return;
             }
 
-            $matches = Lead::where('is_immigration_case', true)
-                ->whereRaw('LOWER(email) = ?', [$email])
+            $matches = Lead::immigrationCase()
+                ->whereDate('dob', $dob)
                 ->get()
-                ->filter(fn (Lead $c) => static::caseSyncDob($c->dob) === $dob);
+                ->filter(fn (Lead $c) => static::caseSyncIdentityKey($c->email, $c->dob) === $identity);
             if ($matches->count() !== 1) {
                 return;
             }
             $case = $matches->first();
-            if (AssessmentCaseLink::hasApplicantConflict($intake, $case)) {
+            if (! $case->is_immigration_case || AssessmentCaseLink::hasApplicantConflict($intake, $case)) {
                 return;
             }
 
