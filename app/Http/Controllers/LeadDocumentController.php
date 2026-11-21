@@ -2083,6 +2083,13 @@ class LeadDocumentController extends Controller
         $lead = $this->portalLead();
         abort_unless($lead, 403);
 
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
+        $clientVisible = fn (LeadDocument $doc) => (! $doc->checklist_key || ! in_array($doc->checklist_key, $hidden, true))
+            && ($doc->source_variant !== 'engagement:written_agreement' || $doc->isClientSharedWrittenAgreement());
+        $clientDocuments = $lead->documents()->orderBy('created_at')->orderBy('id')->get()->filter($clientVisible);
+        $visibleIds = $clientDocuments->modelKeys();
+        $latestVisible = $clientDocuments->keyBy('checklist_key');
+
         $clientPdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         $requestBindings = $clientPdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
         $requests = $lead->documentRequests()
@@ -2099,21 +2106,15 @@ class LeadDocumentController extends Controller
                 'origin' => $r->origin,
                 'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id, $clientPdfKeys, $requestBindings),
                 'requested_at' => $r->requested_at,
-                'latest_document' => $r->latestDocument ? $this->docSerialize($r->latestDocument) : null,
+                'latest_document' => $r->latestDocument && $clientVisible($r->latestDocument) ? $this->docSerialize($r->latestDocument) : null,
             ]);
 
-        $sharedByStaff = LeadDocument::where('lead_id', $lead->id)
-            ->where('status', LeadDocument::STATUS_STAFF_SHARED)
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn (LeadDocument $d) => $this->docSerialize($d));
+        $sharedByStaff = $clientDocuments->where('status', LeadDocument::STATUS_STAFF_SHARED)
+            ->sortByDesc('created_at')->map(fn (LeadDocument $d) => $this->docSerialize($d))->values();
 
         // Files uploaded against Documents-tab checklist items, grouped by
         // the item's frontend key so the gated section flow can render them.
-        $checklistFiles = LeadDocument::where('lead_id', $lead->id)
-            ->whereNotNull('checklist_key')
-            ->orderBy('created_at')
-            ->get()
+        $checklistFiles = $clientDocuments->whereNotNull('checklist_key')
             ->groupBy('checklist_key')
             ->map(fn ($files) => $files->map(fn ($f) => [
                 'id' => $f->id,
@@ -2137,6 +2138,15 @@ class LeadDocumentController extends Controller
         if ($lead->is_immigration_case) {
             $grouped = app(\App\Services\Immigration\CaseChecklistService::class)->groupedByCategory($lead);
             foreach ($grouped as $category => $items) {
+                $items = array_map(function ($item) use ($visibleIds, $latestVisible) {
+                    if (($item['document_id'] ?? null) && ! in_array($item['document_id'], $visibleIds, true)) {
+                        $doc = $latestVisible->get($item['key']);
+                        $item = array_replace($item, ['document_id' => $doc?->id, 'status' => $doc?->status ?? 'not_submitted',
+                            'uploaded_at' => $doc?->created_at?->toIso8601String(), 'note' => $doc?->note]);
+                    }
+
+                    return $item;
+                }, $items);
                 foreach ($items as $it) {
                     if (($it['key'] ?? null) === 'svf' && empty($it['hidden'])) {
                         $vifItem = $it;
@@ -2508,7 +2518,7 @@ class LeadDocumentController extends Controller
         if ($user->isLead() && $doc->source_variant === 'engagement:written_agreement') {
             abort_unless($doc->lead_id === $user->lead_id && $doc->isClientSharedWrittenAgreement(), 404);
         }
-        if ($doc->media_file_id) {
+        if ($doc->media_file_id && ! $doc->client_signed_at && ! $doc->client_signature_path) {
             $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
             if ($user->isLead()) {
                 $hidden=app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);

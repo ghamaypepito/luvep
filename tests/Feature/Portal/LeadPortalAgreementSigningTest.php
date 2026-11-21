@@ -369,4 +369,53 @@ class LeadPortalAgreementSigningTest extends TestCase
             $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($doc->file_path));
         }
     }
+
+    public function test_documents_page_omits_draft_and_hidden_metadata_but_keeps_the_issued_control(): void
+    {
+        [$lead, , $issued] = $this->fixture();
+        $issued->update(['checklist_key' => 'engage.written_agreement', 'original_name' => 'VISIBLE-ISSUED.pdf']);
+        $request = \App\Models\LeadDocumentRequest::create(['lead_id' => $lead->id, 'label' => 'Review request', 'requested_at' => now()]);
+        $draft = LeadDocument::create(['lead_id' => $lead->id, 'request_id' => $request->id, 'checklist_key' => 'engage.written_agreement',
+            'source' => LeadDocument::SOURCE_GENERATED, 'source_variant' => 'engagement:written_agreement', 'status' => LeadDocument::STATUS_SUBMITTED,
+            'file_path' => $issued->file_path, 'mime' => 'application/pdf', 'original_name' => 'UNSENT-DRAFT-SENTINEL.pdf', 'notes' => ['engagement_pack_id' => 'unsent-modern-pack']]);
+        $hidden = LeadDocument::create(['lead_id' => $lead->id, 'checklist_key' => 'synthetic.hidden', 'source' => LeadDocument::SOURCE_UPLOAD,
+            'status' => LeadDocument::STATUS_STAFF_SHARED, 'file_path' => $issued->file_path, 'original_name' => 'HIDDEN-SENTINEL.pdf']);
+        $lead->forceFill(['hidden_track_documents' => ['synthetic.hidden'], 'document_checklist' => [['key' => 'engage.written_agreement', 'label' => 'Agreement', 'category' => 'Team']]])->saveQuietly();
+        $response = $this->get('/portal/lead/documents')->assertOk();
+        $props = $response->inertiaProps();
+        $json = json_encode($props);
+        $this->assertStringContainsString('VISIBLE-ISSUED.pdf', $json);
+        $this->assertStringNotContainsString('UNSENT-DRAFT-SENTINEL.pdf', $json);
+        $this->assertStringNotContainsString('HIDDEN-SENTINEL.pdf', $json);
+        $this->assertNull($props['requests'][0]['latest_document']);
+        $this->assertSame([$issued->id], collect($props['checklistFiles']['engage.written_agreement'])->pluck('id')->all());
+        $this->assertSame($issued->id, $props['checklist']['Team'][0]['document_id']);
+    }
+
+    public function test_media_drive_linked_education_agreement_download_returns_the_signed_pdf_and_preserves_the_asset(): void
+    {
+        [$lead, $user] = $this->fixture();
+        $staff = User::factory()->create(['role' => 'admin']);
+        $root = \App\Models\MediaFolder::create(['client_key' => 'lead:'.$lead->id, 'lead_id' => $lead->id, 'name' => 'Client files', 'ancestry' => '/']);
+        $path = 'media-drive/assets/'.$root->id.'/issued.pdf';
+        Storage::disk('local')->put($path, self::$issuedPdf);
+        $asset = \App\Models\MediaFile::create(['folder_id' => $root->id, 'original_name' => 'Shared issued agreement.pdf', 'file_path' => $path,
+            'mime' => 'application/pdf', 'size' => strlen(self::$issuedPdf), 'sha256' => hash('sha256', self::$issuedPdf),
+            'upload_key' => (string) \Illuminate\Support\Str::uuid(), 'actor_key' => 'user:'.$staff->id, 'uploaded_by' => $staff->id]);
+        $attached = app(\App\Services\MediaDrive\Attachments::class)->attach($staff, ['client_type' => 'lead', 'client_id' => $lead->id,
+            'file_ids' => [$asset->id], 'checklist_key' => 'agree.consultancy']);
+        $doc = LeadDocument::findOrFail($attached['document_ids'][0]);
+        $doc->update(['status' => LeadDocument::STATUS_STAFF_SHARED]);
+        $assetBefore = $asset->refresh()->getRawOriginal();
+        $this->actingAs($user)->get('/portal/lead/documents/'.$doc->id.'/preview')->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->post('/portal/lead/documents/'.$doc->id.'/sign', $this->signature())->assertRedirect()->assertSessionHasNoErrors();
+        $doc->refresh();
+        $response = $this->get('/portal/lead/documents/'.$doc->id.'/download?inline=1')->assertOk();
+        $download = file_get_contents($response->baseResponse->getFile()->getPathname());
+        $this->assertSame(hash('sha256', Storage::disk('local')->get($doc->file_path)), hash('sha256', $download));
+        $this->assertStringContainsString('Client signature confirmation', (new \Smalot\PdfParser\Parser)->parseContent($download)->getText());
+        $this->assertSame(self::$issuedPdf, Storage::disk('local')->get($path));
+        $this->assertSame($assetBefore, $asset->fresh()->getRawOriginal());
+        $this->assertSame($asset->id, $doc->media_file_id);
+    }
 }
