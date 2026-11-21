@@ -87,6 +87,13 @@ class LeadDocument extends Model
             && ($this->source === self::SOURCE_GENERATED || $this->status === self::STATUS_STAFF_SHARED);
     }
 
+    public function isClientSharedWrittenAgreement(): bool
+    {
+        return $this->source_variant === 'engagement:written_agreement'
+            && ($this->source === self::SOURCE_GENERATED || $this->status === self::STATUS_STAFF_SHARED)
+            && (! isset($this->notes['engagement_pack_id']) || ! empty($this->notes['engagement_sent_at']) || $this->status === self::STATUS_STAFF_SHARED);
+    }
+
     public function lead()
     {
         return $this->belongsTo(Lead::class);

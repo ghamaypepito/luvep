@@ -9,7 +9,7 @@ use App\Models\User;
 use App\Models\VisaType;
 use App\Notifications\DocumentSubmittedForReview;
 use App\Notifications\LeadInfoUpdated;
-use App\Services\IssuedEducationAgreement;
+use App\Services\IssuedClientAgreement;
 use App\Support\UploadValidation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -494,7 +494,7 @@ class LeadTrackingController extends Controller
             return back()->with('error', 'This document has been approved and can no longer be edited.');
         }
 
-        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
+        abort_if($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement', 409, 'Issued agreements cannot be replaced.');
 
         $request->validate(['checklist_key' => 'nullable|string|max:80']);
         $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
@@ -664,6 +664,10 @@ class LeadTrackingController extends Controller
         // under-review / rejected one.
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be deleted.');
+        }
+
+        if ($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement') {
+            return back()->with('error', 'This document was prepared for you and cannot be removed.');
         }
 
         if ($doc->file_path) {
@@ -906,6 +910,7 @@ class LeadTrackingController extends Controller
 
         $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         $requestBindings = $pdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
+
         return $lead->documents()
             ->orderByDesc('created_at')
             ->get()
@@ -913,7 +918,8 @@ class LeadTrackingController extends Controller
             // generated / shared documents surface separately (and are
             // stored privately, so a public URL wouldn't resolve anyway).
             ->filter(fn (LeadDocument $d) => $d->source === LeadDocument::SOURCE_UPLOAD)
-            ->reject(fn (LeadDocument $d) => $d->checklist_key && in_array($d->checklist_key, $hidden, true))
+            ->reject(fn (LeadDocument $d) => ($d->checklist_key && in_array($d->checklist_key, $hidden, true))
+                || ($d->source_variant === 'engagement:written_agreement' && ! $d->isClientSharedWrittenAgreement()))
             ->map(fn (LeadDocument $d) => [
                 'id' => $d->id,
                 'original_name' => $d->original_name,
@@ -959,7 +965,8 @@ class LeadTrackingController extends Controller
             })
             ->orderByDesc('created_at')
             ->get()
-            ->reject(fn (LeadDocument $d) => $d->checklist_key && in_array($d->checklist_key, $hidden, true))
+            ->reject(fn (LeadDocument $d) => ($d->checklist_key && in_array($d->checklist_key, $hidden, true))
+                || ($d->source_variant === 'engagement:written_agreement' && ! $d->isClientSharedWrittenAgreement()))
             ->map(function (LeadDocument $d) use ($code, $labels) {
                 // Prefer a friendly label for engagement docs (engagement:<type>).
                 $type = str_starts_with((string) $d->source_variant, 'engagement:')
@@ -972,8 +979,8 @@ class LeadTrackingController extends Controller
                 $isEngagementWA = $type === 'written_agreement';
                 $isConsultancy = $d->checklist_key === 'agree.consultancy';
                 $isEnglishEng = $d->checklist_key === 'agree.engagement_english';
-                $issuedAgreement = $d->isEducationAgreement();
-                $isSignable = $isEngagementWA || ($issuedAgreement && $d->status !== LeadDocument::STATUS_REJECTED);
+                $issuedAgreement = $d->isEducationAgreement() || $isEngagementWA;
+                $isSignable = $issuedAgreement && $d->status !== LeadDocument::STATUS_REJECTED;
 
                 // Friendly titles for the sales-side docs so the tracker
                 // doesn't just show "CA-Ravi-Std150-Single.pdf".
@@ -985,7 +992,7 @@ class LeadTrackingController extends Controller
 
                 $signed = (bool) ($d->client_signed_at || ($issuedAgreement && $d->client_signature_path));
                 $issuedHash = $issuedAgreement && $isSignable && ! $signed
-                    ? IssuedEducationAgreement::checksum($d)
+                    ? IssuedClientAgreement::checksum($d)
                     : null;
 
                 return [
@@ -996,7 +1003,7 @@ class LeadTrackingController extends Controller
                     'created_at' => $d->created_at?->toIso8601String(),
                     'view_url' => "/track/{$code}/documents/{$d->id}/download?inline=1",
                     'download_url' => "/track/{$code}/documents/{$d->id}/download",
-                    // Education clients review the issued PDF itself.
+                    // Clients sign the exact issued PDF, with a confirmation page appended.
                     'issued_agreement_hash' => $issuedHash,
                     'preview_url' => $isEngagementWA ? "/track/{$code}/documents/{$d->id}/preview" : null,
                     'signable' => $isSignable && (! $issuedAgreement || $signed || $issuedHash !== null),
@@ -1024,6 +1031,8 @@ class LeadTrackingController extends Controller
         $doc = LeadDocument::where('id', $docId)
             ->where('lead_id', $lead->id)
             ->firstOrFail();
+
+        abort_if($doc->source_variant === 'engagement:written_agreement' && ! $doc->isClientSharedWrittenAgreement(), 404);
 
         // Only adviser-produced documents are downloadable here.
         $isShared = $doc->source === LeadDocument::SOURCE_GENERATED
@@ -1064,14 +1073,18 @@ class LeadTrackingController extends Controller
         $lead = $this->resolveLead($code);
         abort_unless($lead, 404);
 
-        $doc = LeadDocument::where('id', $docId)
-            ->where('lead_id', $lead->id)
-            ->firstOrFail();
+        return $this->previewDocumentForLead($request, $generator, $lead, $docId);
+    }
 
-        if ($doc->isEducationAgreement()) {
+    /** The caller supplies a lead resolved through its own access boundary. */
+    public function previewDocumentForLead(Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, Lead $lead, $docId)
+    {
+        $doc = LeadDocument::where('id', $docId)->where('lead_id', $lead->id)->firstOrFail();
+
+        if ($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement') {
             $request->query->set('inline', '1');
 
-            return $this->downloadDoc($request, $code, $docId);
+            return $this->downloadDoc($request, $lead->tracking_code, $docId);
         }
 
         // Any stored client signature — passed to the generator so the
@@ -1088,7 +1101,8 @@ class LeadTrackingController extends Controller
         // straight from the Blade view (via previewDocument-style path).
         if (str_starts_with((string) $doc->source_variant, 'engagement:')) {
             $type = str_replace('engagement:', '', $doc->source_variant);
-            $overrides = ['signer_id' => $doc->engagement_signer_id];
+            $overrides = ['signer_id' => $doc->engagement_signer_id,
+                'payload_snapshot' => $doc->notes['engagement_payload'] ?? []];
             if ($clientSig) {
                 $overrides['client_signature'] = $clientSig;
             }
@@ -1106,92 +1120,44 @@ class LeadTrackingController extends Controller
      * re-renders the PDF with the applicant signature embedded (keeping the
      * adviser signature that was used at generation).
      */
-    public function signDoc(Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, string $code, $docId)
+    public function signDoc(Request $request, string $code, $docId)
     {
         $lead = $this->resolveLead($code);
         abort_unless($lead, 404);
 
-        $doc = LeadDocument::where('id', $docId)
-            ->where('lead_id', $lead->id)
-            ->firstOrFail();
+        return $this->signDocumentForLead($request, $lead, $docId);
+    }
 
-        if ($doc->isEducationAgreement()) {
-            abort_if(in_array($doc->checklist_key, app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead), true), 404);
-            abort_if($doc->status === LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
-            abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'This agreement has already been signed.');
+    /** The caller supplies a lead resolved through its own access boundary. */
+    public function signDocumentForLead(Request $request, Lead $lead, $docId)
+    {
+        $doc = LeadDocument::where('id', $docId)->where('lead_id', $lead->id)->firstOrFail();
+        abort_unless($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement', 403);
+        abort_if($doc->source_variant === 'engagement:written_agreement' && ! $doc->isClientSharedWrittenAgreement(), 404);
+        abort_if(in_array($doc->checklist_key, app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead), true), 404);
+        abort_if($doc->status === LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
+        abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'This agreement has already been signed.');
 
-            $data = $request->validate([
-                'issued_agreement_hash' => ['required', 'regex:/^[a-f0-9]{64}$/D'],
-                'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
-                'signature_data' => 'nullable|string|max:2800000',
-                'signer_name' => 'nullable|string|max:120',
-                'acknowledged' => 'accepted',
-            ], ['issued_agreement_hash.required' => 'Refresh this page and review the issued agreement before signing.']);
-
-            [$binary, $ext] = $this->readSignatureUpload($request);
-            $image = $binary ? @getimagesizefromstring($binary) : false;
-            $expectedType = $ext === 'jpeg' ? IMAGETYPE_JPEG : IMAGETYPE_PNG;
-            if (! $image || $image[2] !== $expectedType || max($image[0], $image[1]) > 4096
-                || ! @imagecreatefromstring($binary)) {
-                throw \Illuminate\Validation\ValidationException::withMessages(['signature_data' => 'Draw a valid signature before signing.']);
-            }
-
-            try {
-                app(IssuedEducationAgreement::class)->sign($lead, $doc, $data['issued_agreement_hash'], $binary, $ext, $data['signer_name'] ?? null, $request->ip());
-            } catch (\Illuminate\Validation\ValidationException | \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
-                throw $error;
-            } catch (\Throwable $error) {
-                report($error);
-
-                return back()->withErrors(['signature_data' => 'Could not save the signature. The issued agreement is still available.']);
-            }
-
-            return back()->with('success', 'Thank you — your agreement has been signed.');
-        }
-
-        abort_unless($doc->source_variant === 'engagement:written_agreement', 403);
-
-        $request->validate([
+        $data = $request->validate([
+            'issued_agreement_hash' => ['required', 'regex:/^[a-f0-9]{64}$/D'],
             'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
-            'signature_data' => 'nullable|string',
+            'signature_data' => 'nullable|string|max:2800000',
             'signer_name' => 'nullable|string|max:120',
-            'acknowledged' => 'nullable|boolean',
-        ]);
+            'acknowledged' => 'required|accepted',
+        ], ['issued_agreement_hash.required' => 'Refresh this page and review the issued agreement before signing.']);
 
+        [$binary, $ext] = $this->readSignatureUpload($request);
         try {
-            [$binary, $ext] = $this->readSignatureUpload($request);
-            abort_if($binary === null, 422, 'No signature provided.');
+            app(IssuedClientAgreement::class)->sign($lead, $doc, $data['issued_agreement_hash'], $binary ?? '', $ext, $data['signer_name'] ?? null, $request->ip(), $request->routeIs('track.doc.sign'));
+        } catch (\Illuminate\Validation\ValidationException|\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
+            throw $error;
+        } catch (\Throwable $error) {
+            report($error);
 
-            // Store the applicant signature privately.
-            if ($doc->client_signature_path) {
-                Storage::disk('local')->delete($doc->client_signature_path);
-            }
-            $sigPath = "signatures/client-doc-{$doc->id}-".Str::random(8).".{$ext}";
-            Storage::disk('local')->put($sigPath, $binary);
-
-            $clientSig = 'data:image/'.($ext === 'jpeg' ? 'jpeg' : 'png').';base64,'.base64_encode($binary);
-
-            $pdf = $generator->pdfBinary($lead, 'written_agreement', [
-                'signer_id' => $doc->engagement_signer_id,
-                'client_signature' => $clientSig,
-            ]);
-
-            Storage::disk('local')->put($doc->file_path, $pdf);
-
-            $doc->forceFill([
-                'size' => strlen($pdf),
-                'client_signature_path' => $sigPath,
-                'client_signed_at' => now(),
-                'client_signer_name' => $request->input('signer_name') ?: trim("{$lead->first_name} {$lead->last_name}"),
-                'client_signer_ip' => $request->ip(),
-            ])->save();
-
-            return back()->with('success', 'Thank you — your agreement has been signed.');
-        } catch (\Throwable $e) {
-            Log::error('Client agreement signing failed', ['doc_id' => $docId, 'error' => $e->getMessage()]);
-
-            return back()->withErrors(['error' => 'Could not save your signature. Please try again.']);
+            return back()->withErrors(['error' => 'Could not save the signature. The issued agreement is still available.']);
         }
+
+        return back()->with('success', 'Thank you — your agreement has been signed.');
     }
 
     /**
