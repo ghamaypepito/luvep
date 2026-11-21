@@ -72,4 +72,24 @@ test('actual time-only editor submits intent and preserves newer omitted report 
     assert.equal(posts.length, before, 'Unchanged existing records do not post');
 });
 
+test('switching report dates discards the previous day editor draft', async () => {
+    const props = { date: '2026-11-19', today: '2026-11-21', weekStart: '2026-11-16', staffCount: 1,
+        roster: [{ user_id: 42, entry_id: null, name: 'Synthetic new record', submitted: false, tasks: [] }] };
+    await render(Reports, props);
+    await click(document.querySelector('button[title="Add a record for this day"]'));
+    await input(document.querySelectorAll('input[type=time]')[0], '05:00');
+    await input(document.querySelectorAll('input[type=time]')[1], '14:00');
+    const before = posts.length;
+    await render(Reports, { ...props, date: '2026-11-20' });
+    assert.equal(Boolean(button('Save changes')), false, 'Changing the day closes the old editor');
+    assert.equal(posts.length, before);
+    await click(document.querySelector('button[title="Add a record for this day"]'));
+    assert.equal(document.querySelectorAll('input[type=time]')[0].value, '');
+    assert.equal(document.querySelectorAll('input[type=time]')[1].value, '');
+    await input(document.querySelectorAll('input[type=time]')[0], '06:00');
+    await click(button('Save changes'));
+    assert.deepEqual(posts.at(-1)[1], { user_id: 42, work_date: '2026-11-20', expected_entry_id: null,
+        time_in: '06:00', time_out: null, remarks: null, tasks: [] });
+});
+
 test.after(async () => { await act(async () => root.unmount()); dom.window.close(); });

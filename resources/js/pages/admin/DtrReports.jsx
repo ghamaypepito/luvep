@@ -498,7 +498,7 @@ export default function DtrReports({ date = "", today = "", staffCount = 0, dayC
                         <tbody className="divide-y divide-gray-100">
                             {roster.length === 0 ? (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">No staff have a DTR set up yet.</td></tr>
-                            ) : roster.map((r) => <RosterRow key={r.user_id} r={r} date={date} />)}
+                            ) : roster.map((r) => <RosterRow key={`${date}:${r.user_id}`} r={r} date={date} />)}
                         </tbody>
                     </table>
                 </div>
