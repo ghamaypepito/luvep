@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\Lead;
+use App\Services\Immigration\AssessmentCaseLink;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
 /**
  * When a public visa assessment is submitted by someone who is ALREADY an
- * immigration case (matched on email), sync the fresh submission into that
+ * unambiguous immigration case, sync the fresh submission into that
  * existing case instead of leaving a disconnected duplicate.
  *
  * A submission never creates a Lead of its own (the Lead only exists once the
@@ -27,20 +28,22 @@ trait SyncsIntakeToCase
         try {
             $email = mb_strtolower(trim((string) ($intake->email ?? '')));
             $dob = static::caseSyncDob($intake->dob ?? null);
-            // Need both an email AND a date of birth to be sure it's the same
-            // person: families routinely share one email, so email alone would
-            // fold a husband's enquiry into his wife's case. Email + DOB is the
-            // identity key (see caseSyncIdentityKey used by the list too).
+            // Email + DOB narrows candidates; it does not resolve duplicate
+            // cases or conflicting applicants sharing those details.
             if ($email === '' || $dob === null) {
                 return;
             }
 
-            $case = Lead::where('is_immigration_case', true)
+            $matches = Lead::where('is_immigration_case', true)
                 ->whereRaw('LOWER(email) = ?', [$email])
                 ->get()
-                ->first(fn (Lead $c) => static::caseSyncDob($c->dob) === $dob);
-            if (! $case) {
-                return; // no existing case for this exact person — nothing to sync
+                ->filter(fn (Lead $c) => static::caseSyncDob($c->dob) === $dob);
+            if ($matches->count() !== 1) {
+                return;
+            }
+            $case = $matches->first();
+            if (AssessmentCaseLink::hasApplicantConflict($intake, $case)) {
+                return;
             }
 
             // Keep the submitted name on the assessment and the verified name on the case.

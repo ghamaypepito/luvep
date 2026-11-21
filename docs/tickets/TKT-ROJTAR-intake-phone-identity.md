@@ -1,0 +1,11 @@
+# TKT-ROJTAR: intake synchronization boundary
+
+The ticket reports separate Student/Case phone values. A read-only check on 21 November 2026 confirms the two referenced records remain separate and lack matching DOB/passport corroboration. No record correction or link is authorized by those matching names/emails alone, so the original ticket stays unfinished.
+
+An independent real public Work intake POST exposed a related write defect: two active cases sharing email and DOB caused the first case to receive another named applicant's phone. The same trait serves Student, Visitor, Family, Resident and Work public intake submissions. A unique email/DOB case with a conflicting applicant name could also be patched despite the assessment list/conversion rejecting that identity.
+
+The fix rejects all automatic case patches when email/DOB has zero or multiple active converted case candidates. For a single candidate it reuses AssessmentCaseLink::hasApplicantConflict, including the existing same-passport/DOB name-change allowance. Case names and staff-set visa types remain unchanged. The intake itself is still saved for staff triage. No schema, provider, permissions, financial data, retrospective record copying or separate-record synchronization policy changes.
+
+Verification includes actual HTTP submissions across all five public forms: ambiguous and conflicting cases retain all raw fields; unique matching applicants still sync phone and retain staff visa; unrelated cases remain unchanged; identical duplicate identities remain ambiguous; matching passport/DOB permits a recorded name change while preserving the case name. The prior generic sync test used an uncorroborated surname mismatch and is updated to a matching applicant; a dedicated Resident test now proves the corroborated name-change behavior.
+
+Original reproduction: IndependentPhoneIdentityAuditTest failed before the fix (Anika phone overwritten by Beatriz submission) and passes after it. Focused author tests pass 22 tests / 82 assertions, including the independent original reproducer. The complete Immigration feature suite plus local invoice and Education handoff controls pass 541 tests / 6,458 assertions (PHP memory limit 512 MB). Independent exact-head review/release evidence will be recorded on the PR and ticket report before disposition.
