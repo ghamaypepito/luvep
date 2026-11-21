@@ -2083,12 +2083,12 @@ class LeadDocumentController extends Controller
         $lead = $this->portalLead();
         abort_unless($lead, 403);
 
-        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
+        $checklists = app(\App\Services\Immigration\CaseChecklistService::class);
+        $hidden = $checklists->hiddenKeysFor($lead);
         $clientVisible = fn (LeadDocument $doc) => (! $doc->checklist_key || ! in_array($doc->checklist_key, $hidden, true))
             && ($doc->source_variant !== 'engagement:written_agreement' || $doc->isClientSharedWrittenAgreement());
         $clientDocuments = $lead->documents()->orderBy('created_at')->orderBy('id')->get()->filter($clientVisible);
         $visibleIds = $clientDocuments->modelKeys();
-        $latestVisible = $clientDocuments->keyBy('checklist_key');
 
         $clientPdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         $requestBindings = $clientPdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
@@ -2106,7 +2106,7 @@ class LeadDocumentController extends Controller
                 'origin' => $r->origin,
                 'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id, $clientPdfKeys, $requestBindings),
                 'requested_at' => $r->requested_at,
-                'latest_document' => $r->latestDocument && $clientVisible($r->latestDocument) ? $this->docSerialize($r->latestDocument) : null,
+                'latest_document' => $r->latestDocument && in_array($r->latestDocument->id, $visibleIds, true) ? $this->docSerialize($r->latestDocument) : null,
             ]);
 
         $sharedByStaff = $clientDocuments->where('status', LeadDocument::STATUS_STAFF_SHARED)
@@ -2136,11 +2136,13 @@ class LeadDocumentController extends Controller
         $checklist = [];
         $vifItem = null;
         if ($lead->is_immigration_case) {
-            $grouped = app(\App\Services\Immigration\CaseChecklistService::class)->groupedByCategory($lead);
+            $definitions = collect($checklists->forCase($lead))->keyBy('key');
+            $grouped = $checklists->groupedByCategory($lead);
             foreach ($grouped as $category => $items) {
-                $items = array_map(function ($item) use ($visibleIds, $latestVisible) {
+                $items = array_map(function ($item) use ($visibleIds, $clientDocuments, $checklists, $definitions) {
                     if (($item['document_id'] ?? null) && ! in_array($item['document_id'], $visibleIds, true)) {
-                        $doc = $latestVisible->get($item['key']);
+                        $keys = $checklists->itemKeys($definitions->get($item['key'], $item));
+                        $doc = $clientDocuments->last(fn ($candidate) => in_array($candidate->checklist_key, $keys, true));
                         $item = array_replace($item, ['document_id' => $doc?->id, 'status' => $doc?->status ?? 'not_submitted',
                             'uploaded_at' => $doc?->created_at?->toIso8601String(), 'note' => $doc?->note]);
                     }

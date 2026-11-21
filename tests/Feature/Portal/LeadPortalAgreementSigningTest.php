@@ -372,24 +372,26 @@ class LeadPortalAgreementSigningTest extends TestCase
 
     public function test_documents_page_omits_draft_and_hidden_metadata_but_keeps_the_issued_control(): void
     {
-        [$lead, , $issued] = $this->fixture();
-        $issued->update(['checklist_key' => 'engage.written_agreement', 'original_name' => 'VISIBLE-ISSUED.pdf']);
-        $request = \App\Models\LeadDocumentRequest::create(['lead_id' => $lead->id, 'label' => 'Review request', 'requested_at' => now()]);
-        $draft = LeadDocument::create(['lead_id' => $lead->id, 'request_id' => $request->id, 'checklist_key' => 'engage.written_agreement',
-            'source' => LeadDocument::SOURCE_GENERATED, 'source_variant' => 'engagement:written_agreement', 'status' => LeadDocument::STATUS_SUBMITTED,
-            'file_path' => $issued->file_path, 'mime' => 'application/pdf', 'original_name' => 'UNSENT-DRAFT-SENTINEL.pdf', 'notes' => ['engagement_pack_id' => 'unsent-modern-pack']]);
-        $hidden = LeadDocument::create(['lead_id' => $lead->id, 'checklist_key' => 'synthetic.hidden', 'source' => LeadDocument::SOURCE_UPLOAD,
-            'status' => LeadDocument::STATUS_STAFF_SHARED, 'file_path' => $issued->file_path, 'original_name' => 'HIDDEN-SENTINEL.pdf']);
-        $lead->forceFill(['hidden_track_documents' => ['synthetic.hidden'], 'document_checklist' => [['key' => 'engage.written_agreement', 'label' => 'Agreement', 'category' => 'Team']]])->saveQuietly();
-        $response = $this->get('/portal/lead/documents')->assertOk();
-        $props = $response->inertiaProps();
-        $json = json_encode($props);
-        $this->assertStringContainsString('VISIBLE-ISSUED.pdf', $json);
-        $this->assertStringNotContainsString('UNSENT-DRAFT-SENTINEL.pdf', $json);
-        $this->assertStringNotContainsString('HIDDEN-SENTINEL.pdf', $json);
-        $this->assertNull($props['requests'][0]['latest_document']);
-        $this->assertSame([$issued->id], collect($props['checklistFiles']['engage.written_agreement'])->pluck('id')->all());
-        $this->assertSame($issued->id, $props['checklist']['Team'][0]['document_id']);
+        foreach (['engage.written_agreement', 'wa_legacy'] as $issuedKey) {
+            [$lead, , $issued] = $this->fixture();
+            $issued->update(['checklist_key' => $issuedKey, 'original_name' => 'VISIBLE-ISSUED.pdf']);
+            $request = \App\Models\LeadDocumentRequest::create(['lead_id' => $lead->id, 'label' => 'Review request', 'requested_at' => now()]);
+            $draft = LeadDocument::create(['lead_id' => $lead->id, 'request_id' => $request->id, 'checklist_key' => 'engage.written_agreement',
+                'source' => LeadDocument::SOURCE_GENERATED, 'source_variant' => 'engagement:written_agreement', 'status' => LeadDocument::STATUS_SUBMITTED,
+                'file_path' => $issued->file_path, 'mime' => 'application/pdf', 'original_name' => 'UNSENT-DRAFT-SENTINEL.pdf', 'notes' => ['engagement_pack_id' => 'unsent-modern-pack']]);
+            $hidden = LeadDocument::create(['lead_id' => $lead->id, 'checklist_key' => 'synthetic.hidden', 'source' => LeadDocument::SOURCE_UPLOAD,
+                'status' => LeadDocument::STATUS_STAFF_SHARED, 'file_path' => $issued->file_path, 'original_name' => 'HIDDEN-SENTINEL.pdf']);
+            $lead->forceFill(['hidden_track_documents' => ['synthetic.hidden'], 'document_checklist' => [['key' => 'engage.written_agreement', 'label' => 'Agreement', 'category' => 'Team', 'aliases' => ['wa_legacy']]]])->saveQuietly();
+            $response = $this->get('/portal/lead/documents')->assertOk();
+            $props = $response->inertiaProps();
+            $json = json_encode($props);
+            $this->assertStringContainsString('VISIBLE-ISSUED.pdf', $json);
+            $this->assertStringNotContainsString('UNSENT-DRAFT-SENTINEL.pdf', $json);
+            $this->assertStringNotContainsString('HIDDEN-SENTINEL.pdf', $json);
+            $this->assertNull($props['requests'][0]['latest_document']);
+            $this->assertSame([$issued->id], collect($props['checklistFiles'][$issuedKey])->pluck('id')->all());
+            $this->assertSame($issued->id, $props['checklist']['Team'][0]['document_id']);
+        }
     }
 
     public function test_media_drive_linked_education_agreement_download_returns_the_signed_pdf_and_preserves_the_asset(): void
