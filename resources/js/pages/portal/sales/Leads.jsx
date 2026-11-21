@@ -477,8 +477,11 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                             >
                                 All
                             </button>
-                            {/* Surface 6 most pipeline-critical filters; the rest are reachable via the per-row dropdown */}
-                            {["New Leads", "Contact Attempted", "Qualified", "Booked Consultation", "Consultancy Agreement", "Visa Process"].map((s) => (
+                            {/* Education does not use the agreement/visa quick-filter headings. Keep all saved stages available through existing controls. */}
+                            {(portal === "education"
+                                ? ["New Leads", "Contact Attempted", "Qualified", "Booked Consultation"]
+                                : ["New Leads", "Contact Attempted", "Qualified", "Booked Consultation", "Consultancy Agreement", "Visa Process"]
+                            ).map((s) => (
                                 <button
                                     key={s}
                                     type="button"
