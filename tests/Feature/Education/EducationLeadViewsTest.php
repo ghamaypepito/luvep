@@ -44,6 +44,7 @@ class EducationLeadViewsTest extends TestCase
 
         $row = collect($response->inertiaProps()['students'])->firstWhere('id', $student->id);
         $this->assertSame($display, $row['status']);
+        $this->assertSame($educationStage === null ? 'Declined Visa' : null, $row['education_stage_hint']);
         $this->assertSame($educationStage, $row['education_stage']);
         $this->assertSame('Decline Visa', $row['immigration_stage']);
         $this->assertSame($before, $student->fresh()->getRawOriginal());
@@ -61,6 +62,7 @@ class EducationLeadViewsTest extends TestCase
 
         $this->assertSame('New', collect($response->inertiaProps()['students'])->firstWhere('id', $student->id)['status']);
         $this->assertNull($student->fresh()->education_stage);
+        $this->assertNull(collect($response->inertiaProps()['students'])->firstWhere('id', $student->id)['education_stage_hint']);
     }
 
     public function test_affiliate_detail_supplies_authoritative_staff_updates_and_uses_the_education_profile(): void

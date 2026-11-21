@@ -90,12 +90,17 @@ const render = (Page, props) => act(async () => root.render(React.createElement(
     const Students = await load('resources/js/pages/portal/education/Students.jsx');
     const beforeRender = posts.length;
     await render(Students, { students: [
-        { id: 11, name: 'Recorded Decline', status: 'Declined Visa', education_stage: null, immigration_stage: 'Decline Visa', is_student: true },
+        { id: 11, name: 'Recorded Decline', status: 'Declined Visa', education_stage: null, education_stage_hint: 'Declined Visa', immigration_stage: 'Decline Visa', is_student: true },
         { id: 12, name: 'Explicit Education', status: 'Started Course', education_stage: 'Started Course', immigration_stage: 'Decline Visa', is_student: true },
+        { id: 13, name: 'Generic Pipeline', status: 'Proposal Sent', education_stage: null, immigration_stage: 'Visa Lodged', is_student: true },
     ] });
     const studentRow = name => [...document.querySelectorAll('tbody tr')].find(node => node.textContent.includes(name));
     assert.match(studentRow('Recorded Decline').textContent, /Declined Visa/);
     assert.match(studentRow('Explicit Education').textContent, /Started Course/);
+    assert.match(studentRow('Generic Pipeline').textContent, /Set stage/, 'Generic Sales status is not an assigned Education stage');
+    await click(button('Proposal Sent'));
+    assert.equal(studentRow('Generic Pipeline'), undefined, 'A colliding Sales enum is not counted by the Education stage filter');
+    await click(button('All'));
     await click(button('Declined Visa'));
     assert.ok(studentRow('Recorded Decline'), 'Displayed fallback is also discoverable through the status filter');
     assert.equal(studentRow('Explicit Education'), undefined);

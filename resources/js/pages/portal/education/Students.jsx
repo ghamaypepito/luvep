@@ -588,7 +588,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
             if (! departmentsOf(s).has(view)) return false;
             // Stage pill — matches against the tab's own stage column.
             if (stageFilter !== "All") {
-                const stage = s[tabConfig.field] || (tabConfig.field === "education_stage" ? s.status : null);
+                const stage = s[tabConfig.field] || (tabConfig.field === "education_stage" ? s.education_stage_hint : null);
                 if (stage !== stageFilter) return false;
             }
             return true;
@@ -948,6 +948,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                             heading={rc.label}
                                                             value={val}
                                                             fallbackLabel={rc.field === "education_stage" ? s.status : null}
+                                                            stageHint={rc.field === "education_stage" ? s.education_stage_hint : null}
                                                             open={openStageMenuId === s.id}
                                                             onToggle={() => setOpenStageMenuId(openStageMenuId === s.id ? null : s.id)}
                                                             onClose={() => setOpenStageMenuId(null)}
@@ -1853,7 +1854,7 @@ function stageDotHex(styler, stage) {
     return STAGE_DOT_HEX[match?.[1]] || "#9ca3af";
 }
 
-function StagePicker({ leadId, field, stages, styler, heading, value, fallbackLabel, open, onToggle, onClose }) {
+function StagePicker({ leadId, field, stages, styler, heading, value, fallbackLabel, stageHint, open, onToggle, onClose }) {
     const [saving, setSaving] = useState(false);
     // Where to position the popover. Computed from the trigger button's
     // bounding rect each time we open. Fixed positioning + react portal
@@ -1907,9 +1908,10 @@ function StagePicker({ leadId, field, stages, styler, heading, value, fallbackLa
         };
     }, [open, onClose]);
 
-    const label = value || fallbackLabel || "Set stage";
-    const chipClass = value || stages.includes(fallbackLabel)
-        ? styler(value || fallbackLabel)
+    const showFallback = ! value && fallbackLabel && ! stages.includes(fallbackLabel);
+    const label = value || stageHint || (showFallback ? fallbackLabel : "Set stage");
+    const chipClass = value || stageHint
+        ? styler(value || stageHint)
         : "bg-gray-100 text-gray-500 border-gray-200 border-dashed";
 
     const select = (stage) => {
@@ -1931,7 +1933,7 @@ function StagePicker({ leadId, field, stages, styler, heading, value, fallbackLa
             <button
                 ref={triggerRef}
                 type="button"
-                title={! value && fallbackLabel ? "Recorded status; Education stage has not been set." : undefined}
+                title={! value && stageHint ? "Recorded Immigration outcome; Education stage has not been set." : undefined}
                 disabled={saving}
                 onClick={onToggle}
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold border whitespace-nowrap uppercase hover:shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed ${chipClass}`}
