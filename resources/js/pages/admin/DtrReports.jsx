@@ -78,17 +78,20 @@ function RosterRow({ r, date }) {
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState(null);
+    const [baseline, setBaseline] = useState(null);
     const filled = (r.tasks || []).filter((t) => (t.task || "").trim() || (t.pending || "").trim());
 
     const startEdit = () => {
-        setForm({
+        const initial = {
             time_in: r.time_in || "",
             time_out: r.time_out || "",
             remarks: r.remarks || "",
             tasks: (r.tasks || []).length
                 ? (r.tasks || []).map((t) => ({ task: t.task || "", pending: t.pending || "", pending_done: !!t.pending_done }))
                 : [{ task: "", pending: "", pending_done: false }],
-        });
+        };
+        setForm(initial);
+        setBaseline({ ...initial, exists: r.entry_id != null, entry_id: r.entry_id ?? null });
         setEditing(true);
         setOpen(true);
     };
@@ -97,14 +100,16 @@ function RosterRow({ r, date }) {
     const removeTask = (i) => setForm((f) => ({ ...f, tasks: f.tasks.filter((_, j) => j !== i) }));
 
     const save = () => {
+        const fields = Object.keys(form).filter(key => !baseline.exists || JSON.stringify(form[key]) !== JSON.stringify(baseline[key]));
+        if (!fields.length) { setEditing(false); return; }
+        const changes = Object.fromEntries(fields.map(key => [key, key === "tasks"
+            ? form.tasks.filter(t => (t.task || "").trim() || (t.pending || "").trim()) : form[key] || null]));
         setSaving(true);
         router.post("/admin/dtr/entry", {
             user_id: r.user_id,
             work_date: date,
-            time_in: form.time_in || null,
-            time_out: form.time_out || null,
-            remarks: form.remarks || null,
-            tasks: form.tasks.filter((t) => (t.task || "").trim() || (t.pending || "").trim()),
+            expected_entry_id: baseline.entry_id,
+            ...changes,
         }, {
             preserveScroll: true,
             onSuccess: () => setEditing(false),

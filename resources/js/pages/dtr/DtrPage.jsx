@@ -911,10 +911,8 @@ function DayEditor({ setting, entry, date, isToday = false, carried = [], openSh
     };
     const clockIn = () => { const t = stampNow(); setTimeIn(t); saveDay({ time_in: t }); };
     const clockOut = () => { const t = stampNow(); setTimeOut(t); saveDay({ time_out: t }); };
-    // Closes the most recent open shift server-side (handles the overnight case:
-    // clocked in yesterday, never clocked out). The backend computes the
-    // cross-midnight net; the whole shift stays on the day it started.
-    const closeOpenShift = () => router.post("/dtr/time-out", {}, { preserveScroll: true });
+    // Bind the displayed shift so another open day or a retry cannot change the target.
+    const closeOpenShift = () => router.post("/dtr/time-out", { entry_id: openShift.id }, { preserveScroll: true });
 
     // Autosave — whenever anything persistable changes (a planned/completed/
     // carried task, its text, remarks, or clock times), debounce a save so

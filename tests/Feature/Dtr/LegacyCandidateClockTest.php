@@ -170,4 +170,85 @@ class LegacyCandidateClockTest extends TestCase
         $entry = DtrEntry::where('user_id', $employee->user_id)->sole();
         $this->assertSame('18:17', $entry->time_out);
     }
+
+    public function test_overnight_target_closes_only_the_displayed_entry_even_on_retry(): void
+    {
+        $employee = $this->candidate();
+        $yesterday = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00']);
+        $today = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-21', 'time_in' => '06:00']);
+        $this->actingAs($employee->user)->post('/dtr/time-out', ['entry_id' => $yesterday->id])->assertRedirect();
+        $this->assertSame('08:17', $yesterday->fresh()->time_out);
+        $this->assertNull($today->fresh()->time_out);
+        Carbon::setTestNow(Carbon::parse('2026-11-21 00:19:00', 'UTC'));
+        $this->post('/dtr/time-out', ['entry_id' => $yesterday->id])->assertRedirect();
+        $this->assertSame('08:17', $yesterday->fresh()->time_out);
+        $this->assertNull($today->fresh()->time_out);
+        $this->assertSame(2, DtrEntry::count());
+    }
+
+    public function test_ambiguous_untargeted_legacy_clock_out_requires_refresh(): void
+    {
+        $employee = $this->candidate();
+        foreach (['2026-11-20', '2026-11-21'] as $date) {
+            DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => $date, 'time_in' => '05:00']);
+        }
+        $this->actingAs($employee->user)->post('/dtr/time-out')->assertStatus(409);
+        $this->assertSame(2, DtrEntry::whereNull('time_out')->count());
+    }
+
+    public function test_targeted_legacy_request_cannot_close_an_hr_shift_after_activation(): void
+    {
+        $employee = $this->candidate();
+        $legacy = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00']);
+        $employee->update(['status' => 'active']);
+        $this->actingAs($employee->user)->post('/dtr/time-in')->assertRedirect();
+        $shift = HrShift::sole();
+        $this->post('/dtr/time-out', ['entry_id' => $legacy->id])->assertForbidden();
+        $this->assertNull($shift->fresh()->ended_at);
+        $this->assertNull($legacy->fresh()->time_out);
+        $this->assertSame(1, $employee->fresh()->clock_version);
+    }
+
+    public function test_named_target_requires_own_eligible_legacy_entry(): void
+    {
+        $employee = $this->candidate();
+        $foreign = DtrEntry::create(['user_id' => User::factory()->create()->id, 'work_date' => '2026-11-20', 'time_in' => '05:00']);
+        $this->actingAs($employee->user)->postJson('/dtr/time-out', ['entry_id' => $foreign->id])->assertNotFound();
+        foreach ([null, '', 0, 'invalid'] as $target) {
+            $this->postJson('/dtr/time-out', ['entry_id' => $target])->assertUnprocessable();
+        }
+        $this->assertNull($foreign->fresh()->time_out);
+    }
+
+    public function test_partial_time_correction_preserves_blank_rows_metadata_and_fresh_remarks(): void
+    {
+        $employee = $this->candidate();
+        $tasks = [['task' => '', 'pending' => '', 'tid' => 'blank-preserved'], ['task' => 'Fresh saved task', 'status' => 'todo', 'tid' => 'stable-id', 'kind' => 'side', 'reference' => 'PRIVATE_REFERENCE']];
+        $entry = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00', 'tasks' => $tasks, 'remarks' => 'Fresh saved remarks']);
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $this->actingAs($admin)->post('/admin/dtr/entry', ['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_out' => '14:00'])->assertRedirect();
+        $entry->refresh();
+        $this->assertSame('14:00', $entry->time_out);
+        $this->assertSame('05:00', $entry->time_in);
+        $this->assertSame($tasks, $entry->tasks);
+        $this->assertSame('Fresh saved remarks', $entry->remarks);
+        $this->assertSame(['time_out'], ActivityLog::where('action', 'dtr.time_corrected')->sole()->properties['fields']);
+        $this->post('/admin/dtr/entry', ['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'remarks' => null])->assertRedirect();
+        $this->assertNull($entry->fresh()->remarks);
+        $this->assertSame($tasks, $entry->tasks);
+        $this->assertSame('14:00', $entry->time_out);
+    }
+
+    public function test_editor_expected_record_cannot_overwrite_a_replacement_or_recreate_a_deleted_entry(): void
+    {
+        $employee = $this->candidate();
+        $entry = DtrEntry::create(['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'time_in' => '05:00']);
+        $admin = User::factory()->create(['role' => 'super_admin']);
+        $payload = ['user_id' => $employee->user_id, 'work_date' => '2026-11-20', 'expected_entry_id' => $entry->id, 'time_out' => '14:00'];
+        $this->actingAs($admin)->postJson('/admin/dtr/entry', [...$payload, 'expected_entry_id' => null])->assertStatus(409);
+        $this->assertNull($entry->fresh()->time_out);
+        $entry->delete();
+        $this->postJson('/admin/dtr/entry', $payload)->assertStatus(409);
+        $this->assertSame(0, DtrEntry::count());
+    }
 }
