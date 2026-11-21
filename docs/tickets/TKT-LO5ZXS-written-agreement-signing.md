@@ -1,0 +1,9 @@
+# TKT-LO5ZXS — written agreement signing in the client portal
+
+The authenticated client portal displayed engagement documents from the shared tracker payload. It rewrote view/download links but left live-preview and signature-submission URLs on the public tracker. Immigration cases are deliberately excluded from that public surface, so both requests returned 404 even though the client was signed in and could see the document.
+
+The portal now rewrites all document actions and supplies authenticated preview/sign routes. Those routes resolve the caller's linked lead, check document ownership, sharing, type and hidden-document rules, and reuse the existing rendering/signing implementation. Public immigration tracker access remains blocked. Staff preview remains read-only. The portal requires the agreement acknowledgment, serializes signing with the existing case engagement lock and refuses replacement of an already signed agreement.
+
+Rendering uses the issued payload snapshot when present, retaining original case/adviser/fee details rather than substituting later changes. A rendering failure leaves the issued document and record unchanged and creates no signature file. Existing education agreement checksum protection and the standalone engagement signing surface remain in place.
+
+Regression proof follows the actual portal payload URLs through preview and submission with synthetic records, checks signed-state persistence, renders/parses a real PDF, and verifies cross-client/hidden/non-agreement/guest/preview/retry protections. Independent interaction testing, different-reviewer approval, exact-revision CI and deployed verification are required before closing the ticket. Never sign a real client's agreement to test this fix.

@@ -906,6 +906,7 @@ class LeadTrackingController extends Controller
 
         $pdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
         $requestBindings = $pdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
+
         return $lead->documents()
             ->orderByDesc('created_at')
             ->get()
@@ -1064,14 +1065,18 @@ class LeadTrackingController extends Controller
         $lead = $this->resolveLead($code);
         abort_unless($lead, 404);
 
-        $doc = LeadDocument::where('id', $docId)
-            ->where('lead_id', $lead->id)
-            ->firstOrFail();
+        return $this->previewDocumentForLead($request, $generator, $lead, $docId);
+    }
+
+    /** The caller supplies a lead resolved through its own access boundary. */
+    public function previewDocumentForLead(Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, Lead $lead, $docId)
+    {
+        $doc = LeadDocument::where('id', $docId)->where('lead_id', $lead->id)->firstOrFail();
 
         if ($doc->isEducationAgreement()) {
             $request->query->set('inline', '1');
 
-            return $this->downloadDoc($request, $code, $docId);
+            return $this->downloadDoc($request, $lead->tracking_code, $docId);
         }
 
         // Any stored client signature — passed to the generator so the
@@ -1088,7 +1093,8 @@ class LeadTrackingController extends Controller
         // straight from the Blade view (via previewDocument-style path).
         if (str_starts_with((string) $doc->source_variant, 'engagement:')) {
             $type = str_replace('engagement:', '', $doc->source_variant);
-            $overrides = ['signer_id' => $doc->engagement_signer_id];
+            $overrides = ['signer_id' => $doc->engagement_signer_id,
+                'payload_snapshot' => $doc->notes['engagement_payload'] ?? []];
             if ($clientSig) {
                 $overrides['client_signature'] = $clientSig;
             }
@@ -1111,9 +1117,13 @@ class LeadTrackingController extends Controller
         $lead = $this->resolveLead($code);
         abort_unless($lead, 404);
 
-        $doc = LeadDocument::where('id', $docId)
-            ->where('lead_id', $lead->id)
-            ->firstOrFail();
+        return $this->signDocumentForLead($request, $generator, $lead, $docId);
+    }
+
+    /** The caller supplies a lead resolved through its own access boundary. */
+    public function signDocumentForLead(Request $request, \App\Services\Immigration\EngagementDocumentGenerator $generator, Lead $lead, $docId)
+    {
+        $doc = LeadDocument::where('id', $docId)->where('lead_id', $lead->id)->firstOrFail();
 
         if ($doc->isEducationAgreement()) {
             abort_if(in_array($doc->checklist_key, app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead), true), 404);
@@ -1138,7 +1148,7 @@ class LeadTrackingController extends Controller
 
             try {
                 app(IssuedEducationAgreement::class)->sign($lead, $doc, $data['issued_agreement_hash'], $binary, $ext, $data['signer_name'] ?? null, $request->ip());
-            } catch (\Illuminate\Validation\ValidationException | \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
+            } catch (\Illuminate\Validation\ValidationException|\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
                 throw $error;
             } catch (\Throwable $error) {
                 report($error);
@@ -1150,6 +1160,7 @@ class LeadTrackingController extends Controller
         }
 
         abort_unless($doc->source_variant === 'engagement:written_agreement', 403);
+        abort_if($doc->client_signed_at || $doc->client_signature_path, 409, 'This agreement has already been signed.');
 
         $request->validate([
             'signature_image' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
@@ -1162,20 +1173,18 @@ class LeadTrackingController extends Controller
             [$binary, $ext] = $this->readSignatureUpload($request);
             abort_if($binary === null, 422, 'No signature provided.');
 
-            // Store the applicant signature privately.
-            if ($doc->client_signature_path) {
-                Storage::disk('local')->delete($doc->client_signature_path);
-            }
             $sigPath = "signatures/client-doc-{$doc->id}-".Str::random(8).".{$ext}";
-            Storage::disk('local')->put($sigPath, $binary);
 
             $clientSig = 'data:image/'.($ext === 'jpeg' ? 'jpeg' : 'png').';base64,'.base64_encode($binary);
 
             $pdf = $generator->pdfBinary($lead, 'written_agreement', [
                 'signer_id' => $doc->engagement_signer_id,
+                'payload_snapshot' => $doc->notes['engagement_payload'] ?? [],
+                'client_signed_date' => now()->format('d/m/Y'),
                 'client_signature' => $clientSig,
             ]);
 
+            Storage::disk('local')->put($sigPath, $binary);
             Storage::disk('local')->put($doc->file_path, $pdf);
 
             $doc->forceFill([
