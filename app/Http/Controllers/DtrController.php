@@ -1272,56 +1272,55 @@ class DtrController extends Controller
     /** One-tap clock in — stamps the current time (in the user's DTR timezone). */
     public function timeIn()
     {
-        if (config('hr.enabled') && app(\App\Services\Hr\HrAccess::class)->requiresHrDtr(auth()->id())) {
-            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
-        }
-        if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
-            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_in', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
-
-            return back()->with('success', 'Attendance updated.');
-        }
-        $setting = $this->requireSetting();
-        $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
-
-        $entry = DtrEntry::whereDate('work_date', $now->toDateString())->firstOrNew(['user_id' => auth()->id()], ['work_date' => $now->toDateString()]);
-        if (! $entry->time_in) {
-            $entry->time_in = $now->format('H:i');
-            $entry->save();
-        }
-
-        return back()->with('success', 'Timed in at '.$now->format('g:i A'));
+        return $this->clock('clock_in');
     }
 
     /** One-tap clock out — closes the latest open shift (handles cross-midnight). */
     public function timeOut()
     {
-        if (config('hr.enabled') && app(\App\Services\Hr\HrAccess::class)->requiresHrDtr(auth()->id())) {
-            abort_unless(app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()), 403);
-        }
+        return $this->clock('clock_out');
+    }
+
+    private function clock(string $action)
+    {
         if (config('hr.enabled') && ($employee = app(\App\Services\Hr\HrAccess::class)->employee(auth()->user()))) {
-            app(\App\Services\Hr\ClockService::class)->transition($employee, 'clock_out', (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
+            // HR may commit a work-limit closure before rejecting a subsequent action.
+            app(\App\Services\Hr\ClockService::class)->transition($employee, $action, (string) \Illuminate\Support\Str::uuid(), (int) $employee->clock_version);
 
             return back()->with('success', 'Attendance updated.');
         }
-        $setting = $this->requireSetting();
-        $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
-        $entry = DtrEntry::where('user_id', auth()->id())
-            ->whereNotNull('time_in')->whereNull('time_out')
-            ->where('time_source', '!=', 'live')
-            ->whereDate('work_date', '>=', $now->copy()->subDay()->toDateString())
-            ->whereDate('work_date', '<=', $now->toDateString())
-            ->orderByDesc('work_date')
-            ->lockForUpdate()->first();
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($action) {
+            if (config('hr.enabled')) {
+                \App\Models\HrEmployee::where('user_id', auth()->id())->lockForUpdate()->first();
+                abort_if(app(\App\Services\Hr\HrAccess::class)->requiresHrDtr(auth()->id()), 403);
+            }
+            $setting = $this->requireSetting();
+            $now = now($setting->timezone ?: config('app.timezone', 'UTC'));
 
-        if (! $entry) {
-            return back()->with('success', 'No open shift to clock out.');
-        }
+            if ($action === 'clock_in') {
+                $entry = DtrEntry::whereDate('work_date', $now->toDateString())->lockForUpdate()
+                    ->firstOrNew(['user_id' => auth()->id()], ['work_date' => $now->toDateString()]);
+                if ($entry->time_in) {
+                    return back()->with('success', 'Already clocked in for this day.');
+                }
+                $entry->time_in = $now->format('H:i');
+            } else {
+                $entry = DtrEntry::where('user_id', auth()->id())
+                    ->whereNotNull('time_in')->whereNull('time_out')
+                    ->where('time_source', '!=', 'live')
+                    ->whereDate('work_date', '>=', $now->copy()->subDay()->toDateString())
+                    ->whereDate('work_date', '<=', $now->toDateString())
+                    ->orderByDesc('work_date')->lockForUpdate()->first();
+                if (! $entry) {
+                    return back()->with('success', 'No open shift to clock out.');
+                }
+                $entry->time_out = $now->format('H:i');
+            }
+            $entry->save();
 
-        $entry->time_out = $now->format('H:i');
-        $entry->save();
-
-        return back()->with('success', 'Timed out at '.$now->format('g:i A'));
+            return back()->with('success', ($action === 'clock_in' ? 'Timed in at ' : 'Timed out at ').$now->format('g:i A'));
+        });
     }
 
     /** Derive Net Hrs / Variance / Attendance + task counts for one entry. */

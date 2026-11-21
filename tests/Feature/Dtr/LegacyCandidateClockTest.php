@@ -5,6 +5,7 @@ namespace Tests\Feature\Dtr;
 use App\Models\ActivityLog;
 use App\Models\DtrEntry;
 use App\Models\DtrSetting;
+use App\Models\HrAuditEvent;
 use App\Models\HrEmployee;
 use App\Models\HrShift;
 use App\Models\User;
@@ -152,5 +153,21 @@ class LegacyCandidateClockTest extends TestCase
         $this->assertNull($entry->fresh()->time_out);
         $this->assertSame($beforeCount, ActivityLog::count());
         $this->assertSame(0, ActivityLog::where('action', 'dtr.time_corrected')->count());
+    }
+
+    public function test_rejected_late_hr_clock_in_keeps_its_automatic_closure_committed(): void
+    {
+        $employee = $this->candidate();
+        $employee->update(['status' => 'active']);
+        $this->actingAs($employee->user)->post('/dtr/time-in')->assertRedirect();
+        $shift = HrShift::sole();
+        Carbon::setTestNow(Carbon::parse('2026-11-21 11:17:00', 'UTC'));
+        $this->post('/dtr/time-in')->assertStatus(409);
+        $this->assertSame('2026-11-21 10:17:00', $shift->fresh()->ended_at?->format('Y-m-d H:i:s'));
+        $this->assertSame(1, HrAuditEvent::where('action', 'clock.auto_clock_out')->count());
+        $this->assertSame(2, $employee->fresh()->clock_version);
+        $this->assertSame(1, HrShift::count());
+        $entry = DtrEntry::where('user_id', $employee->user_id)->sole();
+        $this->assertSame('18:17', $entry->time_out);
     }
 }

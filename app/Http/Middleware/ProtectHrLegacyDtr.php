@@ -13,7 +13,7 @@ class ProtectHrLegacyDtr
 {
     public function handle(Request $request, Closure $next)
     {
-        if ($request->user() && in_array($request->route()?->getName(), ['dtr.timein', 'dtr.timeout', 'dtr.entry', 'dtr.pending.toggle', 'dtr.setup', 'admin.dtr.entry.update', 'admin.dtr.entry.delete'], true)) {
+        if ($request->user() && in_array($request->route()?->getName(), ['dtr.entry', 'dtr.pending.toggle', 'dtr.setup', 'admin.dtr.entry.update', 'admin.dtr.entry.delete'], true)) {
             $target = in_array($request->route()?->getName(), ['admin.dtr.entry.update', 'admin.dtr.entry.delete', 'dtr.setup'], true) ? (int) ($request->input('user_id') ?? $request->user()->id) : $request->user()->id;
 
             try {
@@ -21,9 +21,7 @@ class ProtectHrLegacyDtr
                     if (config('hr.enabled')) {
                         // Serialize legacy writes with HR activation and live clock transitions.
                         HrEmployee::where('user_id', $target)->lockForUpdate()->first();
-                        if (! $request->routeIs('dtr.timein', 'dtr.timeout')) {
-                            abort_if(app(HrAccess::class)->requiresHrDtr($target), 409, 'Use Time & Attendance in the HR portal to update or request a correction to this record.');
-                        }
+                        abort_if(app(HrAccess::class)->requiresHrDtr($target), 409, 'Use Time & Attendance in the HR portal to update or request a correction to this record.');
                     }
 
                     $response = $next($request);
