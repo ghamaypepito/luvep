@@ -2,11 +2,25 @@
 
 namespace App\Services\Hr;
 
+use App\Models\DtrEntry;
 use App\Models\HrEmployee;
+use App\Models\HrShift;
 use App\Models\User;
 
 class HrAccess
 {
+    /** Draft enrollment alone must not take over an existing legacy DTR. */
+    public function requiresHrDtr(int $userId): bool
+    {
+        $employee = HrEmployee::with('user')->where('user_id', $userId)->first();
+        if ($employee && ($employee->status !== 'candidate' || ! $employee->user || ! $this->internal($employee->user)
+            || HrShift::where('hr_employee_id', $employee->id)->exists())) {
+            return true;
+        }
+
+        return DtrEntry::where('user_id', $userId)->where('time_source', 'live')->exists();
+    }
+
     public function internal(User $user): bool
     {
         if (! $user->is_active || $user->trashed() || ! in_array($user->role, config('hr.internal_roles'), true)) {
