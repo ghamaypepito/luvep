@@ -95,6 +95,7 @@ jobs:
           node tests/Frontend/student-referral-name.cjs
           node tests/Frontend/student-program-intakes.cjs
           node tests/Frontend/education-dispositions.cjs
+          node tests/Frontend/education-leads.cjs
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
           node tests/Frontend/nbi-client-pdf.cjs

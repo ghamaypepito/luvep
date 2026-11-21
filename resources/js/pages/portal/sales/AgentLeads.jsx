@@ -24,7 +24,7 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
     const [openStageId, setOpenStageId] = useState(null);
     const [savingId, setSavingId] = useState(null);
     const [expandedId, setExpandedId] = useState(null);
-    const [rows, setRows] = useState(leads);
+    const rows = leads;
     const toggleExpand = (id) => setExpandedId(expandedId === id ? null : id);
 
     const changeStage = (lead, stage) => {
@@ -32,7 +32,6 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
         router.post(`${portalBase}/leads/${lead.id}`, { status: stage }, {
             preserveScroll: true,
             preserveState: true,
-            onSuccess: () => setRows((prev) => prev.map((r) => (r.id === lead.id ? { ...r, status: stage, stage } : r))),
             onFinish: () => setSavingId(null),
         });
         setOpenStageId(null);
@@ -139,13 +138,14 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                 <th className="px-3 py-3">Contact</th>
                                 <th className="px-3 py-3">Location</th>
                                 <th className="px-3 py-3">Note</th>
+                                <th className="px-3 py-3">Updated</th>
                                 <th className="px-3 py-3">Added</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                                    <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                                         <Users size={26} className="mx-auto mb-2 text-gray-300" />
                                         <p className="text-sm font-medium">No leads yet</p>
                                         <p className="text-xs text-gray-400 mt-1">
@@ -182,7 +182,7 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                                         {initials(r.name)}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <div className="font-semibold text-gray-900 text-xs truncate">{r.name}</div>
+                                                        <Link href={`${portalBase}/leads/${r.id}`} className="font-semibold text-gray-900 text-xs truncate hover:text-blue-600 focus-visible:underline">{r.name}</Link>
                                                         {r.lead_id && (
                                                             <div className="text-[10px] text-gray-400 font-mono truncate">{r.lead_id}</div>
                                                         )}
@@ -248,6 +248,15 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                                 )}
                                             </td>
 
+                                            <td className="px-3 py-2.5 whitespace-nowrap">
+                                                <div className="text-gray-600">
+                                                    {fmtDateShort(r.updated_at)}
+                                                    <span className="text-gray-400"> · {fmtTime(r.updated_at)}</span>
+                                                </div>
+                                                {r.updated_by && <div className="text-[10px] text-gray-400">{r.updated_by}</div>}
+                                                {r.updated_desc && <div className="text-[10px] text-gray-500 truncate max-w-[170px]" title={r.updated_desc}>{r.updated_desc}</div>}
+                                            </td>
+
                                             {/* ADDED */}
                                             <td className="px-3 py-2.5 whitespace-nowrap">
                                                 <div className="text-gray-600">{fmtDateShort(r.created_at)}</div>
@@ -257,7 +266,7 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
 
                                         {isExpanded && (
                                             <tr className="bg-blue-50/20 border-t border-blue-100/60">
-                                                <td colSpan={7} className="px-6 py-4">
+                                                <td colSpan={8} className="px-6 py-4">
                                                     <LeadDashboardPanel lead={r} portalBase={portalBase} />
                                                 </td>
                                             </tr>
