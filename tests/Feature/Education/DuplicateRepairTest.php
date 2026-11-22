@@ -101,6 +101,28 @@ class DuplicateRepairTest extends TestCase
         $this->assertSame(0, LeadNote::count());
     }
 
+    public function test_portal_account_reassignment_invalidates_preview(): void
+    {
+        $digest = $this->digest();
+        User::where('lead_id', 512)->update(['lead_id' => null]);
+        User::factory()->create(['role' => 'lead', 'lead_id' => 512]);
+        $this->assertSame(1, $this->apply($digest));
+        $this->assertStringContainsString('Dry-run digest changed', Artisan::output());
+        $this->assertNotNull(Lead::find(402));
+        $this->assertSame(1, Lead::find(402)->documents()->count());
+    }
+
+    public function test_multiple_or_non_client_portal_owners_prevent_preview(): void
+    {
+        $extra = User::factory()->create(['role' => 'lead', 'lead_id' => 512]);
+        $this->assertSame(1, Artisan::call('education:repair-duplicate-ntujat'));
+        $this->assertStringContainsString('Portal account ownership changed', Artisan::output());
+        $extra->delete();
+        User::where('lead_id', 512)->update(['role' => 'education']);
+        $this->assertSame(1, Artisan::call('education:repair-duplicate-ntujat'));
+        $this->assertNotNull(Lead::find(402));
+    }
+
     public function test_nonmatching_offer_prevents_repair(): void
     {
         Storage::disk('local')->put('lead-documents/402/offer.pdf', 'different offer');

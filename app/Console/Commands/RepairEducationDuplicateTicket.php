@@ -40,7 +40,12 @@ class RepairEducationDuplicateTicket extends Command
                 $this->require($source->education_stage === 'Started Course' && $target->education_stage === null, 'Education stages changed.');
                 $this->require($target->is_student && $target->is_immigration_case && $target->immigration_stage === 'Approved Visa', 'Survivor membership changed.');
                 $this->require(! $source->dob && ! $source->passport_number && $target->dob && $target->passport_number, 'Identity fields changed.');
-                $this->require($target->portalUser()->exists() && ! $source->portalUser()->exists(), 'Portal account ownership changed.');
+                $owners = User::whereIn('lead_id', [self::SOURCE, self::TARGET])->orderBy('id')->lockForUpdate()
+                    ->get(['id', 'lead_id', 'role', 'is_active']);
+                $targetOwners = $owners->where('lead_id', self::TARGET);
+                $this->require($owners->where('lead_id', self::SOURCE)->isEmpty()
+                    && $targetOwners->count() === 1 && $targetOwners->sole()->role === 'lead'
+                    && $targetOwners->sole()->is_active, 'Portal account ownership changed.');
 
                 // Reject newly discovered source relationships rather than silently
                 // abandoning bookings, financials, consent or other client records.
@@ -73,6 +78,7 @@ class RepairEducationDuplicateTicket extends Command
                 // Keep the original study plan, findings and audit views on the
                 // archived source. The current identical plan stays on the survivor.
                 $snapshot = ['ticket' => 'TKT-NTUJAT', 'source' => $source->getAttributes(), 'target' => $target->getAttributes(),
+                    'portal_accounts' => $owners->map->getAttributes()->all(),
                     'relations' => $relations, 'target_documents' => $targetDocuments->map->getAttributes()->all(),
                     'target_plans' => $targetPlans->map->getAttributes()->all(), 'matching_offer_sha256' => $digest];
                 $json = json_encode($snapshot, JSON_THROW_ON_ERROR);
