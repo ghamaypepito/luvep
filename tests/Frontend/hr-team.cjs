@@ -101,7 +101,11 @@ const button = name => [...document.querySelectorAll('button')].find(node => nod
     await act(async () => root.render(React.createElement(Team, { members: finished, asOf: '2026-11-18T03:05:00Z' })));
     assert.equal(timer('Alex Active work time'), undefined);
     assert.equal(document.querySelector('[role="alert"]'), null);
-    await act(async () => root.render(React.createElement(Team, { members: [{ ...members[0], working_seconds: 90000 }], asOf: '2026-11-18T03:06:00Z' })));
+    await act(async () => root.render(React.createElement(Team, { members: [{ ...members[0], working_seconds: 35999, max_working_seconds: 36000 }], asOf: '2026-11-18T03:06:00Z' })));
+    advance(5000);
+    await act(async () => tick());
+    assert.equal(timer('Alex Active work time'), '10:00:00', 'New capped shifts cannot display more than ten hours between status refreshes');
+    await act(async () => root.render(React.createElement(Team, { members: [{ ...members[0], working_seconds: 90000 }], asOf: '2026-11-18T03:07:00Z' })));
     assert.equal(timer('Alex Active work time'), '25:00:00', 'Duration must not wrap at midnight');
     await act(async () => root.unmount());
     assert.equal(timers.size, 0, 'Polling and live ticks are cleaned up on navigation');

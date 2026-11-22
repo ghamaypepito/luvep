@@ -439,6 +439,13 @@ export default function QuickRegisterPage({ referral = null, visa_types = [] }) 
                         </div>
                     ) : (
                         <form onSubmit={submit} className="space-y-9">
+                            {Object.keys(errors).length > 0 && (
+                                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                                    <p className="font-semibold">Please check your registration details.</p>
+                                    <ul className="mt-2 list-disc pl-5">{Object.entries(errors).map(([key, message]) => <li key={key}>{message}</li>)}</ul>
+                                </div>
+                            )}
+
 
                             {/* Referring-agent banner — only when the URL
                                 carried ?ref=CODE that resolves to an

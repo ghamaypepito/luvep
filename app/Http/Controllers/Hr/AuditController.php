@@ -31,7 +31,7 @@ class AuditController extends Controller
             $e = HrEmployee::findOrFail($f['employee_id']);
             $q->where(fn ($q) => $q->where('metadata->employee_id', $e->id)->orWhere(fn ($q) => $q->where('subject_type', $e->getMorphClass())->where('subject_id', $e->id))->orWhere(fn ($q) => $q->where('subject_type', (new User)->getMorphClass())->where('subject_id', $e->user_id)));
         }
-        $events = $q->latest('id')->limit(200)->get()->map(fn ($e) => ['id' => $e->id, 'action' => $e->action, 'actor' => User::find($e->actor_id)?->name ?? 'Former account', 'subject' => class_basename($e->subject_type).' #'.$e->subject_id, 'metadata' => array_intersect_key($e->metadata ?? [], array_flip(['fields', 'version', 'employee_id', 'previous_status', 'status', 'grants', 'previous_grants'])), 'created_at' => $e->created_at]);
+        $events = $q->latest('id')->limit(200)->get()->map(fn ($e) => ['id' => $e->id, 'action' => $e->action, 'actor' => $e->actor_id === null && $e->action === 'clock.auto_clock_out' ? 'System' : (User::find($e->actor_id)?->name ?? 'Former account'), 'subject' => class_basename($e->subject_type).' #'.$e->subject_id, 'metadata' => array_intersect_key($e->metadata ?? [], array_flip(['fields', 'version', 'employee_id', 'previous_status', 'status', 'grants', 'previous_grants', 'ended_at', 'observed_at'])), 'created_at' => $e->created_at]);
         $employees = HrEmployee::with('user')->get()->map(fn ($e) => ['id' => $e->id, 'name' => $e->user?->name]);
         $actions = HrAuditEvent::distinct()->orderBy('action')->pluck('action');
         $failures = HrNotificationDelivery::whereNull('sent_at')->where('attempts', '>=', 5)->latest('id')->limit(50)->get(['id', 'event_id', 'user_id', 'channel', 'attempts', 'updated_at']);

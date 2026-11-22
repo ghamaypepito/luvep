@@ -2473,6 +2473,8 @@ Route::middleware(['auth'])->group(function () {
             // New sidebar sections — most are placeholders while the full
             // workflow ships incrementally.
             Route::get('/tracker', [App\Http\Controllers\LeadPortalController::class, 'tracker'])->name('tracker');
+            Route::get('/documents/{docId}/preview', [App\Http\Controllers\LeadPortalController::class, 'previewAgreement'])->whereNumber('docId')->name('documents.preview');
+            Route::post('/documents/{docId}/sign', [App\Http\Controllers\LeadPortalController::class, 'signAgreement'])->whereNumber('docId')->name('documents.sign');
             // Requirements = the tracker's checklist view (sidebar item).
             Route::get('/requirements', [App\Http\Controllers\LeadPortalController::class, 'requirements'])->name('requirements');
             Route::get('/journey', [App\Http\Controllers\LeadPortalController::class, 'journey'])->name('journey');

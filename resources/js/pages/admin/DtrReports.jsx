@@ -78,17 +78,20 @@ function RosterRow({ r, date }) {
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState(null);
+    const [baseline, setBaseline] = useState(null);
     const filled = (r.tasks || []).filter((t) => (t.task || "").trim() || (t.pending || "").trim());
 
     const startEdit = () => {
-        setForm({
+        const initial = {
             time_in: r.time_in || "",
             time_out: r.time_out || "",
             remarks: r.remarks || "",
             tasks: (r.tasks || []).length
                 ? (r.tasks || []).map((t) => ({ task: t.task || "", pending: t.pending || "", pending_done: !!t.pending_done }))
                 : [{ task: "", pending: "", pending_done: false }],
-        });
+        };
+        setForm(initial);
+        setBaseline({ ...initial, exists: r.entry_id != null, entry_id: r.entry_id ?? null });
         setEditing(true);
         setOpen(true);
     };
@@ -97,14 +100,16 @@ function RosterRow({ r, date }) {
     const removeTask = (i) => setForm((f) => ({ ...f, tasks: f.tasks.filter((_, j) => j !== i) }));
 
     const save = () => {
+        const fields = Object.keys(form).filter(key => !baseline.exists || JSON.stringify(form[key]) !== JSON.stringify(baseline[key]));
+        if (!fields.length) { setEditing(false); return; }
+        const changes = Object.fromEntries(fields.map(key => [key, key === "tasks"
+            ? form.tasks.filter(t => (t.task || "").trim() || (t.pending || "").trim()) : form[key] || null]));
         setSaving(true);
         router.post("/admin/dtr/entry", {
             user_id: r.user_id,
             work_date: date,
-            time_in: form.time_in || null,
-            time_out: form.time_out || null,
-            remarks: form.remarks || null,
-            tasks: form.tasks.filter((t) => (t.task || "").trim() || (t.pending || "").trim()),
+            expected_entry_id: baseline.entry_id,
+            ...changes,
         }, {
             preserveScroll: true,
             onSuccess: () => setEditing(false),
@@ -493,7 +498,7 @@ export default function DtrReports({ date = "", today = "", staffCount = 0, dayC
                         <tbody className="divide-y divide-gray-100">
                             {roster.length === 0 ? (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">No staff have a DTR set up yet.</td></tr>
-                            ) : roster.map((r) => <RosterRow key={r.user_id} r={r} date={date} />)}
+                            ) : roster.map((r) => <RosterRow key={`${date}:${r.user_id}`} r={r} date={date} />)}
                         </tbody>
                     </table>
                 </div>

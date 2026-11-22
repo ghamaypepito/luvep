@@ -66,10 +66,12 @@ jobs:
           node tests/Frontend/engagement-service-gst.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
+          node tests/Frontend/legacy-dtr-clock-correction.cjs
           node tests/Frontend/hr-work-insights.cjs
           node tests/Frontend/hr-report-changes.cjs
           node tests/Frontend/hr-dtr-calendar.cjs
           node tests/Frontend/hr-team.cjs
+          node tests/Frontend/hr-clock-maintenance.cjs
           node tests/Frontend/hr-my-info.cjs
           node tests/Frontend/hr-navigation.cjs
           node tests/Frontend/hr-overview.cjs
@@ -86,12 +88,15 @@ jobs:
           node tests/Frontend/creative-request-actions.cjs
           node tests/Frontend/creative-request-popup.cjs
           node tests/Frontend/media-drive.cjs
+          node tests/Frontend/media-workspace.cjs
           node tests/Frontend/education-note-activity.cjs
           node tests/Frontend/education-report.cjs
           node tests/Frontend/education-weekly-notes.cjs
           node tests/Frontend/student-referral-name.cjs
           node tests/Frontend/student-program-intakes.cjs
           node tests/Frontend/education-dispositions.cjs
+          node tests/Frontend/education-leads.cjs
+          node tests/Frontend/education-intake-recovery.cjs
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
           node tests/Frontend/nbi-client-pdf.cjs

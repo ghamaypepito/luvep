@@ -13,7 +13,7 @@ use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
 use setasign\Fpdi\PdfReader\PageBoundaries;
 
-final class IssuedEducationAgreement
+final class IssuedClientAgreement
 {
     public static function checksum(LeadDocument $document): ?string
     {
@@ -25,17 +25,32 @@ final class IssuedEducationAgreement
         return hash_file('sha256', $disk->path($document->file_path)) ?: null;
     }
 
-    public function sign(Lead $lead, LeadDocument $document, string $viewedHash, string $signature, string $extension, ?string $signerName, ?string $ip): void
+    public function sign(Lead $lead, LeadDocument $document, string $viewedHash, string $signature, string $extension, ?string $signerName, ?string $ip, bool $publicTracker): void
+    {
+        $image = @getimagesizefromstring($signature);
+        $expectedType = $extension === 'jpeg' ? IMAGETYPE_JPEG : IMAGETYPE_PNG;
+        if (strlen($signature) > 2 * 1024 * 1024 || ! $image || $image[2] !== $expectedType || max($image[0], $image[1]) > 4096 || ! @imagecreatefromstring($signature)) {
+            throw ValidationException::withMessages(['signature_data' => 'Draw a valid PNG or JPEG signature up to 2 MB and 4096 pixels.']);
+        }
+
+        \Illuminate\Support\Facades\Cache::lock('engagement:case:'.$lead->id, 90)->block(5,
+            fn () => $this->persist($lead, $document, $viewedHash, $signature, $extension, $signerName, $ip, $publicTracker));
+    }
+
+    private function persist(Lead $lead, LeadDocument $document, string $viewedHash, string $signature, string $extension, ?string $signerName, ?string $ip, bool $publicTracker): void
     {
         $disk = Storage::disk('local');
         $written = [];
 
         try {
-            DB::transaction(function () use ($lead, $document, $viewedHash, $signature, $extension, $signerName, $ip, $disk, &$written) {
+            DB::transaction(function () use ($lead, $document, $viewedHash, $signature, $extension, $signerName, $ip, $publicTracker, $disk, &$written) {
                 $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+                abort_if($publicTracker && $lead->is_immigration_case, 404);
                 $document = $lead->documents()->whereKey($document->id)->lockForUpdate()->firstOrFail();
                 abort_if($document->client_signed_at || $document->client_signature_path, 409, 'This agreement has already been signed.');
-                abort_unless($document->isEducationAgreement() && $document->status !== LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
+                abort_unless(($document->isEducationAgreement() || $document->isClientSharedWrittenAgreement()) && $document->status !== LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
+                $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
+                abort_if($document->checklist_key && in_array($document->checklist_key, $hidden, true), 404);
 
                 $issuedPath = $document->file_path;
                 $issued = $document->mime === 'application/pdf' && $issuedPath ? $disk->get($issuedPath) : null;
@@ -83,6 +98,10 @@ final class IssuedEducationAgreement
                     'client_signature_path' => $signaturePath, 'client_signed_at' => $signedAt,
                     'client_signer_name' => $name, 'client_signer_ip' => $ip,
                 ])->saveOrFail();
+
+                if ($document->source_variant === 'engagement:written_agreement' && $lead->is_immigration_case) {
+                    $lead->advanceImmigrationStage('Agreement Signed', ['For Assessment', 'Endorsed', 'Agreement Sent', 'For Agreement & Invoice', 'Request for Information'], null, notify: false);
+                }
 
                 if ($document->checklist_key === 'agree.consultancy') {
                     $current = array_search($lead->status, Lead::STAGES, true);

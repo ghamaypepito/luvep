@@ -508,8 +508,7 @@ class SalesController extends Controller
         );
 
         try {
-            $lead = $this->createDashboardLead($validated);
-            $this->storeDashboardLeadDocuments($lead, $request);
+            $lead = $this->createDashboardLead($validated, $request);
 
             return back()->with('success', "Lead {$lead->lead_id} added.");
         } catch (\Throwable $e) {
