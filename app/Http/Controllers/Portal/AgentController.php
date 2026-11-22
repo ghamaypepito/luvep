@@ -456,8 +456,7 @@ class AgentController extends Controller
             $this->dashboardLeadRules(self::LEAD_STATUSES) + $this->dashboardDocumentRules()
         );
 
-        $lead = $this->createDashboardLead($validated);
-        $this->storeDashboardLeadDocuments($lead, $request);
+        $lead = $this->createDashboardLead($validated, $request);
 
         return back()->with('success', 'Lead added successfully.');
     }

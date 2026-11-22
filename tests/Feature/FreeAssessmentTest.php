@@ -205,6 +205,18 @@ class FreeAssessmentTest extends TestCase
         ];
     }
 
+    public function test_returning_assessment_preserves_earlier_uploads_and_course_start(): void
+    {
+        $payload = $this->fullPayload();
+        $lead = \App\Models\Lead::create(['first_name' => $payload['first_name'], 'last_name' => $payload['last_name'], 'email' => $payload['email'],
+            'education_notes' => ['uploaded_files' => ['cv' => ['enrolment-docs/earlier.pdf']], 'actual_course_started_on' => '2026-09-01']]);
+        $this->post('/free-assessment', $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $notes = $lead->fresh()->education_notes;
+        $this->assertSame(['cv' => ['enrolment-docs/earlier.pdf']], $notes['uploaded_files']);
+        $this->assertSame('2026-09-01', $notes['actual_course_started_on']);
+        $this->assertSame($payload['high_school_institution'], $notes['high_school_institution']);
+    }
+
     public function test_free_assessment_page_loads(): void
     {
         $response = $this->get('/free-assessment');

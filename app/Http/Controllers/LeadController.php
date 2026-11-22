@@ -141,9 +141,7 @@ class LeadController extends Controller
         );
 
         try {
-            $lead = $this->createDashboardLead($data);
-            // Persist the modal's CV / passport / diploma / transcript uploads.
-            $this->storeDashboardLeadDocuments($lead, $request);
+            $lead = $this->createDashboardLead($data, $request);
 
             return back()->with('success', "Lead {$lead->lead_id} added.");
         } catch (\Throwable $e) {
@@ -705,6 +703,8 @@ class LeadController extends Controller
             // Update the existing lead with the full assessment payload —
             // assessment is our richest form so its fields take precedence
             // over any earlier partial submissions.
+            $existing = Lead::lockForUpdate()->findOrFail($existing->id);
+            $payload['education_notes'] = $this->submissionEducationNotes($existing, $data, $payload['education_notes']);
             $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $payload));
             $lead = $existing->fresh();
 
@@ -865,6 +865,19 @@ class LeadController extends Controller
         ]);
     }
 
+    /** Keep earlier uploads and staff metadata when a returning applicant omits a field. */
+    private function submissionEducationNotes(Lead $lead, array $submitted, array $fields): array
+    {
+        $notes = is_array($lead->education_notes) ? $lead->education_notes : [];
+        foreach ($fields as $key => $value) {
+            if (array_key_exists($key, $submitted) || ! array_key_exists($key, $notes)) {
+                $notes[$key] = $value;
+            }
+        }
+
+        return $notes;
+    }
+
     /**
      * Enrolment-doc uploads (CV / Passport / Diploma / Transcript) shared by
      * the Free Assessment and Registration intakes. Each file is stored on the
@@ -913,7 +926,11 @@ class LeadController extends Controller
         }
         if (! empty($uploaded)) {
             $notes = $lead->education_notes ?? [];
-            $notes['uploaded_files'] = $uploaded;
+            $previous = is_array($notes['uploaded_files'] ?? null) ? $notes['uploaded_files'] : [];
+            foreach ($uploaded as $folder => $paths) {
+                $previous[$folder] = array_values(array_unique(array_merge((array) ($previous[$folder] ?? []), $paths)));
+            }
+            $notes['uploaded_files'] = $previous;
             $lead->update(['education_notes' => $notes]);
         }
     }
@@ -1173,6 +1190,8 @@ class LeadController extends Controller
                 'stage' => 'Evaluation',
                 'source' => 'registration',
             ];
+            $existing = Lead::lockForUpdate()->findOrFail($existing->id);
+            $registration['education_notes'] = $this->submissionEducationNotes($existing, $data, $registration['education_notes']);
             $existing->update(CaseRecordAccess::preserveCaseIdentity($existing, $registration));
             $lead = $existing->fresh();
 

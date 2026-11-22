@@ -8,6 +8,8 @@ use App\Models\LeadNote;
 use App\Models\LeadStudyPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Shared "Add Lead" handler used by the Sales and Education portals. Mirrors
@@ -64,11 +66,25 @@ trait CreatesDashboardLead
     /**
      * Create a lead + its dashboard side-records from validated form data.
      */
-    protected function createDashboardLead(array $data): Lead
+    protected function createDashboardLead(array $data, ?Request $request = null): Lead
     {
-        // Everything below must succeed together — a failed study-plan or
-        // note insert should not leave an orphaned lead behind.
-        return \Illuminate\Support\Facades\DB::transaction(fn () => $this->persistDashboardLead($data));
+        $storedPaths = [];
+        try {
+            return DB::transaction(function () use ($data, $request, &$storedPaths) {
+                $lead = $this->persistDashboardLead($data);
+                if ($request) {
+                    $this->storeDashboardLeadDocuments($lead, $request, $storedPaths);
+                }
+
+                return $lead;
+            });
+        } catch (\Throwable $e) {
+            // Only files written by this attempt belong to the rolled-back lead.
+            foreach ($storedPaths as $path) {
+                rescue(fn () => Storage::disk('local')->delete($path));
+            }
+            throw $e;
+        }
     }
 
     private function persistDashboardLead(array $data): Lead
@@ -190,7 +206,7 @@ trait CreatesDashboardLead
      * matching checklist key. Files go on the private 'local' disk, the same
      * place staff/lead checklist uploads live.
      */
-    protected function storeDashboardLeadDocuments(Lead $lead, Request $request): void
+    private function storeDashboardLeadDocuments(Lead $lead, Request $request, array &$storedPaths): void
     {
         foreach (self::DASHBOARD_DOC_MAP as $field => $checklistKey) {
             if (! $request->hasFile($field)) {
@@ -201,6 +217,10 @@ trait CreatesDashboardLead
                     continue;
                 }
                 $path = $file->store("lead-documents/{$lead->id}", 'local');
+                if (! $path) {
+                    throw new \RuntimeException('Could not store the lead document.');
+                }
+                $storedPaths[] = $path;
                 LeadDocument::create([
                     'lead_id'       => $lead->id,
                     'checklist_key' => $checklistKey,

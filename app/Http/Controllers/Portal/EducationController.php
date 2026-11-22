@@ -242,9 +242,7 @@ class EducationController extends Controller
         );
 
         try {
-            $lead = $this->createDashboardLead($validated);
-            // Persist the modal's CV / passport / diploma / transcript uploads.
-            $this->storeDashboardLeadDocuments($lead, $request);
+            $lead = $this->createDashboardLead($validated, $request);
 
             return back()->with('success', "Lead {$lead->lead_id} added.");
         } catch (\Throwable $e) {
@@ -1164,8 +1162,14 @@ class EducationController extends Controller
      * Documents — Queue view (what needs my attention) + Folders view
      * (every student's folder with completion progress).
      */
-    public function documents()
+    public function documents(Request $request)
     {
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:200',
+            'folder_status' => ['nullable', Rule::in(['All', 'Needs attention', 'Complete', 'In progress'])],
+        ]);
+        $search = trim($filters['search'] ?? '');
+        $status = $filters['folder_status'] ?? 'All';
         try {
             $pending = \App\Models\LeadDocument::with('lead:id,first_name,last_name,lead_id')
                 ->whereIn('status', ['Submitted', 'UnderReview'])
@@ -1191,19 +1195,34 @@ class EducationController extends Controller
                 ->map(fn ($d) => $this->docQueueRow($d, 'rejected'));
 
             // Folders — every lead with at least one document, with progress.
-            $folders = Lead::has('documents')
-                ->with('documents:id,lead_id,status,checklist_key')
-                ->orderBy('first_name')
-                ->limit(200)
-                ->get()
-                ->map(fn ($l) => [
+            $folderQuery = Lead::has('documents')
+                ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search) {
+                    $query->whereRaw("LOWER(CONCAT(first_name, ' ', last_name)) LIKE ?", ['%'.mb_strtolower($search).'%'])
+                        ->orWhere('lead_id', 'like', '%'.$search.'%');
+                }));
+            $attention = fn ($query) => $query->whereIn('status', ['Submitted', 'UnderReview', 'Rejected']);
+            $notApproved = fn ($query) => $query->where(fn ($query) => $query->where('status', '!=', 'Approved')->orWhereNull('status'));
+            if ($status === 'Needs attention') {
+                $folderQuery->whereHas('documents', $attention);
+            } elseif ($status === 'Complete') {
+                $folderQuery->whereDoesntHave('documents', $notApproved);
+            } elseif ($status === 'In progress') {
+                $folderQuery->whereHas('documents', $notApproved)->whereDoesntHave('documents', $attention);
+            }
+            $folderPage = $folderQuery->withCount([
+                'documents',
+                'documents as approved_count' => fn ($query) => $query->where('status', 'Approved'),
+                'documents as pending_count' => fn ($query) => $query->whereIn('status', ['Submitted', 'UnderReview']),
+                'documents as rejected_count' => fn ($query) => $query->where('status', 'Rejected'),
+            ])->orderBy('first_name')->orderBy('id')->paginate(40)->withQueryString();
+            $folders = $folderPage->getCollection()->map(fn ($l) => [
                     'id' => $l->id,
                     'lead_id' => $l->lead_id,
                     'name' => trim("{$l->first_name} {$l->last_name}") ?: 'Unknown',
-                    'total' => $l->documents->count(),
-                    'approved' => $l->documents->where('status', 'Approved')->count(),
-                    'pending' => $l->documents->whereIn('status', ['Submitted', 'UnderReview'])->count(),
-                    'rejected' => $l->documents->where('status', 'Rejected')->count(),
+                    'total' => $l->documents_count,
+                    'approved' => $l->approved_count,
+                    'pending' => $l->pending_count,
+                    'rejected' => $l->rejected_count,
                 ]);
 
             return inertia('portal/education/Documents', [
@@ -1212,6 +1231,14 @@ class EducationController extends Controller
                 'stale' => $stale,
                 'rejected' => $rejected,
                 'folders' => $folders,
+                'folderFilters' => ['search' => $search, 'status' => $status],
+                'folderPagination' => [
+                    'total' => $folderPage->total(),
+                    'from' => $folderPage->firstItem(),
+                    'to' => $folderPage->lastItem(),
+                    'previous' => $folderPage->previousPageUrl(),
+                    'next' => $folderPage->nextPageUrl(),
+                ],
             ]);
         } catch (\Throwable $e) {
             Log::error('Education documents page failed', ['error' => $e->getMessage()]);

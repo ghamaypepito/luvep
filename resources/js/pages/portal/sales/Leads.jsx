@@ -1344,6 +1344,7 @@ const NAME_SUFFIXES = ["Jr.", "Sr.", "II", "III", "IV", "V"];
 function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions = [], agents = [] }) {
     const [open, setOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [errors, setErrors] = useState({});
     const blank = {
         first_name: "", last_name: "", suffix: "", email: "", phone: "", status: statuses[0] || "New Leads", assessment_date: "",
         pre_screened_by: "", pre_screening_notes: "", program_offered: "", agent_id: "",
@@ -1371,11 +1372,20 @@ function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions 
     const submit = (e) => {
         e.preventDefault();
         if (!form.first_name.trim()) return;
+        setErrors({});
         setSaving(true);
         router.post(`${portalBase}/leads`, form, {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => { setForm(blank); setOpen(false); },
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    setErrors({ error: page.props.flash.error });
+                    return;
+                }
+                setForm(blank);
+                setOpen(false);
+            },
+            onError: (messages) => setErrors(messages),
             onFinish: () => setSaving(false),
         });
     };
@@ -1405,6 +1415,11 @@ function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions 
                         </div>
 
                         <form onSubmit={submit} className="px-6 py-4 space-y-3 overflow-y-auto">
+                            {Object.keys(errors).length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                                <p className="font-semibold">Could not add the lead. Your details are still here.</p>
+                                {Object.entries(errors).map(([key, message]) => <p key={key}>{message}</p>)}
+                            </div>}
+
                             {/* Core details — 3 across so they sit in tidy rows. */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
                                 <Field label="First name" required>
