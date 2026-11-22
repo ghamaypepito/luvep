@@ -84,6 +84,7 @@ class RepairEducationDuplicateTicket extends Command
                 $json = json_encode($snapshot, JSON_THROW_ON_ERROR);
                 $planDigest = hash('sha256', $json);
                 $this->info('Plan SHA256: '.$planDigest);
+                $this->line('Offer SHA256: '.$digest);
                 $this->line('Retain 512 account/identity/referral; retain Started Course; move 1 offer; archive 402 with original history.');
                 if (! $this->option('apply')) return self::SUCCESS;
                 $this->require(hash_equals($planDigest, (string) $this->option('apply')), 'Dry-run digest changed; preview again.');
@@ -125,6 +126,7 @@ class RepairEducationDuplicateTicket extends Command
         foreach (['local', 'public'] as $name) {
             $disk = Storage::disk($name);
             if ($disk->exists($document->file_path)) {
+                $this->require($disk->size($document->file_path) > 0, 'An offer file is empty.');
                 return hash_file('sha256', $disk->path($document->file_path));
             }
         }

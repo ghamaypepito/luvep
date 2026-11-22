@@ -123,6 +123,15 @@ class DuplicateRepairTest extends TestCase
         $this->assertNotNull(Lead::find(402));
     }
 
+    public function test_empty_matching_offers_are_not_identity_evidence(): void
+    {
+        Storage::disk('local')->put('lead-documents/402/offer.pdf', '');
+        Storage::disk('local')->put('lead-documents/512/offer.pdf', '');
+        $this->assertSame(1, Artisan::call('education:repair-duplicate-ntujat'));
+        $this->assertStringContainsString('offer file is empty', Artisan::output());
+        $this->assertNotNull(Lead::find(402));
+    }
+
     public function test_nonmatching_offer_prevents_repair(): void
     {
         Storage::disk('local')->put('lead-documents/402/offer.pdf', 'different offer');
