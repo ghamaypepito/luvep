@@ -4166,7 +4166,7 @@ function ChecklistNotesCell({ value, onSave }) {
     );
 }
 
-function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser = null, threads = [], staffOptions = [], education = false }) {
+function DocumentsPanel({ lead, checklistFiles = {}, orphans: suppliedOrphans = [], currentUser = null, threads = [], staffOptions = [], education = false }) {
     const writeBase = useWriteBase();
     // Bucket document threads by the checklist item they're anchored to
     // (anchor_key = checklist_key), so each row can render its own discussion.
@@ -4263,6 +4263,18 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
 
         return [...merged, ...leftover];
     }, [lead?.is_immigration_case, lead?.custom_documents, education]);
+
+    // Files with retired keys or keys outside this checklist still belong to
+    // the lead. Keep them accessible without treating them as approved requirements.
+    const orphans = React.useMemo(() => {
+        const visibleKeys = new Set(sections.flatMap((section) => section.items.map((item) => item.id)));
+        const visibleIds = new Set(Object.entries(checklistFiles)
+            .filter(([key]) => visibleKeys.has(key)).flatMap(([, files]) => files.map((file) => file.id)));
+        const otherFiles = Object.entries(checklistFiles)
+            .filter(([key]) => !visibleKeys.has(key)).flatMap(([, files]) => files);
+        return [...new Map([...suppliedOrphans, ...otherFiles]
+            .filter((file) => !visibleIds.has(file.id)).map((file) => [file.id, file])).values()];
+    }, [sections, checklistFiles, suppliedOrphans]);
 
     // Folder choices for the "Add document" modal — the standard folders plus
     // the catch-all "Additional Documents".
@@ -4527,7 +4539,7 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
                     onMouseDown={(e) => { if (e.target === e.currentTarget) setDownloadOpen(false); }}
                 >
-                    <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[85vh]">
+                    <div role="dialog" aria-modal="true" aria-label="Download documents" className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2.5 bg-gray-50/40">
                             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
                                 <Download size={16} />

@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class BackfillEnrolmentDocuments extends Command
 {
-    protected $signature = 'leads:backfill-enrolment-docs {--dry-run : List what would be created without writing}';
+    protected $signature = 'leads:backfill-enrolment-docs {--dry-run : List what would be created without writing} {--lead=* : Restrict to these numeric lead IDs}';
 
     protected $description = 'Create LeadDocument rows for registration/assessment uploads that only live in education_notes so they surface in the Documents tab.';
 
@@ -35,14 +35,19 @@ class BackfillEnrolmentDocuments extends Command
     public function handle(): int
     {
         $dry = (bool) $this->option('dry-run');
-        $disk = Storage::disk('local');
+        $leadIds = $this->option('lead');
+        if (collect($leadIds)->contains(fn ($id) => ! ctype_digit((string) $id) || (int) $id < 1)) {
+            $this->error('--lead must contain positive numeric lead IDs.');
+
+            return self::INVALID;
+        }
 
         $created = 0;
         $skippedExisting = 0;
         $missingOnDisk = 0;
         $leadsTouched = 0;
 
-        Lead::whereNotNull('education_notes')->chunkById(200, function ($leads) use ($disk, $dry, &$created, &$skippedExisting, &$missingOnDisk, &$leadsTouched) {
+        Lead::whereNotNull('education_notes')->when($leadIds, fn ($query) => $query->whereIn('id', $leadIds))->chunkById(200, function ($leads) use ($dry, &$created, &$skippedExisting, &$missingOnDisk, &$leadsTouched) {
             foreach ($leads as $lead) {
                 $notes = $lead->education_notes;
                 if (! is_array($notes) || empty($notes['uploaded_files']) || ! is_array($notes['uploaded_files'])) {
@@ -64,6 +69,21 @@ class BackfillEnrolmentDocuments extends Command
                             $skippedExisting++;
 
                             continue;
+                        }
+                        // Historical intake uploads used public/enrolment-docs;
+                        // newer ones use the private disk. Never recover arbitrary
+                        // paths supplied outside the intake's storage namespace.
+                        if (! str_starts_with($path, 'enrolment-docs/') || str_contains($path, '..') || str_contains($path, '\\')) {
+                            $this->warn("  unsupported intake path (lead {$lead->lead_id})");
+                            continue;
+                        }
+                        if (LeadDocument::where('file_path', $path)->where('lead_id', '!=', $lead->id)->exists()) {
+                            $this->warn("  file already belongs to another lead (lead {$lead->lead_id})");
+                            continue;
+                        }
+                        $disk = Storage::disk('local');
+                        if (! $disk->exists($path) && Storage::disk('public')->exists($path)) {
+                            $disk = Storage::disk('public');
                         }
                         if (! $disk->exists($path)) {
                             $missingOnDisk++;
