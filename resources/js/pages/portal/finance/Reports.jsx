@@ -18,8 +18,8 @@ const money = (v, cur) => `${cur || ""} ${Number(v || 0).toLocaleString("en-US",
 function downloadCsv(filename, rows) {
     const csv = rows.map((r) => r.map((c) => {
         const raw = String(c ?? "");
-        const s = typeof c === "string" && /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw;
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        const s = typeof c === "string" && /^[=+@\-\t\r\n]/.test(raw) ? `'${raw}` : raw;
+        return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");

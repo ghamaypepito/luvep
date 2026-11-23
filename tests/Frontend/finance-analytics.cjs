@@ -26,7 +26,7 @@ const props = { report: 'analytics', start: '2026-11-01', end: '2026-11-30', cur
     previous: { start: '2026-10-02', end: '2026-10-31', received: 0, paid: 0, net: 0 },
     receivables: snapshot, payables: { ...snapshot, attention: [] },
     trends: [{ period: '2026-11-02', received: 1000.01, paid: 100.01 }, { period: '2026-11-09', received: 0, paid: 0 }],
-    expense_breakdown: [{ category: '=HYPERLINK("example")', amount: 100.01 }],
+    expense_breakdown: [{ category: '=HYPERLINK("example")', amount: 100.01 }, { category: 'Vendor\r=1+1', amount: 0 }],
 } };
 const button = text => [...document.querySelectorAll('button')].find(n => n.textContent.trim() === text);
 (async () => {
@@ -48,6 +48,7 @@ const button = text => [...document.querySelectorAll('button')].find(n => n.text
     assert.ok(csv.includes('Live balance snapshot,2026-11-23'));
     assert.ok(csv.includes('Net cash movement,900'));
     assert.ok(csv.includes('"\'=HYPERLINK(""example"")"'), 'Spreadsheet formula text is neutralised');
+    assert.ok(csv.includes('"Vendor\r=1+1",0'), 'Carriage returns stay inside a quoted CSV cell');
     assert.ok(!csv.includes('Net profit'));
     await act(async () => root.render(React.createElement(loaded.exports.default, { ...props, start: '2026-10-01', end: '2026-10-31', data: {} })));
     assert.equal(document.querySelector('input[type=date]').value, '2026-10-01', 'Date fields track server props after presets');
