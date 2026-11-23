@@ -93,6 +93,47 @@ class FinanceAnalyticsTest extends TestCase
         $this->get('/portal/finance/reports')->assertForbidden();
     }
 
+    public function test_payment_status_pies_partition_all_issued_value_without_counting_overdue_twice(): void
+    {
+        foreach (['receivables' => FinanceReceivable::class, 'payables' => FinancePayable::class] as $key => $model) {
+            $make = fn (array $attributes) => $model::create(array_replace([
+                $key === 'receivables' ? 'invoice_no' : 'bill_no' => 'PIE-'.($model::count() + 1),
+                $key === 'receivables' ? 'client_name' : 'vendor_name' => 'Synthetic Party',
+                'amount' => 100, 'currency' => 'NZD', 'status' => $key === 'receivables' ? 'sent' : 'approved',
+                'issue_date' => '2020-01-01', 'due_date' => today(),
+            ], $attributes));
+            foreach ([
+                ['amount' => 100.01, 'due_date' => today()->subDay(), 'paid' => 20.01],
+                ['amount' => 250, 'paid' => 50],
+                ['amount' => 50, 'due_date' => today()->addDay(), 'paid' => 0],
+                ['amount' => 100, 'paid' => 100],
+                ['amount' => 40, 'paid' => 60],
+                ['amount' => 999, 'status' => 'draft', 'paid' => 50],
+                ['amount' => 888, 'status' => 'void', 'paid' => 50],
+                ['amount' => 777, 'currency' => 'USD', 'paid' => 50],
+            ] as $attributes) {
+                $paid = $attributes['paid'];
+                unset($attributes['paid']);
+                $record = $make($attributes);
+                if ($paid) {
+                    $record->payments()->create(['amount' => $paid, 'paid_on' => '2020-01-01']);
+                }
+            }
+            $this->get('/portal/finance/reports?start=2026-11-01&end=2026-11-30')
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where("data.{$key}.paid_total", 210.01)
+                    ->where("data.{$key}.not_overdue_total", 250)
+                    ->where("data.{$key}.overdue_total", 80)
+                    ->where("data.{$key}.issued_total", 540.01)
+                    ->where("data.{$key}.total", 330)
+                    ->where('data.received', 0)->where('data.paid', 0));
+            $this->get('/portal/finance/reports?currency=USD')
+                ->assertInertia(fn (Assert $page) => $page->where("data.{$key}.paid_total", 50)
+                    ->where("data.{$key}.not_overdue_total", 727)->where("data.{$key}.overdue_total", 0)
+                    ->where("data.{$key}.issued_total", 777));
+        }
+    }
+
     private function receivable(array $attributes = []): FinanceReceivable
     {
         return FinanceReceivable::create(array_replace(['invoice_no' => 'TEST-'.(FinanceReceivable::count() + 1), 'client_name' => 'Synthetic Client', 'amount' => 1000,

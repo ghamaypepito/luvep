@@ -100,6 +100,8 @@ class FinanceReportController extends Controller
                 && $row['due_date'] <= today()->addDays(6)->toDateString());
             $snapshots[$key] = [
                 'total' => $aging['total'], 'count' => $rows->count(), 'buckets' => $aging['buckets'],
+                'paid_total' => $aging['paid_total'], 'issued_total' => $aging['issued_total'],
+                'not_overdue_total' => round($aging['buckets']['current'], 2),
                 'overdue_total' => round($overdue->sum('balance'), 2), 'overdue_count' => $overdue->count(),
                 'oldest_days' => (int) ($rows->max('days_past_due') ?? 0),
                 'due_soon_total' => round($upcoming->sum('balance'), 2), 'due_soon_count' => $upcoming->count(),
@@ -147,8 +149,16 @@ class FinanceReportController extends Controller
     /** Live aging snapshot for a receivable/payable model. */
     private function aging(string $model, string $currency): array
     {
-        $rows = $model::where('currency', $currency)->whereNotIn('status', ['draft', 'void'])->with('payments')->get()
-            ->filter(fn ($r) => ! in_array($r->payment_status, ['paid', 'void'], true) && $r->balance > 0.005);
+        $entries = $model::where('currency', $currency)->whereNotIn('status', ['draft', 'void'])->with('payments')->get();
+        // The pie partitions document value, so excess payments cannot inflate the paid slice.
+        $issuedCents = 0;
+        $paidCents = 0;
+        foreach ($entries as $entry) {
+            $amountCents = max(0, (int) round((float) $entry->amount * 100));
+            $issuedCents += $amountCents;
+            $paidCents += min($amountCents, max(0, (int) round($entry->amount_paid * 100)));
+        }
+        $rows = $entries->filter(fn ($r) => ! in_array($r->payment_status, ['paid', 'void'], true) && $r->balance > 0.005);
 
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
         $list = [];
@@ -171,6 +181,8 @@ class FinanceReportController extends Controller
         return [
             'buckets' => array_map(fn ($v) => round($v, 2), $buckets),
             'total' => round(array_sum($buckets), 2),
+            'paid_total' => $paidCents / 100,
+            'issued_total' => $issuedCents / 100,
             'rows' => $list,
         ];
     }
