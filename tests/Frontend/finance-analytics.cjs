@@ -37,6 +37,9 @@ const button = text => [...document.querySelectorAll('button')].find(n => n.text
     assert.ok(document.querySelector('[aria-label="Weekly cash data"]').textContent.includes('NZD 1,000.01'));
     assert.ok(document.querySelector('a.finance-record').href.endsWith('/receivables?q=INV%20A%2F1'));
     assert.ok(!document.body.textContent.includes('Infinity'));
+    assert.equal(document.querySelectorAll('.finance-expense-pie svg circle').length, 1, 'A single paid category fills the pie');
+    assert.ok(document.querySelector('[aria-label="Expense category amounts and shares"]').textContent.includes('100.0%'));
+    assert.ok(!document.querySelector('[aria-label="Expense category amounts and shares"]').textContent.includes('Vendor'), 'Zero amounts are not slices');
     await act(async () => document.querySelector('[aria-label="View cash received details"]').click());
     assert.equal(gets.at(-1)[1].report, 'collections');
     await act(async () => {
@@ -50,9 +53,18 @@ const button = text => [...document.querySelectorAll('button')].find(n => n.text
     assert.ok(csv.includes('"\'=HYPERLINK(""example"")"'), 'Spreadsheet formula text is neutralised');
     assert.ok(csv.includes('"Vendor\r=1+1",0'), 'Carriage returns stay inside a quoted CSV cell');
     assert.ok(!csv.includes('Net profit'));
+    await act(async () => root.render(React.createElement(loaded.exports.default, { ...props, currency: 'USD', data: { ...props.data, expense_breakdown: [{ category: 'Office costs', amount: 75 }, { category: 'Travel', amount: 25 }] } })));
+    assert.equal(document.querySelectorAll('.finance-expense-pie svg path').length, 2);
+    const pieData = document.querySelector('[aria-label="Expense category amounts and shares"]').textContent;
+    assert.ok(pieData.includes('Office costsUSD 75.0075.0%'));
+    assert.ok(pieData.includes('TravelUSD 25.0025.0%'));
+    assert.ok(document.querySelector('.finance-expense-pie figcaption').textContent.includes('USD 100.00'));
+    assert.ok(document.querySelector('.finance-expense-pie svg').getAttribute('aria-label').includes('USD 100.00'));
     await act(async () => root.render(React.createElement(loaded.exports.default, { ...props, start: '2026-10-01', end: '2026-10-31', data: {} })));
     assert.equal(document.querySelector('input[type=date]').value, '2026-10-01', 'Date fields track server props after presets');
     assert.ok(document.body.textContent.includes('No cash movements recorded'));
+    assert.equal(document.querySelector('.finance-expense-pie'), null);
+    assert.ok(document.body.textContent.includes('No supplier payments recorded in this period.'));
     assert.ok(!document.body.textContent.includes('NaN'));
     await act(async () => root.unmount());
     console.log('Finance analytics: exact monetary values, accessible chart data, drill-downs, currency filters, CSV and empty states verified.');
