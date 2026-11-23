@@ -7,6 +7,7 @@ Finance Reports opens on Analytics. Cash Summary, Receivables Aging, Payables Ag
 - Aging is a live snapshot using existing payment-ledger balances and aging bands, independent of the selected cash period. Drafts, voids, settled balances and overpayments are excluded. Due soon means today through six days from today. Largest overdue lists show up to five outstanding records, ordered by remaining balance, with links to the existing ledger search.
 - Date ranges are ISO calendar dates, ordered and limited to five years. Currency changes and date presets retain the report. Applying custom dates clears a weekly preset. All amounts stay in their recorded currency.
 - CSV exports include the cash window, previous period, current snapshot date, cash weeks and category totals. Text that could be interpreted as a spreadsheet formula is escaped. Export and print do not mutate records or send messages.
+- The expense pie shows each paid category’s share for the selected dates and currency, with exact amounts and percentages in a visible table. Empty periods show a message; a single category fills the circle. It uses the same ledger totals as the existing reports.
 
 Design follows the existing Ticket Analytics green controls, summary cards, weekly chart, exact-data disclosure and drill-down pattern. The owner's Taste Vault dashboard reference was consulted. No new dependency, schema, background task, financial write or access permission was added.
 

@@ -42,11 +42,38 @@ export default function FinanceAnalytics({ data, currency, start, end, onReport 
         </div>
         <section className="tw-card tw-breakdown">
             <div className="tw-section-heading"><div><h2>Cash paid by expense category</h2><p>Recorded supplier payments in the selected period. Gross amounts, including any recorded tax.</p></div></div>
-            <Bars rows={(data.expense_breakdown ?? []).map(row => ({ label: row.category, amount: row.amount }))} currency={currency} empty="No supplier payments recorded in this period." />
+            <ExpensePie rows={data.expense_breakdown ?? []} currency={currency} />
         </section>
         <div className="finance-ledger-grid">
             <Attention title="Largest overdue invoices" snapshot={ar} kind="receivables" currency={currency} />
             <Attention title="Largest overdue bills" snapshot={ap} kind="payables" currency={currency} />
+        </div>
+    </div>;
+}
+
+function ExpensePie({ rows, currency }) {
+    const categories = rows.filter(row => Number(row.amount) > 0);
+    const total = categories.reduce((sum, row) => sum + Number(row.amount), 0);
+    const colors = ["#214f43", "#b47b45", "#739c83", "#6a829b", "#b5c77c", "#986783", "#c59a73", "#78806b"];
+    let position = 0;
+    if (!total) return <p className="tw-empty">No supplier payments recorded in this period.</p>;
+    return <div className="finance-expense-pie">
+        <figure>
+            <svg viewBox="0 0 100 100" role="img" aria-label={`Expense category pie chart. Total paid: ${money(total, currency)}. Exact amounts and shares are listed alongside.`}>
+                {categories.map((row, i) => {
+                    const share = Number(row.amount) / total;
+                    const start = position * Math.PI * 2 - Math.PI / 2;
+                    position += share;
+                    const end = position * Math.PI * 2 - Math.PI / 2;
+                    const title = `${row.category}: ${money(row.amount, currency)} (${(share * 100).toFixed(1)}%)`;
+                    return categories.length === 1 ? <circle key={row.category} cx="50" cy="50" r="49" fill={colors[i % colors.length]}><title>{title}</title></circle> :
+                        <path key={row.category} fill={colors[i % colors.length]} stroke="white" strokeWidth="0.5" d={`M 50 50 L ${50 + 49 * Math.cos(start)} ${50 + 49 * Math.sin(start)} A 49 49 0 ${share > 0.5 ? 1 : 0} 1 ${50 + 49 * Math.cos(end)} ${50 + 49 * Math.sin(end)} Z`}><title>{title}</title></path>;
+                })}
+            </svg>
+            <figcaption>Total paid <strong>{money(total, currency)}</strong></figcaption>
+        </figure>
+        <div className="finance-pie-legend">
+            <DataTable title="Expense category amounts and shares" columns={["Category", "Paid", "Share"]} rows={categories.map((row, i) => [<span className="finance-pie-category" key={row.category}><i aria-hidden="true" style={{ background: colors[i % colors.length] }} />{row.category}</span>, money(row.amount, currency), `${(Number(row.amount) / total * 100).toFixed(1)}%`])} />
         </div>
     </div>;
 }
