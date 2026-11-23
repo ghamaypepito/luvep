@@ -1,6 +1,7 @@
 @extends('agreements.engagement.service-layout')
 @section('document')
 @php($booking_total = isset($service_pricing) ? number_format($service_pricing['grand_total'], 2) : $service_fee)
+@php($face_to_face = ($consultation['consultation_mode'] ?? 'online') === 'face_to_face')
 <h1>INITIAL CONSULTATION AGREEMENT</h1>
 <p>This Initial Consultation Agreement ("Agreement") is entered into between the undersigned consultant ("Consultant") and the undersigned client ("Client") in connection with an initial visa consultation session, subject to the terms below.</p>
 <h2>1. Consultation Details</h2>
@@ -9,7 +10,10 @@
     'Client Name' => $client['name'],
     'Consultation Date' => !empty($consultation['consultation_date']) ? \Carbon\Carbon::parse($consultation['consultation_date'])->format('d/m/Y') : 'Not yet supplied',
     'Consultation Time' => trim(($consultation['consultation_time'] ?? '').' '.($consultation['consultation_timezone'] ?? '')) ?: 'Not yet supplied',
-    'Platform' => 'Google Meet', 'Meeting Link' => $consultation['meeting_link'] ?? 'Not yet supplied',
+    ...(!empty($consultation['consultation_mode']) ? ['Consultation Mode' => $face_to_face ? 'Face-to-Face Consultation' : 'Online Consultation'] : []),
+    ...($face_to_face
+        ? ['Consultation Address' => $consultation['consultation_address'] ?? 'Not yet supplied']
+        : ['Platform' => 'Google Meet', 'Meeting Link' => $consultation['meeting_link'] ?? 'Not yet supplied']),
     'Consultant Name' => $adviser['name'],
 ] as $label => $value)
 <tr><td>{{ $label }}</td><td>{{ $value }}</td></tr>
@@ -28,7 +32,7 @@
 @endif
 <ul>
 <li>A non-refundable booking fee of <strong>${{ $booking_total }} (USD)</strong> is required to reserve and confirm the consultation slot.</li>
-<li>The booking fee secures the date and time listed above via Google Meet.</li>
+<li>The booking fee secures the date and time listed above {{ $face_to_face ? 'for a face-to-face consultation at '.($consultation['consultation_address'] ?? 'Not yet supplied') : (!empty($consultation['consultation_mode']) ? 'for an online consultation via Google Meet' : 'via Google Meet') }}.</li>
 <li>Should the Client decide to proceed with visa processing following the consultation, the ${{ $booking_total }} booking fee already paid will be credited/deducted in full toward the total consulting and service fee for the visa processing engagement.</li>
 <li>If the Client does not proceed with visa processing, the booking fee is retained by the Consultant as payment for the consultation session rendered and is non-refundable.</li>
 </ul>

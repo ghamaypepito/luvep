@@ -65,6 +65,7 @@ jobs:
           node tests/Frontend/engagement-delete.cjs
           node tests/Frontend/reception-doorbell.cjs
           node tests/Frontend/engagement-service-gst.cjs
+          node tests/Frontend/consultation-mode.cjs
           node tests/Frontend/hr-return-link.cjs
           node tests/Frontend/dtr-draft-history.cjs
           node tests/Frontend/legacy-dtr-clock-correction.cjs
@@ -85,6 +86,7 @@ jobs:
           node tests/Frontend/ticket-request-edit.cjs
           node tests/Frontend/ticket-board-actions.cjs
           node tests/Frontend/ticket-analytics.cjs
+          node tests/Frontend/finance-analytics.cjs
           node tests/Frontend/creative-analytics.cjs
           node tests/Frontend/creative-request-actions.cjs
           node tests/Frontend/creative-request-popup.cjs

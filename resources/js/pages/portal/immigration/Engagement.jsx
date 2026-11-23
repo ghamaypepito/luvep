@@ -642,6 +642,8 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
+    const [consultationMode, setConsultationMode] = useState(draft?.engagement_settings?.consultation_mode || "online");
+    const [consultationAddress, setConsultationAddress] = useState(draft?.engagement_settings?.consultation_address || "");
     const [meetingLink, setMeetingLink] = useState(draft?.engagement_settings?.meeting_link || "");
     const documents = useMemo(() => specialService ? [
         { key: engagementType, label: consultation ? "Initial Consultation Agreement" : "OIA Engagement Agreement", dynamic: true },
@@ -862,13 +864,17 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         (!selectedCase[feeFields.normal] || !selectedCase[feeFields.inz]);
     const missingSignature = selectedTypes.some((key) => ["written_agreement", "initial_consultation", "oia"].includes(key)) && selectedSigner && !selectedSigner.has_signature;
 
+    const consultationDetails = {
+        consultation_date: consultationDate, consultation_time: consultationTime, consultation_timezone: consultationTimezone,
+        consultation_mode: consultationMode,
+        ...(consultationMode === "face_to_face" ? { consultation_address: consultationAddress } : { meeting_link: meetingLink }),
+    };
     const settings = {
         engagement_type: engagementType, types: selectedTypes, signer_id: signerId,
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
         ...(specialService ? { service_fee: serviceFeeOverride } : {}),
-        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
-            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}),
+        ...(consultation ? consultationDetails : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
         revision: familyRefresh,
     };
@@ -879,8 +885,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
         ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
-        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
-            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}), _r: familyRefresh,
+        ...(consultation ? consultationDetails : {}), _r: familyRefresh,
     });
     const preparedPreview = flow.prepared?.documents.find((doc) => doc.type === previewType)?.preview_url;
     const savedPreview = !flow.prepared && flow.savedPackId ? draft?.documents?.find((doc) => doc.type_key === previewType)?.view_url : null;
@@ -982,9 +987,21 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                 <label className="block text-xs font-medium text-gray-700">Time zone
                                     <input value={consultationTimezone} onChange={(e) => setConsultationTimezone(e.target.value)} placeholder="Pacific/Auckland" className={`${ctrlCls} mt-1.5`} />
                                 </label>
-                                <label className="block text-xs font-medium text-gray-700">Google Meet link
-                                    <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/…" className={`${ctrlCls} mt-1.5`} />
+                                <label className="block text-xs font-medium text-gray-700">Consultation Mode
+                                    <select value={consultationMode} onChange={(e) => setConsultationMode(e.target.value)} required className={`${ctrlCls} mt-1.5`}>
+                                        <option value="online">Online Consultation</option>
+                                        <option value="face_to_face">Face-to-Face Consultation</option>
+                                    </select>
                                 </label>
+                                {consultationMode === "face_to_face" ? (
+                                    <label className="block text-xs font-medium text-gray-700">Consultation Address
+                                        <textarea value={consultationAddress} onChange={(e) => setConsultationAddress(e.target.value)} required maxLength={2000} rows={3} placeholder="Enter the consultation address" className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                ) : (
+                                    <label className="block text-xs font-medium text-gray-700">Google Meet link
+                                        <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} required maxLength={1000} placeholder="https://meet.google.com/…" className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                )}
                             </div>}
 
                             <div className="grid grid-cols-2 gap-2 items-start">

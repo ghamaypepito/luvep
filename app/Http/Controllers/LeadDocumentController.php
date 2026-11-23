@@ -1522,7 +1522,7 @@ class LeadDocumentController extends Controller
         // The invoice rides in the engagement pack but renders through the
         // InvoiceGenerator, priced off the same tier / location / GST / fee.
         if ($type === 'engage_invoice') {
-            $engOverrides = $serviceFee;
+            $engOverrides = array_merge($serviceFee, $request->only(['consultation_mode', 'meeting_link', 'consultation_address']));
             if (in_array($request->query('fee_tier'), \App\Models\VisaType::FEE_TIERS, true)) {
                 $engOverrides['fee_tier'] = $request->query('fee_tier');
             }
@@ -1568,7 +1568,7 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $opts['professional_fee'] = (float) $profFee;
             }
-            $opts = array_merge($opts, $request->only(['consultation_date', 'consultation_time', 'consultation_timezone', 'meeting_link']));
+            $opts = array_merge($opts, $request->only(['consultation_date', 'consultation_time', 'consultation_timezone', 'consultation_mode', 'meeting_link', 'consultation_address']));
             $html = app(EngagementDocumentGenerator::class)->renderHtml($lead, $engageType, $opts);
 
             return response($html)->header('Content-Type', 'text/html; charset=utf-8');

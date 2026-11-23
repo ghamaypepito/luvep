@@ -11,12 +11,12 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
-use App\Support\CaseRecordAccess;
 use App\Models\UserReview;
+use App\Services\Immigration\AssessmentCaseLink;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
+use App\Support\CaseRecordAccess;
 use App\Traits\BuildsLeadRow;
-use App\Services\Immigration\AssessmentCaseLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -4777,13 +4777,20 @@ class ImmigrationController extends Controller
         }
         $stageEvents = [];
         foreach ($inCase()->whereNotNull('stage_history')->select(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])->lazyById() as $case) {
+            $previousStage = null;
             foreach ($case->stage_history ?? [] as $event) {
                 $stage = $event['stage'] ?? null;
-                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage)) {
+                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage) || trim($stage) === '') {
                     continue;
                 }
                 $date = ReportPeriod::eventDate($event['at'] ?? null);
-                if (! $date || ! $date->betweenIncluded($earliest, $now)) {
+                if ($date && $date->gt($now)) {
+                    continue;
+                }
+                // Clearing/restoring an outcome is not a new decision; retain state from before the reporting window.
+                $restoredDecision = in_array($stage, $terminalStages, true) && $stage === $previousStage;
+                $previousStage = $stage;
+                if ($restoredDecision || ! $date || ! $date->betweenIncluded($earliest, $now)) {
                     continue;
                 }
                 if (($event['pathway_intake'] ?? false) || isset($pathwayIntakes[$case->id][$stage][$date->timestamp])) {
