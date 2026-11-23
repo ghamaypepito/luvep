@@ -5,6 +5,7 @@ const { buildSync } = require('esbuild');
 const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/immigration/cases/engagement' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react'), { act } = React, { createRoot } = require('react-dom/client');
 const empty = () => null, requests = [], confirmations = [], errors = [];
