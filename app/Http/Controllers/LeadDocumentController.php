@@ -1516,7 +1516,10 @@ class LeadDocumentController extends Controller
         $engageType = $this->engagementTypeFor($type);
         $engagementType = $type === 'engage_invoice' ? $request->query('engagement_type', 'immigration_advice') : $engageType;
         $serviceFee = in_array($engagementType, ['initial_consultation', 'oia'], true)
-            ? $request->validate(['service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE])
+            ? $request->validate([
+                'service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE,
+                ...($engagementType === 'initial_consultation' ? ['service_currency' => EngagementWorkflowController::SERVICE_CURRENCY_RULE] : []),
+            ])
             : [];
 
         // The invoice rides in the engagement pack but renders through the
