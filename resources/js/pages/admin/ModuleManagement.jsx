@@ -2,6 +2,12 @@ import { useMemo, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { Boxes, Search, Save, Check, ShieldCheck, User as UserIcon } from "lucide-react";
 
+// The server drops redundant child grants when their parent is present.
+function normalizedModuleGrants(keys) {
+    const grants = new Set(keys);
+    return [...grants].filter((key) => ! key.includes(".") || ! grants.has(key.split(".")[0]));
+}
+
 // Super-admin-only: grant per-user access to restricted modules. Every other
 // module is grandfathered (visible by role) and never appears here — only the
 // modules that ship hidden-by-default are toggled per user.
@@ -12,6 +18,7 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
     const [grantedPortals, setGrantedPortals] = useState(() => new Set());
     const [saving, setSaving] = useState(false);
     const [savingPortals, setSavingPortals] = useState(false);
+    const [moduleNotice, setModuleNotice] = useState(null);
 
     const selected = useMemo(() => users.find((u) => u.id === selectedId) || null, [users, selectedId]);
 
@@ -26,6 +33,7 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
     }, [users, search]);
 
     const selectUser = (u) => {
+        setModuleNotice(null);
         setSelectedId(u.id);
         setGranted(new Set(u.modules || []));
         setGrantedPortals(new Set(u.portals || []));
@@ -50,31 +58,37 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
     };
     const featureOn = (m, key) => granted.has(m.key) || granted.has(key);
 
-    const toggleWhole = (m) => setGranted((prev) => {
-        const next = new Set(prev);
-        const fks = featureKeys(m);
-        if (fks.length === 0) {                                 // no parts → simple toggle
-            next.has(m.key) ? next.delete(m.key) : next.add(m.key);
+    const toggleWhole = (m) => {
+        setModuleNotice(null);
+        setGranted((prev) => {
+            const next = new Set(prev);
+            const fks = featureKeys(m);
+            if (fks.length === 0) {                                 // no parts → simple toggle
+                next.has(m.key) ? next.delete(m.key) : next.add(m.key);
+                return next;
+            }
+            const on = next.has(m.key) || fks.every((k) => next.has(k));
+            next.delete(m.key);                                    // drop legacy bare-parent form
+            fks.forEach((k) => next.delete(k));
+            if (! on) fks.forEach((k) => next.add(k));             // turning ON = every part
             return next;
-        }
-        const on = next.has(m.key) || fks.every((k) => next.has(k));
-        next.delete(m.key);                                    // drop legacy bare-parent form
-        fks.forEach((k) => next.delete(k));
-        if (! on) fks.forEach((k) => next.add(k));             // turning ON = every part
-        return next;
-    });
+        });
+    };
 
-    const toggleFeature = (m, key) => setGranted((prev) => {
-        const next = new Set(prev);
-        // Expand a legacy whole-module grant into explicit parts so a single
-        // part can be flipped without losing the others.
-        if (next.has(m.key)) {
-            next.delete(m.key);
-            featureKeys(m).forEach((k) => next.add(k));
-        }
-        next.has(key) ? next.delete(key) : next.add(key);
-        return next;
-    });
+    const toggleFeature = (m, key) => {
+        setModuleNotice(null);
+        setGranted((prev) => {
+            const next = new Set(prev);
+            // Expand a legacy whole-module grant into explicit parts so a single
+            // part can be flipped without losing the others.
+            if (next.has(m.key)) {
+                next.delete(m.key);
+                featureKeys(m).forEach((k) => next.add(k));
+            }
+            next.has(key) ? next.delete(key) : next.add(key);
+            return next;
+        });
+    };
 
     // Dirty check vs the user's saved grant set.
     const dirty = useMemo(() => {
@@ -86,11 +100,27 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
     }, [selected, granted]);
 
     const save = () => {
-        if (! selected || selected.is_super_admin) return;
+        if (! selected || selected.is_super_admin || saving) return;
+        const submitted = normalizedModuleGrants(granted);
+        const target = selected;
+        setModuleNotice(null);
         setSaving(true);
-        router.post(`/admin/module-management/${selected.id}`, { modules: [...granted] }, {
+        router.post(`/admin/module-management/${target.id}`, { modules: submitted }, {
             preserveScroll: true,
             preserveState: true,
+            onError: (errors) => setModuleNotice({ type: "error", message: `Access was not saved. ${Object.values(errors).flat().join(" ")}` }),
+            onSuccess: (page) => {
+                const saved = page.props.users?.find((u) => u.id === target.id);
+                const actual = new Set(normalizedModuleGrants(saved?.modules || []));
+                const verified = Array.isArray(saved?.modules) && actual.size === submitted.length && submitted.every((key) => actual.has(key));
+                if (! verified) {
+                    setModuleNotice({ type: "error", message: "Could not verify the requested access was saved. Reload this page and check the user's saved options." });
+                    if (saved) setGranted(new Set(saved.modules));
+                    return;
+                }
+                setGranted(new Set(saved.modules));
+                setModuleNotice({ type: "success", message: `Module access saved for ${saved.name}.` });
+            },
             onFinish: () => setSaving(false),
         });
     };
@@ -164,6 +194,7 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
                                     key={u.id}
                                     type="button"
                                     onClick={() => selectUser(u)}
+                                    disabled={saving || savingPortals}
                                     className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
                                         selectedId === u.id ? "bg-gray-900 text-white" : "hover:bg-gray-50"
                                     }`}
@@ -227,6 +258,8 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
                                                         <button
                                                             type="button"
                                                             onClick={() => toggleWhole(m)}
+                                                            aria-pressed={on}
+                                                            disabled={saving}
                                                             className="w-full text-left flex items-center gap-3 px-4 py-3"
                                                         >
                                                             <div className="min-w-0 flex-1">
@@ -252,6 +285,8 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
                                                                             key={f.key}
                                                                             type="button"
                                                                             onClick={() => toggleFeature(m, f.key)}
+                                                                            aria-pressed={fon}
+                                                                            disabled={saving}
                                                                             className="w-full text-left flex items-center gap-3 pl-4 pr-2 py-2 rounded-lg transition-colors hover:bg-gray-50"
                                                                         >
                                                                             <div className="min-w-0 flex-1">
@@ -271,6 +306,12 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
                                             })}
                                         </div>
 
+                                        {moduleNotice && (
+                                            <p role={moduleNotice.type === "success" ? "status" : "alert"}
+                                                className={`mt-4 text-sm ${moduleNotice.type === "success" ? "text-emerald-700" : "text-red-700"}`}>
+                                                {moduleNotice.message}
+                                            </p>
+                                        )}
                                         <div className="flex items-center justify-end gap-3 mt-5">
                                             {dirty && <span className="text-[11px] text-amber-600 font-semibold">Unsaved changes</span>}
                                             <button
