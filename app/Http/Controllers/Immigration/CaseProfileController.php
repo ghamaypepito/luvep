@@ -11,12 +11,12 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
-use App\Support\CaseRecordAccess;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
 use App\Services\Immigration\RecentVisaDocuments;
 use App\Services\Immigration\VisaProgressService;
+use App\Support\CaseRecordAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -155,7 +155,7 @@ class CaseProfileController extends Controller
                 ];
             })(),
             // Cases the dependant can be related to (defaults to this case).
-            'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
+            'canCorrectCaseNames' => CaseRecordAccess::canCorrectNames(request()),
             'caseOptions' => Lead::immigrationCase()
                 ->when($user->role === 'agent', fn ($query) => $query->where('agent_id', $user->id))
                 ->orderBy('first_name')->limit(500)
@@ -611,7 +611,21 @@ class CaseProfileController extends Controller
         abort_unless($dependent->lead_id === $lead->id, 404);
         $data = $request->validate($this->dependentRules($dependent->linked_lead_id));
         CaseRecordAccess::authorizeNameChanges($request, $dependent, $data, ['first_name', 'middle_name', 'family_name']);
-        $dependent->update($data);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($dependent, $data, $lead) {
+            $previousNames = $dependent->only(['first_name', 'middle_name', 'family_name']);
+            $dependent->update($data);
+            $nameChanges = [];
+            foreach ($previousNames as $field => $old) {
+                if ($dependent->wasChanged($field)) {
+                    $nameChanges[$field] = ['old' => $old, 'new' => $dependent->{$field}];
+                }
+            }
+            if ($nameChanges) {
+                \App\Models\ActivityLog::record('case.dependent_name_corrected', ['properties' => [
+                    'subject_type' => 'Lead', 'subject_id' => $lead->id, 'dependent_id' => $dependent->id, 'changes' => $nameChanges,
+                ]]);
+            }
+        });
 
         return back()->with('success', 'Dependant updated.');
     }
