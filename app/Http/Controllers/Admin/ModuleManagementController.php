@@ -161,7 +161,8 @@ class ModuleManagementController extends Controller
             }
         });
 
-        return back()->with('success', "Module access updated for {$user->name}.");
+        // The page acknowledges this save only after checking returned stored grants.
+        return back();
     }
 
     /** Every grantable key: each restricted module plus its dotted feature keys. */
