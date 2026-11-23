@@ -1,10 +1,13 @@
+import "../../../../css/finance-reports.css";
+import FinanceAnalytics from "./FinanceAnalytics";
 import WeeklyReport, { WeekButtons } from "@/components/WeeklyReport";
 import { Head, router } from "@inertiajs/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Printer, Download, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 const REPORTS = [
-    { key: "income", label: "Income Statement" },
+    { key: "analytics", label: "Analytics" },
+    { key: "income", label: "Cash Summary" },
     { key: "receivables_aging", label: "Receivables Aging" },
     { key: "payables_aging", label: "Payables Aging" },
     { key: "collections", label: "Collections" },
@@ -14,7 +17,8 @@ const money = (v, cur) => `${cur || ""} ${Number(v || 0).toLocaleString("en-US",
 
 function downloadCsv(filename, rows) {
     const csv = rows.map((r) => r.map((c) => {
-        const s = String(c ?? "");
+        const raw = String(c ?? "");
+        const s = typeof c === "string" && /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw;
         return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -28,11 +32,12 @@ function downloadCsv(filename, rows) {
 const pad = (n) => String(n).padStart(2, "0");
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-export default function Reports({ report = "income", start, end, preset: activePreset, weeklyReport, currency = "NZD", currencies = [], data = {} }) {
+export default function Reports({ report = "analytics", start, end, preset: activePreset, weeklyReport, currency = "NZD", currencies = [], data = {}, errors = {} }) {
     const [range, setRange] = useState({ start, end });
     const isAging = report.endsWith("_aging");
+    useEffect(() => setRange({ start, end }), [start, end]);
 
-    const go = (params) => router.get("/portal/finance/reports", { report, currency, start: range.start, end: range.end, ...params }, { preserveScroll: true });
+    const go = (params) => router.get("/portal/finance/reports", { report, currency, start, end, ...params }, { preserveScroll: true });
 
     const selectPreset = (kind) => {
         const now = new Date();
@@ -52,8 +57,18 @@ export default function Reports({ report = "income", start, end, preset: activeP
     const exportCsv = () => {
         const fname = `${report}_${currency}_${start}_${end}.csv`;
         let rows = [[label], ["Currency", currency], [isAging ? "Current snapshot" : `${start} to ${end}`], []];
-        if (report === "income") {
-            rows.push(["Revenue", data.revenue], ["Expenses", data.expenses], ["Net profit", data.net], [], ["Expense breakdown", ""], ["Category", "Amount"]);
+        if (report === "analytics") {
+            rows.push(["Cash received", data.received], ["Cash paid out", data.paid], ["Net cash movement", data.net],
+                ["Previous period", data.previous?.start, data.previous?.end],
+                ["Previous cash received", data.previous?.received], ["Previous cash paid out", data.previous?.paid], ["Previous net cash", data.previous?.net],
+                [], ["Live balance snapshot", data.as_of], ["Ledger", "Outstanding", "Overdue", "Due in next 7 days"]);
+            ["receivables", "payables"].forEach(key => rows.push([key, data[key]?.total, data[key]?.overdue_total, data[key]?.due_soon_total]));
+            rows.push([], ["Week starting", "Received", "Paid out", "Net cash"]);
+            (data.trends || []).forEach(r => rows.push([r.period, r.received, r.paid, Math.round((r.received - r.paid) * 100) / 100]));
+            rows.push([], ["Paid expense category", "Amount"]);
+            (data.expense_breakdown || []).forEach(r => rows.push([r.category, r.amount]));
+        } else if (report === "income") {
+            rows.push(["Cash received", data.revenue], ["Cash paid out", data.expenses], ["Net cash movement", data.net], [], ["Expense breakdown", ""], ["Category", "Amount"]);
             (data.expense_breakdown || []).forEach((b) => rows.push([b.category, b.amount]));
         } else if (isAging) {
             rows.push(["Reference", "Party", "Due date", "Amount", "Balance", "Days past due", "Bucket"]);
@@ -70,60 +85,31 @@ export default function Reports({ report = "income", start, end, preset: activeP
     };
 
     return (
-        <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
+        <div className="ticket-workspace finance-reports">
             <Head title="Finance Reports" />
 
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Reports</h1>
-                    <p className="text-sm text-gray-500 mt-1">Income statement, aging and collections in {currency}.</p>
+            <header className="tw-heading">
+                <div><h1>Finance reporting</h1><p>Cash movement, outstanding balances and the records behind them.</p></div>
+                <div className="finance-actions"><button onClick={exportCsv}><Download size={15} aria-hidden="true" /> Export CSV</button><button onClick={() => window.print()}><Printer size={15} aria-hidden="true" /> Print report</button></div>
+            </header>
+            <nav className="tw-nav" aria-label="Finance reports">{REPORTS.map(r => <button key={r.key} aria-current={report === r.key ? "page" : undefined} onClick={() => go({ report: r.key, ...(activePreset ? { preset: activePreset } : {}) })}>{r.label}</button>)}</nav>
+            <form className="tw-card finance-filter-form" onSubmit={e => { e.preventDefault(); go(range); }}>
+                <div className="tw-section-heading"><h2>Report filters</h2><span>{isAging ? "Live balances as of today" : "Cash movements use the recorded payment date"}</span></div>
+                <div className="finance-filter-fields">
+                    {!isAging && <><label>From date<input type="date" required value={range.start} onChange={e => setRange(p => ({ ...p, start: e.target.value }))} /></label><label>To date<input type="date" required min={range.start} value={range.end} onChange={e => setRange(p => ({ ...p, end: e.target.value }))} /></label></>}
+                    <label>Currency<select aria-label="Report currency" value={currency} onChange={e => go({ currency: e.target.value, ...(activePreset ? { preset: activePreset } : {}) })}>{currencies.map(code => <option key={code} value={code}>{code}</option>)}</select></label>
+                    {!isAging && <button className="tw-button">Apply dates</button>}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {currencies.length > 1 && (
-                        <select aria-label="Report currency" value={currency}
-                            onChange={(e) => go({ currency: e.target.value, ...(activePreset ? { preset: activePreset } : {}) })}
-                            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700">
-                            {currencies.map((code) => <option key={code} value={code}>{code}</option>)}
-                        </select>
-                    )}
-                    <button onClick={exportCsv} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"><Download size={15} /> CSV</button>
-                    <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"><Printer size={15} /> Print</button>
-                </div>
-            </div>
-
-            {/* Report tabs */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-                {REPORTS.map((r) => (
-                    <button key={r.key} onClick={() => go({ report: r.key, ...(activePreset ? { preset: activePreset } : {}) })}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${report === r.key ? "bg-indigo-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-                        {r.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Date range (income & collections only) */}
-            {!isAging && (
-                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
-                    <div className="flex items-center gap-2">
-                        <input type="date" value={range.start} onChange={(e) => setRange((p) => ({ ...p, start: e.target.value }))} className="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" />
-                        <span className="text-gray-400 text-sm">to</span>
-                        <input type="date" value={range.end} onChange={(e) => setRange((p) => ({ ...p, end: e.target.value }))} className="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30" />
-                        <button onClick={() => go({})} className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700">Apply</button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
-                        <WeekButtons preset={activePreset} onChange={(preset) => go({ preset })} />
-                        {[["month", "This month"], ["quarter", "This quarter"], ["year", "This year"], ["last_month", "Last month"]].map(([k, lbl]) => (
-                            <button key={k} onClick={() => selectPreset(k)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100">{lbl}</button>
-                        ))}
-                    </div>
-                </div>
-            )}
-            {isAging && <p className="text-xs text-gray-400">Aging is a live snapshot of everything still outstanding, as of today.</p>}
+                {!isAging && <div className="finance-periods"><WeekButtons preset={activePreset} onChange={preset => go({ preset })} />{[["month", "This month"], ["quarter", "This quarter"], ["year", "This year"], ["last_month", "Last month"]].map(([k, lbl]) => <button key={k} type="button" onClick={() => selectPreset(k)}>{lbl}</button>)}</div>}
+            </form>
+            {Object.keys(errors).length > 0 && <div role="alert" className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800">{Object.values(errors).map((error, i) => <p key={i}>{error}</p>)}</div>}
+            <p className="finance-basis">Cash figures show gross recorded receipts and payments in {currency}, including any recorded tax. They are not accrual profit, a tax calculation or a bank balance. Imported Afirmo records and portal records use the same ledger; currencies are never combined.</p>
+            {isAging && <p className="finance-caption">Aging is a live snapshot, not a historical period balance. Drafts and voids are excluded.</p>}
 
             <WeeklyReport report={weeklyReport} saveUrl="/portal/finance/reports/note" />
 
             {/* Report body */}
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+            {report === "analytics" ? <FinanceAnalytics data={data} currency={currency} start={start} end={end} onReport={report => go({ report, ...(activePreset ? { preset: activePreset } : {}) })} /> : <div className="tw-card">
                 <div className="mb-5">
                     <h2 className="text-lg font-bold text-gray-900">{label}</h2>
                     {!isAging && <p className="text-xs text-gray-400">{start} — {end}</p>}
@@ -132,7 +118,7 @@ export default function Reports({ report = "income", start, end, preset: activeP
                 {report === "income" && <IncomeReport data={data} currency={currency} />}
                 {isAging && <AgingReport data={data} currency={currency} kind={report === "receivables_aging" ? "Client" : "Vendor"} />}
                 {report === "collections" && <CollectionsReport data={data} currency={currency} />}
-            </div>
+            </div>}
         </div>
     );
 }
@@ -142,9 +128,9 @@ function IncomeReport({ data, currency }) {
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Stat icon={<TrendingUp className="w-5 h-5 text-emerald-600" />} label="Revenue" value={money(data.revenue, currency)} tone="text-emerald-600" />
-                <Stat icon={<TrendingDown className="w-5 h-5 text-rose-500" />} label="Expenses" value={money(data.expenses, currency)} tone="text-rose-500" />
-                <Stat icon={<Wallet className="w-5 h-5 text-indigo-600" />} label="Net profit" value={money(net, currency)} tone={net >= 0 ? "text-emerald-600" : "text-rose-600"} />
+                <Stat icon={<TrendingUp className="w-5 h-5 text-emerald-600" />} label="Cash received" value={money(data.revenue, currency)} tone="text-emerald-600" />
+                <Stat icon={<TrendingDown className="w-5 h-5 text-rose-500" />} label="Cash paid out" value={money(data.expenses, currency)} tone="text-rose-500" />
+                <Stat icon={<Wallet className="w-5 h-5 text-indigo-600" />} label="Net cash movement" value={money(net, currency)} tone={net >= 0 ? "text-emerald-600" : "text-rose-600"} />
             </div>
             <div>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">Expenses by category</p>
