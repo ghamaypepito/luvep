@@ -4,7 +4,7 @@ The Initial Consultation Agreement & Invoice builder supports Online Consultatio
 
 The live preview, generated agreement and invoice include the selected arrangement. Saved draft settings and the agreement payload snapshot preserve it through reopening, email review and client signing. Existing agreements without a mode retain their original online wording when signed. No migration or historical document rewrite is required.
 
-When a selected client has no email address, the builder explains why Verify & Email is disabled and links to the client profile in a separate tab. Add the email there, refresh the Engagement page and reopen the saved draft. The draft can still be generated and saved without a client email.
+When a selected client has no email address, the builder explains why Verify & Email is disabled. Add the email to the client record, refresh the Engagement page and reopen the saved draft. This guidance applies to case and pre-screening clients. The draft can still be generated and saved without a client email.
 
 The reviewed client email includes the arrangement, date, time and time zone. Existing HTML fragments, Markdown and complete designer email templates retain their format. Generate and Save as Draft send nothing; sending still requires the existing reviewed email action.
 

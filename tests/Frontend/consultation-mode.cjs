@@ -84,10 +84,8 @@ const preview = () => new URL(document.querySelector('iframe').getAttribute('src
             assert.equal(warning.getAttribute('role'), 'alert');
             assert.match(warning.textContent, /Verify & Email is disabled because this client has no email address/);
             assert.match(warning.textContent, /refresh this page/i);
-            const profile = warning.querySelector('a');
-            assert.equal(profile.getAttribute('href'), `/portal/immigration/cases/${fixture.id}/profile`);
-            assert.equal(profile.getAttribute('target'), '_blank');
-            assert.match(profile.getAttribute('rel'), /noopener/);
+            assert.match(warning.textContent, /Add their email to the client record/);
+            assert.equal(warning.querySelector('a'), null, 'Shared builder must not send pre-screening leads to a case-only profile');
             assert.equal(verify.getAttribute('aria-describedby'), warning.id);
             assert.equal(verify.disabled, true);
             assert.doesNotMatch(document.body.textContent, /Draft saved\. Ready to review the email/);

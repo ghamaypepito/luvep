@@ -1291,8 +1291,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                         <p>{flow.savedPackId ? (missingClientEmail ? "Draft saved." : "Draft saved. Ready to review the email.") : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
                         <p className="mt-1">Generate and Save as Draft do not send email.</p>
                         {missingClientEmail && <p id="engagement-missing-email" role="alert" className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                            Verify &amp; Email is disabled because this client has no email address. Add it in the client profile, refresh this page, and reopen the draft.{" "}
-                            <a href={`/portal/immigration/cases/${selectedCase.id}/profile`} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">Open client profile</a>
+                            Verify &amp; Email is disabled because this client has no email address. Add their email to the client record, refresh this page, and reopen the draft.
                         </p>}
                         {flow.error && !flow.review && <p role="alert" className="mt-2 max-w-xl text-red-700">{flow.error}</p>}
                     </div>
