@@ -16,7 +16,7 @@ const empty = () => null;
 const compiled = buildSync({ entryPoints: ['resources/js/pages/portal/immigration/Engagement.jsx'], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom', '@/*', '@inertiajs/react', 'sonner', 'lucide-react'] }).outputFiles[0].text;
 const component = new Module(path.resolve('consultation-mode-test.cjs'), module);
 component.require = name => {
-    if (name.endsWith('/useEngagementWorkflow')) return (_id, value) => { settings = value; return {}; };
+    if (name.endsWith('/useEngagementWorkflow')) return (_id, value, draft) => { settings = value; return { savedPackId: draft?.pack_id ?? null }; };
     if (name === '@inertiajs/react') return { Head: empty, Link: empty, router: {} };
     if (name === 'lucide-react') return new Proxy({}, { get: () => empty });
     if (name === 'sonner') return { toast: {} };
@@ -67,6 +67,41 @@ const preview = () => new URL(document.querySelector('iframe').getAttribute('src
     root = createRoot(document.getElementById('root'));
     await act(async () => root.render(React.createElement(Modal, { ...props, draft: { engagement_type: 'initial_consultation', engagement_settings: { meeting_link: 'https://meet.google.com/legacy-fixture' } } })));
     assert.equal(mode().value, 'online'); assert.equal(link().value, 'https://meet.google.com/legacy-fixture'); assert.equal(address(), null);
+    await act(async () => root.unmount());
+    // A saved draft with no recipient must explain why email review is disabled.
+    const savedDraft = { pack_id: 'fixture-pack', engagement_type: 'initial_consultation', engagement_settings: {} };
+    const signer = { id: 1, name: 'Fixture Adviser', licence_current: true, has_signature: true };
+    for (const email of [null, '', 'fixture@example.test']) {
+        const client = { ...fixture, email };
+        root = createRoot(document.getElementById('root'));
+        await act(async () => root.render(React.createElement(Modal, {
+            ...props, initialCase: client, cases: [client], signers: [signer], draft: savedDraft,
+        })));
+        const warning = document.getElementById('engagement-missing-email');
+        const verify = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Verify & Email');
+        if (!email) {
+            assert.ok(warning, 'Explain the missing client email');
+            assert.equal(warning.getAttribute('role'), 'alert');
+            assert.match(warning.textContent, /Verify & Email is disabled because this client has no email address/);
+            assert.match(warning.textContent, /refresh this page/i);
+            const profile = warning.querySelector('a');
+            assert.equal(profile.getAttribute('href'), `/portal/immigration/cases/${fixture.id}/profile`);
+            assert.equal(profile.getAttribute('target'), '_blank');
+            assert.match(profile.getAttribute('rel'), /noopener/);
+            assert.equal(verify.getAttribute('aria-describedby'), warning.id);
+            assert.equal(verify.disabled, true);
+            assert.doesNotMatch(document.body.textContent, /Draft saved\. Ready to review the email/);
+        } else {
+            assert.equal(warning, null, 'Do not warn when the email is present');
+            assert.equal(verify.getAttribute('aria-describedby'), null);
+            assert.equal(verify.disabled, false);
+            assert.match(document.body.textContent, /Draft saved\. Ready to review the email/);
+        }
+        await act(async () => root.unmount());
+    }
+    root = createRoot(document.getElementById('root'));
+    await act(async () => root.render(React.createElement(Modal, { ...props, initialCase: null })));
+    assert.equal(document.getElementById('engagement-missing-email'), null, 'Do not warn before selecting a client');
     await act(async () => root.unmount());
     console.log('Consultation mode switching, required fields, preview payloads, draft restoration and legacy online defaults passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

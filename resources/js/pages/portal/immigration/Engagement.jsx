@@ -859,6 +859,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     };
     const flow = useEngagementWorkflow(selectedCase?.id, settings, draft, onClose);
     const submitting = !!flow.busy;
+    const missingClientEmail = Boolean(selectedCase && !selectedCase.email);
     const previewParameters = new URLSearchParams({
         engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
@@ -1287,8 +1288,12 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                 {/* Generate, save and reviewed sending are distinct operations. */}
                 <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                     <div className="min-w-0 text-xs text-gray-600">
-                        <p>{flow.savedPackId ? "Draft saved. Ready to review the email." : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
+                        <p>{flow.savedPackId ? (missingClientEmail ? "Draft saved." : "Draft saved. Ready to review the email.") : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
                         <p className="mt-1">Generate and Save as Draft do not send email.</p>
+                        {missingClientEmail && <p id="engagement-missing-email" role="alert" className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            Verify &amp; Email is disabled because this client has no email address. Add it in the client profile, refresh this page, and reopen the draft.{" "}
+                            <a href={`/portal/immigration/cases/${selectedCase.id}/profile`} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">Open client profile</a>
+                        </p>}
                         {flow.error && !flow.review && <p role="alert" className="mt-2 max-w-xl text-red-700">{flow.error}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1302,7 +1307,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                             {flow.busy === "save" ? "Saving…" : "Save as Draft"}
                         </button>
-                        <button type="button" onClick={flow.verify} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
+                        <button type="button" onClick={flow.verify} aria-describedby={missingClientEmail ? "engagement-missing-email" : undefined} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
                             className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
                             {flow.busy === "review" ? "Preparing review…" : "Verify & Email"}
                         </button>
