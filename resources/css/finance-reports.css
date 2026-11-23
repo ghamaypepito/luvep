@@ -49,3 +49,4 @@
 .finance-ledger-status .finance-pie svg{max-width:200px}
 .finance-ledger-status>.finance-caption{margin-top:20px}
 .finance-pie-legend td:nth-child(2){white-space:nowrap}
+@media(max-width:540px){.finance-pie-legend th,.finance-pie-legend td{padding:12px 8px}.finance-ledger-status .finance-pie-category{overflow-wrap:normal}}
