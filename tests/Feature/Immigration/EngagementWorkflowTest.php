@@ -68,6 +68,25 @@ class EngagementWorkflowTest extends TestCase
             ->assertOk()->json();
     }
 
+    public function test_consultation_sections_flow_without_a_blank_page_before_cancellation(): void
+    {
+        $this->lead->forceFill(['first_name' => 'Sample Arpankumar', 'middle_name' => null, 'last_name' => 'CLIENT'])->save();
+        foreach (['online', 'face_to_face'] as $mode) {
+            $settings = array_replace($this->settings(), [
+                'consultation_mode' => $mode, 'service_fee' => '300.00',
+                'consultation_address' => '4/15 Example Way, Albany, Auckland 0632',
+            ]);
+            $pdf = app(EngagementDocumentGenerator::class)->pdfBinary($this->lead, 'initial_consultation', $settings);
+            $pages = (new Parser)->parseContent($pdf)->getPages();
+            $this->assertCount(2, $pages, 'The consultation must not add a third page before section 5.');
+            $lastPage = end($pages)->getText();
+            $this->assertStringContainsString('4. Visa Processing', $lastPage);
+            $this->assertStringContainsString('5. Cancellation', $lastPage);
+            $this->assertStringContainsString('7. Acknowledgment', $lastPage);
+        }
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_consultation_requires_only_the_selected_arrangement(): void
     {
         $url = "/admin/leads/{$this->lead->id}/engagement/prepare";
