@@ -68,6 +68,120 @@ class EngagementWorkflowTest extends TestCase
             ->assertOk()->json();
     }
 
+    public function test_consultation_requires_only_the_selected_arrangement(): void
+    {
+        $url = "/admin/leads/{$this->lead->id}/engagement/prepare";
+        foreach ([null, 'online'] as $mode) {
+            $settings = array_replace($this->settings(), ['meeting_link' => '', 'consultation_address' => 'Unused address']);
+            if ($mode !== null) {
+                $settings['consultation_mode'] = $mode;
+            }
+            $this->postJson($url, $settings)->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        }
+        $face = array_replace($this->settings(), ['consultation_mode' => 'face_to_face', 'meeting_link' => 'invalid']);
+        $this->postJson($url, $face)->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        $this->postJson($url, $face + ['consultation_address' => '   '])->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        $this->postJson($url, $face + ['consultation_address' => '20 Example Road, Auckland'])->assertOk();
+        $this->postJson($url, array_replace($this->settings(), ['consultation_mode' => 'unknown']))
+            ->assertUnprocessable()->assertJsonValidationErrors('consultation_mode');
+        $this->postJson($url, array_replace($this->settings(), ['meeting_link' => 'http://meet.google.com/test']))
+            ->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        $this->postJson($url, array_replace($this->settings(), ['meeting_link' => 'https://meet.google.com/'.str_repeat('x', 1000)]))
+            ->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        $this->postJson($url, $face + ['consultation_address' => str_repeat('A', 2001)])
+            ->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        foreach ([null, ['face_to_face']] as $invalidMode) {
+            $this->postJson($url, array_replace($this->settings(), ['consultation_mode' => $invalidMode]))
+                ->assertUnprocessable()->assertJsonValidationErrors('consultation_mode');
+        }
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_consultation_arrangement_survives_preview_save_email_and_signing(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+        foreach (['online', 'face_to_face'] as $mode) {
+            $online = $mode === 'online';
+            $label = $online ? 'Online Consultation' : 'Face-to-Face Consultation';
+            $detail = $online ? 'https://meet.google.com/abc-defg-hij' : '20 Example Road, Auckland';
+            $settings = array_replace($this->settings(), [
+                'consultation_mode' => $mode, 'consultation_address' => $online ? 'UNUSED ADDRESS' : $detail,
+                'meeting_link' => $online ? $detail : 'https://meet.google.com/unused-link',
+            ]);
+            $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+            foreach (['engage_initial_consultation', 'engage_invoice'] as $type) {
+                $this->get("{$base}/generate/{$type}/preview?{$query}")->assertOk()->assertSee($label)->assertSee($detail)
+                    ->assertDontSee('UNUSED ADDRESS')->assertDontSee('unused-link');
+            }
+            $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()->json();
+            $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+            $docs = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+            foreach ($docs as $doc) {
+                $this->assertSame($mode, $doc->notes['engagement_settings']['consultation_mode']);
+                $this->assertArrayNotHasKey($online ? 'consultation_address' : 'meeting_link', $doc->notes['engagement_settings']);
+                $text = (new Parser)->parseContent(Storage::disk('local')->get($doc->file_path))->getText();
+                $this->assertStringContainsString($label, $text);
+                $this->assertStringContainsString($detail, $text);
+                $this->assertStringNotContainsString('unused-link', $text);
+                $this->assertStringNotContainsString('UNUSED ADDRESS', $text);
+            }
+            $review = $this->postJson("{$base}/engagement/review", ['pack_id' => $saved['pack_id']])->assertOk()->json();
+            $this->assertStringContainsString($label, $review['html']);
+            $this->assertStringContainsString($detail, $review['html']);
+            Mail::assertNothingOutgoing();
+            $agreement = $docs->firstWhere('source_variant', 'engagement:initial_consultation');
+            $this->postJson("{$base}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+            Mail::assertSent(\App\Mail\ReviewedEngagementMail::class, function ($mail) use ($review, $label, $detail, $online) {
+                $this->assertSame($review['html'], $mail->htmlBody);
+                $this->assertStringContainsString($label, $mail->htmlBody);
+                $this->assertStringContainsString($detail, $mail->htmlBody);
+                $this->assertStringNotContainsString($online ? 'UNUSED ADDRESS' : 'unused-link', $mail->htmlBody);
+                return $mail->hasTo('fixture@example.test') && count($mail->files) === 2;
+            });
+            Mail::fake();
+            $signing = '/engagement/'.$agreement->notes['engagement_signing_token'].'/documents/'.$agreement->id;
+            $this->get($signing.'/preview')->assertOk()->assertSee($label)->assertSee($detail);
+            $this->post($signing.'/sign', [
+                'signer_name' => 'Fixture Client',
+                'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            ])->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNotNull($agreement->fresh()->client_signed_at);
+            $text = (new Parser)->parseContent(Storage::disk('local')->get($agreement->file_path))->getText();
+            $this->assertStringContainsString($label, $text);
+            $this->assertStringContainsString($detail, $text);
+            Mail::fake();
+        }
+    }
+
+    public function test_custom_consultation_email_includes_escaped_arrangement_details(): void
+    {
+        $template = \App\Models\MessageTemplate::create([
+            'key' => 'initial_consultation_agreement', 'name' => 'Consultation fixture', 'department' => '',
+            'is_active' => true, 'channels' => ['email'], 'email_subject' => 'Consultation',
+            'email_body' => '<p>Review your agreement.</p>',
+        ]);
+        $settings = array_replace($this->settings(), [
+            'consultation_mode' => 'face_to_face', 'meeting_link' => '',
+            'consultation_address' => '20 Example Road <script>alert(1)</script>',
+        ]);
+        $base = "/admin/leads/{$this->lead->id}/engagement";
+        $prepared = $this->postJson($base.'/prepare', $settings)->assertOk()->json();
+        $saved = $this->postJson($base.'/save', ['token' => $prepared['token']])->assertOk()->json();
+        $review = $this->postJson($base.'/review', ['pack_id' => $saved['pack_id']])->assertOk()->json();
+        $this->assertStringContainsString('Review your agreement.', $review['html']);
+        $this->assertStringContainsString('Face-to-Face Consultation', $review['html']);
+        $this->assertStringContainsString('&lt;script&gt;', $review['html']);
+        $this->assertStringNotContainsString('<script>', $review['html']);
+        foreach (['**Review your agreement.**', '<html><body><p>Review your agreement.</p></body></html>'] as $body) {
+            $template->update(['email_body' => $body, 'design_json' => str_starts_with($body, '<html>') ? ['body' => []] : null]);
+            $html = $this->postJson($base.'/review', ['pack_id' => $saved['pack_id']])->assertOk()->json('html');
+            $this->assertStringContainsString('Face-to-Face Consultation', $html);
+            $this->assertStringNotContainsString('**Review', $html);
+            $this->assertLessThan(stripos($html, '</body>'), strpos($html, 'Face-to-Face Consultation'));
+        }
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_prepare_and_save_never_send_and_save_is_idempotent(): void
     {
         \App\Models\EmailAutomationMessage::create([

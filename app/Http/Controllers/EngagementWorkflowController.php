@@ -22,6 +22,8 @@ class EngagementWorkflowController extends Controller
 
     public function prepare(Request $request, EngagementPackWorkflow $workflow, $id)
     {
+        $consultation = $request->input('engagement_type') === 'initial_consultation';
+        $faceToFace = $request->input('consultation_mode', 'online') === 'face_to_face';
         $data = $request->validate([
             'engagement_type' => ['required', Rule::in(['immigration_advice', 'initial_consultation', 'oia'])],
             'types' => 'required|array|min:1|max:5', 'types.*' => 'required|string|distinct',
@@ -34,7 +36,9 @@ class EngagementWorkflowController extends Controller
             'consultation_date' => 'required_if:engagement_type,initial_consultation|nullable|date_format:Y-m-d',
             'consultation_time' => 'required_if:engagement_type,initial_consultation|nullable|date_format:H:i',
             'consultation_timezone' => 'required_if:engagement_type,initial_consultation|nullable|timezone',
-            'meeting_link' => 'required_if:engagement_type,initial_consultation|nullable|url:https|max:1000',
+            'consultation_mode' => ['sometimes', 'required', Rule::in(['online', 'face_to_face'])],
+            'meeting_link' => [Rule::excludeIf(! $consultation || $faceToFace), Rule::requiredIf($consultation && ! $faceToFace), 'nullable', 'url:https', 'max:1000'],
+            'consultation_address' => [Rule::excludeIf(! $consultation || ! $faceToFace), Rule::requiredIf($consultation && $faceToFace), 'nullable', 'string', 'max:2000'],
         ]);
 
         return response()->json($workflow->prepare($this->lead($id), $data));
