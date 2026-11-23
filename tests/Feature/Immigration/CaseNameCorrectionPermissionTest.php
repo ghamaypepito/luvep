@@ -44,6 +44,28 @@ class CaseNameCorrectionPermissionTest extends TestCase
         $this->assertSame('Original', $case->fresh()->first_name);
     }
 
+    public function test_personal_save_uses_the_same_legacy_case_membership_as_the_enabled_form(): void
+    {
+        $this->withoutVite();
+        $manager = User::factory()->create(['role' => 'immigration_manager', 'module_permissions' => ['case_name_correction']]);
+        $case = Lead::create(['first_name' => 'Original', 'last_name' => 'Applicant', 'email' => 'legacy@example.test', 'is_immigration_case' => false,
+            'is_student' => true, 'education_stage' => 'Endorsed to Immigration', 'stage_history' => [['stage' => 'Existing handoff']]]);
+        $history = $case->fresh()->stage_history;
+        $this->actingAs($manager)->get('/portal/immigration/cases/'.$case->id.'/profile')->assertOk()
+            ->assertInertia(fn ($page) => $page->where('canCorrectCaseNames', true));
+        $this->post('/portal/immigration/cases/'.$case->id.'/personal', ['first_name' => 'Corrected', 'email' => $case->email])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $case->refresh();
+        $this->assertSame('Corrected', $case->first_name);
+        $this->assertFalse($case->is_immigration_case);
+        $this->assertTrue($case->is_student);
+        $this->assertSame('Endorsed to Immigration', $case->education_stage);
+        $this->assertSame($history, $case->stage_history);
+        $plain = Lead::create(['first_name' => 'Plain', 'last_name' => 'Applicant', 'email' => 'plain@example.test', 'is_immigration_case' => false]);
+        $this->postJson('/portal/immigration/cases/'.$plain->id.'/personal', ['first_name' => 'Denied', 'email' => $plain->email])->assertNotFound();
+        $this->assertSame('Plain', $plain->fresh()->first_name);
+    }
+
     public function test_super_admin_can_grant_and_revoke_only_this_option_with_an_audit_and_without_other_access_changes(): void
     {
         $super = User::factory()->create(['role' => 'super_admin']);

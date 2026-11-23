@@ -1582,7 +1582,7 @@ class CaseProfileController extends Controller
         $user = auth()->user();
         abort_unless($user instanceof User, 403);
         $this->ensureCanViewCases($user);
-        abort_unless($lead->is_immigration_case, 404);
+        abort_unless(Lead::immigrationCase()->whereKey($lead->getKey())->exists(), 404);
 
         $validated = $request->validate([
             'first_name' => 'required|string|max:120',
