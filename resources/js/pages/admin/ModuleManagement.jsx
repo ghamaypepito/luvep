@@ -108,13 +108,18 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
         router.post(`/admin/module-management/${target.id}`, { modules: submitted }, {
             preserveScroll: true,
             preserveState: true,
-            onError: (errors) => setModuleNotice({ type: "error", message: `Access was not saved. ${Object.values(errors).flat().join(" ")}` }),
+            onError: (errors) => setModuleNotice({
+                type: "error",
+                message: `Access was not saved. ${Object.values(errors).flat().join(" ")}`,
+            }),
             onSuccess: (page) => {
                 const saved = page.props.users?.find((u) => u.id === target.id);
                 const actual = new Set(normalizedModuleGrants(saved?.modules || []));
-                const verified = Array.isArray(saved?.modules) && actual.size === submitted.length && submitted.every((key) => actual.has(key));
+                const serverError = page.props.flash?.error;
+                const verified = ! serverError && Array.isArray(saved?.modules)
+                    && actual.size === submitted.length && submitted.every((key) => actual.has(key));
                 if (! verified) {
-                    setModuleNotice({ type: "error", message: "Could not verify the requested access was saved. Reload this page and check the user's saved options." });
+                    setModuleNotice({ type: "error", message: serverError || "Could not verify the requested access was saved. Reload this page and check the user's saved options." });
                     if (saved) setGranted(new Set(saved.modules));
                     return;
                 }
@@ -222,6 +227,12 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
 
                     {/* Module toggles */}
                     <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                        {moduleNotice && (
+                            <p role={moduleNotice.type === "success" ? "status" : "alert"}
+                                className={`mb-4 text-sm ${moduleNotice.type === "success" ? "text-emerald-700" : "text-red-700"}`}>
+                                {moduleNotice.message}
+                            </p>
+                        )}
                         {! selected ? (
                             <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center text-gray-400">
                                 <UserIcon size={26} className="mb-2 text-gray-300" />
@@ -306,12 +317,6 @@ export default function ModuleManagement({ modules = [], users = [], portals = [
                                             })}
                                         </div>
 
-                                        {moduleNotice && (
-                                            <p role={moduleNotice.type === "success" ? "status" : "alert"}
-                                                className={`mt-4 text-sm ${moduleNotice.type === "success" ? "text-emerald-700" : "text-red-700"}`}>
-                                                {moduleNotice.message}
-                                            </p>
-                                        )}
                                         <div className="flex items-center justify-end gap-3 mt-5">
                                             {dirty && <span className="text-[11px] text-amber-600 font-semibold">Unsaved changes</span>}
                                             <button

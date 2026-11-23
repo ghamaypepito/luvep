@@ -59,6 +59,19 @@ const start = async (saved = user) => {
         'A redirect without the requested stored grant must not be acknowledged as success');
     assert.equal(document.querySelector('[role="status"]'), null);
 
+    const missing = await start();
+    await render([]);
+    await act(async () => { missing[2].onSuccess({ props: { users: [] } }); missing[2].onFinish(); });
+    assert.match(document.querySelector('[role="alert"]')?.textContent || '', /could not.*verify/i,
+        'A missing returned account must still display the failed verification');
+
+    const denied = await start();
+    const retained = { ...user, modules: ['hr', 'case_name_correction'] };
+    await render([retained]);
+    await act(async () => { denied[2].onSuccess({ props: { users: [retained], flash: { error: 'Synthetic save refusal' } } }); denied[2].onFinish(); });
+    assert.match(document.querySelector('[role="alert"]')?.textContent || '', /Synthetic save refusal/);
+    assert.equal(document.querySelector('[role="status"]'), null, 'Explicit server errors must never receive a contradictory success acknowledgement');
+
     const good = await start();
     const persisted = { ...user, modules: ['hr', 'case_name_correction'] };
     await render([persisted]);
