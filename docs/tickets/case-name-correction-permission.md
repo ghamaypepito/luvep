@@ -4,7 +4,7 @@ Existing Admin/Super Admin name correction remains available. An active Immigrat
 
 The option permits correcting applicant and dependant names within existing authorized case-edit paths. The shared case-name boundary and the Personal/Cases edit controls use the same server capability. Case archiving, archived-record operations, role management and other Admin access keep their separate existing checks. Other roles, inactive accounts, ungranted managers, unknown grant keys and View-as previews do not acquire this capability.
 
-Personal saves use the same canonical Immigration membership scope as profile reads and the Cases list, including legacy Education handoffs. Saving never converts the case or rewrites its handoff history; plain leads remain excluded.
+Personal and existing-dependant saves share the same canonical Immigration membership guard as profile reads and the Cases list, including legacy Education handoffs. Saving never converts the case or rewrites its handoff history; plain leads remain excluded. Other process endpoints retain their existing strict guards.
 
 Grant/revocation changes are audited with the target account and prior/new flag. Applicant edits retain existing Lead activity auditing. Dependant name changes receive a case-scoped before/after audit in the same transaction. Revocation takes effect on the next authenticated request. No automatic client name change, assessment overwrite, passport processing, case conversion or document action is added.
 

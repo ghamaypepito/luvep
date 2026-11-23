@@ -137,4 +137,30 @@ class CaseNameCorrectionPermissionTest extends TestCase
             ['relationship' => 'child', 'first_name' => 'Forged', 'family_name' => 'Family'])->assertNotFound();
         $this->assertSame('Corrected', $dependent->fresh()->first_name);
     }
+
+    public function test_existing_dependant_names_save_on_legacy_cases_without_converting_or_changing_other_records(): void
+    {
+        $this->withoutVite();
+        $manager = User::factory()->create(['role' => 'immigration_manager', 'module_permissions' => ['case_name_correction']]);
+        $this->actingAs($manager);
+        foreach (Lead::EDUCATION_STAGES_IMMIGRATION as $stage) {
+            $case = Lead::create(['first_name' => 'Original', 'last_name' => 'Applicant', 'is_immigration_case' => false,
+                'education_stage' => $stage, 'stage_history' => [['stage' => 'Existing handoff']]])->fresh();
+            $before = $case->getRawOriginal();
+            $dependent = \App\Models\CaseDependent::create(['lead_id' => $case->id, 'relationship' => 'child', 'first_name' => 'Before', 'family_name' => 'Family']);
+            $this->get('/portal/immigration/cases/'.$case->id.'/profile')->assertOk()
+                ->assertInertia(fn ($page) => $page->where('canCorrectCaseNames', true)->where('dependents.0.id', $dependent->id));
+            $this->put('/portal/immigration/cases/'.$case->id.'/dependents/'.$dependent->id,
+                ['relationship' => 'child', 'first_name' => 'Corrected', 'family_name' => 'Family'])->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertSame('Corrected', $dependent->fresh()->first_name);
+            $this->assertSame($before, $case->fresh()->getRawOriginal());
+            $audit = ActivityLog::where('action', 'case.dependent_name_corrected')->where('properties->dependent_id', $dependent->id)->sole();
+            $this->assertSame($case->id, $audit->properties['subject_id']);
+            $this->assertSame($manager->id, $audit->user_id);
+        }
+        $plain = Lead::create(['first_name' => 'Plain', 'last_name' => 'Applicant', 'is_immigration_case' => false]);
+        $this->putJson('/portal/immigration/cases/'.$plain->id.'/dependents/'.$dependent->id,
+            ['relationship' => 'child', 'first_name' => 'Denied', 'family_name' => 'Family'])->assertNotFound();
+        $this->assertSame('Corrected', $dependent->fresh()->first_name);
+    }
 }
