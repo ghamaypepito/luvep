@@ -42,6 +42,8 @@ const preview = () => new URL(document.querySelector('iframe').getAttribute('src
     await act(async () => root.render(React.createElement(Modal, props)));
     await change(document.getElementById('engagement-type'), 'initial_consultation');
     assert.equal(mode().value, 'online');
+    assert.equal(settings.service_currency, 'NZD');
+    assert.equal(preview().searchParams.get('service_currency'), 'NZD');
     assert.deepEqual([...mode().options].map(o => o.textContent), ['Online Consultation', 'Face-to-Face Consultation']);
     assert.equal(link().required, true); assert.equal(address(), null);
     await change(link(), 'https://meet.google.com/fixture-only');
@@ -55,6 +57,12 @@ const preview = () => new URL(document.querySelector('iframe').getAttribute('src
     assert.equal(settings.consultation_mode, 'face_to_face'); assert.equal(settings.consultation_address, '20 Example Road, Auckland');
     assert.equal(preview().searchParams.get('consultation_address'), settings.consultation_address);
     assert.equal(preview().searchParams.has('meeting_link'), false);
+    assert.equal(settings.service_currency, 'NZD');
+    assert.equal(preview().searchParams.get('service_currency'), 'NZD');
+    await act(async () => [...document.querySelectorAll('button')].find(button => /^Invoice\s*Auto$/i.test(button.textContent.trim())).click());
+    assert.match(preview().pathname, /engage_invoice\/preview$/);
+    assert.equal(preview().searchParams.get('service_currency'), 'NZD');
+    assert.equal(preview().searchParams.get('consultation_mode'), 'face_to_face');
     await change(mode(), 'online');
     assert.equal(address(), null); assert.equal(link().required, true);
     assert.equal(link().value, 'https://meet.google.com/fixture-only'); assert.equal('consultation_address' in settings, false);

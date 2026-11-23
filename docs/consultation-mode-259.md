@@ -2,7 +2,7 @@
 
 The Initial Consultation Agreement & Invoice builder supports Online Consultation and Face-to-Face Consultation. Online requires an HTTPS Google Meet link. Face-to-face requires a consultation address. Only the selected detail is submitted and saved; server validation excludes the inactive field.
 
-Initial Consultation currency can be USD or NZD. Existing and new drafts default to USD unless NZD is explicitly selected; the numeric fee is not converted. Currency is saved with the fee snapshot and used consistently by the agreement, invoice and signing view. OIA remains NZD.
+Initial Consultation currency can be USD or NZD. New agreements and their paired invoices default to NZD in both the builder and server generation. Staff can explicitly select USD. Reopened drafts and issued documents retain their saved currency; the numeric fee is not converted. Currency is saved with the fee snapshot and used consistently by the agreement, invoice and signing view. OIA remains NZD.
 
 The live preview, generated agreement and invoice include the selected arrangement. Saved draft settings and the agreement payload snapshot preserve it through reopening, email review and client signing. Existing agreements without a mode retain their original online wording when signed. No migration or historical document rewrite is required.
 

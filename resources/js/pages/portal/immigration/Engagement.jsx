@@ -612,7 +612,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
-    const [consultationCurrency, setConsultationCurrency] = useState(draft?.engagement_settings?.service_currency || (draft?.engagement_type === "initial_consultation" && draft?.currency) || "USD");
+    const [consultationCurrency, setConsultationCurrency] = useState(draft?.engagement_settings?.service_currency || (draft?.engagement_type === "initial_consultation" && draft?.currency) || "NZD");
     const serviceCurrency = consultation ? consultationCurrency : "NZD";
     const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
     const defaultServiceFee = consultation ? 250 : 500;
