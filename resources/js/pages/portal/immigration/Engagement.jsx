@@ -149,23 +149,42 @@ function ClientLink({ url }) {
  */
 function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
     const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const inFlight = useRef(false);
+    const finish = () => { inFlight.current = false; setBusy(false); };
+    const showError = (errors) => {
+        const detail = Object.values(errors || {}).flat().filter((value) => typeof value === "string" && value.trim()).join(" ");
+        const message = detail || "Could not delete the documents. Please refresh and try again.";
+        setError(message);
+        toast.error(message);
+    };
 
     const remove = async () => {
-        const ok = await confirmDialog({
-            title: "Delete engagement documents?",
-            message: `Delete all ${count} engagement document${count === 1 ? '' : 's'} for ${caseName}? This removes the files permanently.`,
-            confirmText: "Delete", tone: "danger",
-        });
-        if (! ok) return;
+        if (inFlight.current) return;
+        inFlight.current = true;
         setBusy(true);
-        router.delete(`/admin/leads/${caseId}/engagement/documents?pack_id=${encodeURIComponent(packId || "legacy")}`, {
-            preserveScroll: true,
-            onError: () => toast.error("Could not delete the documents."),
-            onFinish: () => setBusy(false),
-        });
+        setError("");
+        try {
+            const ok = await confirmDialog({
+                title: "Delete engagement documents?",
+                message: `Delete all ${count} engagement document${count === 1 ? '' : 's'} for ${caseName}? This removes the files permanently. Packs linked to Finance or recorded payments must be reviewed by Finance first.`,
+                confirmText: "Delete", tone: "danger",
+            });
+            if (!ok) { finish(); return; }
+            router.delete(`/admin/leads/${caseId}/engagement/documents?pack_id=${encodeURIComponent(packId || "legacy")}`, {
+                preserveScroll: true,
+                preserveState: true,
+                onError: showError,
+                onFinish: finish,
+            });
+        } catch {
+            showError({ error: "Could not delete the documents. Please refresh and try again." });
+            finish();
+        }
     };
 
     return (
+        <div className="flex flex-col items-end gap-1">
         <button
             type="button"
             onClick={remove}
@@ -175,6 +194,8 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
         >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={13} />}
         </button>
+        {error && <p role="alert" className="max-w-64 whitespace-normal text-xs text-rose-700">{error}</p>}
+        </div>
     );
 }
 
