@@ -5,13 +5,28 @@
         <article>
             @php($hasFeaturedImage = !empty($content['image_url']))
             <div class="{{ $hasFeaturedImage ? 'relative mx-auto w-fit max-w-full' : 'flex justify-end' }}">
-                @if ($hasFeaturedImage)
+                @if (count($content['featured_images'] ?? []) > 1)
+                    <section aria-label="Featured image carousel" class="w-full max-w-3xl">
+                        <div tabindex="0" aria-label="Scroll article images" class="flex snap-x snap-mandatory gap-4 overflow-x-auto rounded-xl focus-visible:outline-2 focus-visible:outline-brand-green">
+                            @foreach ($content['featured_images'] as $index => $image)
+                                <figure id="article-image-{{ $index + 1 }}" class="flex w-full shrink-0 snap-start justify-center">
+                                    <img src="{{ $image['url'] }}" alt="{{ $image['alt'] ?? '' }}" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" class="block max-h-[34rem] max-w-full object-contain">
+                                </figure>
+                            @endforeach
+                        </div>
+                        <nav aria-label="Choose carousel image" class="flex justify-center gap-2 py-3">
+                            @foreach ($content['featured_images'] as $index => $image)
+                                <a href="#article-image-{{ $index + 1 }}" aria-label="Image {{ $index + 1 }} of {{ count($content['featured_images']) }}" class="grid size-10 place-items-center rounded-full bg-green-50 text-sm font-semibold text-brand-green focus-visible:outline-2 focus-visible:outline-brand-green">{{ $index + 1 }}</a>
+                            @endforeach
+                        </nav>
+                    </section>
+                @elseif ($hasFeaturedImage)
                     <img src="{{ $content['image_url'] }}" alt="{{ $content['image_alt'] ?? '' }}"
                         class="block max-h-[34rem] max-w-full rounded-xl object-contain">
                 @endif
 
                 <a href="{{ route('articles.index', absolute: false) }}"
-                    class="{{ $hasFeaturedImage ? 'absolute right-3 bottom-3 bg-white px-3 shadow-sm sm:right-4 sm:bottom-4' : '' }} inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-green underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green">
+                    class="{{ $hasFeaturedImage && count($content['featured_images'] ?? []) < 2 ? 'absolute right-3 bottom-3 bg-white px-3 shadow-sm sm:right-4 sm:bottom-4' : '' }} inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-green underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green">
                     <svg aria-hidden="true" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m12 19-7-7 7-7m-7 7h14"/>
                     </svg>

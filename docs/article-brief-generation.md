@@ -1,0 +1,13 @@
+# Article brief generation — review draft
+
+Existing Content Calendar editors can add and edit the editorial brief on a new or saved article. The existing brief JSON is reused, including imported planning fields. Generation needs a writing prompt of at least 20 characters and uses the saved staff Claude connection with a bounded 4,000-token response budget. Existing caption/chat budgets are unchanged.
+
+Generate article & SEO returns editable title, summary, sectioned rich text, URL slug, primary keyword, meta title/description, suggested image alt text and visual directions. The author defaults to EP Editorial Team unless supplied by the editor. Generation does not save, submit, approve or publish. Replacing existing article text requires confirmation; provider/validation failures retain current fields. Output facts and sources still need human review. Article approval/publishing permissions are unchanged.
+
+Build visual preview reuses the existing EP canvas renderer: one 1200×630 featured graphic or 3–5 1080×1080 carousel slides. An optional local photo can be composited; these are branded layouts, not newly generated photographic footage/imagery. PNG downloads stay local. Choosing Use uploads the rendered PNGs into the article's image selection. Direct PNG/JPEG/WebP uploads accept up to five images below 10MB, 8192px per side and 40 megapixels. Upload controls clearly state that uploaded article images receive public web links; they do not use or expose the private Social Drive.
+
+The ordered image selection is persisted in an additive nullable JSON column. Its first item supplies the cover/SEO image and its description; multiple images render as a keyboard-accessible native scroll carousel with numbered links. The existing published snapshot includes the selected images only after review and approval. Saving changes resets approval and leaves an existing live revision and its image URLs intact.
+
+Generated HTML is built from escaped plain-text sections. User edits still pass through the existing HTML sanitizer. Staff authorization, CSRF and throttles protect generation/uploads; no public generation endpoint exists. Brief text/provider bodies are not logged. Failed upload batches clean up their newly stored files. Uploaded publication assets are immutable random paths; removing a draft selection does not delete files used by live articles.
+
+Rollback retains the additive image column and uploaded files. No new dependency, key or provider is required. The local review preview uses sample AI responses and blocks saving/uploading/publishing. Native canvas previews and PNG downloads are real; live AI quality has not been evaluated in this review.
