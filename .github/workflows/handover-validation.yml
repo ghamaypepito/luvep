@@ -101,6 +101,7 @@ jobs:
           node tests/Frontend/education-intake-recovery.cjs
           node tests/Frontend/assessment-case-link.cjs
           node tests/Frontend/passport-prefill.cjs
+          node tests/Frontend/case-name-correction.cjs
           node tests/Frontend/nbi-client-pdf.cjs
           node tests/Frontend/recent-visa.cjs
           node tests/Frontend/resident-english-exception.cjs
