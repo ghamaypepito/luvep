@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import sections from '../../../data/education-cost-sections.json';
 
 const API = '/portal/education/cost-breakdowns';
-const emptyRow = () => ({ description: '', amount: '' });
+const emptyRow = () => ({ description: '', amount: '', section: '' });
 const errorText = (error) => Object.values(error.response?.data?.errors || {}).flat()[0] || error.response?.data?.message || 'Could not complete this request. Please retry.';
 const money = (value) => Number(value).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -69,8 +70,8 @@ export default function CostBreakdownBuilder() {
         const nzd = Number(row.amount) / currentQuote.rates[source].rate;
         return { nzd: Math.round((nzd + Number.EPSILON) * 100) / 100, local: Math.round((nzd * currentQuote.rates[target].rate + Number.EPSILON) * 100) / 100 };
     };
-    const total = rows.reduce((sum, row) => { const value = converted(row); return { amount: sum.amount + (Number(row.amount) || 0), nzd: sum.nzd + (value?.nzd || 0), local: sum.local + (value?.local || 0) }; }, { amount: 0, nzd: 0, local: 0 });
-    const validRows = rows.every((row) => row.description.trim() && /^\d+(\.\d{1,2})?$/.test(String(row.amount)) && Number(row.amount) <= 99999999.99);
+    const total = rows.filter((row) => row.section !== 'other_costs').reduce((sum, row) => { const value = converted(row); return { amount: sum.amount + (Number(row.amount) || 0), nzd: sum.nzd + (value?.nzd || 0), local: sum.local + (value?.local || 0) }; }, { amount: 0, nzd: 0, local: 0 });
+    const validRows = rows.every((row) => row.description.trim() && ((row.section === 'other_costs' && row.amount === '') || (/^\d+(\.\d{1,2})?$/.test(String(row.amount)) && Number(row.amount) <= 99999999.99)));
     const canGenerate = client && country.trim() && category && currentQuote && validRows && !busy && !rateLoading;
     const generate = async (action) => {
         if (!canGenerate) return;
@@ -112,14 +113,17 @@ export default function CostBreakdownBuilder() {
                     {rateLoading ? <p role="status">Loading automatic reference rates...</p> : rateError ? <p role="alert">{rateError}</p> : currentQuote ? <><p>Indicative conversion - {currentQuote.provider}</p>{Object.entries(currentQuote.rates).map(([code, value]) => <p key={code}>1 NZD = {value.rate} {code} - rate date {value.date}</p>)}</> : <p>Select valid currencies to fetch automatic reference rates.</p>}
                     <button type="button" className="mt-2 underline" onClick={() => setRateRefresh((old) => old + 1)} disabled={rateLoading}>Refresh rates</button>
                 </div>
-                <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead><tr><th>Description</th><th>Original {source}</th><th>Estimate NZD</th><th>Estimate {target || 'local'}</th><th>Action</th></tr></thead><tbody>{rows.map((row, index) => { const estimate = converted(row); return <tr key={index}>
-                    <td className="py-2 pr-2"><textarea aria-label={`Description ${index + 1}`} className={inputClass} maxLength={500} value={row.description} onChange={(e) => updateRow(index, 'description', e.target.value)} /></td>
+                <p className="text-xs text-gray-500">Choose a heading for each item to group it in the preview and PDF. Changing a heading keeps the entered amount. Other costs are shown separately and excluded from the listed cost total; leave their amount blank when it is not yet known.</p>
+                <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead><tr><th>Description</th><th>Original {source}</th><th>Estimate NZD</th><th>Estimate {target || 'local'}</th><th>Action</th></tr></thead><tbody>{rows.map((row, index) => { const estimate = converted(row); const heading = sections.find((section) => section.key === row.section)?.label; return <React.Fragment key={index}>
+                    {heading && row.section !== rows[index - 1]?.section && <tr className="bg-green-50 text-green-900"><th colSpan={5} className="px-2 py-2 text-xs uppercase tracking-wide">{heading}</th></tr>}
+                    <tr>
+                    <td className="py-2 pr-2"><select aria-label={`Heading ${index + 1}`} className={inputClass} value={row.section || ''} onChange={(e) => updateRow(index, 'section', e.target.value)}><option value="">No heading</option>{sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}</select><textarea aria-label={`Description ${index + 1}`} className={inputClass} maxLength={500} value={row.description} onChange={(e) => updateRow(index, 'description', e.target.value)} /></td>
                     <td className="pr-2"><input aria-label={`Amount ${index + 1}`} type="number" min="0" max="99999999.99" step="0.01" className={inputClass} value={row.amount} onChange={(e) => updateRow(index, 'amount', e.target.value)} /></td>
                     <td>{estimate ? money(estimate.nzd) : '-'}</td><td>{estimate ? money(estimate.local) : '-'}</td>
                     <td><button type="button" aria-label={`Remove row ${index + 1}`} disabled={rows.length === 1} onClick={() => setRows((old) => old.filter((_, i) => i !== index))}>Remove</button></td>
-                </tr>; })}</tbody><tfoot><tr><th>Listed cost total</th><td>{money(total.amount)}</td><td>{currentQuote ? money(total.nzd) : '-'}</td><td>{currentQuote ? money(total.local) : '-'}</td><td /></tr></tfoot></table></div>
+                </tr></React.Fragment>; })}</tbody><tfoot><tr><th>Listed cost total</th><td>{money(total.amount)}</td><td>{currentQuote ? money(total.nzd) : '-'}</td><td>{currentQuote ? money(total.local) : '-'}</td><td /></tr></tfoot></table></div>
                 <button type="button" className="rounded-lg border px-3 py-2 text-sm" disabled={rows.length >= 30} onClick={() => setRows((old) => [...old, emptyRow()])}>Add cost item</button>
-                <p className="text-xs text-gray-500">Totals sum rounded line amounts, using two decimal places. Only listed costs are included. Converted amounts are estimates, not payment amounts.</p>
+                <p className="text-xs text-gray-500">Totals sum rounded line amounts, using two decimal places. Other costs to prepare for are not included. Converted amounts are estimates, not payment amounts.</p>
                 <div className="flex flex-wrap gap-2">{[['preview', 'Preview breakdown'], ['download', 'Download PDF'], ['save', 'Save new breakdown']].map(([action, label]) => <button key={action} type="button" disabled={!canGenerate} onClick={() => generate(action)} className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-40">{busy ? 'Working...' : label}</button>)}</div>
             </>}
         </fieldset>
