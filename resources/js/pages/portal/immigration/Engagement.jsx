@@ -612,6 +612,8 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
+    const [consultationCurrency, setConsultationCurrency] = useState(draft?.engagement_settings?.service_currency || (draft?.engagement_type === "initial_consultation" && draft?.currency) || "USD");
+    const serviceCurrency = consultation ? consultationCurrency : "NZD";
     const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
     const defaultServiceFee = consultation ? 250 : 500;
     const serviceFee = serviceFees[engagementType];
@@ -853,7 +855,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
         ...(specialService ? { service_fee: serviceFeeOverride } : {}),
-        ...(consultation ? consultationDetails : {}),
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
         revision: familyRefresh,
     };
@@ -865,7 +867,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
         ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
-        ...(consultation ? consultationDetails : {}), _r: familyRefresh,
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}), _r: familyRefresh,
     });
     const preparedPreview = flow.prepared?.documents.find((doc) => doc.type === previewType)?.preview_url;
     const savedPreview = !flow.prepared && flow.savedPackId ? draft?.documents?.find((doc) => doc.type_key === previewType)?.view_url : null;
@@ -1170,8 +1172,15 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+                                {consultation && <label htmlFor="consultation-currency" className="mb-3 block text-xs font-semibold">Currency
+                                    <select id="consultation-currency" value={consultationCurrency} disabled={!!draft?.signed}
+                                        onChange={(event) => setConsultationCurrency(event.target.value)} className={`${ctrlCls} mt-1.5`}>
+                                        <option value="USD">USD - US Dollar</option>
+                                        <option value="NZD">NZD - New Zealand Dollar</option>
+                                    </select>
+                                </label>}
                                 <label className="block text-xs font-semibold">
-                                    {consultation ? "Booking fee (USD, ex GST)" : "Service fee (NZD, ex GST)"}
+                                    {consultation ? `Booking fee (${serviceCurrency}, ex GST)` : "Service fee (NZD, ex GST)"}
                                     <input type="text" inputMode="decimal" disabled={!!draft?.signed}
                                         value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
                                         onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
@@ -1191,10 +1200,10 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                     </select>
                                 </label>
                                 {serviceFeeValid && <dl aria-label="Service fee summary" className="mt-3 space-y-1 text-xs tabular-nums">
-                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee)}</dd></div>
+                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee)}</dd></div>
                                     <div className="flex justify-between"><dt>GST ({GST_PCT}%)</dt><dd>{fmtFee(serviceGst)}</dd></div>
                                     <div className="flex justify-between"><dt>Disbursements</dt><dd>{fmtFee(0)}</dd></div>
-                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
+                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
                                 </dl>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>

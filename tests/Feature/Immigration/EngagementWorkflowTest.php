@@ -68,6 +68,67 @@ class EngagementWorkflowTest extends TestCase
             ->assertOk()->json();
     }
 
+    public function test_consultation_currency_is_preserved_in_previews_draft_and_signing(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+        $settings = array_replace($this->settings(), [
+            'consultation_mode' => 'face_to_face', 'consultation_address' => '20 Example Road, Auckland',
+            'service_fee' => '300.00', 'service_currency' => 'NZD', 'include_gst' => false,
+        ]);
+        $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+        foreach (['engage_initial_consultation', 'engage_invoice'] as $type) {
+            $this->get("{$base}/generate/{$type}/preview?{$query}")->assertOk()->assertSee('NZD')->assertDontSee('USD');
+        }
+        $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()->assertJsonPath('currency', 'NZD')->json();
+        $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+        $docs = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+        foreach ($docs as $doc) {
+            $this->assertSame('NZD', $doc->notes['engagement_currency']);
+            $this->assertSame('NZD', $doc->notes['engagement_settings']['service_currency']);
+            $text = (new Parser)->parseContent(Storage::disk('local')->get($doc->file_path))->getText();
+            $this->assertStringContainsString('NZD', $text);
+            $this->assertStringNotContainsString('USD', $text);
+            $this->assertStringContainsString('300.00', $text);
+        }
+        $agreement = $docs->firstWhere('source_variant', 'engagement:initial_consultation');
+        $snapshot = $agreement->notes['engagement_payload'];
+        $html = app(EngagementDocumentGenerator::class)->renderHtml($this->lead, 'initial_consultation', ['payload_snapshot' => $snapshot]);
+        $this->assertStringContainsString('NZD', $html);
+        $this->assertStringNotContainsString('USD', $html);
+        foreach (['EUR', null, ['NZD']] as $invalid) {
+            $this->postJson("{$base}/engagement/prepare", array_replace($settings, ['service_currency' => $invalid]))
+                ->assertUnprocessable()->assertJsonValidationErrors('service_currency');
+        }
+        $this->assertSame('NZD', EngagementDocumentGenerator::servicePricing('oia', ['service_currency' => 'USD'])['currency']);
+        Mail::assertNothingOutgoing();
+        $review = $this->postJson("{$base}/engagement/review", ['pack_id' => $saved['pack_id']])->assertOk()->json();
+        $this->postJson("{$base}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+        Mail::assertSent(\App\Mail\ReviewedEngagementMail::class, function ($mail) use ($review) {
+            $this->assertSame($review['html'], $mail->htmlBody);
+            foreach ($mail->files as $file) {
+                $text = (new Parser)->parseContent(base64_decode($file['bytes']))->getText();
+                $this->assertStringContainsString('NZD', $text);
+                $this->assertStringNotContainsString('USD', $text);
+                $this->assertStringContainsString('300.00', $text);
+            }
+            return $mail->hasTo('fixture@example.test');
+        });
+        $invoice = $docs->firstWhere('source_variant', 'invoice');
+        $this->assertDatabaseHas('finance_receivables', [
+            'invoice_document_id' => $invoice->id, 'currency' => 'NZD', 'amount' => 300,
+        ]);
+        $signing = '/engagement/'.$agreement->notes['engagement_signing_token'].'/documents/'.$agreement->id;
+        $this->post($signing.'/sign', [
+            'signer_name' => 'Fixture Client',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertNotNull($agreement->fresh()->client_signed_at);
+        $signedText = (new Parser)->parseContent(Storage::disk('local')->get($agreement->file_path))->getText();
+        $this->assertStringContainsString('NZD', $signedText);
+        $this->assertStringNotContainsString('USD', $signedText);
+        $this->assertStringContainsString('300.00', $signedText);
+    }
+
     public function test_consultation_sections_flow_without_a_blank_page_before_cancellation(): void
     {
         $this->lead->forceFill(['first_name' => 'Sample Arpankumar', 'middle_name' => null, 'last_name' => 'CLIENT'])->save();

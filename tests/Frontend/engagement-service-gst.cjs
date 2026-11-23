@@ -44,6 +44,15 @@ const summary = () => document.querySelector('[aria-label="Service fee summary"]
     assert.match(summary(), /GST \(15%\)37.50/); assert.match(summary(), /Total amountUSD 287.50/);
     await change(fee(), '123.45'); assert.equal(settings.service_fee, '123.45');
     assert.match(summary(), /Total amountUSD 141.97/);
+    await change(document.getElementById('consultation-currency'), 'NZD');
+    assert.equal(settings.service_currency, 'NZD');
+    assert.match(summary(), /Total amountNZD 141.97/);
+    await change(document.getElementById('engagement-type'), 'oia');
+    assert.equal(document.getElementById('consultation-currency'), null);
+    assert.equal('service_currency' in settings, false);
+    await change(document.getElementById('engagement-type'), 'initial_consultation');
+    assert.equal(document.getElementById('consultation-currency').value, 'NZD');
+    await change(document.getElementById('consultation-currency'), 'USD');
     await change(document.getElementById('engagement-type'), 'oia');
     assert.equal(gst().value, 'incl'); assert.match(summary(), /Total amountNZD 575.00/);
     await change(gst(), 'excl'); assert.match(summary(), /GST \(15%\)0.00/); assert.match(summary(), /Total amountNZD 500.00/);
@@ -58,5 +67,11 @@ const summary = () => document.querySelector('[aria-label="Service fee summary"]
     assert.equal(settings.include_gst, false); assert.equal(settings.service_fee, '123.45');
     assert.match(summary(), /Disbursements0.00/); assert.match(summary(), /Total amountNZD 123.45/);
     await act(async () => reopened.unmount());
+    const nzdDraft = createRoot(document.getElementById('root'));
+    await act(async () => nzdDraft.render(React.createElement(Modal, { ...props, draft: { engagement_type: 'initial_consultation', currency: 'NZD', engagement_settings: { service_fee: '300', service_currency: 'NZD', include_gst: false } } })));
+    assert.equal(document.getElementById('consultation-currency').value, 'NZD');
+    assert.equal(settings.service_currency, 'NZD');
+    assert.match(summary(), /Total amountNZD 300.00/);
+    await act(async () => nzdDraft.unmount());
     console.log('Per-service GST defaults, independent selections and reopened settings passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

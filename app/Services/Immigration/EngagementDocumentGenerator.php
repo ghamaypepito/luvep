@@ -276,7 +276,7 @@ class EngagementDocumentGenerator
             'include_gst' => (bool) $includeGst,
             'gst' => $gst,
             'grand_total' => round($fee + $gst, 2),
-            'currency' => $type === 'oia' ? 'NZD' : 'USD',
+            'currency' => $type === 'oia' ? 'NZD' : ($settings['service_currency'] ?? 'USD'),
         ];
     }
 
