@@ -145,9 +145,24 @@ class ModuleManagementController extends Controller
             return ! in_array(explode('.', $k, 2)[0], $granted, true);
         }));
 
-        $user->update(['module_permissions' => $granted]);
+        $nameCorrection = in_array('case_name_correction', $granted, true);
+        if ($nameCorrection && ! $user->isAdmin() && $user->role !== User::ROLE_IMMIGRATION_MANAGER) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'modules' => 'Name Correction can only be granted to an Immigration manager.',
+            ]);
+        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($user, $granted, $nameCorrection) {
+            $previous = in_array('case_name_correction', (array) $user->module_permissions, true);
+            $user->update(['module_permissions' => $granted]);
+            if ($previous !== $nameCorrection) {
+                \App\Models\ActivityLog::record('case.name_correction_permission_changed', ['properties' => [
+                    'subject_type' => 'User', 'subject_id' => $user->id, 'old' => $previous, 'new' => $nameCorrection,
+                ]]);
+            }
+        });
 
-        return back()->with('success', "Module access updated for {$user->name}.");
+        // The page acknowledges this save only after checking returned stored grants.
+        return back();
     }
 
     /** Every grantable key: each restricted module plus its dotted feature keys. */

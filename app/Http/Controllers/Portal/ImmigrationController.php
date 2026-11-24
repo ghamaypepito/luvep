@@ -11,12 +11,12 @@ use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\ResidentIntake;
 use App\Models\User;
-use App\Support\CaseRecordAccess;
 use App\Models\UserReview;
+use App\Services\Immigration\AssessmentCaseLink;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
+use App\Support\CaseRecordAccess;
 use App\Traits\BuildsLeadRow;
-use App\Services\Immigration\AssessmentCaseLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -328,6 +328,7 @@ class ImmigrationController extends Controller
     {
         return inertia('portal/immigration/Cases', $this->casesPayload() + [
             'canManageCaseArchive' => CaseRecordAccess::canManage(request()),
+            'canCorrectCaseNames' => CaseRecordAccess::canCorrectNames(request()),
         ]);
     }
 
@@ -864,7 +865,7 @@ class ImmigrationController extends Controller
             // reopens with the Invoice document ticked when one exists.
             $invoicedIds = LeadDocument::where('source_variant', 'invoice')->distinct()->pluck('lead_id');
 
-            $generated = LeadDocument::with([
+            $generated = \App\Services\Immigration\EngagementArchive::activeDocuments(LeadDocument::query())->with([
                 'lead:id,first_name,last_name,lead_id,tracking_code,email,phone,residence_country,engagement_signing_token,engagement_sent_at,engagement_fee_total,engagement_total_amount,engagement_fee_location,engagement_fee_tier,engagement_include_gst,engagement_assist_signer_id',
                 'lead.faceImage',
                 'uploader:id,name,email',
@@ -1020,6 +1021,7 @@ class ImmigrationController extends Controller
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
                 'canUploadSignature' => \App\Services\Immigration\StaffEngagementSignature::permitted(auth()->user()),
+                'canArchiveEngagement' => \App\Services\Immigration\EngagementArchive::permitted(auth()->user()),
                 'internalSignatureNotificationsReady' => app(\App\Services\Immigration\StaffEngagementSignature::class)->internalRecipients()->isNotEmpty(),
                 'search' => $search,
             ]);
@@ -4777,13 +4779,20 @@ class ImmigrationController extends Controller
         }
         $stageEvents = [];
         foreach ($inCase()->whereNotNull('stage_history')->select(['id', 'first_name', 'last_name', 'inz_visa_type', 'immigration_assignee', 'stage_history'])->lazyById() as $case) {
+            $previousStage = null;
             foreach ($case->stage_history ?? [] as $event) {
                 $stage = $event['stage'] ?? null;
-                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage)) {
+                if (($event['department'] ?? null) !== 'immigration' || ! is_string($stage) || trim($stage) === '') {
                     continue;
                 }
                 $date = ReportPeriod::eventDate($event['at'] ?? null);
-                if (! $date || ! $date->betweenIncluded($earliest, $now)) {
+                if ($date && $date->gt($now)) {
+                    continue;
+                }
+                // Clearing/restoring an outcome is not a new decision; retain state from before the reporting window.
+                $restoredDecision = in_array($stage, $terminalStages, true) && $stage === $previousStage;
+                $previousStage = $stage;
+                if ($restoredDecision || ! $date || ! $date->betweenIncluded($earliest, $now)) {
                     continue;
                 }
                 if (($event['pathway_intake'] ?? false) || isset($pathwayIntakes[$case->id][$stage][$date->timestamp])) {

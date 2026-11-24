@@ -24,11 +24,13 @@ class DocumentReadyNotification extends Mailable implements ShouldQueue
     public string $firstName;
     public string $noun;      // "proposal" | "agreement"
     public string $nounTitle; // "Proposal"  | "Agreement"
+    public bool $documentOnly = false;
 
-    public function __construct(public Lead $lead, string $kind = 'agreement')
+    public function __construct(public Lead $lead, string $kind = 'agreement', ?string $documentUrl = null)
     {
         $kind             = in_array($kind, ['proposal', 'agreement'], true) ? $kind : 'agreement';
-        $this->trackUrl   = rtrim(config('app.url'), '/') . '/track/' . $lead->tracking_code;
+        $this->trackUrl   = $documentUrl ?? rtrim(config('app.url'), '/') . '/track/' . $lead->tracking_code;
+        $this->documentOnly = $documentUrl !== null;
         $this->firstName  = $lead->first_name ?: 'there';
         $this->noun       = $kind;
         $this->nounTitle  = ucfirst($kind);
@@ -50,6 +52,7 @@ class DocumentReadyNotification extends Mailable implements ShouldQueue
                 'trackUrl'  => $this->trackUrl,
                 'noun'      => $this->noun,
                 'nounTitle' => $this->nounTitle,
+                'documentOnly' => $this->documentOnly,
             ],
         );
     }

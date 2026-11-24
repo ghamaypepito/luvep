@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', \App\Http\Middleware\EnsureSocialTeamAccess::class])->group(function () {
+    Route::post('/admin/content-calendar/generate', [\App\Http\Controllers\Admin\ArticleAssistanceController::class, 'generate'])->middleware('throttle:3,1');
+    Route::post('/admin/content-calendar/images', [\App\Http\Controllers\Admin\ArticleAssistanceController::class, 'images'])->middleware('throttle:10,1');
     Route::prefix('admin/content-calendar')->name('admin.editorial.')->controller(\App\Http\Controllers\Admin\EditorialCalendarController::class)->group(function () {
         Route::get('/', 'index')->name('calendar');
         Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');

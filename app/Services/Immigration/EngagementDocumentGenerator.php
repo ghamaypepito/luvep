@@ -39,7 +39,7 @@ class EngagementDocumentGenerator
         'initial_consultation' => [
             'view' => 'agreements.engagement.initial-consultation',
             'header' => 'INITIAL CONSULTATION AGREEMENT', 'label' => 'Initial Consultation Agreement',
-            'description' => 'Initial visa consultation - USD 250 booking fee.',
+            'description' => 'Initial visa consultation booking fee.',
             'eyebrow' => null, 'cover_title' => 'INITIAL CONSULTATION', 'cover_subtitle' => null,
             'prefix' => 'InitialConsultationAgreement', 'dynamic' => true,
         ],
@@ -211,7 +211,7 @@ class EngagementDocumentGenerator
             $payload['client']['dob'] = $lead->dob ? \Illuminate\Support\Carbon::parse($lead->dob)->format('d/m/Y') : null;
             $payload['client']['passport'] = $lead->passport_number;
             $payload['consultation'] = array_intersect_key($overrides, array_flip([
-                'consultation_date', 'consultation_time', 'consultation_timezone', 'meeting_link',
+                'consultation_date', 'consultation_time', 'consultation_timezone', 'consultation_mode', 'meeting_link', 'consultation_address',
             ]));
         }
         // Signing reproduces the exact case/adviser/fee details saved in the draft.
@@ -233,6 +233,13 @@ class EngagementDocumentGenerator
         [, $payload] = $this->resolve($lead, $type, $overrides);
         unset($payload['logo_data'], $payload['cover_bg_data']);
         return $payload;
+    }
+
+    public static function consultationArrangement(array $settings): string
+    {
+        return ($settings['consultation_mode'] ?? 'online') === 'face_to_face'
+            ? 'Face-to-Face Consultation at '.($settings['consultation_address'] ?? 'Not yet supplied')
+            : 'Online Consultation via Google Meet: '.($settings['meeting_link'] ?? 'Not yet supplied');
     }
 
     public static function signable(string $type): bool
@@ -269,7 +276,7 @@ class EngagementDocumentGenerator
             'include_gst' => (bool) $includeGst,
             'gst' => $gst,
             'grand_total' => round($fee + $gst, 2),
-            'currency' => $type === 'oia' ? 'NZD' : 'USD',
+            'currency' => $type === 'oia' ? 'NZD' : ($settings['service_currency'] ?? 'NZD'),
         ];
     }
 

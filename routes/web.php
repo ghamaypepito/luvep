@@ -407,6 +407,13 @@ Route::middleware(['throttle:tracker', 'tracker.enabled'])->group(function () {
     Route::get('/track/{code}/agreements/{token}/signed', [\App\Http\Controllers\Tracker\TrackerAgreementController::class, 'signedConfirmation'])->name('track.agreements.signed');
 });
 
+// Password-free access to one issued English agreement; never the case tracker.
+Route::middleware(['signed', 'throttle:tracker'])->group(function () {
+    Route::get('/english-agreements/{document}', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'show'])->whereNumber('document')->name('english-agreement.show');
+    Route::get('/english-agreements/{document}/pdf', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'download'])->whereNumber('document')->name('english-agreement.download');
+    Route::post('/english-agreements/{document}/sign', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'sign'])->whereNumber('document')->name('english-agreement.sign');
+});
+
 // Standalone engagement-signing surface. The per-lead token
 // (leads.engagement_signing_token) is the bearer credential; it grants access
 // to ONLY that lead's engagement-pack documents (not the whole case), so it is
@@ -518,6 +525,8 @@ Route::post('/api/sync-calendar', [App\Http\Controllers\SyncController::class, '
 // Authenticated areas — every staff user must be logged in ('auth'); role
 // middleware nested below narrows each section ('portal:admin', 'portal:sales', …).
 Route::middleware(['auth'])->group(function () {
+
+    Route::get('/help-center', [\App\Http\Controllers\HelpCenterController::class, 'index'])->name('help-center');
 
     Route::get('/creative-requests', [\App\Http\Controllers\CreativeRequestController::class, 'index'])->name('creative.index');
     Route::get('/creative-requests/task/{task}', [\App\Http\Controllers\CreativeRequestController::class, 'forTask'])->whereNumber('task');
@@ -2078,6 +2087,7 @@ Route::middleware(['auth'])->group(function () {
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
             Route::get('/cases/engagement', [ImmigrationController::class, 'engagement'])->name('cases.engagement');
+            Route::post('/cases/{id}/engagement/archive', [\App\Http\Controllers\EngagementArchiveController::class, 'store'])->whereNumber('id')->name('cases.engagement.archive');
             Route::post('/engagement/documents/{document}/signature', [\App\Http\Controllers\StaffEngagementSignatureController::class, 'store'])->whereNumber('document')->middleware('throttle:20,1');
             Route::get('/cases/invoice', [ImmigrationController::class, 'invoice'])->name('cases.invoice');
             // INZ Forms console — generate/send INZ forms across all cases.

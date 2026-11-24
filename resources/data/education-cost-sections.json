@@ -1,0 +1,8 @@
+[
+    {"key":"school_enrolment","label":"School enrolment and documentation"},
+    {"key":"english_proficiency","label":"English proficiency exam"},
+    {"key":"medical_exam","label":"Medical exam"},
+    {"key":"visa_application","label":"Visa application"},
+    {"key":"travel_insurance","label":"Travel and medical insurance"},
+    {"key":"other_costs","label":"Other costs to prepare for (not included in the total)"}
+]

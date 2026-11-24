@@ -2,8 +2,8 @@
 
 namespace Tests\Feature\Immigration;
 
-use App\Models\Lead;
 use App\Models\FinanceReceivable;
+use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,7 +54,7 @@ class ReportLiaEndorsementTest extends TestCase
         ]);
         $this->actingAs(User::factory()->create(['role' => 'immigration']))
             ->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->where('pipeline.for_quotation', 3)->has('pipeline.quotation_cases', 3));
+            ->where('pipeline.for_quotation', 3)->has('pipeline.quotation_cases', 3));
         $this->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('pipeline.for_quotation', 2)->has('pipeline.quotation_cases', 2));
     }
@@ -80,8 +80,8 @@ class ReportLiaEndorsementTest extends TestCase
         ]);
         $this->actingAs(User::factory()->create(['role' => 'immigration']))
             ->get('/portal/immigration/reports?preset=this_week')->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->where('pipeline.for_quotation', 2)->where('pipeline.quotation_cases.0.name', 'Today Fixture')
-                ->where('pipeline.quotation_cases.1.name', 'Boundary 1 Fixture'));
+            ->where('pipeline.for_quotation', 2)->where('pipeline.quotation_cases.0.name', 'Today Fixture')
+            ->where('pipeline.quotation_cases.1.name', 'Boundary 1 Fixture'));
         $this->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('pipeline.for_quotation', 1)->where('pipeline.quotation_cases.0.name', 'Boundary 0 Fixture'));
     }
@@ -148,11 +148,119 @@ class ReportLiaEndorsementTest extends TestCase
         $url = '/portal/immigration/reports?preset=custom';
         $this->actingAs(User::factory()->create(['role' => 'immigration_manager']))
             ->get($url.'&from=2026-11-02&to=2026-11-08')->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->has('outcomes.approved', 0)->where('activity.visas_approved', 0)->where('conclusion.stats.approved', 0)
-                ->where('trend.3.approved', 1)->where('trend.5.approved', 0));
+            ->has('outcomes.approved', 0)->where('activity.visas_approved', 0)->where('conclusion.stats.approved', 0)
+            ->where('trend.3.approved', 1)->where('trend.5.approved', 0));
         $this->get($url.'&from=2026-09-29&to=2026-09-29')->assertOk()->assertInertia(fn (Assert $page) => $page
             ->has('outcomes.approved', 1)->where('outcomes.approved.0.id', $approved->id)
             ->where('activity.visas_approved', 1)->where('conclusion.stats.approved', 1));
+    }
+
+    public function test_restoring_an_old_approval_after_education_edits_does_not_create_a_new_reported_decision(): void
+    {
+        $this->withoutVite();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-23T00:00:00Z'));
+        $event = fn ($stage, $at, $department = 'immigration') => compact('stage', 'at', 'department');
+        $old = [];
+        foreach (['2026-09-29T00:12:46Z', '2026-03-01T00:12:46Z'] as $at) {
+            $old[] = Lead::create([
+                'first_name' => 'Historical', 'last_name' => 'Approval', 'is_immigration_case' => true,
+                'immigration_stage' => 'Approved Visa', 'stage_updated_at' => '2026-11-19 03:01:46',
+                'stage_history' => [
+                    $event('Approved Visa', $at),
+                    $event(null, '2026-11-12T02:00:00Z'),
+                    $event('Started Course', '2026-11-19T03:01:45Z', 'education'),
+                    $event('Approved Visa', '2026-11-19T03:01:46Z'),
+                ],
+            ]);
+        }
+        $fresh = Lead::create([
+            'first_name' => 'Genuine', 'last_name' => 'Decision', 'is_immigration_case' => true,
+            'immigration_stage' => 'Approved Visa', 'stage_history' => [
+                $event('Visa Lodged', '2026-11-10T00:00:00Z'),
+                $event('Approved Visa', '2026-11-17T00:00:00Z'),
+            ],
+        ]);
+        $before = array_map(fn ($lead) => $lead->fresh()->getRawOriginal(), $old);
+
+        $this->actingAs(User::factory()->create(['role' => 'immigration_manager']))
+            ->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('range.from', '2026-11-16')->where('range.to', '2026-11-22')
+            ->has('outcomes.approved', 1)->where('outcomes.approved.0.id', $fresh->id)
+            ->where('activity.visas_approved', 1)->where('conclusion.stats.approved', 1)
+            ->where('trend.3.approved', 1)->where('trend.5.approved', 1));
+        $this->get('/portal/immigration/reports?preset=custom&from=2026-09-29&to=2026-09-29')
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('outcomes.approved', 1)->where('outcomes.approved.0.id', $old[0]->id)
+            ->where('outcomes.approved.0.date', '2026-09-29T00:12:46+00:00'));
+        foreach ($old as $index => $lead) {
+            $this->assertSame($before[$index], $lead->fresh()->getRawOriginal());
+        }
+    }
+
+    public function test_education_stage_edit_and_cleared_approval_restoration_keep_the_original_report_period(): void
+    {
+        $this->withoutVite();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-19T00:00:00Z'));
+        $case = Lead::create([
+            'first_name' => 'Synthetic', 'last_name' => 'Student', 'is_student' => true,
+            'is_immigration_case' => true, 'education_stage' => 'Approved Visa', 'immigration_stage' => 'Approved Visa',
+            'stage_history' => [['department' => 'immigration', 'stage' => 'Approved Visa', 'at' => '2026-09-29T00:00:00Z']],
+        ]);
+        $url = "/portal/education/students/{$case->id}/dashboard-field";
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->post($url, ['education_stage' => 'Started Course'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('Approved Visa', $case->fresh()->immigration_stage);
+        $this->assertCount(1, array_filter($case->fresh()->stage_history, fn ($event) => $event['department'] === 'immigration'));
+        $this->post($url, ['immigration_stage' => null])->assertRedirect()->assertSessionHasNoErrors();
+        $this->post($url, ['immigration_stage' => 'Approved Visa'])->assertRedirect()->assertSessionHasNoErrors();
+        $history = $case->fresh()->stage_history;
+        $this->assertSame([null, 'Approved Visa'], array_column(array_slice($history, -2), 'stage'));
+
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-23T00:00:00Z'));
+        $this->actingAs(User::factory()->create(['role' => 'immigration']))
+            ->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('outcomes.approved', 0)->where('activity.visas_approved', 0)
+            ->where('conclusion.stats.approved', 0)->where('trend.3.approved', 1)->where('trend.5.approved', 0));
+        $this->assertSame($history, $case->fresh()->stage_history);
+    }
+
+    public function test_real_new_decisions_and_repeated_rfi_requests_are_not_hidden_by_restoration_filtering(): void
+    {
+        $this->withoutVite();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-23T00:00:00Z'));
+        $event = fn ($stage, $at) => ['department' => 'immigration', 'stage' => $stage, 'at' => $at];
+        $changed = Lead::create([
+            'first_name' => 'Substantive', 'last_name' => 'Transition', 'is_immigration_case' => true,
+            'immigration_stage' => 'Approved Visa', 'stage_history' => [
+                $event('Approved Visa', '2026-09-29T00:00:00Z'),
+                $event('Visa Lodged', '2026-11-16T00:00:00Z'),
+                $event('Approved Visa', '2026-11-19T00:00:00Z'),
+            ],
+        ]);
+        $rfi = Lead::create([
+            'first_name' => 'Repeated', 'last_name' => 'Request', 'is_immigration_case' => true,
+            'immigration_stage' => 'Request for Information', 'stage_history' => [
+                $event('Request for Information', '2026-10-01T00:00:00Z'),
+                $event('Request for Information', '2026-11-17T00:00:00Z'),
+            ],
+        ]);
+        foreach (['Approved Visa', 'Decline Visa'] as $stage) {
+            Lead::create([
+                'first_name' => 'Restored', 'last_name' => 'Outcome', 'is_immigration_case' => true,
+                'immigration_stage' => $stage, 'stage_history' => [
+                    $event($stage, '2026-09-29T00:00:00Z'),
+                    $event('', '2026-11-15T00:00:00Z'),
+                    $event($stage, '2026-11-19T00:00:00Z'),
+                    $event($stage, '2026-11-20T00:00:00Z'),
+                ],
+            ]);
+        }
+        $this->actingAs(User::factory()->create(['role' => 'immigration']))
+            ->get('/portal/immigration/reports?preset=last_week')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('outcomes.approved', 1)->where('outcomes.approved.0.id', $changed->id)
+            ->has('outcomes.declined', 0)->where('activity.visas_declined', 0)
+            ->has('outcomes.rfis', 1)->where('outcomes.rfis.0.id', $rfi->id)
+            ->where('activity.apps_lodged', 1));
     }
 
     public function test_immigration_history_and_handoffs_use_the_same_nz_reporting_window(): void
@@ -230,5 +338,4 @@ class ReportLiaEndorsementTest extends TestCase
             ->where('submissions.lodged.0.id', $case->id)->where('submissions.lodged.0.date', '2026-11-03T00:00:00+00:00')
             ->where('outcomes.approved.0.id', $case->id)->where('outcomes.approved.0.date', '2026-11-04T00:00:00+00:00'));
     }
-
 }

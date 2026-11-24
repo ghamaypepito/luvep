@@ -167,7 +167,7 @@ function PersonalForm({ lead = {}, intake = null, assessmentCompleteness = null,
             <div className="flex flex-col lg:flex-row gap-5 items-start">
                 {/* LEFT — form sections */}
                 <div className="space-y-4 w-full min-w-0" style={{ flex: "1 1 0%" }}>
-                    <Section title="Identity" note={canCorrectCaseNames ? "Feeds INZ 1012 · section A" : "Only an Admin or Super Admin can change the case name."}>
+                    <Section title="Identity" note={canCorrectCaseNames ? "Feeds INZ 1012 · section A" : "Name corrections require Admin access or an explicit Name Correction grant."}>
                         <F label="First name" required badge={verdictBadge("Full name") || (!data.first_name ? { text: "Required", tone: "req" } : null)}>
                             <input type="text" required readOnly={!canCorrectCaseNames} value={data.first_name} onChange={(e) => setData("first_name", e.target.value)} className={canCorrectCaseNames ? IC : ICLocked} maxLength={120} />
                         </F>

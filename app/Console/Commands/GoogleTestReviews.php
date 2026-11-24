@@ -55,7 +55,7 @@ class GoogleTestReviews extends Command
             'grant_type' => 'refresh_token',
         ]);
 
-        if (! $tokenResp->successful() || ! $tokenResp->json('access_token')) {
+        if (! $tokenResp->successful() || ! is_string($tokenResp->json('access_token')) || trim($tokenResp->json('access_token')) === '') {
             $this->error('  AUTH FAILED — could not get an access token.');
             $this->line('  Google said: '.trim($tokenResp->json('error_description') ?? $tokenResp->json('error') ?? $tokenResp->body()));
             $this->line('  This usually means the refresh token is wrong/expired, or the OAuth consent step was never completed as the Business-Profile account.');
@@ -75,7 +75,7 @@ class GoogleTestReviews extends Command
             $this->warn('  BLOCKED — the Account Management API rejected the call.');
             $this->line('  Reason: '.$block);
             $this->line('  If this says the API is disabled, enable "My Business Account Management API" in the Cloud project.');
-            $this->line('  If it says permission denied, access is not approved yet.');
+            $this->line('  Check profile manager permissions, API enablement and project approval. This response alone does not identify which requirement is missing.');
 
             return self::FAILURE;
         }
@@ -99,21 +99,18 @@ class GoogleTestReviews extends Command
         $this->line('');
 
         // 4) Try the reviews endpoint (v4 — the gated one) -------------------
-        $accountPath = $present('account_id')
-            ? 'accounts/'.$cfg['account_id']
-            : ($accounts[0]['name'] ?? null);
+        if (! $present('account_id')) {
+            $this->warn('UNVERIFIED: set GOOGLE_BUSINESS_ACCOUNT_ID for the intended business before testing reviews.');
 
-        if (! $accountPath) {
-            $this->warn('No account id available to test the reviews endpoint — set GOOGLE_BUSINESS_ACCOUNT_ID or ensure an account is visible above.');
-
-            return self::SUCCESS;
+            return self::FAILURE;
         }
+        $accountPath = 'accounts/'.$cfg['account_id'];
 
         if (! $present('location_id')) {
             $this->warn('No GOOGLE_BUSINESS_LOCATION_ID set — skipping the reviews fetch.');
-            $this->line('Access/auth look fine above. Add the location id to test the actual reviews pull.');
+            $this->line('UNVERIFIED: add the intended location id. Authentication alone does not verify review access.');
 
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
         $limit = (int) $this->option('limit');
@@ -121,7 +118,7 @@ class GoogleTestReviews extends Command
             'https://mybusiness.googleapis.com/v4/%s/locations/%s/reviews?pageSize=%d',
             $accountPath,
             $cfg['location_id'],
-            max(1, $limit)
+            max(1, min(50, $limit))
         );
 
         $this->line('Step 3 — fetching reviews (this is the access-gated call)...');
@@ -129,9 +126,9 @@ class GoogleTestReviews extends Command
         $reviewsResp = Http::withToken($token)->get($url);
 
         if ($block = $this->blockReason($reviewsResp)) {
-            $this->warn('  BLOCKED — the reviews API is not open to this project yet.');
+            $this->warn('  UNVERIFIED: the reviews request did not succeed.');
             $this->line('  Reason: '.$block);
-            $this->line('  => Access has NOT been approved yet. Re-check quota (300 QPM) / support case 7-5088000041654.');
+            $this->line('  Check Google Cloud quota, API enablement and profile permissions. A 429 can indicate quota exhaustion; check whether the quota is zero before concluding project approval is missing.');
 
             return self::FAILURE;
         }
@@ -148,7 +145,7 @@ class GoogleTestReviews extends Command
         $this->line('  Total reviews on this location: '.($count ?? 'unknown'));
         $this->line('  Fetched in this call: '.$fetched);
         $this->line('');
-        $this->info('✅ API is live and NOT blocked. Ready to build the automatic sync.');
+        $this->info('Reviews endpoint verified for the configured location. Next verify the dry sync, moderation and scheduled run before resolving the ticket.');
 
         return self::SUCCESS;
     }

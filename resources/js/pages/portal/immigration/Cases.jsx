@@ -144,7 +144,7 @@ const tabKeyForStage = (stage) => {
     return hit ? hit.key : 'applications';
 };
 
-export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false, canManageCaseArchive = false }) {
+export default function ImmigrationCases({ cases = [], distribution = [], priorities = {}, stages = [], visaTypes = [], agents = [], me_id = null, staff = [], total: totalCount = null, loaded = null, readOnly = false, canManageCaseArchive = false, canCorrectCaseNames = false }) {
     // True queue size vs. how many the server actually loaded. When these
     // differ, the safety ceiling truncated the list — warn loudly rather than
     // silently hiding cases (the "For Assessment cases vanished" bug).
@@ -448,7 +448,7 @@ export default function ImmigrationCases({ cases = [], distribution = [], priori
                     stages={stages}
                     visaTypes={visaTypes}
                     agents={agents}
-                    canCorrectCaseNames={canManageCaseArchive}
+                    canCorrectCaseNames={canCorrectCaseNames}
                     onClose={() => { setCreating(false); setEditingCase(null); }}
                 />
             )}

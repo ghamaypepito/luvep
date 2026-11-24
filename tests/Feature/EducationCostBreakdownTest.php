@@ -45,6 +45,109 @@ class EducationCostBreakdownTest extends TestCase
             'rows' => [['description' => 'Custom school enrolment', 'amount' => '3500.00'], ['description' => 'Supporting costs', 'amount' => '1750.00']], 'action' => 'preview'];
     }
 
+    public function test_reference_headings_render_in_preview_pdf_and_saved_snapshot_without_repricing(): void
+    {
+        $lead = $this->client();
+        $before = $lead->fresh()->getRawOriginal();
+        $quote = app(CostBreakdownRates::class)->quote('NZD', 'PHP');
+        $rows = [
+            ['section' => 'school_enrolment', 'description' => 'School enrolment and documentation fee', 'amount' => '2850.00'],
+            ['section' => 'english_proficiency', 'description' => "Personalised review\nand unlimited mock tests", 'amount' => '400.00'],
+            ['section' => 'english_proficiency', 'description' => 'Examination fee', 'amount' => '420.00'],
+            ['section' => 'medical_exam', 'description' => 'Medical examination fee (full medical)', 'amount' => '480.00'],
+            ['section' => 'visa_application', 'description' => 'Professional fee of Licensed Immigration Adviser', 'amount' => '2000.00'],
+            ['section' => 'visa_application', 'description' => 'Immigration New Zealand fee', 'amount' => '850.00'],
+            ['section' => 'travel_insurance', 'description' => 'Travel and medical insurance fee', 'amount' => '1000.00'],
+            ['section' => 'other_costs', 'description' => 'Tuition fee - depends on the programme', 'amount' => null],
+            ['section' => 'other_costs', 'description' => 'Show money / living expenses', 'amount' => '20000.00'],
+            ['section' => 'other_costs', 'description' => 'Travel to New Zealand - cost not yet specified', 'amount' => null],
+        ];
+        $data = [...$this->data($lead), 'source_currency' => 'NZD', 'rate_token' => $quote['token'], 'rows' => $rows];
+        $headings = ['School enrolment and documentation', 'English proficiency exam', 'Medical exam', 'Visa application', 'Travel and medical insurance'];
+        foreach (['single' => 'Single', 'couple' => 'Couple', 'couple_child' => 'Couple with child'] as $family => $label) {
+            $html = $this->postJson('/portal/education/cost-breakdowns', [...$data, 'family' => $family])->assertOk()->json('html');
+            $last = -1;
+            foreach ($headings as $heading) {
+                $position = strpos($html, $heading);
+                $this->assertNotFalse($position);
+                $this->assertGreaterThan($last, $position);
+                $last = $position;
+            }
+            $this->assertStringContainsString($label, $html);
+            $this->assertStringContainsString('8,000.00', $html);
+            $this->assertStringContainsString('280,000.00', $html);
+            $this->assertStringNotContainsString('28,000.00', $html);
+            $this->assertGreaterThan(strpos($html, 'Listed cost total'), strpos($html, '<h2>Other costs to prepare for'));
+        }
+        $pdf = $this->postJson('/portal/education/cost-breakdowns', [...$data, 'family' => 'single', 'action' => 'download'])->assertOk()->getContent();
+        $parsed = (new Parser)->parseContent($pdf);
+        $text = $parsed->getText();
+        foreach ([...$headings, 'Other costs to prepare for', '8,000.00', '280,000.00', 'Not specified'] as $expected) {
+            $this->assertStringContainsString(strtoupper($expected), strtoupper($text));
+        }
+        foreach ($parsed->getPages() as $page) {
+            if (str_contains($page->getText(), 'Other costs to prepare for')) {
+                $this->assertStringContainsString('Tuition fee', $page->getText(), 'The excluded-cost heading must stay with its first row');
+            }
+        }
+        if (getenv('EDUCATION_COST_SECTIONS_PDF_SAMPLE')) {
+            file_put_contents(getenv('EDUCATION_COST_SECTIONS_PDF_SAMPLE'), $pdf);
+        }
+        $this->postJson('/portal/education/cost-breakdowns', [...$data, 'family' => 'single', 'action' => 'save'])->assertCreated();
+        $snapshot = LeadDocument::sole()->notes['cost_breakdown_snapshot'];
+        $this->assertEquals([2850, 400, 420, 480, 2000, 850, 1000], array_column(array_slice($snapshot['rows'], 0, 7), 'amount'));
+        $this->assertEquals(8000, $snapshot['totals']['amount']);
+        $this->assertSame('school_enrolment', $snapshot['rows'][0]['section']);
+        $this->assertNull($snapshot['other_rows'][0]['amount']);
+        $this->assertEquals(20000, $snapshot['other_rows'][1]['amount']);
+        $this->assertSame($before, $lead->fresh()->getRawOriginal());
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_legacy_rows_keep_totals_and_saved_files_when_new_headings_are_used(): void
+    {
+        $data = $this->data($this->client());
+        $this->postJson('/portal/education/cost-breakdowns', [...$data, 'action' => 'save'])->assertCreated();
+        $old = LeadDocument::sole();
+        $oldMetadata = $old->getRawOriginal();
+        $oldBytes = Storage::disk('local')->get($old->file_path);
+        $newRows = $data['rows'];
+        $newRows[0]['section'] = 'school_enrolment';
+        $newRows[1]['section'] = 'medical_exam';
+        $this->postJson('/portal/education/cost-breakdowns', [...$data, 'rows' => $newRows, 'action' => 'save'])->assertCreated();
+        $this->assertSame($oldMetadata, $old->fresh()->getRawOriginal());
+        $this->assertSame($oldBytes, Storage::disk('local')->get($old->file_path));
+        $this->assertDatabaseCount('lead_documents', 2);
+        $latest = LeadDocument::latest('id')->first();
+        $this->assertEquals(5250, $latest->notes['cost_breakdown_snapshot']['totals']['amount']);
+    }
+
+    public function test_section_validation_and_other_cost_missing_amounts_do_not_turn_missing_prices_into_zero(): void
+    {
+        $data = $this->data($this->client());
+        foreach ([
+            [['section' => 'unknown', 'description' => 'Invalid heading', 'amount' => 100]],
+            [['section' => 'school_enrolment', 'description' => 'Missing fee', 'amount' => null]],
+            [['description' => 'Legacy missing fee', 'amount' => null]],
+            [['section' => 'other_costs', 'description' => 'Negative excluded fee', 'amount' => -1]],
+            [['section' => 'other_costs', 'description' => 'Over-precise excluded fee', 'amount' => '1.001']],
+        ] as $rows) {
+            $this->postJson('/portal/education/cost-breakdowns', [...$data, 'rows' => $rows])->assertUnprocessable();
+        }
+        $rows = [
+            ['description' => 'Legacy included fee', 'amount' => 100, 'exclude_from_total' => true],
+            ['section' => 'other_costs', 'description' => 'Unknown tuition', 'amount' => null],
+            ['section' => 'other_costs', 'description' => 'Explicit zero cost', 'amount' => 0],
+        ];
+        $this->postJson('/portal/education/cost-breakdowns', [...$data, 'rows' => $rows, 'action' => 'save'])->assertCreated();
+        $snapshot = LeadDocument::sole()->notes['cost_breakdown_snapshot'];
+        $this->assertEquals(100, $snapshot['totals']['amount']);
+        $this->assertNull($snapshot['rows'][1]['amount']);
+        $this->assertNull($snapshot['rows'][1]['nzd']);
+        $this->assertEquals(0, $snapshot['rows'][2]['amount']);
+        $this->assertArrayNotHasKey('exclude_from_total', $snapshot['rows'][0]);
+    }
+
     public function test_country_defaults_follow_residence_and_exclude_immigration_only_records(): void
     {
         foreach (['Philippines', 'NZ', 'India', '', 'Unknown country'] as $country) {
