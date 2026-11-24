@@ -2524,7 +2524,7 @@ function SharedDocRow({ doc: d }) {
  * Client signing modal for the Written Agreement — draw a signature on the
  * canvas, watch it land on the document live, then submit.
  */
-function ClientSignModal({ doc: d, onClose }) {
+export function ClientSignModal({ doc: d, onClose }) {
     const [submitting, setSubmitting] = useState(false);
     const [hasDrawing, setHasDrawing] = useState(false);
     const [error, setError] = useState(null);
