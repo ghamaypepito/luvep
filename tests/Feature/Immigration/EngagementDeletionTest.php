@@ -31,21 +31,21 @@ class EngagementDeletionTest extends TestCase
         return $documents;
     }
 
-    public function test_manager_can_delete_a_colleagues_unlinked_pack_without_touching_other_packs(): void
+    public function test_legacy_delete_cannot_remove_an_immigration_pack_even_for_admins(): void
     {
         Storage::fake('local');
         $manager = User::factory()->create(['role' => 'immigration_manager']);
         $creator = User::factory()->create(['role' => 'admin']);
         $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Engagement', 'is_immigration_case' => true]);
-        $removed = $this->pack($lead, $creator, 'selected-pack');
+        $selected = $this->pack($lead, $creator, 'selected-pack');
         $kept = $this->pack($lead, $creator, 'other-pack');
-        $this->actingAs($manager)->from('/portal/immigration/cases/engagement')
-            ->delete('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=selected-pack')->assertRedirect()->assertSessionHasNoErrors();
-        foreach ($removed as $doc) {
-            $this->assertModelMissing($doc);
-            Storage::disk('local')->assertMissing($doc->file_path);
+        foreach ([$manager, $creator, User::factory()->create(['role' => 'super_admin'])] as $actor) {
+            foreach (['?pack_id=selected-pack', ''] as $selector) {
+                $this->actingAs($actor)->deleteJson('/admin/leads/'.$lead->id.'/engagement/documents'.$selector)
+                    ->assertUnprocessable()->assertJsonValidationErrors('archive');
+            }
         }
-        foreach ($kept as $doc) {
+        foreach ([...$selected, ...$kept] as $doc) {
             $this->assertModelExists($doc);
             Storage::disk('local')->assertExists($doc->file_path);
         }
@@ -62,23 +62,25 @@ class EngagementDeletionTest extends TestCase
             'issue_date' => now()->toDateString(), 'due_date' => now()->addDays(7)->toDateString()]);
         $this->actingAs(User::factory()->create(['role' => 'immigration_manager']))
             ->deleteJson('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=sent-pack')
-            ->assertUnprocessable()->assertJsonValidationErrors('document')
-            ->assertJsonPath('errors.document.0', 'This issued invoice is linked to Finance. Ask Finance to void it if it was issued in error.');
+            ->assertUnprocessable()->assertJsonValidationErrors('archive');
         foreach ($docs as $doc) {
             $this->assertModelExists($doc);
             Storage::disk('local')->assertExists($doc->file_path);
         }
     }
 
-    public function test_sent_unlinked_pack_can_be_deleted_by_another_team_member(): void
+    public function test_legacy_handoff_case_also_requires_archive_instead_of_pack_deletion(): void
     {
         Storage::fake('local');
-        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Sent', 'is_immigration_case' => true]);
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Sent', 'is_immigration_case' => false,
+            'education_stage' => Lead::EDUCATION_STAGES_IMMIGRATION[0]]);
         $docs = $this->pack($lead, User::factory()->create(['role' => 'admin']), 'unlinked-sent', true);
         $this->actingAs(User::factory()->create(['role' => 'immigration_manager']))
-            ->delete('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=unlinked-sent')->assertRedirect()->assertSessionHasNoErrors();
+            ->deleteJson('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=unlinked-sent')
+            ->assertUnprocessable()->assertJsonValidationErrors('archive');
         foreach ($docs as $doc) {
-            $this->assertModelMissing($doc);
+            $this->assertModelExists($doc);
+            Storage::disk('local')->assertExists($doc->file_path);
         }
     }
 
@@ -87,11 +89,31 @@ class EngagementDeletionTest extends TestCase
         Storage::fake('local');
         $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Protected', 'is_immigration_case' => true]);
         $docs = $this->pack($lead, User::factory()->create(['role' => 'admin']), 'private-pack');
-        foreach (['lead', 'agent'] as $role) {
-            $this->actingAs(User::factory()->create(['role' => $role]))
+        foreach (['lead', 'agent', 'sales', 'education', 'english', 'accommodation', 'finance'] as $role) {
+            $actor = User::factory()->create(['role' => $role, 'portal_access' => ['immigration']]);
+            $this->actingAs($actor)
                 ->deleteJson('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=private-pack')->assertForbidden();
         }
         foreach ($docs as $doc) {
+            $this->assertModelExists($doc);
+            Storage::disk('local')->assertExists($doc->file_path);
+        }
+    }
+
+    public function test_existing_non_case_pack_deletion_is_unchanged(): void
+    {
+        Storage::fake('local');
+        $admin = User::factory()->create(['role' => 'admin']);
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Other portal']);
+        $selected = $this->pack($lead, $admin, 'selected-pack');
+        $other = $this->pack($lead, $admin, 'other-pack');
+        $this->actingAs($admin)->delete('/admin/leads/'.$lead->id.'/engagement/documents?pack_id=selected-pack')
+            ->assertRedirect()->assertSessionHasNoErrors();
+        foreach ($selected as $doc) {
+            $this->assertModelMissing($doc);
+            Storage::disk('local')->assertMissing($doc->file_path);
+        }
+        foreach ($other as $doc) {
             $this->assertModelExists($doc);
             Storage::disk('local')->assertExists($doc->file_path);
         }
