@@ -23,6 +23,8 @@ School/programme deletion is refused only when school-workspace history exists, 
 
 One additive migration creates `school_workspace_records` and `school_workspace_files`. Run it before serving the dashboard. No historical backfill, role grant, pricing rewrite, client correction, Finance/Immigration operation or live mail is included. Migration rollback deliberately retains entered records and private-file metadata; do not drop these tables or delete private uploads on code rollback.
 
+The deployment workflow copies code before migrations. Until both new tables exist, school profiles retain their existing information view and ordinary catalogue updates/deletes retain their previous behavior. The new workspace reports a controlled installation-unavailable response. A regression explicitly removes/reinstalls the new schema and verifies old Schools/Programs behavior in that interval.
+
 Synthetic backend tests cover dashboard isolation, catalogue reuse, enrolment CRUD/no identity or stage changes, dates, cross-school/programme/record/file denial, statuses, stale saves, duplicate prevention, private upload/download retention, audit rollback/cleanup, role/preview/inactive denial, and archive/reassignment guards. Actual React checks cover counts, filters, chronology, links, versioned saves and error retention. Synthetic Chrome desktop/mobile rendering checks cover the page and intake form. Full exact-head CI is required before release.
 
 Keep In review until Sir Ghamay reviews/merges/deploys, staff confirms actual enrolments and missing dates, and Emma accepts the dashboard in production. Existing school associations should be reviewed, not automatically classified as enrolled. No production record was modified during implementation/testing.

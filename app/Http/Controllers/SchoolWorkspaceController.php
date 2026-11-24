@@ -22,6 +22,7 @@ class SchoolWorkspaceController extends Controller
         $user = $request->user();
         abort_unless($user?->is_active && ($user->isAdmin() || $user->role === 'education')
             && ! $request->attributes->has('user_view_actor'), 403);
+        abort_unless(SchoolWorkspaceRecord::available(), 503, 'School management is being installed. Existing school information and Programs remain available. Please retry shortly.');
     }
 
     public function show(Request $request, $id)

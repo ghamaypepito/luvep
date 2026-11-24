@@ -16,6 +16,12 @@ class SchoolWorkspaceRecord extends Model
 
     protected $casts = ['data' => 'array', 'version' => 'integer'];
 
+    public static function available(): bool
+    {
+        return \Illuminate\Support\Facades\Schema::hasTable('school_workspace_records')
+            && \Illuminate\Support\Facades\Schema::hasTable('school_workspace_files');
+    }
+
     public function files()
     {
         return $this->hasMany(SchoolWorkspaceFile::class);

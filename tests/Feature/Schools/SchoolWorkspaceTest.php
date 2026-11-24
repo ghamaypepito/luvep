@@ -232,4 +232,24 @@ class SchoolWorkspaceTest extends TestCase
         $this->withHeader('X-Luvep-User-View', $token)->postJson($this->url('/enrolment'), $this->enrolment())->assertForbidden();
         $this->assertSame(0, SchoolWorkspaceRecord::count());
     }
+
+    public function test_existing_catalogue_and_profiles_work_before_the_workspace_migration_is_installed(): void
+    {
+        \Illuminate\Support\Facades\Schema::dropIfExists('school_workspace_files');
+        \Illuminate\Support\Facades\Schema::dropIfExists('school_workspace_records');
+        try {
+            $this->assertNull($this->get('/portal/education/schools/'.$this->school->id.'/profile')->assertOk()->inertiaProps()['workspace']);
+            $this->get($this->url())->assertStatus(503);
+            $this->actingAs(User::factory()->create(['role' => 'admin']));
+            $other = School::create(['name' => 'Synthetic other school']);
+            $this->post('/admin/programs/'.$this->program->id, ['title' => 'Synthetic Course', 'level' => 7,
+                'category' => 'bachelors', 'status' => 'published', 'school_id' => $other->id])->assertRedirect()->assertSessionHasNoErrors();
+            $this->delete('/admin/programs/'.$this->program->id)->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNull($this->program->fresh());
+            $this->delete('/admin/schools/'.$this->school->id)->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNull($this->school->fresh());
+        } finally {
+            (require database_path('migrations/2026_11_24_010000_create_school_workspace_records.php'))->up();
+        }
+    }
 }
