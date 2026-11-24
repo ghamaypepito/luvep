@@ -1337,16 +1337,19 @@ class LeadDocumentController extends Controller
     }
 
     /**
-     * Delete every generated engagement document for a case in one call —
-     * the Engagement workspace shows one row per case, so its Delete action
-     * clears that case's whole engagement pack (files + rows, plus any
-     * captured client signature).
+     * Legacy pack deletion for other portals. Immigration uses Engagement
+     * Archive; permanent whole-case deletion belongs to Archived Cases.
      */
     public function destroyEngagementDocs(Request $request, $leadId)
     {
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $leadId) {
-            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
-            $lead = Lead::findOrFail($leadId);
+            $lead = Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            if (Lead::immigrationCase()->whereKey($lead->id)->exists()) {
+                abort_unless(\App\Services\Immigration\EngagementArchive::permitted($request->user()), 403);
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'archive' => 'Use Archive in Engagement to remove this entry. Permanent case deletion is available only to Admins from Archived Cases.',
+                ]);
+            }
 
             try {
                 // Delete the whole engagement pack: the 4 pack documents
@@ -2524,13 +2527,13 @@ class LeadDocumentController extends Controller
             abort_unless($doc->lead_id === $user->lead_id && $doc->isClientSharedWrittenAgreement(), 404);
         }
         if ($doc->media_file_id) {
-            $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
+            $file = app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc, $user);
             if ($user->isLead()) {
-                $hidden=app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
-                abort_if($doc->checklist_key && in_array($doc->checklist_key,$hidden,true),404);
+                $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
+                abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
             }
             if (! $doc->client_signed_at && ! $doc->client_signature_path) {
-                return app(\App\Services\MediaDrive\Library::class)->stream($file,$request->boolean('inline'));
+                return app(\App\Services\MediaDrive\Library::class)->stream($file, $request->boolean('inline'));
             }
         }
 

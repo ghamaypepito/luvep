@@ -23,7 +23,7 @@ class ArchivedCaseFiles
             'case_attestations', 'case_views', 'case_step_states', 'case_payments',
             'case_partner_recommendation', 'document_format_case', 'potential_cases',
             'lead_contact_profiles', 'lead_education_exps', 'lead_study_plans',
-            'lead_proposals', 'lead_tag_lead', 'visa_applications', 'installment_plans',
+            'lead_proposals', 'lead_tag_lead', 'visa_applications', 'installment_plans', 'engagement_pack_archives',
             'finance_receivables', 'email_replies',
         ] as $table) {
             $records[$table] = DB::table($table)->where('lead_id', $case->id)->get();
@@ -59,6 +59,7 @@ class ArchivedCaseFiles
         }
         foreach ($records['lead_documents'] as $document) {
             $this->add($files, 'documents/'.$document->id, $document->file_path, $document->original_name);
+            $this->add($files, 'signatures/'.$document->id, $document->client_signature_path, disks: ['local']);
             $notes = json_decode($document->notes ?? '', true);
             $this->add($files, 'issued/'.$document->id, $notes['issued_agreement']['file_path'] ?? null);
         }
@@ -136,7 +137,7 @@ class ArchivedCaseFiles
         foreach ($files as $file) {
             $path = $file['path'];
             $name = '%'.basename($path).'%';
-            if (LeadDocument::where('file_path', $path)->orWhere('notes->issued_agreement->file_path', $path)->exists()
+            if (LeadDocument::where('file_path', $path)->orWhere('client_signature_path', $path)->orWhere('notes->issued_agreement->file_path', $path)->exists()
                 || Lead::withTrashed()->where('passport_path', $path)->orWhereLike('education_notes', $name)->exists()
                 || DB::table('invoice_replacements')->where('previous_path', $path)->exists()
                 || DB::table('agreements')->where('pdf_path', $path)->orWhere('signed_pdf_path', $path)->exists()
