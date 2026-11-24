@@ -124,7 +124,7 @@ class PartnerActivityTracker
             $rows->push(['source_key' => 'task:'.$task->id, 'agent_id' => $partner, 'category' => 'follow_up',
                 'title' => $task->title, 'status' => $task->completed ? 'completed' : 'pending',
                 'activity_on' => $this->date($task->completed ? $task->completed_at : $task->created_at),
-                'follow_up_on' => $this->date($task->due_at), 'assignee_id' => $task->assignee_id, 'lead_id' => $task->lead_id,
+                'follow_up_on' => $this->date($task->due_at), 'assignee_id' => $task->assignee_id, 'assignee_ids' => $task->allAssigneeIds(), 'lead_id' => $task->lead_id,
                 'updated_at' => $task->updated_at?->toIso8601String(),
                 'details' => ['client_name' => trim($task->lead->first_name.' '.$task->lead->last_name),
                     'application_status_current' => $task->lead->education_stage ?: $task->lead->status,
@@ -199,14 +199,16 @@ class PartnerActivityTracker
         $rows = $allRows->filter(fn ($r) => $partners->has($r['agent_id']))
             ->filter(fn ($r) => empty($filters['agent_id']) || $r['agent_id'] == $filters['agent_id'])
             ->filter(fn ($r) => empty($filters['category']) || $r['category'] === $filters['category'])
-            ->filter(fn ($r) => empty($filters['assignee_id']) || $r['assignee_id'] == $filters['assignee_id'])
+            ->filter(fn ($r) => empty($filters['assignee_id']) || $r['assignee_id'] == $filters['assignee_id']
+                || in_array((int) $filters['assignee_id'], $r['assignee_ids'] ?? [], true))
             ->map(function ($r) use ($partners, $staff, $today) {
                 if ($r['category'] === 'agreement' && $r['status'] !== 'draft' && ! empty($r['details']['expiry_on']) && $r['details']['expiry_on'] < $today->toDateString()) {
                     $r['details']['recorded_status'] = $r['status'];
                     $r['status'] = 'expired';
                 }
                 $r['partner'] = $partners[$r['agent_id']]->name;
-                $r['staff'] = $staff->get($r['assignee_id'])?->name;
+                $r['staff'] = collect($r['assignee_ids'] ?? [$r['assignee_id']])->filter()->unique()
+                    ->map(fn ($id) => $staff->get($id)?->name)->filter()->join(', ');
                 $r['overdue'] = $r['follow_up_on'] && $r['follow_up_on'] < $today->toDateString()
                     && ! in_array($r['status'], ['completed', 'responded', 'signed', 'expired'], true) && ! ($r['event_only'] ?? false)
                     && ! (($r['state_only'] ?? false) && ! ($r['details']['current'] ?? true));

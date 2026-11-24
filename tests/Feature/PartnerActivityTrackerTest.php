@@ -356,6 +356,9 @@ class PartnerActivityTrackerTest extends TestCase
         LeadTask::create(['lead_id' => $lead->id, 'title' => 'Confidential other-department work', 'type' => 'follow_up', 'department' => 'immigration', 'created_by' => $lia->id, 'assignee_id' => $lia->id]);
         LeadTask::create(['lead_id' => $lead->id, 'title' => 'Explicitly shared follow-up', 'type' => 'follow_up', 'department' => 'immigration', 'created_by' => $lia->id, 'assignee_id' => $lia->id, 'additional_assignee_ids' => [$staff->id]]);
         $this->get(self::BASE)->assertInertia(fn (Assert $p) => $p->has('rows', 1)->where('rows.0.title', 'Explicitly shared follow-up'));
+        $this->get(self::BASE.'?assignee_id='.$staff->id)->assertInertia(fn (Assert $p) => $p
+            ->has('rows', 1)->where('rows.0.title', 'Explicitly shared follow-up')
+            ->where('rows.0.staff', $lia->name.', '.$staff->name));
     }
 
     public function test_agreement_link_is_only_exposed_when_the_private_pdf_exists(): void
