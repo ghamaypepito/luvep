@@ -37,6 +37,7 @@ jobs:
       - name: Verify workspace interactions and installation
         run: |
           node tests/Frontend/accommodation-carousel.cjs
+          node tests/Frontend/accommodation-tenant-link.cjs
           node tests/Frontend/accommodation-agreements.cjs
           node tests/Frontend/accommodation-move-in.cjs
           node tests/Frontend/brief-references.cjs

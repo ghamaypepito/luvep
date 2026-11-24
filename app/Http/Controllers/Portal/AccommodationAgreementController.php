@@ -45,6 +45,8 @@ class AccommodationAgreementController extends Controller
             'client_name' => $a->client_name,
             'status' => $a->status,
             'signing_url' => $a->signingUrl(),
+            'tenant_id' => $a->tenant_id,
+            'can_link_tenant' => request()->user()->is_active && ! request()->attributes->get('user_view_actor') && $a->status === 'signed',
             'signed' => $a->status === AccommodationAgreement::STATUS_SIGNED,
             'can_resend_copy' => $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
             'created_at' => optional($a->created_at)->toIso8601String(),

@@ -57,7 +57,7 @@ function Modal({ title, onClose, children }) {
 const FIELD = "w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
 const LABEL = "block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5";
 
-export default function TenantDetail({ tenant, historical = [], properties = [], documents = [], signedAgreements = [], canActivate = false, onboardingUrl = null }) {
+export default function TenantDetail({ tenant, historical = [], properties = [], documents = [], signedAgreements = [], preTenancySources = [], canActivate = false, onboardingUrl = null }) {
     const [tab, setTab] = useState("overview");
     const [modal, setModal] = useState(null); // notice | vacate | renew | move
     const isVacated = tenant.current_status === "vacated";
@@ -202,6 +202,9 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
             {tab === "docs" && <>
                 {signedAgreements.length > 0 && <Card title="Signed agreements" icon={<FileText size={18} />}>
                     {signedAgreements.map(a => <a key={a.id} className="block py-2 text-sm font-semibold text-blue-700 underline" href={`/portal/accommodation/forms/agreements/${a.id}/download`}>Signed agreement #{a.id} Â· {fmtDate(a.signed_at)}</a>)}
+                </Card>}
+                {preTenancySources.length > 0 && <Card title="Pre-tenancy forms and uploads" icon={<FileText size={18} />}>
+                    {preTenancySources.map(source => <a key={source.key} href={source.url} className="block py-2 text-sm font-semibold text-blue-700 underline">{source.label} — view responses and uploaded documents</a>)}
                 </Card>}
                 <TenantDocuments tenant={tenant} documents={documents} />
             </>}

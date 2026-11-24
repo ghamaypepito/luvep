@@ -2402,6 +2402,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/forms/pre-tenancy/{form}', [\App\Http\Controllers\Portal\PreTenancyFormsController::class, 'show'])->name('forms.pre-tenancy.show');
             Route::get('/forms/pre-tenancy/{form}/{kind}/download', [\App\Http\Controllers\Portal\PreTenancyFormsController::class, 'download'])->name('forms.pre-tenancy.download');
 
+            Route::get('/forms/agreements/{agreement}/tenant-link', [\App\Http\Controllers\Portal\Accommodation\AgreementTenantLinkController::class, 'show'])->name('forms.agreements.tenant-link');
+            Route::post('/forms/agreements/{agreement}/tenant-link', [\App\Http\Controllers\Portal\Accommodation\AgreementTenantLinkController::class, 'store'])->name('forms.agreements.tenant-link.store');
             Route::get('/forms/agreements', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'index'])->name('forms.agreements');
             Route::post('/forms/agreements/prefill', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'prefill'])->name('forms.agreements.prefill');
             Route::post('/forms/agreements/preview', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'preview'])->name('forms.agreements.preview');
