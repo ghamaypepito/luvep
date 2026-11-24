@@ -126,10 +126,10 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
                     <p>Duration: {p.duration_months == null ? 'Not specified' : `${p.duration_months} months`} · Campus: {p.location || 'Not specified'} · Catalogue: {p.status}</p>
                     <p>Tuition: {p.tuition_fee ?? p.price_text ?? 'Not specified'} {p.tuition_fee_notes || ''} · Application fee: {record?.data.application_fee ?? 'Not specified'} {record?.data.currency || ''}</p>
                     <p>Other fees: {record?.data.other_fees || 'Not specified'}</p>
-                    {Array.isArray(p.tuition_fees) && p.tuition_fees.map((fee, i) => <p key={i}>{fee.label}: {fee.amount ?? 'Not specified'} {fee.notes || ''}</p>)}
+                    {Array.isArray(p.tuition_fees) && p.tuition_fees.filter(fee => fee && typeof fee === 'object').map((fee, i) => <p key={i}>{fee.label}: {fee.amount ?? 'Not specified'} {fee.notes || ''}</p>)}
                     <p>Catalogue insurance: {p.insurance_fee ?? 'Not specified'} · Visa processing: {p.visa_processing_fee ?? 'Not specified'} (amounts as recorded; currency is not inferred)</p>
                     <p>English: {p.english_requirements || 'Not specified'}</p>
-                    <div>Entry requirements: {Array.isArray(p.entry_requirements) ? p.entry_requirements.map((s, i) => <div key={i}>{s.intro}<ul>{s.bullets?.map((b, j) => <li key={j}>{b}</li>)}</ul></div>) : 'Not specified'}</div>
+                    <div>Entry requirements: {Array.isArray(p.entry_requirements) ? p.entry_requirements.filter(s => s && typeof s === 'object').map((s, i) => <div key={i}>{s.intro}<ul>{Array.isArray(s.bullets) && s.bullets.map((b, j) => <li key={j}>{b}</li>)}</ul></div>) : 'Not specified'}</div>
                     <p>Catalogue intakes: {p.intake_months || 'Not specified'} (exact dates are in Intakes)</p>
                     {files(record)}<button className="text-blue-700 underline" onClick={() => { begin(record); if (!record) setEditing(previous => ({ ...previous, program_id: p.id })); }}>Edit school course details</button>
                 </article>;

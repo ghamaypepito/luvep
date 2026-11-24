@@ -17,7 +17,8 @@ loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(
 const Page = loaded.exports.default;
 const root = createRoot(document.getElementById('root'));
 const props = { school: { id: 1, name: 'Synthetic School' }, today: '2026-11-24',
-    programs: [{ id: 10, title: 'Course One', level: 7, status: 'published', tuition_fee: 12345 }, { id: 11, title: 'Course Two', status: 'published' }],
+    programs: [{ id: 10, title: 'Course One', level: 7, status: 'published', tuition_fee: 12345,
+        tuition_fees: [null, { label: 'Legacy zero fee', amount: 0 }], entry_requirements: [null, { intro: 'Recorded requirement', bullets: null }] }, { id: 11, title: 'Course Two', status: 'published' }],
     students: [{ id: 20, first_name: 'Synthetic', last_name: 'Student', school_id: 1 }, { id: 21, first_name: 'Review', last_name: 'Student', school_id: 1 }],
     staff: [{ id: 30, name: 'Synthetic Staff' }],
     statuses: { enrolment: ['Enrolled', 'Currently Studying', 'Completed', 'Deferred', 'Withdrawn'], communication: ['Pending', 'Completed', 'Awaiting Response'], intake: ['Open', 'Closing Soon', 'Closed', 'Fully Booked', 'Postponed'] },
@@ -56,6 +57,7 @@ const count = label => [...document.querySelectorAll('main > div:first-of-type >
     assert.match(articles[0].textContent, /Latest meeting/);
     assert.equal(document.querySelector('a[href*="management-records"]')?.getAttribute('href'), '/portal/education/schools/1/management-records/4/files/8');
     await click('Courses & Fees'); assert.match(document.body.textContent, /12345/);
+    assert.match(document.body.textContent, /Legacy zero fee: 0/); assert.match(document.body.textContent, /Recorded requirement/);
     assert.ok(document.querySelector('a[href="/portal/education/programs"]'));
     await click('Intakes'); await change('Filter intake', 'February');
     assert.equal(document.querySelectorAll('section[aria-label="Intakes"] article').length, 1);
