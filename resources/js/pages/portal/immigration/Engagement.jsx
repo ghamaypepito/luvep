@@ -5,7 +5,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import { toast } from "sonner";
 import {
     FileSignature, Search, Plus, X, Download, Check,
-    FileText, Loader2, Mail, Eye, Trash2, ExternalLink, Copy, Link2, ScrollText, Send as SendIcon, CheckCircle2,
+    FileText, Loader2, Mail, Eye, Archive, ExternalLink, Copy, Link2, ScrollText, Send as SendIcon, CheckCircle2,
 } from "lucide-react";
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
@@ -143,38 +143,57 @@ function ClientLink({ url }) {
 }
 
 /**
- * Delete a case's whole generated engagement pack in one call. Confirms
- * first (naming the case + document count), then removes the stored files
- * and their rows server-side.
+ * Remove one pack from the active workspace without changing its documents or Finance.
  */
-function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
+function ArchiveEngagementButton({ caseId, caseName, packId, documentId }) {
     const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const inFlight = useRef(false);
+    const finish = () => { inFlight.current = false; setBusy(false); };
+    const showError = (errors) => {
+        const detail = Object.values(errors || {}).flat().filter((value) => typeof value === "string" && value.trim()).join(" ");
+        const message = detail || "Could not archive the engagement. Please refresh and try again.";
+        setError(message);
+        toast.error(message);
+    };
 
     const remove = async () => {
-        const ok = await confirmDialog({
-            title: "Delete engagement documents?",
-            message: `Delete all ${count} engagement document${count === 1 ? '' : 's'} for ${caseName}? This removes the files permanently.`,
-            confirmText: "Delete", tone: "danger",
-        });
-        if (! ok) return;
+        if (inFlight.current) return;
+        inFlight.current = true;
         setBusy(true);
-        router.delete(`/admin/leads/${caseId}/engagement/documents?pack_id=${encodeURIComponent(packId || "legacy")}`, {
-            preserveScroll: true,
-            onError: () => toast.error("Could not delete the documents."),
-            onFinish: () => setBusy(false),
-        });
+        setError("");
+        try {
+            const ok = await confirmDialog({
+                title: "Archive engagement?",
+                message: `Remove this engagement for ${caseName} from the active Engagement list? Its documents, signing links and existing Finance records will remain unchanged.`,
+                confirmText: "Archive",
+            });
+            if (!ok) { finish(); return; }
+            router.post(`/portal/immigration/cases/${caseId}/engagement/archive`, { pack_id: packId || "legacy", document_id: documentId }, {
+                preserveScroll: true,
+                preserveState: true,
+                onError: showError,
+                onFinish: finish,
+            });
+        } catch {
+            showError({ error: "Could not archive the engagement. Please refresh and try again." });
+            finish();
+        }
     };
 
     return (
-        <button
-            type="button"
-            onClick={remove}
-            disabled={busy}
-            title={`Delete all ${count} engagement document(s) for ${caseName}`}
-            className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-rose-500 hover:border-rose-300 hover:bg-rose-50 transition-colors disabled:opacity-40"
-        >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={13} />}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+            <button
+                type="button"
+                onClick={remove}
+                disabled={busy || !documentId}
+                title={`Archive engagement for ${caseName}`}
+                className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Archive size={13} />}
+            </button>
+            {error && <p role="alert" className="max-w-64 whitespace-normal text-xs text-rose-700">{error}</p>}
+        </div>
     );
 }
 
@@ -184,7 +203,7 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, internalSignatureNotificationsReady = false }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, canArchiveEngagement = false, internalSignatureNotificationsReady = false }) {
     const [query, setQuery] = useState(search);
     useEffect(() => { setQuery(search); }, [search]);
     const searchEngagements = (value) => {
@@ -426,8 +445,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 </div>
                                             )}
                                         </td>
-                                        {/* Actions — open the client's tracker, or
-                                            delete the case's whole pack. */}
+                                        {/* Actions — inspect or archive only this workspace entry. */}
                                         <td className="px-3 py-3 pr-4 whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
@@ -439,12 +457,12 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <ScrollText size={13} />
                                                 </button>
                                                 {canUploadSignature && !c.signed && !c.is_draft && c.documents.some((doc) => ['written_agreement', 'initial_consultation', 'oia'].includes(doc.type_key) && !doc.signed) && <button type="button" onClick={() => setSignatureFor(c)} className="rounded-lg border px-2 py-1 text-[11px] font-semibold text-teal-800">Upload signature</button>}
-                                                <DeleteCaseDocsButton
+                                                {canArchiveEngagement && <ArchiveEngagementButton
                                                     caseId={c.case_id}
                                                     packId={c.pack_id}
                                                     caseName={c.case_name}
-                                                    count={c.documents.length}
-                                                />
+                                                    documentId={c.documents.find((doc) => doc.type_key !== "invoice")?.id}
+                                                />}
                                             </div>
                                         </td>
                                     </tr>
