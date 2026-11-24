@@ -93,14 +93,14 @@ class FinanceAnalyticsTest extends TestCase
         $this->get('/portal/finance/reports')->assertForbidden();
     }
 
-    public function test_payment_status_pies_partition_all_issued_value_without_counting_overdue_twice(): void
+    public function test_payment_status_pies_partition_issued_value_in_range_without_counting_overdue_twice(): void
     {
         foreach (['receivables' => FinanceReceivable::class, 'payables' => FinancePayable::class] as $key => $model) {
             $make = fn (array $attributes) => $model::create(array_replace([
                 $key === 'receivables' ? 'invoice_no' : 'bill_no' => 'PIE-'.($model::count() + 1),
                 $key === 'receivables' ? 'client_name' : 'vendor_name' => 'Synthetic Party',
                 'amount' => 100, 'currency' => 'NZD', 'status' => $key === 'receivables' ? 'sent' : 'approved',
-                'issue_date' => '2020-01-01', 'due_date' => today(),
+                'issue_date' => '2026-11-01', 'due_date' => today(),
             ], $attributes));
             foreach ([
                 ['amount' => 100.01, 'due_date' => today()->subDay(), 'paid' => 20.01],
@@ -116,21 +116,57 @@ class FinanceAnalyticsTest extends TestCase
                 unset($attributes['paid']);
                 $record = $make($attributes);
                 if ($paid) {
-                    $record->payments()->create(['amount' => $paid, 'paid_on' => '2020-01-01']);
+                    $record->payments()->create(['amount' => $paid, 'paid_on' => '2026-11-02']);
                 }
             }
             $this->get('/portal/finance/reports?start=2026-11-01&end=2026-11-30')
                 ->assertInertia(fn (Assert $page) => $page
-                    ->where("data.{$key}.paid_total", 210.01)
-                    ->where("data.{$key}.not_overdue_total", 250)
-                    ->where("data.{$key}.overdue_total", 80)
-                    ->where("data.{$key}.issued_total", 540.01)
-                    ->where("data.{$key}.total", 330)
-                    ->where('data.received', 0)->where('data.paid', 0));
+                    ->where("data.{$key}.period_status.paid_total", 210.01)
+                    ->where("data.{$key}.period_status.not_overdue_total", 250)
+                    ->where("data.{$key}.period_status.overdue_total", 80)
+                    ->where("data.{$key}.period_status.issued_total", 540.01)
+                    ->where("data.{$key}.total", 330));
             $this->get('/portal/finance/reports?currency=USD')
-                ->assertInertia(fn (Assert $page) => $page->where("data.{$key}.paid_total", 50)
-                    ->where("data.{$key}.not_overdue_total", 727)->where("data.{$key}.overdue_total", 0)
-                    ->where("data.{$key}.issued_total", 777));
+                ->assertInertia(fn (Assert $page) => $page->where("data.{$key}.period_status.paid_total", 50)
+                    ->where("data.{$key}.period_status.not_overdue_total", 727)->where("data.{$key}.period_status.overdue_total", 0)
+                    ->where("data.{$key}.period_status.issued_total", 777));
+        }
+    }
+
+    public function test_payment_status_pies_follow_issue_dates_and_the_historical_cutoff(): void
+    {
+        foreach (['receivables' => FinanceReceivable::class, 'payables' => FinancePayable::class] as $key => $model) {
+            $make = fn ($issued, $due, $amount) => $model::create([
+                $key === 'receivables' ? 'invoice_no' : 'bill_no' => 'RANGE-'.($model::count() + 1),
+                $key === 'receivables' ? 'client_name' : 'vendor_name' => 'Synthetic Party',
+                'amount' => $amount, 'currency' => 'NZD', 'status' => $key === 'receivables' ? 'sent' : 'approved',
+                'issue_date' => $issued, 'due_date' => $due,
+            ]);
+            $make('2026-10-31', '2026-11-01', 900);
+            $first = $make('2026-11-01', '2026-11-05', 100.01);
+            $first->payments()->create(['amount' => 20.01, 'paid_on' => '2026-11-10']);
+            $first->payments()->create(['amount' => 50, 'paid_on' => '2026-11-16']);
+            $last = $make('2026-11-15', '2026-11-15', 200);
+            $last->payments()->create(['amount' => 30, 'paid_on' => '2026-11-15']);
+            $last->payments()->create(['amount' => 70, 'paid_on' => '2026-11-16']);
+            $make('2026-11-16', '2026-12-01', 700);
+            $make('2026-11-24', '2026-12-01', 500);
+
+            $this->get('/portal/finance/reports?start=2026-11-01&end=2026-11-15')
+                ->assertInertia(fn (Assert $page) => $page->where('data.status_as_of', '2026-11-15')
+                    ->where("data.{$key}.period_status.paid_total", 50.01)
+                    ->where("data.{$key}.period_status.not_overdue_total", 170)
+                    ->where("data.{$key}.period_status.overdue_total", 80)
+                    ->where("data.{$key}.period_status.issued_total", 300.01)
+                    ->where("data.{$key}.total", 2230));
+            $this->get('/portal/finance/reports?start=2026-11-15&end=2026-11-30')
+                ->assertInertia(fn (Assert $page) => $page->where('data.status_as_of', '2026-11-23')
+                    ->where("data.{$key}.period_status.paid_total", 100)
+                    ->where("data.{$key}.period_status.not_overdue_total", 700)
+                    ->where("data.{$key}.period_status.overdue_total", 100)
+                    ->where("data.{$key}.period_status.issued_total", 900));
+            $this->get('/portal/finance/reports?start=2026-11-24&end=2026-11-30')
+                ->assertInertia(fn (Assert $page) => $page->where("data.{$key}.period_status.issued_total", 0));
         }
     }
 

@@ -66,7 +66,7 @@ class FinanceReportController extends Controller
         ]);
     }
 
-    /** Period cash movements and a separately labelled live ledger snapshot. */
+    /** Period cash and document status, plus a separately labelled live aging snapshot. */
     private function analytics(Carbon $start, Carbon $end, string $currency): array
     {
         $cash = $this->collections($start, $end, $currency);
@@ -92,6 +92,7 @@ class FinanceReportController extends Controller
         ], array_values($weeks));
 
         $snapshots = [];
+        $statusAsOf = $end->lt(today()) ? $end->copy()->startOfDay() : today();
         foreach (['receivables' => FinanceReceivable::class, 'payables' => FinancePayable::class] as $key => $model) {
             $aging = $this->aging($model, $currency);
             $rows = collect($aging['rows']);
@@ -100,8 +101,7 @@ class FinanceReportController extends Controller
                 && $row['due_date'] <= today()->addDays(6)->toDateString());
             $snapshots[$key] = [
                 'total' => $aging['total'], 'count' => $rows->count(), 'buckets' => $aging['buckets'],
-                'paid_total' => $aging['paid_total'], 'issued_total' => $aging['issued_total'],
-                'not_overdue_total' => round($aging['buckets']['current'], 2),
+                'period_status' => $this->paymentStatus($model, $currency, $start, $statusAsOf),
                 'overdue_total' => round($overdue->sum('balance'), 2), 'overdue_count' => $overdue->count(),
                 'oldest_days' => (int) ($rows->max('days_past_due') ?? 0),
                 'due_soon_total' => round($upcoming->sum('balance'), 2), 'due_soon_count' => $upcoming->count(),
@@ -115,7 +115,7 @@ class FinanceReportController extends Controller
             'previous' => ['start' => $previousStart->toDateString(), 'end' => $previousEnd->toDateString(),
                 'received' => $previous['revenue'], 'paid' => $previous['expenses'], 'net' => $previous['net']],
             'trends' => $trends, 'expense_breakdown' => $income['expense_breakdown'],
-            'as_of' => today()->toDateString(), ...$snapshots,
+            'as_of' => today()->toDateString(), 'status_as_of' => $statusAsOf->toDateString(), ...$snapshots,
         ];
     }
 
@@ -146,19 +146,32 @@ class FinanceReportController extends Controller
         ];
     }
 
+    /** Issued documents in the selected window, with payments and due status at the cutoff. */
+    private function paymentStatus(string $model, string $currency, Carbon $start, Carbon $asOf): array
+    {
+        $cutoff = $asOf->toDateString();
+        $entries = $model::where('currency', $currency)->whereNotIn('status', ['draft', 'void'])
+            ->whereDate('issue_date', '>=', $start->toDateString())->whereDate('issue_date', '<=', $cutoff)
+            ->with(['payments' => fn ($query) => $query->whereDate('paid_on', '<=', $cutoff)])->get();
+        $totals = ['issued_total' => 0, 'paid_total' => 0, 'not_overdue_total' => 0, 'overdue_total' => 0];
+        foreach ($entries as $entry) {
+            $amount = max(0, (int) round((float) $entry->amount * 100));
+            // Partition document value; excess payments cannot inflate the paid slice.
+            $paid = min($amount, max(0, (int) round($entry->amount_paid * 100)));
+            $totals['issued_total'] += $amount;
+            $totals['paid_total'] += $paid;
+            $overdue = $entry->due_date && $entry->due_date->toDateString() < $cutoff;
+            $totals[$overdue ? 'overdue_total' : 'not_overdue_total'] += $amount - $paid;
+        }
+
+        return array_map(fn ($cents) => $cents / 100, $totals);
+    }
+
     /** Live aging snapshot for a receivable/payable model. */
     private function aging(string $model, string $currency): array
     {
-        $entries = $model::where('currency', $currency)->whereNotIn('status', ['draft', 'void'])->with('payments')->get();
-        // The pie partitions document value, so excess payments cannot inflate the paid slice.
-        $issuedCents = 0;
-        $paidCents = 0;
-        foreach ($entries as $entry) {
-            $amountCents = max(0, (int) round((float) $entry->amount * 100));
-            $issuedCents += $amountCents;
-            $paidCents += min($amountCents, max(0, (int) round($entry->amount_paid * 100)));
-        }
-        $rows = $entries->filter(fn ($r) => ! in_array($r->payment_status, ['paid', 'void'], true) && $r->balance > 0.005);
+        $rows = $model::where('currency', $currency)->whereNotIn('status', ['draft', 'void'])->with('payments')->get()
+            ->filter(fn ($r) => ! in_array($r->payment_status, ['paid', 'void'], true) && $r->balance > 0.005);
 
         $buckets = ['current' => 0, '1-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0];
         $list = [];
@@ -181,8 +194,6 @@ class FinanceReportController extends Controller
         return [
             'buckets' => array_map(fn ($v) => round($v, 2), $buckets),
             'total' => round(array_sum($buckets), 2),
-            'paid_total' => $paidCents / 100,
-            'issued_total' => $issuedCents / 100,
             'rows' => $list,
         ];
     }
