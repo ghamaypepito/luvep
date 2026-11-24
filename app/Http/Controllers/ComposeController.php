@@ -25,6 +25,7 @@ class ComposeController extends Controller
         $ctx = $this->context($request);
 
         return inertia($ctx['component'], [
+            'partnerRecipient' => ($partner = $this->partnerRecipient($request)) ? ['id' => $partner->id, 'name' => $partner->name, 'email' => $partner->email] : null,
             'basePath' => $ctx['basePath'],
             'sent' => $this->sentList($request),
             'templates' => MessageTemplate::active()->availableTo($request->user())
@@ -67,6 +68,10 @@ class ComposeController extends Controller
         $leads = $this->recipientLeads($request)->whereIn('id', $leadIds)->get();
         abort_unless($leads->count() === count(array_unique($leadIds)), 403, 'You do not have access to one or more recipients.');
 
+        $partner = $this->partnerRecipient($request);
+        if ($partner && ($leadIds || count($emails) !== 1 || $emails[0] !== mb_strtolower(trim($partner->email)))) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['emails' => 'Partner tracking requires the selected partner as the only recipient.']);
+        }
         $subject = $data['subject'] ?? '';
         $body = $data['body'];
         // A visual-builder body is a complete HTML document → send self-contained.
@@ -100,7 +105,7 @@ class ComposeController extends Controller
         // Typed addresses — no lead context, so strip any {{variables}}.
         $strip = fn ($t) => preg_replace('/\{\{.*?\}\}/s', '', (string) $t);
         foreach ($emails as $email) {
-            $comms->sendComposedEmail($email, $strip($subject), $strip($body), $attachments, $rawHtml, null);
+            $comms->sendComposedEmail($email, $strip($subject), $strip($body), $attachments, $rawHtml, null, partnerId: $partner?->id);
             $count++;
         }
 
@@ -171,7 +176,7 @@ class ComposeController extends Controller
     private function sentList(Request $request)
     {
         return MessageLog::where('channel', MessageLog::CHANNEL_EMAIL)
-            ->where('source', 'compose')
+            ->whereIn('source', ['compose', 'partner-tracker'])
             ->when(in_array($request->user()->role, ['agent', User::ROLE_SUB_AGENT], true), fn ($query) => $query
                 ->where('triggered_by_user_id', $request->user()->id)
                 ->where(fn ($recipients) => $recipients->where('recipient_type', 'raw')
@@ -192,6 +197,22 @@ class ComposeController extends Controller
                 'sender' => $m->triggeredBy?->name,
                 'created_at' => optional($m->created_at)->toIso8601String(),
             ]);
+    }
+
+    private function partnerRecipient(Request $request): ?User
+    {
+        if (! $request->filled('partner_id')) {
+            return null;
+        }
+        abort_unless($this->context($request)['basePath'] === '/portal/education/compose', 403);
+        app(\App\Services\PartnerActivityTracker::class)->authorize($request);
+        $id = $request->validate(['partner_id' => 'required|integer'])['partner_id'];
+        $partner = User::where('role', 'agent')->findOrFail($id);
+        if (! filter_var($partner->email, FILTER_VALIDATE_EMAIL)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['partner_id' => 'Add a valid email to the partner account first.']);
+        }
+
+        return $partner;
     }
 
     /** Resolve the acting view context (admin vs a department portal) from the route. */
