@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class PartnerActivityTracker
@@ -71,7 +72,8 @@ class PartnerActivityTracker
                 'details' => ['sent_on' => $this->date($a->sent_at), 'received_on' => $this->date($a->agent_signed_at),
                     'expiry_on' => $this->date($a->expires_on), 'version' => $a->version, 'draft' => $a->is_draft, 'current' => $currentVersions->get($a->agent_id) === $a->id,
                     'both_signed' => $a->isSignedByAgent() && $a->isSignedByCompany(),
-                    'document_url' => '/portal/education/partner-tracker/agreements/'.$a->id.'/document'],
+                    'document_url' => $a->file_path && Storage::disk('local')->exists($a->file_path)
+                        ? '/portal/education/partner-tracker/agreements/'.$a->id.'/document' : null],
             ]);
             $events = $eventsByAgreement->get($a->id, collect());
             // Existing audit events are the dated timeline; legacy timestamp fallbacks are explicitly labelled.

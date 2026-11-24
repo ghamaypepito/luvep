@@ -82,6 +82,7 @@ function ActivityList({ title, rows, installed, onEdit }) {
             <details className="mt-2 text-sm"><summary className="cursor-pointer text-blue-800">Details and documents</summary>
                 {Object.entries(row.details || {}).filter(([k, v]) => v != null && !k.endsWith('_url') && typeof v !== 'object').map(([k, v]) => <p key={k} className="mt-1 whitespace-pre-wrap break-words"><strong>{label(k)}:</strong> {String(v)}</p>)}
                 {row.details?.document_url && <a className="mt-2 block text-blue-700 underline" href={row.details.document_url}>View / download original agreement</a>}
+                {row.state_only && !row.details?.document_url && <p className="mt-2 text-gray-600">No stored agreement PDF is available. Review the original agreement record.</p>}
                 {row.details?.task_url && <a className="mt-2 block text-blue-700 underline" href={row.details.task_url}>Open existing Task Board</a>}
                 {row.files?.map(f => <a key={f.id} href={`${f.url}?inline=1`} target="_blank" rel="noreferrer" className="mt-2 block break-all text-blue-700 underline">{f.name}</a>)}
                 {installed && row.record_id ? <AttachmentUpload recordId={row.record_id} /> : !row.event_only && <p className="mt-2 text-gray-600">Save tracking details before attaching files.</p>}

@@ -357,4 +357,15 @@ class PartnerActivityTrackerTest extends TestCase
         LeadTask::create(['lead_id' => $lead->id, 'title' => 'Explicitly shared follow-up', 'type' => 'follow_up', 'department' => 'immigration', 'created_by' => $lia->id, 'assignee_id' => $lia->id, 'additional_assignee_ids' => [$staff->id]]);
         $this->get(self::BASE)->assertInertia(fn (Assert $p) => $p->has('rows', 1)->where('rows.0.title', 'Explicitly shared follow-up'));
     }
+
+    public function test_agreement_link_is_only_exposed_when_the_private_pdf_exists(): void
+    {
+        [, $agent] = $this->setupTracker();
+        $agreement = $this->agreement($agent);
+        $this->get(self::BASE)->assertInertia(fn (Assert $p) => $p->where('agreements.0.details.document_url', null));
+        Storage::disk('local')->put($agreement->file_path, '%PDF-synthetic');
+        $this->get(self::BASE)->assertInertia(fn (Assert $p) => $p->where('agreements.0.details.document_url', self::BASE.'/agreements/'.$agreement->id.'/document'));
+        $this->get(self::BASE.'/agreements/'.$agreement->id.'/document')->assertDownload('synthetic-agreement.pdf');
+        $this->actingAs($agent)->get(self::BASE.'/agreements/'.$agreement->id.'/document')->assertForbidden();
+    }
 }
