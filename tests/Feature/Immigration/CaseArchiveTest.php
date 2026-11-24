@@ -98,10 +98,12 @@ class CaseArchiveTest extends TestCase
         $active = $this->case();
         $document = $archived->documents()->create([
             'original_name' => '../offer.pdf', 'file_path' => 'private/offer.pdf', 'status' => LeadDocument::STATUS_APPROVED,
+            'client_signature_path' => 'private/client-signature.png',
         ]);
         $missing = $archived->documents()->create(['original_name' => 'missing.pdf', 'file_path' => 'private/missing.pdf']);
         $other = $active->documents()->create(['original_name' => 'other.pdf', 'file_path' => 'private/other.pdf']);
         Storage::disk('local')->put($document->file_path, 'archived case offer');
+        Storage::disk('local')->put($document->client_signature_path, 'archived signature');
         Storage::disk('local')->put($other->file_path, 'another case offer');
         $archived->delete();
 
@@ -116,6 +118,7 @@ class CaseArchiveTest extends TestCase
         try {
             $this->assertTrue($zip->open($path));
             $this->assertSame('archived case offer', $zip->getFromName("documents/{$document->id}/offer.pdf"));
+            $this->assertSame('archived signature', $zip->getFromName("signatures/{$document->id}/client-signature.png"));
             $this->assertFalse($zip->locateName("documents/{$other->id}/other.pdf"));
             $snapshot = json_decode($zip->getFromName('case-records.json'), true, flags: JSON_THROW_ON_ERROR);
             $this->assertSame('IC-BACKUP-TEST', $snapshot['case']['lead_id']);
@@ -137,11 +140,13 @@ class CaseArchiveTest extends TestCase
         $dependant = CaseDependent::create([
             'lead_id' => $active->id, 'linked_lead_id' => $archived->id, 'relationship' => 'child', 'source' => 'staff',
         ]);
-        $own = $archived->documents()->create(['original_name' => 'own.pdf', 'file_path' => 'private/own.pdf']);
-        $shared = $archived->documents()->create(['original_name' => 'shared.pdf', 'file_path' => 'private/shared.pdf']);
-        $activeCopy = $active->documents()->create(['original_name' => 'shared.pdf', 'file_path' => $shared->file_path]);
+        $own = $archived->documents()->create(['original_name' => 'own.pdf', 'file_path' => 'private/own.pdf', 'client_signature_path' => 'private/own-signature.png']);
+        $shared = $archived->documents()->create(['original_name' => 'shared.pdf', 'file_path' => 'private/shared.pdf', 'client_signature_path' => 'private/shared-signature.png']);
+        $activeCopy = $active->documents()->create(['original_name' => 'shared.pdf', 'file_path' => $shared->file_path, 'client_signature_path' => $shared->client_signature_path]);
         Storage::disk('local')->put($own->file_path, 'archived only');
         Storage::disk('local')->put($shared->file_path, 'shared source');
+        Storage::disk('local')->put($own->client_signature_path, 'own signature');
+        Storage::disk('local')->put($shared->client_signature_path, 'shared signature');
 
         $receivable = DB::table('finance_receivables')->insertGetId([
             'lead_id' => $archived->id, 'invoice_document_id' => $own->id, 'invoice_no' => 'INV-ARCHIVE-TEST',
@@ -185,5 +190,7 @@ class CaseArchiveTest extends TestCase
         Storage::disk('local')->assertMissing('media-drive/photo.png');
         Storage::disk('local')->assertMissing($own->file_path);
         Storage::disk('local')->assertExists($activeCopy->file_path);
+        Storage::disk('local')->assertMissing($own->client_signature_path);
+        Storage::disk('local')->assertExists($activeCopy->client_signature_path);
     }
 }

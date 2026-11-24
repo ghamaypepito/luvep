@@ -1,6 +1,6 @@
-# TKT-UA9PPC — Engagement-only archive
+# TKT-UA9PPC — Engagement archive and Admin case deletion
 
-Ma’am Ei confirmed option A: remove the selected entry from the active Engagement list, retain documents/history and make no change in Finance. This supersedes the earlier delete-feedback-only proposal.
+The requester confirmed on 24 November that Admin permanent deletion after archiving means the **entire archived client case**. Preserve that existing Admin/Super Admin capability; no separate permanent Engagement-pack deletion is introduced. Removing a selected entry from active Engagement uses Archive and retains documents/history and Finance. These are separate actions with separate scopes.
 
 Replace the workspace Delete action with an explicit Archive confirmation and dedicated authenticated POST. Only active Admin/Super Admin and Immigration staff/manager/adviser roles may archive. Validate the canonical live Immigration case (including legacy handoffs), explicit pack ID and original engagement-document ID. Reject foreign, stale, invoice-only and deleted-case targets.
 
@@ -8,6 +8,12 @@ Store identity, actor and timestamp in the new engagement_pack_archives table, u
 
 Serialize with the existing case Engagement lock and a database transaction. Archive and actor-attributed engagement.archived audit commit together. Retries are idempotent; audit failure rolls back. No private document/financial text is copied into the marker or audit.
 
+Retire the legacy `DELETE /admin/leads/{id}/engagement/documents` action for canonical Immigration cases, including legacy Education handoffs. Under the case row lock, deny unrelated roles and return explicit Archive guidance to permitted Immigration/Admin staff. This prevents stale pages and direct requests from permanently deleting one or multiple case packs. Other portals' existing non-case pack behavior remains unchanged.
+
+Reuse Archived Cases for permanent whole-case deletion: active Admin/Super Admin only, no View-as, a previously archived case and the existing `DELETE ACCOUNT` confirmation. Its existing actor audit and standalone Finance ledger/payment retention remain. This whole-case operation removes/unlinks case evidence and is not the byte-for-byte Finance retention promised by Engagement Archive. Include captured signature images in the existing optional backup and file cleanup; preserve any signature still referenced by another document. Include Engagement archive markers in the optional case snapshot.
+
 Tests compare full before/after Leads, documents, receivables, payments, proof links and case-financial rows and file/signature hashes. Cover colleague-owned signed/Sent/draft/legacy packs, other case/pack isolation, search and pre-limit filtering, permissions, stale/deleted targets, retry and rollback. Actual React tests cover non-destructive confirmation, exact POST payload, cancellation, failure/retry, duplicate guards and action visibility.
 
-Deploy the additive archive-table migration with the application. No Finance migration or backfill is included. Keep archive data during an application rollback; older application code can show archived entries again without changing Finance/documents. No self-service restore or invoice cancellation feature is added. No live record is archived by this session. Keep In review until Sir Ghamay reviews/merges/deploys and the requester verifies the selected entry is removed only from active Engagement.
+Regression checks cover the legacy DELETE boundary for all relevant roles, missing selectors, Admin requests and legacy handoffs, plus unchanged non-case deletion. Whole-case checks verify optional signature backup, unshared signature cleanup and shared-signature retention. Earlier independent tests reproduced both the destructive legacy endpoint and omitted signature cleanup before these corrections.
+
+Deploy the additive archive-table migration with the application. No Finance migration or backfill is included. Keep archive data during an application rollback; older application code can show archived entries again without changing Finance/documents. No self-service Engagement restore or invoice cancellation feature is added. No live record is archived or permanently deleted for testing. Independent final testing, a different review, exact-revision CI and deployed verification are required before Done. Admin deletion approval is established by the requester's clarification; do not require a second business approval of that capability.
