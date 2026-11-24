@@ -28,7 +28,7 @@ const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
  * email them. Mirrors the Compose editor. A lead with no email can be viewed
  * but not messaged (the composer is replaced with a prompt).
  */
-export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
+export default function CommunicationsPanel({ leadId, leadEmail = "", allowCc = false }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
@@ -42,6 +42,7 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
     const [composerOpen, setComposerOpen] = useState(false);
     const [replyContext, setReplyContext] = useState(null); // { subject } of the message being answered
     const [subject, setSubject] = useState("");
+    const [cc, setCc] = useState("");
     const [body, setBody] = useState("");
     const [files, setFiles] = useState([]);
     const [canAttachDocuments, setCanAttachDocuments] = useState(false);
@@ -64,14 +65,14 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
         const base = (m.subject || "").replace(/^\s*re:\s*/i, "").trim();
         setSubject(base ? `Re: ${base}` : "");
         setReplyContext({ subject: m.subject, from: m.direction === "in" ? (m.from || "the lead") : "your team" });
-        setBody(""); setError(null); setSent(false);
+        setBody(""); setCc(""); setError(null); setSent(false);
         setComposerOpen(true);
         scrollToComposer();
     };
 
     // Start a fresh email not tied to any message.
     const openBlank = () => {
-        setSubject(""); setReplyContext(null); setBody(""); setError(null); setSent(false);
+        setSubject(""); setReplyContext(null); setBody(""); setCc(""); setError(null); setSent(false);
         setComposerOpen(true);
         scrollToComposer();
     };
@@ -160,6 +161,10 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
         try {
             const fd = new FormData();
             if (subject.trim()) fd.append("subject", subject.trim());
+            if (allowCc) {
+                cc.split(/[,;]/).map((address) => address.trim()).filter(Boolean)
+                    .forEach((address) => fd.append("cc[]", address));
+            }
             fd.append("body", body);
             files.forEach((f) => fd.append("attachments[]", f));
             selectedDocuments.forEach((document) => fd.append("document_ids[]", document.id));
@@ -228,6 +233,17 @@ export default function CommunicationsPanel({ leadId, leadEmail = "" }) {
                         </div>
                     )}
 
+                    {allowCc && (
+                        <label className="block text-xs font-medium text-gray-600">
+                            CC (optional)
+                            <input
+                                value={cc}
+                                onChange={(e) => setCc(e.target.value)}
+                                placeholder="Separate email addresses with commas"
+                                className="mt-1 w-full px-3 py-2 mb-2 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-300"
+                            />
+                        </label>
+                    )}
                     <input
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}

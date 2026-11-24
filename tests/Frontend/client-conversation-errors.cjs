@@ -29,7 +29,8 @@ global.fetch = async (url, options = {}) => {
         : { message: 'You do not have access to this lead.' } };
 };
 (async () => {
-    await act(async () => root.render(React.createElement(Panel, {leadId: 7, leadEmail:'synthetic@example.test'})));
+    const props = { leadId: 7, leadEmail: 'synthetic@example.test' };
+    await act(async () => root.render(React.createElement(Panel, props)));
     assert.match(document.body.textContent, /You do not have access to this lead\./, 'A denied conversation must visibly report its access error');
     assert.doesNotMatch(document.body.textContent, /No messages yet/, 'Denied reads must not masquerade as an empty conversation');
     const retry = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Retry');
@@ -49,6 +50,14 @@ global.fetch = async (url, options = {}) => {
         await act(async () => btn.click());
     };
     await click('New email');
+    assert.equal(document.querySelector('input[placeholder="Separate email addresses with commas"]'), null);
+    await act(async () => root.render(React.createElement(Panel, { ...props, allowCc: true })));
+    const cc = document.querySelector('input[placeholder="Separate email addresses with commas"]');
+    assert.ok(cc);
+    await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(cc, 'one@example.test, two@example.test');
+        cc.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     const documents = document.querySelector('select[aria-label="Attach a student document"]');
     assert.ok(documents);
     assert.match(documents.options[1].textContent, /Offer of Place\.pdf.*Approved.*#11/s);
@@ -61,12 +70,17 @@ global.fetch = async (url, options = {}) => {
     status = 413;
     await click('Send email');
     assert.match(document.body.textContent, /attachments are too large/);
+    assert.equal(cc.value, 'one@example.test, two@example.test');
     assert.ok(document.querySelector('[aria-label="Remove Offer of Place.pdf"]'), 'Failed send keeps the selected attachment');
     status = 200;
     await click('Send email');
     const send = requests.findLast(({ options }) => options.body);
     assert.equal(send.url, '/admin/leads/7/communications');
-    assert.deepEqual(Object.fromEntries(send.options.body), { body: '', 'document_ids[]': '11' });
+    assert.deepEqual(send.options.body.getAll('cc[]'), ['one@example.test', 'two@example.test']);
+    assert.equal(send.options.body.get('document_ids[]'), '11');
+    assert.equal(send.options.body.get('body'), '');
+    await click('New email');
+    assert.equal(document.querySelector('input[placeholder="Separate email addresses with commas"]').value, '');
     await act(async () => root.unmount());
     console.log('Conversation access errors, reply sync and student attachment retry verified');
 })().catch(error => { console.error(error); process.exitCode = 1; });
