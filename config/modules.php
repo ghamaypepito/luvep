@@ -26,6 +26,11 @@ return [
     |
     */
     'restricted' => [
+        'case_name_correction' => [
+            'label' => 'Name Correction — Immigration',
+            'description' => 'Allow an individually authorized Immigration manager to correct applicant and dependant names. No case archiving, role changes or other Admin access.',
+            'admin_default' => true,
+        ],
         'social_marketing' => [
             'label' => 'Social & Marketing — Digital team',
             'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Admins can approve social posts. Publishing requires the separate Social Post Publishing permission.',

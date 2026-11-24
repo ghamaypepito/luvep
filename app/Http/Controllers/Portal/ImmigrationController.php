@@ -328,6 +328,7 @@ class ImmigrationController extends Controller
     {
         return inertia('portal/immigration/Cases', $this->casesPayload() + [
             'canManageCaseArchive' => CaseRecordAccess::canManage(request()),
+            'canCorrectCaseNames' => CaseRecordAccess::canCorrectNames(request()),
         ]);
     }
 

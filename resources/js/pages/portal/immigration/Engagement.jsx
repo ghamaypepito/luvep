@@ -630,6 +630,8 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
+    const [consultationCurrency, setConsultationCurrency] = useState(draft?.engagement_settings?.service_currency || (draft?.engagement_type === "initial_consultation" && draft?.currency) || "NZD");
+    const serviceCurrency = consultation ? consultationCurrency : "NZD";
     const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
     const defaultServiceFee = consultation ? 250 : 500;
     const serviceFee = serviceFees[engagementType];
@@ -871,18 +873,19 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
         ...(specialService ? { service_fee: serviceFeeOverride } : {}),
-        ...(consultation ? consultationDetails : {}),
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
         revision: familyRefresh,
     };
     const flow = useEngagementWorkflow(selectedCase?.id, settings, draft, onClose);
     const submitting = !!flow.busy;
+    const missingClientEmail = Boolean(selectedCase && !selectedCase.email);
     const previewParameters = new URLSearchParams({
         engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
         ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
-        ...(consultation ? consultationDetails : {}), _r: familyRefresh,
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}), _r: familyRefresh,
     });
     const preparedPreview = flow.prepared?.documents.find((doc) => doc.type === previewType)?.preview_url;
     const savedPreview = !flow.prepared && flow.savedPackId ? draft?.documents?.find((doc) => doc.type_key === previewType)?.view_url : null;
@@ -1187,8 +1190,15 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+                                {consultation && <label htmlFor="consultation-currency" className="mb-3 block text-xs font-semibold">Currency
+                                    <select id="consultation-currency" value={consultationCurrency} disabled={!!draft?.signed}
+                                        onChange={(event) => setConsultationCurrency(event.target.value)} className={`${ctrlCls} mt-1.5`}>
+                                        <option value="USD">USD - US Dollar</option>
+                                        <option value="NZD">NZD - New Zealand Dollar</option>
+                                    </select>
+                                </label>}
                                 <label className="block text-xs font-semibold">
-                                    {consultation ? "Booking fee (USD, ex GST)" : "Service fee (NZD, ex GST)"}
+                                    {consultation ? `Booking fee (${serviceCurrency}, ex GST)` : "Service fee (NZD, ex GST)"}
                                     <input type="text" inputMode="decimal" disabled={!!draft?.signed}
                                         value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
                                         onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
@@ -1208,10 +1218,10 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                     </select>
                                 </label>
                                 {serviceFeeValid && <dl aria-label="Service fee summary" className="mt-3 space-y-1 text-xs tabular-nums">
-                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee)}</dd></div>
+                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee)}</dd></div>
                                     <div className="flex justify-between"><dt>GST ({GST_PCT}%)</dt><dd>{fmtFee(serviceGst)}</dd></div>
                                     <div className="flex justify-between"><dt>Disbursements</dt><dd>{fmtFee(0)}</dd></div>
-                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
+                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
                                 </dl>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
@@ -1305,8 +1315,11 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                 {/* Generate, save and reviewed sending are distinct operations. */}
                 <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                     <div className="min-w-0 text-xs text-gray-600">
-                        <p>{flow.savedPackId ? "Draft saved. Ready to review the email." : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
+                        <p>{flow.savedPackId ? (missingClientEmail ? "Draft saved." : "Draft saved. Ready to review the email.") : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
                         <p className="mt-1">Generate and Save as Draft do not send email.</p>
+                        {missingClientEmail && <p id="engagement-missing-email" role="alert" className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            Verify &amp; Email is disabled because this client has no email address. Add their email to the client record, refresh this page, and reopen the draft.
+                        </p>}
                         {flow.error && !flow.review && <p role="alert" className="mt-2 max-w-xl text-red-700">{flow.error}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1320,7 +1333,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                             {flow.busy === "save" ? "Saving…" : "Save as Draft"}
                         </button>
-                        <button type="button" onClick={flow.verify} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
+                        <button type="button" onClick={flow.verify} aria-describedby={missingClientEmail ? "engagement-missing-email" : undefined} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
                             className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
                             {flow.busy === "review" ? "Preparing review…" : "Verify & Email"}
                         </button>

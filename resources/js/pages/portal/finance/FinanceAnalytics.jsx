@@ -37,18 +37,61 @@ export default function FinanceAnalytics({ data, currency, start, end, onReport 
             </section>
         </div>
         <div className="finance-ledger-grid">
+            <LedgerStatus title="Receivables" snapshot={ar} currency={currency} asOf={data.as_of ?? end} />
+            <LedgerStatus title="Payables" snapshot={ap} currency={currency} asOf={data.as_of ?? end} />
+        </div>
+        <div className="finance-ledger-grid">
             <AgingPanel title="Receivables" snapshot={ar} currency={currency} onOpen={() => onReport("receivables_aging")} />
             <AgingPanel title="Payables" snapshot={ap} currency={currency} onOpen={() => onReport("payables_aging")} />
         </div>
         <section className="tw-card tw-breakdown">
             <div className="tw-section-heading"><div><h2>Cash paid by expense category</h2><p>Recorded supplier payments in the selected period. Gross amounts, including any recorded tax.</p></div></div>
-            <Bars rows={(data.expense_breakdown ?? []).map(row => ({ label: row.category, amount: row.amount }))} currency={currency} empty="No supplier payments recorded in this period." />
+            <FinancePie rows={(data.expense_breakdown ?? []).filter(row => Number(row.amount) > 0).map(row => ({ label: row.category, amount: row.amount }))} currency={currency} title="Expense category" groupLabel="Category" totalLabel="Total paid" empty="No supplier payments recorded in this period." />
         </section>
         <div className="finance-ledger-grid">
             <Attention title="Largest overdue invoices" snapshot={ar} kind="receivables" currency={currency} />
             <Attention title="Largest overdue bills" snapshot={ap} kind="payables" currency={currency} />
         </div>
     </div>;
+}
+
+function FinancePie({ rows, currency, title, groupLabel, totalLabel, empty }) {
+    const categories = rows.filter(row => Number(row.amount) > 0);
+    const total = categories.reduce((sum, row) => sum + Number(row.amount), 0);
+    const colors = ["#214f43", "#b47b45", "#739c83", "#6a829b", "#b5c77c", "#986783", "#c59a73", "#78806b"];
+    let position = 0;
+    if (!total) return <p className="tw-empty">{empty}</p>;
+    return <div className="finance-pie">
+        <figure>
+            <svg viewBox="0 0 100 100" role="img" aria-label={`${title} pie chart. ${totalLabel}: ${money(total, currency)}. Exact amounts and shares are listed alongside.`}>
+                {categories.map((row, i) => {
+                    const share = Number(row.amount) / total;
+                    const start = position * Math.PI * 2 - Math.PI / 2;
+                    position += share;
+                    const end = position * Math.PI * 2 - Math.PI / 2;
+                    const sliceTitle = `${row.label}: ${money(row.amount, currency)} (${(share * 100).toFixed(1)}%)`;
+                    return categories.length === 1 ? <circle key={row.label} cx="50" cy="50" r="49" fill={row.color ?? colors[i % colors.length]}><title>{sliceTitle}</title></circle> :
+                        <path key={row.label} fill={row.color ?? colors[i % colors.length]} stroke="white" strokeWidth="0.5" d={`M 50 50 L ${50 + 49 * Math.cos(start)} ${50 + 49 * Math.sin(start)} A 49 49 0 ${share > 0.5 ? 1 : 0} 1 ${50 + 49 * Math.cos(end)} ${50 + 49 * Math.sin(end)} Z`}><title>{sliceTitle}</title></path>;
+                })}
+            </svg>
+            <figcaption>{totalLabel} <strong>{money(total, currency)}</strong></figcaption>
+        </figure>
+        <div className="finance-pie-legend">
+            <DataTable title={`${title} amounts and shares`} columns={[groupLabel, "Amount", "Share"]} rows={rows.map((row, i) => [<span className="finance-pie-category" key={row.label}><i aria-hidden="true" style={{ background: row.color ?? colors[i % colors.length] }} />{row.label}</span>, money(row.amount, currency), `${(Number(row.amount) / total * 100).toFixed(1)}%`])} />
+        </div>
+    </div>;
+}
+
+function LedgerStatus({ title, snapshot, currency, asOf }) {
+    return <section className="tw-card finance-ledger-status">
+        <div className="tw-section-heading"><div><h2>{title} payment status</h2><p>All issued records · live as of {date(asOf)} · {currency}.</p></div></div>
+        <FinancePie title={`${title} payment status`} groupLabel="Status" totalLabel="Total issued" currency={currency} empty={`No issued ${title.toLowerCase()} in this currency.`} rows={[
+            { label: "Paid", amount: snapshot.paid_total ?? 0, color: "#214f43" },
+            { label: "Outstanding (not overdue)", amount: snapshot.not_overdue_total ?? 0, color: "#b47b45" },
+            { label: "Overdue", amount: snapshot.overdue_total ?? 0, color: "#a65245" },
+        ]} />
+        <p className="finance-caption">Live document balances across all dates. Drafts and voids excluded. Paid is capped at each document’s total; excess payments are excluded.</p>
+    </section>;
 }
 
 function comparison(current, previous, currency) {

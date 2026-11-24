@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { ExternalLink, X } from 'lucide-react';
 import ArticleBodyEditor from './ArticleBodyEditor';
+import ArticleVisuals from './ArticleVisuals';
 
 const articlesPath = '/admin/content-calendar/articles';
 const requestHeaders = { Accept: 'application/json' };
@@ -26,7 +27,7 @@ const successMessages = {
 };
 const draftFields = [
     'title', 'slug', 'planned_date', 'pillar', 'summary', 'body_html', 'primary_keyword',
-    'meta_title', 'meta_description', 'author', 'image_url', 'image_alt',
+    'meta_title', 'meta_description', 'author', 'image_url', 'image_alt', 'brief', 'featured_images',
 ];
 const pillars = ['Study', 'Immigration', 'Employment', 'Settlement'];
 const briefFields = {
@@ -42,8 +43,8 @@ const focusClass = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus
 const secondaryButton = `inline-flex min-h-10 items-center justify-center rounded-md border border-gray-300 bg-white px-3.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50 ${focusClass}`;
 const primaryButton = `inline-flex min-h-10 items-center justify-center rounded-md bg-green-800 px-3.5 text-sm font-semibold text-white hover:bg-green-900 disabled:opacity-50 ${focusClass}`;
 
-const emptyDraft = Object.fromEntries(draftFields.map((field) => [field, '']));
-const valuesFor = (article) => Object.fromEntries(draftFields.map((field) => [field, article[field] ?? '']));
+const emptyDraft = { ...Object.fromEntries(draftFields.map((field) => [field, ''])), brief: {}, featured_images: [] };
+const valuesFor = (article) => Object.fromEntries(draftFields.map((field) => [field, article[field] ?? (field === 'brief' ? {} : field === 'featured_images' ? [] : '')]));
 const slugFor = (title) => title.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '')
     .replace(/[^a-z0-9]+/g, '-').slice(0, 180).replace(/^-|-$/g, '');
 
@@ -109,10 +110,13 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved,
     const [confirmPublish, setConfirmPublish] = useState(false);
     const [customSlug, setCustomSlug] = useState(false);
     const [previewUrl, setPreviewUrl] = useState('');
+    const [visualFormat, setVisualFormat] = useState('featured'), [visualSuggestions, setVisualSuggestions] = useState([]);
+    const generating = useRef(false), generationRequest = useRef(null);
+    useEffect(() => () => generationRequest.current?.abort(), []);
     const status = article?.status ?? 'draft';
     const facebookDelivery = article?.facebook_delivery;
     const dateLocked = status !== 'draft' || Boolean(article?.published_slug);
-    const dirty = draftFields.some((field) => form[field] !== (article?.[field] ?? ''));
+    const dirty = JSON.stringify(form) !== JSON.stringify(article ? valuesFor(article) : emptyDraft);
     const stageAction = {
         draft: 'submit',
         in_review: canPublish ? 'approve' : null,
@@ -162,11 +166,33 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved,
         if (message) feedback.current?.focus();
     }, [message]);
 
+    function selectImages(images) {
+        setForm(previous => ({ ...previous, featured_images: images, image_url: images[0]?.url || '', image_alt: images[0]?.alt || '' }));
+        setSavedMessage(''); setConfirmPublish(false);
+    }
+    function changeBrief(key, value) { change('brief', { ...form.brief, [key]: value }); }
+    async function generate() {
+        if (pending || generating.current) return;
+        if (form.body_html && !window.confirm('Replace the current article text and SEO suggestions? Images and the planned date will be kept.')) return;
+        generating.current = true; setPending('generate'); setMessage(''); setErrors({});
+        const controller = new AbortController(); generationRequest.current = controller;
+        try {
+            const { data } = await axios.post('/admin/content-calendar/generate', { brief: form.brief, author: form.author, pillar: form.pillar || null, visual_format: visualFormat }, { headers: requestHeaders, signal: controller.signal });
+            if (controller.signal.aborted) return;
+            setForm(previous => ({ ...previous, ...data.article, slug: article?.published_slug || (customSlug ? previous.slug : data.article.slug), image_alt: previous.image_url ? previous.image_alt : data.article.image_alt, brief: { ...previous.brief, feature: previous.brief.feature || data.visual_direction } }));
+            setVisualSuggestions(data.slides); setSavedMessage('Suggested article and SEO fields created. Review the facts, prepare an image, then save your draft.'); setConfirmPublish(false);
+        } catch (error) {
+            if (!controller.signal.aborted) { setErrors(error.response?.data?.errors || {}); setMessage(error.response?.data?.message || 'Generation failed. Your current draft has not changed.'); }
+        } finally { generating.current = false; if (!controller.signal.aborted) setPending(''); }
+    }
+
     function change(field, value) {
         if (field === 'slug') setCustomSlug(true);
         setForm((previous) => ({
             ...previous,
             [field]: value,
+            ...(field === 'image_url' ? { featured_images: [] } : {}),
+            ...(field === 'image_alt' && previous.featured_images.length ? { featured_images: previous.featured_images.map((image, index) => index === 0 ? { ...image, alt: value } : image) } : {}),
             ...(!article && !customSlug && field === 'title' ? { slug: slugFor(value) } : {}),
         }));
         setErrors((previous) => ({ ...previous, [field]: undefined }));
@@ -274,6 +300,15 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved,
                             )}
                             <fieldset disabled={Boolean(pending)} className="grid min-w-0 gap-y-6 md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.6fr)] md:gap-y-0">
                                 <div className="min-w-0 space-y-5 px-4 pt-5 pb-1 sm:px-6 md:pb-6">
+                                    <section className="rounded-xl border border-green-100 bg-green-50/50 p-4" aria-labelledby="article-brief-heading">
+                                        <h3 id="article-brief-heading" className="text-base font-semibold text-green-950">1 · Editorial brief</h3>
+                                        <p className="mt-1 mb-3 text-sm text-gray-600">Describe the topic, audience, key points and desired next step. Include verified facts and any sources to check.</p>
+                                        <Field name="brief-prompt" label="Article brief" rows={5} maxLength={6000} value={form.brief.prompt || ''} onChange={(_, value) => changeBrief('prompt', value)} error={firstError('brief.prompt')} />
+                                        <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Additional brief details</summary><div className="mt-3 space-y-3">{Object.entries(briefFields).filter(([key]) => key !== 'prompt').map(([key, label]) => <Field key={key} name={'brief-' + key} label={label} rows={2} maxLength={6000} value={form.brief[key] || ''} onChange={(_, value) => changeBrief(key, value)} />)}</div></details>
+                                        <button type="button" className={primaryButton + ' mt-4'} disabled={Boolean(pending) || (form.brief.prompt || '').trim().length < 20} onClick={generate}>{pending === 'generate' ? 'Generating article…' : 'Generate article & SEO'}</button>
+                                        <p className="mt-2 text-xs text-gray-600">Creates editable suggestions using the saved staff AI connection. Nothing is saved or published automatically.</p>
+                                    </section>
+                                    <h3 className="text-base font-semibold">2 · Article draft</h3>
                                     {field('title', 'Title', { maxLength: 200, required: true, ref: titleInput })}
                                     {field('summary', 'Summary', { maxLength: 600, rows: 3 })}
                                     <ArticleBodyEditor value={form.body_html} onChange={(value) => change('body_html', value)} disabled={Boolean(pending)} error={firstError('body_html')} />
@@ -291,6 +326,7 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved,
                                         {field('meta_description', 'Meta description', { maxLength: 220, rows: 3 })}
                                     </section>
 
+                                    <ArticleVisuals form={form} format={visualFormat} onFormat={setVisualFormat} suggestions={visualSuggestions} onSelect={selectImages} pending={pending} onPending={setPending} />
                                     <section aria-labelledby="article-image-heading" className="space-y-4 border-t border-gray-200 pt-5">
                                         <h3 id="article-image-heading" className="text-base font-semibold">Featured image</h3>
                                         {field('image_url', 'Featured image URL', { type: 'url', maxLength: 2000, hint: 'Use a public HTTPS link. Recommended cover and social preview size is 1200 × 630 px.' })}
@@ -306,21 +342,7 @@ export default function ArticleDialog({ articleId, canPublish, onClose, onSaved,
                                         hint: dateLocked ? 'The date is locked while this article is in review or has a live version.' : 'Manila time. This is your editorial target.',
                                     })}
                                     {field('pillar', 'Content pillar', { options: pillars })}
-                                    <div className="border-t border-gray-200 pt-4">
-                                        <h4 className="text-sm font-semibold">Editorial brief</h4>
-                                        {article?.brief && Object.values(article.brief).some(Boolean) ? (
-                                            <dl className="mt-3 space-y-4">
-                                                {Object.entries(briefFields).map(([key, label]) => article.brief[key] && (
-                                                    <div key={key}>
-                                                        <dt className="text-sm font-medium">{label}</dt>
-                                                        <dd className="mt-1 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap text-gray-700">{article.brief[key]}</dd>
-                                                    </div>
-                                                ))}
-                                            </dl>
-                                        ) : (
-                                            <p className="mt-1 text-sm text-gray-600">This article has no planning brief.</p>
-                                        )}
-                                    </div>
+                                    <p className="border-t border-gray-200 pt-4 text-sm text-gray-600">Save your draft, submit it for review, then publish the approved revision. Generated content and visual suggestions are editable.</p>
                                 </aside>
                             </fieldset>
                         </div>

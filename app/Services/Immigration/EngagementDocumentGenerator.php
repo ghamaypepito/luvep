@@ -39,7 +39,7 @@ class EngagementDocumentGenerator
         'initial_consultation' => [
             'view' => 'agreements.engagement.initial-consultation',
             'header' => 'INITIAL CONSULTATION AGREEMENT', 'label' => 'Initial Consultation Agreement',
-            'description' => 'Initial visa consultation - USD 250 booking fee.',
+            'description' => 'Initial visa consultation booking fee.',
             'eyebrow' => null, 'cover_title' => 'INITIAL CONSULTATION', 'cover_subtitle' => null,
             'prefix' => 'InitialConsultationAgreement', 'dynamic' => true,
         ],
@@ -276,7 +276,7 @@ class EngagementDocumentGenerator
             'include_gst' => (bool) $includeGst,
             'gst' => $gst,
             'grand_total' => round($fee + $gst, 2),
-            'currency' => $type === 'oia' ? 'NZD' : 'USD',
+            'currency' => $type === 'oia' ? 'NZD' : ($settings['service_currency'] ?? 'NZD'),
         ];
     }
 
