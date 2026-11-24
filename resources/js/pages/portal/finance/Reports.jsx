@@ -63,8 +63,9 @@ export default function Reports({ report = "analytics", start, end, preset: acti
                 ["Previous cash received", data.previous?.received], ["Previous cash paid out", data.previous?.paid], ["Previous net cash", data.previous?.net],
                 [], ["Live balance snapshot", data.as_of], ["Ledger", "Outstanding", "Overdue", "Due in next 7 days"]);
             ["receivables", "payables"].forEach(key => rows.push([key, data[key]?.total, data[key]?.overdue_total, data[key]?.due_soon_total]));
-            rows.push([], ["Live payment status", "Paid against issued documents", "Outstanding (not overdue)", "Overdue", "Issued total"]);
-            ["receivables", "payables"].forEach(key => rows.push([key, data[key]?.paid_total, data[key]?.not_overdue_total, data[key]?.overdue_total, data[key]?.issued_total]));
+            rows.push([], ["Payment-status issue date range", start, end], ["Payment-status balance cutoff", data.status_as_of],
+                ["Period payment status", "Paid against issued documents", "Outstanding (not overdue)", "Overdue", "Issued total"]);
+            ["receivables", "payables"].forEach(key => rows.push([key, data[key]?.period_status?.paid_total, data[key]?.period_status?.not_overdue_total, data[key]?.period_status?.overdue_total, data[key]?.period_status?.issued_total]));
             rows.push([], ["Week starting", "Received", "Paid out", "Net cash"]);
             (data.trends || []).forEach(r => rows.push([r.period, r.received, r.paid, Math.round((r.received - r.paid) * 100) / 100]));
             rows.push([], ["Paid expense category", "Amount"]);
