@@ -377,6 +377,11 @@ class User extends Authenticatable
             || $this->role === self::ROLE_SUPER_ADMIN;
     }
 
+    public function canAccessHelpCenter(): bool
+    {
+        return $this->is_active && in_array($this->role, config('hr.internal_roles'), true);
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->role === self::ROLE_SUPER_ADMIN;

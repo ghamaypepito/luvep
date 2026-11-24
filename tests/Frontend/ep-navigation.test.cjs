@@ -16,7 +16,7 @@ test('full workspace does not create a duplicate floating chat',async()=>{await 
 function extra(file){const r=buildSync({entryPoints:[path.resolve(file)],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:['react','react-dom','lucide-react'],alias:{'@inertiajs/react':path.resolve('tests/Frontend/helpers/ep-inertia.cjs')},loader:{'.css':'empty'}});const mod=new Module(path.resolve('tests/Frontend/ep-extra-bundle.cjs'));mod.filename=mod.id;mod.paths=Module._nodeModulePaths(process.cwd());mod._compile(r.outputFiles[0].text,mod.filename);return mod.exports.default;}
 const CTA=extra('resources/js/components/ui/MobileStickyCTA.jsx'),Contact=extra('resources/js/components/ui/FloatingContact.jsx');
 test('new internal screens hide public contact overlays while public pages retain them',async()=>{
- for(const url of ['/ep-agent','/ep-manager','/booking']){
+ for(const url of ['/ep-agent','/ep-manager','/help-center','/booking']){
   global.__epTestPage={url,props:{contact:{phone:'+64000000',whatsapp:'6400000'}}};root=createRoot(document.getElementById('root'));
   await act(async()=>{root.render(React.createElement(React.Fragment,null,React.createElement(CTA),React.createElement(Contact)));await tick();});
   assert.equal(document.body.textContent.includes('Book Free'),url==='/booking');
@@ -32,3 +32,5 @@ test('sidebar event on the full workspace keeps the current conversation URL',as
  await act(async()=>{window.dispatchEvent(new CustomEvent('ep-assistant-open'));await tick();});
  dom.virtualConsole.removeListener('jsdomError',listener);dom.reconfigure({url:'http://localhost/admin'});assert.equal(seen.length,0);
 });
+
+test('Help Center retains the staff assistant',async()=>{await mount(false,true,'/help-center');assert.match(document.body.textContent,/EP Assistant/);});
