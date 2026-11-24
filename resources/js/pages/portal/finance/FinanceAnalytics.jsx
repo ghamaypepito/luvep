@@ -23,7 +23,7 @@ export default function FinanceAnalytics({ data, currency, start, end, onReport 
                 <p className="tw-muted">{hint}</p>{prior != null && <p className="finance-comparison">{comparison(value, prior, currency)}</p>}
             </article>)}
         </section>
-        <p className="finance-caption">Cash metrics: {date(start)} – {date(end)}. Comparison: {date(previous.start ?? start)} – {date(previous.end ?? end)} (the preceding equal-length period). Balances below are live as of {date(data.as_of ?? end)}.</p>
+        <p className="finance-caption">Cash metrics: {date(start)} – {date(end)}. Comparison: {date(previous.start ?? start)} – {date(previous.end ?? end)} (the preceding equal-length period). Aging and overdue follow-up figures are live as of {date(data.as_of ?? end)}. Payment-status pies use the issue-date range and cutoff shown on each chart.</p>
         <div className="tw-chart-grid">
             <CashTrend rows={data.trends ?? []} currency={currency} />
             <section className="tw-card finance-insights" aria-labelledby="finance-insights-title">
@@ -37,8 +37,8 @@ export default function FinanceAnalytics({ data, currency, start, end, onReport 
             </section>
         </div>
         <div className="finance-ledger-grid">
-            <LedgerStatus title="Receivables" snapshot={ar} currency={currency} asOf={data.as_of ?? end} />
-            <LedgerStatus title="Payables" snapshot={ap} currency={currency} asOf={data.as_of ?? end} />
+            <LedgerStatus title="Receivables" snapshot={ar.period_status ?? {}} currency={currency} start={start} end={end} asOf={data.status_as_of ?? end} />
+            <LedgerStatus title="Payables" snapshot={ap.period_status ?? {}} currency={currency} start={start} end={end} asOf={data.status_as_of ?? end} />
         </div>
         <div className="finance-ledger-grid">
             <AgingPanel title="Receivables" snapshot={ar} currency={currency} onOpen={() => onReport("receivables_aging")} />
@@ -82,15 +82,15 @@ function FinancePie({ rows, currency, title, groupLabel, totalLabel, empty }) {
     </div>;
 }
 
-function LedgerStatus({ title, snapshot, currency, asOf }) {
+function LedgerStatus({ title, snapshot, currency, start, end, asOf }) {
     return <section className="tw-card finance-ledger-status">
-        <div className="tw-section-heading"><div><h2>{title} payment status</h2><p>All issued records · live as of {date(asOf)} · {currency}.</p></div></div>
-        <FinancePie title={`${title} payment status`} groupLabel="Status" totalLabel="Total issued" currency={currency} empty={`No issued ${title.toLowerCase()} in this currency.`} rows={[
+        <div className="tw-section-heading"><div><h2>{title} payment status</h2><p>Issued {date(start)} – {date(end)} · {currency}. Balances as of {date(asOf)}.</p></div></div>
+        <FinancePie title={`${title} payment status`} groupLabel="Status" totalLabel="Total issued in range" currency={currency} empty={`No ${title.toLowerCase()} issued in this date range and currency through ${date(asOf)}.`} rows={[
             { label: "Paid", amount: snapshot.paid_total ?? 0, color: "#214f43" },
             { label: "Outstanding (not overdue)", amount: snapshot.not_overdue_total ?? 0, color: "#b47b45" },
             { label: "Overdue", amount: snapshot.overdue_total ?? 0, color: "#a65245" },
         ]} />
-        <p className="finance-caption">Live document balances across all dates. Drafts and voids excluded. Paid is capped at each document’s total; excess payments are excluded.</p>
+        <p className="finance-caption">Uses document issue dates and payments through {date(asOf)}. Outstanding excludes overdue amounts. Drafts, voids and future-issued records are excluded. Paid is capped at each document’s total.</p>
     </section>;
 }
 
