@@ -4,7 +4,7 @@ import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
 import { Link, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
-import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen, BookOpen } from "lucide-react";
 
 // Admin-area restricted modules that, when granted via Module Management, should
 // surface as a sidebar link for a NON-admin staffer (admins already see them in
@@ -187,6 +187,7 @@ export default function DashboardLayout({
     const handleLogout = () => router.post("/logout");
 
     const getPageTitle = () => {
+        if (url.split("?")[0] === "/help-center") return "Help Center";
         if (url.split("?")[0].endsWith("/media-drive")) return user?.role === "lead" ? "Shared folders" : "Media Drive";
         for (const item of nav) {
             if (item.href && isPathMatch(item.href)) return item.name;
@@ -380,6 +381,11 @@ export default function DashboardLayout({
                         </Link>
                     );
                 })}
+                {props.auth?.can_view_help && (
+                    <Link href="/help-center" aria-current={url.split("?")[0] === "/help-center" ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-800 ${url.split("?")[0] === "/help-center" ? "bg-emerald-50 text-emerald-900" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}`}>
+                        <BookOpen size={18} aria-hidden="true" /> Help Center
+                    </Link>
+                )}
                 {settingsHref && (
                     <Link
                         href={settingsHref}

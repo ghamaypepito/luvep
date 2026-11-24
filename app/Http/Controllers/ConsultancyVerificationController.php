@@ -409,12 +409,12 @@ class ConsultancyVerificationController extends Controller
                 // (client / agent-CC / education-team, each off until configured).
                 // Its return says whether a CLIENT message was sent, so the
                 // built-in client email falls back only when none is configured.
-                $firedClient = app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.approved', $lead->fresh(), [
+                $firedClient = app(\App\Services\EmailAutomationService::class)->fire('education.consultancy.approved', $lead->fresh(), array_merge([
                     'agreement_type' => $review['scenario_label'] ?? 'Consultancy Agreement',
                     'total_amount' => ConsultancyReviewService::totalAmount($review),
-                ]);
+                ], \App\Services\EnglishAgreementAccess::emailContext($issued)));
 
-                app(\App\Http\Controllers\LeadDocumentController::class)->sendConsultancyAgreementEmail($lead->fresh(), ! $firedClient);
+                app(\App\Http\Controllers\LeadDocumentController::class)->sendConsultancyAgreementEmail($lead->fresh(), ! $firedClient, $issued);
             } catch (\Throwable $e) {
                 Log::warning('Consultancy approval email failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
             }

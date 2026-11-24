@@ -1804,6 +1804,7 @@ class LeadDocumentController extends Controller
     {
         $validated = $request->validate([
             'kind' => 'nullable|string|in:proposal,agreement',
+            'document_id' => 'nullable|integer|min:1',
             // Optional: the shortlisted program the lead settled on. Only
             // meaningful for proposals; must be one of the lead's picks.
             'preferred_program_id' => 'nullable|integer',
@@ -1820,6 +1821,14 @@ class LeadDocumentController extends Controller
             }
 
             $kind = $validated['kind'] ?? 'agreement';
+            $agreementContext = [];
+            if ($kind === 'agreement') {
+                $document = isset($validated['document_id'])
+                    ? $lead->documents()->findOrFail($validated['document_id'])
+                    : $lead->documents()->whereIn('checklist_key', ['agree.consultancy', 'agree.engagement_english'])
+                        ->where('source', LeadDocument::SOURCE_GENERATED)->orderByDesc('id')->first();
+                $agreementContext = \App\Services\EnglishAgreementAccess::emailContext($document);
+            }
 
             // Record which program the lead chose, when staff pass it from the
             // Notify modal. Only for proposals, and only if it's in the lead's
@@ -1857,13 +1866,13 @@ class LeadDocumentController extends Controller
             // suggested programs. Falls back to the plain Mailable if the
             // template is missing/inactive or has no email channel.
             $templateKey = $kind === 'proposal' ? 'program_proposal' : 'consultancy_agreement';
-            $vars = $kind === 'proposal' ? $this->proposalProgramVars($lead) : [];
+            $vars = $kind === 'proposal' ? $this->proposalProgramVars($lead) : $agreementContext;
 
             $res = app(\App\Services\CommunicationService::class)
                 ->sendTemplated($templateKey, $lead, $vars);
 
             if (! $res['email']) {
-                Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, $kind));
+                Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, $kind, $agreementContext['agreement_url'] ?? null));
             }
 
             // Start the post-proposal feedback drip (day 1/2/5) on an actual
@@ -1938,7 +1947,7 @@ class LeadDocumentController extends Controller
      * false advances the status but skips the built-in send (so a configured
      * client automation can own the email without a double-send).
      */
-    public function sendConsultancyAgreementEmail(Lead $lead, bool $sendMail = true): bool
+    public function sendConsultancyAgreementEmail(Lead $lead, bool $sendMail = true, ?LeadDocument $document = null): bool
     {
         $stages = \App\Models\Lead::STAGES;
         $curIdx = array_search($lead->status, $stages, true);
@@ -1952,7 +1961,11 @@ class LeadDocumentController extends Controller
             return false;
         }
 
-        app(\App\Services\CommunicationService::class)->sendTemplated('consultancy_agreement', $lead);
+        $context = \App\Services\EnglishAgreementAccess::emailContext($document);
+        $result = app(\App\Services\CommunicationService::class)->sendTemplated('consultancy_agreement', $lead, $context);
+        if ($context && ! ($result['email'] ?? null)) {
+            Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, 'agreement', $context['agreement_url']));
+        }
 
         return true;
     }

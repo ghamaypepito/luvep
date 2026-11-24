@@ -2,7 +2,7 @@ import { UserViewButton } from '../admin/UserViewControls';
 import { hrPath } from '@/lib/hrPath';
 import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, UserRound, UsersRound, LogOut, Clock3, Menu, X, ShieldCheck, ChevronRight, Settings } from 'lucide-react';
+import { LayoutDashboard, UserRound, UsersRound, LogOut, Clock3, Menu, X, ShieldCheck, ChevronRight, Settings, BookOpen } from 'lucide-react';
 import NotificationBell from '../NotificationBell';
 import ClockWidget, { HrClockProvider } from '../hr/ClockWidget';
 import ProfileMenu from '../hr/ProfileMenu';
@@ -60,6 +60,7 @@ export default function HrLayout({ children }) {
                             return <Link key={group.key} href={group.tabs[0].href} aria-current={section?.key === group.key ? 'page' : undefined}><Icon size={19} aria-hidden="true" />{group.label}</Link>;
                         })}
                     </nav>
+                    {auth?.can_view_help && <a href={`${hr.main_url.replace(/\/$/, '')}/help-center`} className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-gray-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-800"><BookOpen size={19} aria-hidden="true" />Help Center</a>}
                     <div className="hr-sidebar-note"><ShieldCheck size={21} aria-hidden="true" /><strong>Your HR space</strong><p>Personnel records only.<br />No general Admin activity.</p></div>
                     <Link className="hr-sidebar-person" href={hrPath('/profile')}>
                         <span className="hr-avatar">{avatar ? <img src={avatar} alt="" /> : initials}</span>

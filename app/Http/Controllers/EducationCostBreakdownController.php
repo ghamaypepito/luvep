@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LeadDocument;
 use App\Services\Education\CostBreakdownRates;
+use App\Services\Education\CostBreakdownSections;
 use App\Services\MediaDrive\Access;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -74,20 +75,26 @@ class EducationCostBreakdownController extends Controller
             'source_currency' => ['required', 'regex:/^[A-Z]{3}$/D'], 'target_currency' => ['required', 'regex:/^[A-Z]{3}$/D'],
             'rate_token' => ['required', 'string', 'max:12000'], 'rows' => ['required', 'array', 'min:1', 'max:30'],
             'rows.*.description' => ['required', 'string', 'max:500'],
-            'rows.*.amount' => ['required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
+            'rows.*.section' => ['nullable', Rule::in(array_column(CostBreakdownSections::catalogue(), 'key'))],
+            'rows.*.amount' => ['required_unless:rows.*.section,other_costs', 'nullable', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
             'action' => ['required', Rule::in(['preview', 'download', 'save'])],
         ]);
         $lead = $this->leads($request)->findOrFail($data['lead_id']);
         $snapshot = $rates->snapshot($data['rate_token'], $data['source_currency'], $data['target_currency']);
         $sourceRate = $snapshot['rates'][$data['source_currency']]['rate'];
         $targetRate = $snapshot['rates'][$data['target_currency']]['rate'];
-        $rows = collect($data['rows'])->map(fn ($row) => ['description' => trim($row['description']),
-            'amount' => round((float) $row['amount'], 2), 'nzd' => round((float) $row['amount'] / $sourceRate, 2),
-            'local' => round((float) $row['amount'] / $sourceRate * $targetRate, 2)])->all();
+        $rows = collect($data['rows'])->map(function ($row) use ($sourceRate, $targetRate) {
+            $amount = isset($row['amount']) ? (float) $row['amount'] : null;
+
+            return ['description' => trim($row['description']), 'section' => $row['section'] ?? '',
+                'amount' => $amount === null ? null : round($amount, 2),
+                'nzd' => $amount === null ? null : round($amount / $sourceRate, 2),
+                'local' => $amount === null ? null : round($amount / $sourceRate * $targetRate, 2)];
+        })->all();
         $payload = ['client' => trim($lead->first_name.' '.$lead->last_name), 'country' => $data['country'],
             'category' => $data['category'], 'family' => $data['family'], 'source_currency' => $data['source_currency'],
             'target_currency' => $data['target_currency'], 'rows' => $rows, 'exchange' => $snapshot,
-            'generated_at' => now()->toIso8601String()];
+            'generated_at' => now()->toIso8601String(), ...CostBreakdownSections::layout($rows)];
         if ($data['action'] === 'preview') {
             return response()->json(['html' => view('agreements.education-cost-breakdown', $payload)->render()]);
         }

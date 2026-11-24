@@ -75,12 +75,24 @@ const render = (Page, props) => act(async () => root.render(React.createElement(
     assert.ok(button('Contact Attempted'));
 
     const Leads = await load('resources/js/pages/portal/education/Leads.jsx');
-    await render(Leads, { portal: 'education', leads: [
+    const agreementRows = [
         { id: 1, name: 'Legacy Agreement', status: 'Consultancy Agreement' },
         { id: 2, name: 'Sent Agreement', status: 'Consultancy Agreement Sent' },
         { id: 3, name: 'Signed Agreement', status: 'Consultancy Agreement Signed' },
         { id: 4, name: 'Other Prospect', status: 'New Leads' },
-    ], statuses: ['New Leads', 'Consultancy Agreement', 'Consultancy Agreement Sent', 'Consultancy Agreement Signed'] });
+    ];
+    const agreementStatuses = ['New Leads', 'Consultancy Agreement', 'Consultancy Agreement Sent', 'Consultancy Agreement Signed'];
+    await render(Leads, { portal: 'education', leads: agreementRows, statuses: agreementStatuses });
+    const educationHeadings = [...button('All').parentElement.querySelectorAll('button')].map(node => node.textContent.trim());
+    assert.ok(!educationHeadings.includes('Consultancy Agreement'), 'Education intentionally omits the agreement quick heading');
+    assert.ok(!educationHeadings.includes('Visa Process'), 'Education intentionally omits the Visa Process quick heading');
+    for (const name of ['Legacy Agreement', 'Sent Agreement', 'Signed Agreement', 'Other Prospect']) {
+        assert.match(document.querySelector('tbody').textContent, new RegExp(name), 'Removing headings does not hide records under All');
+    }
+    // The shared grouping behavior is still available in Sales. Keep that
+    // interaction covered while Education has its narrower heading row.
+    const SalesLeads = await load('resources/js/pages/portal/sales/Leads.jsx');
+    await render(SalesLeads, { portal: 'sales', leads: agreementRows, statuses: agreementStatuses });
     await click(button('Consultancy Agreement'));
     for (const name of ['Legacy Agreement', 'Sent Agreement', 'Signed Agreement']) assert.match(document.querySelector('tbody').textContent, new RegExp(name));
     assert.doesNotMatch(document.querySelector('tbody').textContent, /Other Prospect/);

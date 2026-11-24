@@ -47,7 +47,7 @@ class SyncGoogleReviews extends Command
             'refresh_token' => $cfg['refresh_token'],
             'grant_type' => 'refresh_token',
         ]);
-        if (! $tok->successful()) {
+        if (! $tok->successful() || ! is_string($tok->json('access_token')) || trim($tok->json('access_token')) === '') {
             $this->error('Token refresh failed ('.$tok->status().'): '.$tok->body());
 
             return self::FAILURE;

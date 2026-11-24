@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { Save, Settings as SettingsIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -40,6 +40,11 @@ export default function Settings({ settings }) {
                         <p className="text-sm text-gray-500">Edit fees and other app-wide values.</p>
                     </div>
                 </header>
+
+                <section className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-5" aria-labelledby="settings-help-title">
+                    <div><h2 id="settings-help-title" className="font-semibold text-gray-900">Help & documentation</h2><p className="mt-1 text-sm text-gray-600">Search guides and step-by-step instructions by department.</p></div>
+                    <Link href="/help-center" className="inline-flex min-h-11 items-center rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-800">Open Help Center</Link>
+                </section>
 
                 <form onSubmit={submit} className="space-y-8">
                     {Object.entries(grouped).map(([group, rows]) => (
