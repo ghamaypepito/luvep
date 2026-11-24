@@ -865,7 +865,7 @@ class ImmigrationController extends Controller
             // reopens with the Invoice document ticked when one exists.
             $invoicedIds = LeadDocument::where('source_variant', 'invoice')->distinct()->pluck('lead_id');
 
-            $generated = LeadDocument::with([
+            $generated = \App\Services\Immigration\EngagementArchive::activeDocuments(LeadDocument::query())->with([
                 'lead:id,first_name,last_name,lead_id,tracking_code,email,phone,residence_country,engagement_signing_token,engagement_sent_at,engagement_fee_total,engagement_total_amount,engagement_fee_location,engagement_fee_tier,engagement_include_gst,engagement_assist_signer_id',
                 'lead.faceImage',
                 'uploader:id,name,email',
@@ -1021,6 +1021,7 @@ class ImmigrationController extends Controller
                 'me_id' => auth()->id(),
                 'activityLog' => $activityLog,
                 'canUploadSignature' => \App\Services\Immigration\StaffEngagementSignature::permitted(auth()->user()),
+                'canArchiveEngagement' => \App\Services\Immigration\EngagementArchive::permitted(auth()->user()),
                 'internalSignatureNotificationsReady' => app(\App\Services\Immigration\StaffEngagementSignature::class)->internalRecipients()->isNotEmpty(),
                 'search' => $search,
             ]);

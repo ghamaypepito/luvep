@@ -2087,6 +2087,7 @@ Route::middleware(['auth'])->group(function () {
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
             Route::get('/cases/engagement', [ImmigrationController::class, 'engagement'])->name('cases.engagement');
+            Route::post('/cases/{id}/engagement/archive', [\App\Http\Controllers\EngagementArchiveController::class, 'store'])->whereNumber('id')->name('cases.engagement.archive');
             Route::post('/engagement/documents/{document}/signature', [\App\Http\Controllers\StaffEngagementSignatureController::class, 'store'])->whereNumber('document')->middleware('throttle:20,1');
             Route::get('/cases/invoice', [ImmigrationController::class, 'invoice'])->name('cases.invoice');
             // INZ Forms console — generate/send INZ forms across all cases.
