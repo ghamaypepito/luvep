@@ -2346,6 +2346,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/properties/export', [PropertyController::class, 'export'])->name('properties.export');
             Route::post('/properties', [PropertyController::class, 'store'])->name('properties.store');
             Route::get('/properties/{property}', [PropertyController::class, 'show'])->name('properties.show');
+            Route::post('/properties/{property}/room-occupancy', [\App\Http\Controllers\Portal\RoomInventoryController::class, 'store'])->name('properties.room-occupancy');
             Route::get('/properties/{property}/edit', [PropertyController::class, 'edit'])->name('properties.edit');
             Route::match(['POST', 'PUT'], '/properties/{property}', [PropertyController::class, 'update'])->name('properties.update');
             Route::patch('/properties/{property}/archive', [PropertyController::class, 'archive'])->name('properties.archive');

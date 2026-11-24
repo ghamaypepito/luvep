@@ -97,7 +97,7 @@ class PropertyController extends Controller
         $sort = $request->query('sort', 'code');         // code | address | latest
 
         $properties = Property::with('images')
-            ->withCount('activeTenants') // drives rooms_occupied / occupancy_status
+            ->withCount('activeTenants')
             ->when($search, fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$search}%")
                 ->orWhere('code', 'like', "%{$search}%")
@@ -117,8 +117,13 @@ class PropertyController extends Controller
             ->when(! in_array($sort, ['address', 'latest'], true), fn ($q) => $q
                 ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED), code'))
             ->paginate(15)
-            ->withQueryString()
-            ->through(fn (Property $p) => $p->makeVisible(self::VISIBLE_IN_PORTAL));
+            ->withQueryString();
+        $summaries = \App\Services\Accommodation\RoomInventory::forProperties($properties->getCollection())->keyBy('id');
+        $properties->through(function (Property $p) use ($summaries) {
+            $p->makeVisible(self::VISIBLE_IN_PORTAL);
+            $p->room_summary = $summaries->get($p->id);
+            return $p;
+        });
 
         return inertia('portal/accommodation/Properties', [
             'properties' => $properties,
@@ -147,6 +152,9 @@ class PropertyController extends Controller
             'property' => $property,
             'tenants' => $tenants->whereIn('current_status', Tenant::ACTIVE_STATUSES)->values(),
             'historicalTenants' => $tenants->where('current_status', 'vacated')->values(),
+            'roomSummary' => \App\Services\Accommodation\RoomInventory::summarize($property),
+            'canVerifyRooms' => request()->user()?->is_active && (request()->user()->isAdmin() || request()->user()->role === 'accommodation')
+                && ! request()->attributes->has('user_view_actor') && $property->is_active,
             'activity' => [],
         ]);
     }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Head, Link } from "@inertiajs/react";
+import RoomVerification from '@/components/accommodation/RoomVerification';
 import {
     ArrowLeft, Pencil, Home, Users, Activity, MapPin, Wallet, Plug,
     UserCog, FileText, Lock, Flame, Plus,
@@ -47,7 +48,7 @@ function Card({ title, icon, internal = false, children }) {
     );
 }
 
-export default function PropertyDetail({ property, tenants = [], historicalTenants = [] }) {
+export default function PropertyDetail({ property, tenants = [], historicalTenants = [], roomSummary = null, canVerifyRooms = false }) {
     const [tab, setTab] = useState("overview");
     const tabs = [
         { key: "overview", label: "Overview", icon: <Home size={16} /> },
@@ -80,9 +81,9 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
                         </div>
                         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
                             {[property.city || property.suburb, property.region, property.property_type].filter(Boolean).join(" · ") || "—"}
-                            {property.occupancy_status && (
-                                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${OCCUPANCY_STYLES[property.occupancy_status] ?? "bg-gray-100 text-gray-500"}`}>
-                                    {cap(property.occupancy_status)}
+                            {roomSummary && (
+                                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-700">
+                                    {roomSummary.state === 'verified' ? `${roomSummary.occupied} occupied / ${roomSummary.vacant} vacant` : 'Room check needed'}
                                 </span>
                             )}
                             {!property.is_active && (
@@ -100,6 +101,7 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
             </div>
 
             {/* Tabs */}
+            <RoomVerification key={roomSummary?.version} propertyId={property.id} summary={roomSummary} canVerify={canVerifyRooms} />
             <div className="flex gap-1 border-b border-gray-100">
                 {tabs.map((t) => (
                     <button
@@ -113,7 +115,7 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
                     >
                         {t.icon} {t.label}
                         {t.key === "tenants" && property.total_rooms ? (
-                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs">{property.rooms_occupied ?? 0}/{property.total_rooms}</span>
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs">{roomSummary?.households ?? tenants.length} households</span>
                         ) : null}
                     </button>
                 ))}
@@ -128,8 +130,9 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
                         <Row label="Region" value={show(property.region)} />
                         <Row label="Type" value={show(property.property_type)} />
                         <Row label="Total rooms" value={show(property.total_rooms)} />
-                        <Row label="Occupied" value={property.total_rooms ? `${property.rooms_occupied ?? 0}/${property.total_rooms}` : (property.rooms_occupied ?? 0)} />
-                        {!property.total_rooms && property.rooms_occupied > 0 && (
+                        <Row label="Occupied rooms" value={roomSummary?.occupied ?? 'Not verified'} />
+                        <Row label="Vacant rooms" value={roomSummary?.vacant ?? 'Not verified'} />
+                        {!property.total_rooms && tenants.length > 0 && (
                             <p className="mt-2 text-xs text-amber-600">Set total rooms to see occupancy.</p>
                         )}
                     </Card>
