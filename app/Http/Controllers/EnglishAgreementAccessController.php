@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LeadDocument;
 use App\Services\EnglishAgreementAccess;
-use App\Services\IssuedEducationAgreement;
+use App\Services\IssuedClientAgreement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -30,7 +30,7 @@ class EnglishAgreementAccessController extends Controller
             'view_url' => $this->url($request, $document, 'download'),
             'download_url' => $this->url($request, $document, 'download'),
             'sign_url' => $signed ? null : $this->url($request, $document, 'sign'),
-            'issued_agreement_hash' => $signed ? null : IssuedEducationAgreement::checksum($document),
+            'issued_agreement_hash' => $signed ? null : IssuedClientAgreement::checksum($document),
         ]])->toResponse($request)->withHeaders(['Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer', 'X-Robots-Tag' => 'noindex, nofollow']);
     }
 
@@ -45,7 +45,7 @@ class EnglishAgreementAccessController extends Controller
         ])->setContentDisposition('inline', $document->original_name ?: 'English-agreement.pdf');
     }
 
-    public function sign(Request $request, LeadDocument $document, IssuedEducationAgreement $agreements)
+    public function sign(Request $request, LeadDocument $document, IssuedClientAgreement $agreements)
     {
         EnglishAgreementAccess::assertAvailable($document);
         abort_if($document->client_signed_at || $document->client_signature_path, 409, 'This agreement has already been signed.');
@@ -62,7 +62,7 @@ class EnglishAgreementAccessController extends Controller
             throw ValidationException::withMessages(['signature_data' => 'Draw a valid signature before signing.']);
         }
         try {
-            $agreements->sign($document->lead, $document, $data['issued_agreement_hash'], $bytes, $parts[1], null, $request->ip());
+            $agreements->sign($document->lead, $document, $data['issued_agreement_hash'], $bytes, $parts[1], null, $request->ip(), false);
         } catch (ValidationException|\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $error) {
             throw $error;
         } catch (\Throwable $error) {
