@@ -1,0 +1,11 @@
+# TKT-OPWWAA — Education cost-breakdown headings
+
+Emma’s reference has five cost headings: School enrolment and documentation, English proficiency exam, Medical exam, Visa application, and Travel and medical insurance. Other costs to prepare for are explicitly outside the total. The existing Education builder and its generated PDF used one flat list. The reference’s sample prices are not instructions to replace Emma’s encoded amounts.
+
+Add an optional per-item heading from a shared catalogue in the Education builder, preview and PDF. Group included rows under the reference headings, retain entered descriptions/amounts and preserve existing conversion/rounding. Unsectioned older requests still include every entered item in the total. Staff explicitly chooses a heading; changing it never copies a default fee or multiplies amounts for a different applicant type.
+
+The explicitly selected Other costs section is separate from the listed cost total. Its amount may be unknown and displays Not specified, preserving null rather than inventing zero. A real zero remains zero. Chargeable/unsectioned rows still require a valid non-negative amount with at most two decimals. Arbitrary section IDs and client-supplied exclusion flags are rejected/ignored respectively; the approved section determines inclusion.
+
+Snapshot headings, rows, grouped layout, totals and rate metadata only when generating a new version. Existing saved PDFs/metadata remain unchanged. The change does not edit agreement fees, Finance records, currency-rate providers or the separate consultancy cost-breakdown template. No migration, backfill, email or live record mutation is included. Earlier saved PDFs receive headings only through a newly generated version.
+
+Tests cover the seven encoded amounts in the screenshot, all applicant types, ordered headings in preview/download/saved snapshots, excluded/unknown/zero other costs, old requests, validation, preserved saved PDFs and private access. Actual-page UI checks cover heading assignment without repricing, live totals, preview invalidation, retry and Sales isolation. The actual synthetic PDF is rendered and visually reviewed, including keeping the Other costs heading with its first row across pagination. Review/merge/deployment and Emma’s live verification precede closure.
