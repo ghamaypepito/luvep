@@ -326,6 +326,7 @@ export default function PropertyForm({ property = null, options = {}, next_code 
                                     <label className={label}>Room type</label>
                                     <select className={field} value={data.room_type} onChange={(e) => setData("room_type", e.target.value)}>
                                         <option value="single">Single</option>
+                                        <option value="couple">Couple</option>
                                         <option value="ensuite">Ensuite</option>
                                     </select>
                                     {err("room_type")}
