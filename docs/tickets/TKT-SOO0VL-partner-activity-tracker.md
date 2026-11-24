@@ -4,6 +4,8 @@
 The Affiliate Partners directory already supplies canonical partner User IDs, original-referral attribution, performance reporting, versioned private agreement PDFs and agreement create/update/send/signature audit events. Existing MessageLog and LeadTask records supply mail delivery and client follow-up facts. A unified activity/training/deadline/report workspace was absent. This addition reuses those sources; it does not create a parallel agency registry, signing system or task engine.
 
 ## Prepared workspace
+New partner-tracker mail is restricted to the same approved audience in Compose history. It is excluded from event/client case mail histories, including numeric ID collisions and shared email addresses; existing legacy/null-source mail remains visible under its previous rules.
+
 Entry: Education > Partner Activity Tracker; also linked from the existing Admin Affiliate Partners directory. Active ordinary Education/Admin sessions need the existing `agents` module permission. No grant is automatically applied. Agents, sub-agents, external clients, unrelated department roles and view-as sessions cannot use this workspace.
 
 - Email: sent date, partner, subject, purpose, responsible staff, Awaiting Response / Responded / No Response and follow-up date. New partner-specific Compose uses an explicitly selected partner ID and fixed single recipient, and lists actual Sent transport records (including a later bounce). Queued/failed mail is not claimed as sent. Reply status is confirmed by staff. Earlier raw-address mail is not associated by matching names/emails; record external/historical work deliberately. Normal Compose defaults remain intact.

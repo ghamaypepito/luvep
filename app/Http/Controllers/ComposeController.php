@@ -175,8 +175,12 @@ class ComposeController extends Controller
     /** External partners see their own sends, with current lead access enforced. */
     private function sentList(Request $request)
     {
+        $canReadPartnerMail = app(\App\Services\PartnerActivityTracker::class)->canAccess($request->user())
+            && ! $request->attributes->get('user_view_actor');
+
         return MessageLog::where('channel', MessageLog::CHANNEL_EMAIL)
-            ->whereIn('source', ['compose', 'partner-tracker'])
+            ->where(fn ($sources) => $sources->where('source', 'compose')
+                ->when($canReadPartnerMail, fn ($allowed) => $allowed->orWhere('source', 'partner-tracker')))
             ->when(in_array($request->user()->role, ['agent', User::ROLE_SUB_AGENT], true), fn ($query) => $query
                 ->where('triggered_by_user_id', $request->user()->id)
                 ->where(fn ($recipients) => $recipients->where('recipient_type', 'raw')

@@ -48,6 +48,26 @@ class PartnerActivityTrackerTest extends TestCase
             'details' => ['purpose' => 'Synthetic partnership follow-up', 'remarks' => 'Test only']], $changes);
     }
 
+    public function test_partner_mail_does_not_pollute_event_or_case_history_with_colliding_identity(): void
+    {
+        [, $agent] = $this->setupTracker();
+        $this->actingAs(User::factory()->create(['role' => 'admin']));
+        $event = \App\Models\Event::create(['name' => 'Synthetic Fair', 'type' => 'Fair', 'status' => 'upcoming',
+            'mode' => 'in-person', 'event_code' => 'synthetic-partner-history', 'date_from' => '2026-12-01']);
+        $lead = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Client', 'email' => $agent->email,
+            'event_id' => $event->id, 'is_immigration_case' => true]);
+        foreach ([null, 'compose', 'partner-tracker'] as $source) {
+            MessageLog::create(['channel' => 'email', 'source' => $source,
+                'recipient_type' => $source === 'partner-tracker' ? 'user' : 'lead',
+                'recipient_id' => $lead->id, 'recipient_address' => $agent->email,
+                'subject' => $source ?? 'Legacy message', 'body' => 'Synthetic body', 'status' => 'sent']);
+        }
+        $this->get('/admin/events/'.$event->id)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('sentEmails', 2)->where('sentEmails', fn ($rows) => collect($rows)->pluck('subject')->sort()->values()->all() === ['Legacy message', 'compose']));
+        $this->get('/portal/immigration/cases/'.$lead->id.'/profile')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('communications', 2)->where('communications', fn ($rows) => collect($rows)->pluck('subject')->sort()->values()->all() === ['Legacy message', 'compose']));
+    }
+
     private function agreement(User $agent, array $changes = []): AgentAgreement
     {
         return AgentAgreement::create($changes + ['agent_id' => $agent->id, 'version' => 1, 'is_draft' => false,
@@ -370,5 +390,23 @@ class PartnerActivityTrackerTest extends TestCase
         $this->get(self::BASE)->assertInertia(fn (Assert $p) => $p->where('agreements.0.details.document_url', self::BASE.'/agreements/'.$agreement->id.'/document'));
         $this->get(self::BASE.'/agreements/'.$agreement->id.'/document')->assertDownload('synthetic-agreement.pdf');
         $this->actingAs($agent)->get(self::BASE.'/agreements/'.$agreement->id.'/document')->assertForbidden();
+    }
+
+    public function test_shared_compose_history_keeps_partner_mail_inside_the_tracker_audience(): void
+    {
+        [$staff, $agent] = $this->setupTracker();
+        foreach (['compose', 'partner-tracker'] as $source) {
+            MessageLog::create(['channel' => 'email', 'source' => $source, 'recipient_type' => 'user', 'recipient_id' => $agent->id,
+                'recipient_address' => $agent->email, 'subject' => $source.' subject', 'body' => 'Synthetic body',
+                'status' => 'sent', 'sent_at' => now(), 'triggered_by_user_id' => $staff->id]);
+        }
+        $finance = User::factory()->create(['role' => 'finance', 'module_permissions' => ['agents']]);
+        $education = User::factory()->create(['role' => 'education', 'module_permissions' => []]);
+        foreach ([[$finance, 'finance'], [$education, 'education']] as [$actor, $portal]) {
+            $this->actingAs($actor)->get('/portal/'.$portal.'/compose')->assertOk()->assertInertia(fn (Assert $p) => $p
+                ->has('sent', 1)->where('sent.0.subject', 'compose subject'));
+        }
+        $this->actingAs($staff)->get('/portal/education/compose')->assertInertia(fn (Assert $p) => $p->has('sent', 2));
+        $this->actingAs(User::factory()->create(['role' => 'admin']))->get('/admin/email/compose')->assertInertia(fn (Assert $p) => $p->has('sent', 2));
     }
 }

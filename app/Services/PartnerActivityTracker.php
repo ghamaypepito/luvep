@@ -27,11 +27,15 @@ class PartnerActivityTracker
         'follow_up' => ['pending', 'completed'],
     ];
 
+    public function canAccess(User $actor): bool
+    {
+        return $actor->is_active && ($actor->isAdmin() || $actor->role === 'education') && $actor->canSeeModule('agents');
+    }
+
     public function authorize(Request $request): void
     {
         $actor = $request->user();
-        abort_unless($actor && $actor->is_active && ($actor->isAdmin() || $actor->role === 'education')
-            && $actor->canSeeModule('agents') && ! $request->attributes->get('user_view_actor'), 403);
+        abort_unless($actor && $this->canAccess($actor) && ! $request->attributes->get('user_view_actor'), 403);
     }
 
     public function installed(): bool
