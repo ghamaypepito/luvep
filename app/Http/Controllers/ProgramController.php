@@ -102,6 +102,10 @@ class ProgramController extends Controller
     {
         $program = Program::findOrFail($id);
         $validated = $request->validate($this->rules());
+        if ($request->has('school_id') && (string) ($validated['school_id'] ?? '') !== (string) ($program->school_id ?? '')
+            && \App\Models\SchoolWorkspaceRecord::where('program_id', $program->id)->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['school_id' => 'This programme has school management history. Keep its school association; archive it and create a separate programme if needed.']);
+        }
 
         if ($request->hasFile('image')) {
             if ($program->image) {
@@ -128,6 +132,9 @@ class ProgramController extends Controller
     public function destroy($id)
     {
         $program = Program::findOrFail($id);
+        if (\App\Models\SchoolWorkspaceRecord::where('program_id', $program->id)->exists()) {
+            return back()->with('error', 'This programme has school management history. Archive it instead of deleting it.');
+        }
 
         if ($program->image) {
             Storage::disk('public')->delete($program->image);
