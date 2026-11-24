@@ -6,7 +6,9 @@ use App\Models\FinanceReceivable;
 use App\Models\Lead;
 use App\Models\LeadDocument;
 use App\Models\User;
+use App\Models\VisaType;
 use App\Services\Immigration\EngagementDocumentGenerator;
+use App\Services\Immigration\InvoiceGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -737,6 +739,47 @@ class EngagementWorkflowTest extends TestCase
         $this->prepare();
         $this->assertDatabaseCount('lead_documents', 0);
         Mail::assertNothingOutgoing();
+    }
+
+    public function test_family_middle_names_appear_in_the_written_agreement_and_invoice(): void
+    {
+        $visa = VisaType::create([
+            'code' => 'workflow_family', 'name' => 'Sample Family Visa', 'category' => 'Visitor',
+            'active' => true, 'professional_fees' => 900, 'inz_application_fee' => 441,
+        ]);
+        $this->lead->update(['inz_visa_type' => $visa->name]);
+        $linkedLead = Lead::create([
+            'first_name' => 'Taylor', 'middle_name' => 'River', 'last_name' => 'Client',
+            'email' => 'linked@example.test', 'is_immigration_case' => true, 'inz_visa_type' => $visa->name,
+        ]);
+        $this->lead->dependents()->createMany([
+            ['relationship' => 'partner', 'linked_lead_id' => $linkedLead->id, 'in_agreement' => true],
+            [
+                'relationship' => 'child', 'visa_type_id' => $visa->id, 'in_agreement' => true,
+                'first_name' => 'Morgan', 'middle_name' => 'Lee', 'family_name' => 'Client',
+            ],
+            [
+                'relationship' => 'child', 'visa_type_id' => $visa->id, 'in_agreement' => true,
+                'first_name' => 'Jordan', 'family_name' => 'Client',
+            ],
+        ]);
+
+        $agreements = app(EngagementDocumentGenerator::class);
+        $invoices = app(InvoiceGenerator::class);
+        $parser = new Parser;
+        $documents = [
+            $agreements->renderHtml($this->lead, 'written_agreement'),
+            $invoices->renderHtml($this->lead),
+            $parser->parseContent($agreements->pdfBinary($this->lead, 'written_agreement'))->getText(),
+            $parser->parseContent($invoices->pdfBinary($this->lead))->getText(),
+        ];
+
+        foreach ($documents as $content) {
+            $this->assertStringContainsString('Fixture Middle Client', $content);
+            $this->assertStringContainsString('Taylor River Client', $content);
+            $this->assertStringContainsString('Morgan Lee Client', $content);
+            $this->assertStringContainsString('Jordan Client', $content);
+        }
     }
 
     public function test_standard_immigration_pack_retains_its_three_supporting_documents(): void

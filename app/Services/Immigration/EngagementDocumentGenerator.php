@@ -447,22 +447,37 @@ class EngagementDocumentGenerator
         // defaults on, so existing families are unaffected until a member is
         // explicitly excluded.
         foreach ($lead->dependents()->where('in_agreement', true)->with(['visaType', 'linkedLead'])->get() as $dep) {
-            if ($dep->linkedLead && $dep->linkedLead->inz_visa_type) {
-                $visaName = $dep->linkedLead->inz_visa_type;
+            $linkedLead = $dep->linkedLead;
+            if ($linkedVisa = $linkedLead?->inz_visa_type) {
+                $visaName = $linkedVisa;
                 $visaModel = VisaType::where('name', $visaName)->first();
-                $name = trim("{$dep->linkedLead->first_name} {$dep->linkedLead->last_name}") ?: $dep->fullName();
             } elseif ($dep->visaType) {
                 $visaName = $dep->visaType->name;
                 $visaModel = $dep->visaType;
-                $name = $dep->fullName();
             } else {
                 continue;
             }
 
+            $firstName = $dep->first_name;
+            $middleName = trim((string) $dep->middle_name);
+            $lastName = $dep->family_name;
+            if ($linkedLead && trim("$linkedLead->first_name $linkedLead->last_name") !== ''
+                && ($linkedVisa || (trim("$firstName $lastName") === '' && $dep->canReadLinkedCase()))) {
+                $firstName = $linkedLead->first_name;
+                $lastName = $linkedLead->last_name;
+                if ($dep->canReadLinkedCase()) {
+                    $middleName = trim((string) $linkedLead->middle_name) ?: $middleName;
+                }
+            }
+            $name = collect([$firstName, $middleName, $lastName])
+                ->map(fn ($part) => trim((string) $part))
+                ->filter(fn ($part) => $part !== '')
+                ->implode(' ');
+
             $deps[] = [
                 'type' => 'dependent',
                 'id' => $dep->id,
-                'name' => $name,
+                'name' => $name !== '' ? $name : $dep->fullName(),
                 'visa' => $visaName,
                 'visa_model' => $visaModel,
                 'rel' => $dep->relationship,
