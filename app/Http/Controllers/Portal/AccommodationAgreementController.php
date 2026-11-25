@@ -92,9 +92,9 @@ class AccommodationAgreementController extends Controller
             'source_id' => 'nullable|required_with:source|integer',
         ]);
 
-        $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
         $ctx = isset($v['source']) ? $this->builder->resolve($v['source'], (int) $v['source_id']) : null;
         abort_if(isset($v['source']) && $ctx === null, 404);
+        $data = app(AgreementTerms::class)->calculate($v['data'] ?? [], standardUtilityBilling: $ctx !== null && $v['agreement_type'] === 'standard_flatmate');
         $data = $this->withWelcomePackagesAndInvoice($data, $v['agreement_type'], $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
@@ -129,7 +129,7 @@ class AccommodationAgreementController extends Controller
         $ctx = $this->builder->resolve($v['source'], (int) $v['source_id']);
         abort_if($ctx === null, 404);
 
-        $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
+        $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true, standardUtilityBilling: $v['agreement_type'] === 'standard_flatmate');
         $data = $this->withWelcomePackagesAndInvoice($data, $v['agreement_type'], $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {

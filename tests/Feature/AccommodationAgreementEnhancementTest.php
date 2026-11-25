@@ -46,7 +46,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $data = [
             'property_id' => $property->id, 'notes' => "Special <script>text</script>\nSecond line",
             'subtenants' => [['first_name' => 'Synthetic', 'last_name' => 'Tenant', 'email' => 'tenant@example.test']],
-            'tenancy' => ['commence_date' => '2026-11-18', 'move_in_date' => '2026-11-18', 'duration' => 1, 'duration_unit' => 'months', 'weekly_rent' => '700', 'utility_option' => '1', 'utility_amount' => '70'],
+            'tenancy' => ['commence_date' => '2026-11-18', 'move_in_date' => '2026-11-18', 'duration' => 1, 'duration_unit' => 'months', 'weekly_rent' => '700', 'utility_option' => '2', 'utility_amount' => '70'],
             'costs' => ['bond' => '700', 'deposit' => '700', 'advance_weeks' => 1, 'total_move_in' => '1.00'],
         ];
         $this->actingAs($staff);
@@ -177,6 +177,40 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame(350, $agreement->data['welcome_packages']['total']);
         $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
             ->assertSee('Grocery Package')->assertSee('Bedding Essentials Package')->assertDontSee('Kitchenware Package');
+    }
+
+    public function test_standard_flatmate_weekly_utilities_are_included_once_and_follow_the_selected_billing_option(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $data['tenancy'] = array_replace($data['tenancy'], ['weekly_rent' => '365', 'utility_amount' => '40', 'utility_option' => '1']);
+        $data['subtenants'][] = ['first_name' => 'Other', 'last_name' => 'Occupant'];
+        $source->update(['data' => ['welcome_packages' => WelcomePackages::snapshot(['grocery'])]]);
+        $agreement = $this->generate($source, $data);
+        $this->assertSame('80.00', $agreement->data['tenancy']['weekly_utility_total']);
+        $this->assertSame('445.00', $agreement->data['costs']['bond']);
+        $this->assertSame('445.00', $agreement->data['costs']['deposit']);
+        $this->assertSame('445.00', $agreement->data['costs']['rent_advance']);
+        $this->assertSame('317.86', $agreement->data['costs']['prorated_rent']);
+        $this->assertSame('1802.86', $agreement->data['move_in_invoice']['total']);
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
+            ->assertSee('Rent + Utilities (weekly)')->assertSee('Weekly utilities for all occupants')->assertSee('1,802.86');
+
+        $data['tenancy']['utility_option'] = '2';
+        $data['costs']['bond'] = $data['costs']['deposit'] = '365';
+        $separate = $this->generate($source, $data);
+        $this->assertSame('365.00', $separate->data['tenancy']['weekly_payable']);
+        $this->assertSame('365.00', $separate->data['costs']['rent_advance']);
+        $this->assertSame('260.71', $separate->data['costs']['prorated_rent']);
+        $this->assertSame('1505.71', $separate->data['move_in_invoice']['total']);
+
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
+            'signer_name' => 'Other Occupant', 'signer_index' => 1, 'signature_data' => self::PNG, 'terms_accepted' => true,
+        ])->assertRedirect();
+        $tenant = Tenant::findOrFail($agreement->fresh()->tenant_id);
+        $this->assertSame('365.00', $tenant->weekly_rent_nzd);
+        $this->assertSame('80.00', $tenant->weekly_utilities_nzd);
     }
 
     public function test_move_in_invoice_calculates_all_requested_totals_and_uses_the_issued_snapshot(): void
