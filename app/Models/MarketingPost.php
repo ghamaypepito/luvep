@@ -19,6 +19,12 @@ class MarketingPost extends Model
         return ['version' => 'integer', 'approved_version' => 'integer', 'scheduled_at' => 'immutable_datetime', 'publish_now' => 'boolean'];
     }
 
+    public function canMoveInCalendar(): bool
+    {
+        return ! $this->publish_now && ! $this->ghl_post_id
+            && in_array($this->status, ['draft', 'in_review', 'changes_requested', 'approved'], true);
+    }
+
     public function fingerprint(): string
     {
         $content = [

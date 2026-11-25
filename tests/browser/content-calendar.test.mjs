@@ -28,7 +28,7 @@ const bundle = await build({
                 contents: `import React from 'react';
                     export const Head = () => null;
                     export const Link = ({ href, children, ...props }) => React.createElement('a', { href, ...props }, children);
-                    export const router = { reload() {} };`,
+                    export const router = { reload(options) { options?.onFinish?.(); } };`,
             }));
         },
     }],
@@ -45,7 +45,7 @@ const article = {
 };
 const articlesPath = '/admin/content-calendar/articles';
 
-async function withCalendar(run, { canPublish = false, topics = [article], ghlPosts = [] } = {}) {
+async function withCalendar(run, { canPublish = false, topics = [article], ghlPosts = [], socialPosts = [] } = {}) {
     const channel = process.env.PLAYWRIGHT_CHANNEL;
     const browser = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
     try {
@@ -63,6 +63,7 @@ async function withCalendar(run, { canPublish = false, topics = [article], ghlPo
         await page.evaluate(props => window.renderCalendar(props), {
             month: '2026-11',
             topics,
+            socialPosts,
             undated: [{ id: 2, title: 'Unscheduled article', status: 'draft', planned_date: null }],
             canPublish,
         });
@@ -191,6 +192,50 @@ test('dragging a draft moves its planned date and a draft with a live version st
     }, { topics: [article, { ...article, id: 9, title: 'Live article', published_slug: 'live-article' }] });
 });
 
+
+test('a social post in review can be dragged or moved with the date field', async () => {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    const title = 'Plan with Luvep';
+    await withCalendar(async page => {
+        await page.setViewportSize({ width: 1280, height: 1200 });
+        let saved = { id, campaign: title, status: 'in_review', can_move: true, version: 3, calendar_date: '2026-11-08', calendar_time: '09:00', caption: 'Original copy' };
+        const payloads = [];
+        const url = 'http://calendar.test/social/marketing/posts/' + id;
+        await page.route('http://calendar.test/social/ghl/accounts', route => route.fulfill({ json: { publishing_enabled: true, accounts: [] } }));
+        await page.route(url, route => route.fulfill({ json: { post: saved } }));
+        await page.route(url + '/planned-date', async route => {
+            assert.equal(route.request().method(), 'PATCH');
+            const data = route.request().postDataJSON();
+            payloads.push(data);
+            saved = { ...saved, calendar_date: data.planned_date, version: saved.version + 1 };
+            await route.fulfill({ json: { post: saved } });
+        });
+        const post = page.getByRole('button', { name: title + ', Social post, For review', exact: true });
+        const scheduled = page.getByRole('button', { name: /Sent already.*Scheduled in GHL/ });
+        assert.equal(await post.getAttribute('draggable'), 'true');
+        assert.equal(await scheduled.getAttribute('draggable'), 'false');
+        await post.dragTo(page.locator('.editorial-calendar-day').filter({ has: page.locator('time[datetime="2026-11-12"]') }));
+        await page.getByText(/Moved to.*November 12/).waitFor();
+        await post.focus();
+        await page.keyboard.press('Enter');
+        const dialog = page.getByRole('dialog', { name: 'Social post' });
+        const date = dialog.getByLabel('Date · Manila');
+        await date.waitFor();
+        assert.equal(await date.inputValue(), '2026-11-12');
+        await date.fill('2026-12-08');
+        await dialog.getByRole('button', { name: 'Save date', exact: true }).click();
+        await dialog.getByText('Date updated in Luvep.').waitFor();
+        assert.equal(await dialog.getByLabel('Time · Manila').inputValue(), '09:00');
+        assert.equal(await dialog.getByLabel('Caption', { exact: true }).inputValue(), 'Original copy');
+        assert.deepEqual(payloads, [
+            { version: 3, planned_date: '2026-11-12' },
+            { version: 4, planned_date: '2026-12-08' },
+        ]);
+    }, { socialPosts: [
+        { id, title, status: 'in_review', can_move: true, version: 3, planned_date: '2026-11-08', planned_time: '09:00' },
+        { id: 'scheduled', title: 'Sent already', status: 'scheduled', can_move: false, planned_date: '2026-11-09', planned_time: '09:00' },
+    ] });
+});
 
 test('editable brief generates article and SEO without saving, then saves the reviewed brief and metadata', async () => {
     await withCalendar(async page => {
