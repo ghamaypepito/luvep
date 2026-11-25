@@ -39,6 +39,7 @@ jobs:
           node tests/Frontend/accommodation-carousel.cjs
           node tests/Frontend/accommodation-agreements.cjs
           node tests/Frontend/accommodation-move-in.cjs
+          node tests/Frontend/accommodation-shared-dtr.cjs
           node tests/Frontend/brief-references.cjs
           node tests/Frontend/compose-studio.cjs
           node tests/Frontend/compose-video.cjs

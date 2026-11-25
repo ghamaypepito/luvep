@@ -168,6 +168,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/portal/english/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.english.dtr');
     Route::get('/portal/immigration/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.immigration.dtr');
     Route::get('/portal/accommodation/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.accommodation.dtr');
+    Route::post('/portal/accommodation/dtr/shared-tasks', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'store']);
+    Route::patch('/portal/accommodation/dtr/shared-tasks/{id}', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'update'])->whereNumber('id');
+    Route::post('/portal/accommodation/dtr/shared-tasks/{id}/complete', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'complete'])->whereNumber('id');
     Route::get('/portal/agent/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.agent.dtr');
     Route::get('/portal/finance/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.finance.dtr');
 });
