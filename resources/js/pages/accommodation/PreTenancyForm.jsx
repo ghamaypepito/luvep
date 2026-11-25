@@ -88,7 +88,12 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
         referee_name: "",
         referee_phone: "",
         referee_email: "",
+        arriving_from_overseas: "",
+        welcome_packages: [],
     });
+    const welcomePackages = Object.entries(options.welcome_packages || {});
+    const welcomeTotal = welcomePackages.reduce((total, [key, item]) =>
+        total + (data.welcome_packages.includes(key) ? item.price : 0), 0);
 
     const setOccupant = (i, key, val) => setData("occupants", data.occupants.map((o, idx) => (idx === i ? { ...o, [key]: val } : o)));
     const addOccupant = () => setData("occupants", [...data.occupants, emptyOccupant()]);
@@ -329,6 +334,49 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
                     <Field label="Referee's email address" required error={errors.referee_email}>
                         <input type="email" className={inputClass} value={data.referee_email} onChange={(e) => setData("referee_email", e.target.value)} />
                     </Field>
+                </SectionCard>
+
+                <SectionCard n="7" title="Exalt Welcome Packages (Optional)">
+                    <fieldset>
+                        <legend className="mb-2 text-sm font-semibold text-gray-900">Are you arriving in New Zealand from overseas?</legend>
+                        <div className="flex gap-5">
+                            {["yes", "no"].map((choice) => (
+                                <label key={choice} className="flex items-center gap-2 text-sm">
+                                    <input type="radio" name="arriving_from_overseas" value={choice} checked={data.arriving_from_overseas === choice}
+                                        onChange={() => setData((previous) => ({
+                                            ...previous, arriving_from_overseas: choice,
+                                            welcome_packages: choice === "yes" ? previous.welcome_packages : [],
+                                        }))} />
+                                    {choice === "yes" ? "Yes" : "No"}
+                                </label>
+                            ))}
+                        </div>
+                        {errors.arriving_from_overseas && <p role="alert" className="text-sm text-rose-600">{errors.arriving_from_overseas}</p>}
+                    </fieldset>
+                    {data.arriving_from_overseas === "yes" && (
+                        <fieldset className="space-y-3">
+                            <legend className="sr-only">Select any welcome packages</legend>
+                            {welcomePackages.map(([key, item]) => (
+                                <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                                    <input type="checkbox" className="mt-1 size-4 shrink-0 accent-[#1F5A8B]" checked={data.welcome_packages.includes(key)}
+                                        onChange={(event) => setData("welcome_packages", event.target.checked
+                                            ? [...data.welcome_packages, key] : data.welcome_packages.filter((choice) => choice !== key))} />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex flex-wrap justify-between gap-x-3 font-semibold text-gray-900">
+                                            <span>{item.name}</span><span>${item.price} NZD</span>
+                                        </span>
+                                        {item.inclusions.map((line) => <span key={line} className="mt-1 block text-sm text-gray-700">{line}</span>)}
+                                    </span>
+                                </label>
+                            ))}
+                            {Object.entries(errors).filter(([key]) => key === "welcome_packages" || key.startsWith("welcome_packages."))
+                                .map(([key, error]) => <p key={key} role="alert" className="text-sm text-rose-600">{error}</p>)}
+                            <p className="text-sm text-gray-600">{options.welcome_package_service_note}</p>
+                            <p aria-live="polite" className="flex justify-between gap-3 rounded-xl bg-blue-100 p-3 font-bold text-blue-950">
+                                <span>Total selected packages</span><span>${welcomeTotal} NZD</span>
+                            </p>
+                        </fieldset>
+                    )}
                 </SectionCard>
 
                 <div className="flex items-center justify-end gap-3 pt-2">

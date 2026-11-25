@@ -27,7 +27,7 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
     const [calculated, setCalculated] = useState(null);
     const [previewKey, setPreviewKey] = useState('');
     const [formErrors, setFormErrors] = useState([]);
-    const currentKey = JSON.stringify({ agreement_type: agreementType, data: fields });
+    const currentKey = JSON.stringify({ agreement_type: agreementType, source: selected?.source, source_id: selected?.id, data: fields });
     const computed = previewKey === currentKey ? calculated : null;
 
     const copyLink = (a) => {
@@ -82,12 +82,12 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
         previewTimer.current = setTimeout(() => refreshPreview(), 500);
         return () => clearTimeout(previewTimer.current);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fields, agreementType]);
+    }, [fields, agreementType, selected]);
 
     const refreshPreview = async () => {
         if (!fields) return;
         const sequence = ++previewSequence.current;
-        const key = JSON.stringify({ agreement_type: agreementType, data: fields });
+        const key = currentKey;
         setPreviewLoading(true);
         try {
             const res = await fetch("/portal/accommodation/forms/agreements/preview", {
