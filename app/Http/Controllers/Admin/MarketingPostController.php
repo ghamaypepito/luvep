@@ -43,7 +43,7 @@ class MarketingPostController extends Controller
             'media_url' => $post->media_path ? route('marketing.posts.media', ['id' => $post->id]) : null,
             'media_mime' => $post->media_mime, 'post_type' => $post->post_type ?: 'post',
             'first_comment' => $post->first_comment ?? '', 'publish_now' => (bool) $post->publish_now,
-            'calendar_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
+            'can_move' => $post->canMoveInCalendar(), 'calendar_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
             'calendar_time' => $post->scheduled_at?->setTimezone('Asia/Manila')->format('H:i'),
             'review_note' => $post->review_note, 'ghl_post_id' => $post->ghl_post_id,
             'updated_at' => $post->updated_at?->toIso8601String(), 'approved_by' => $post->approved_by];
@@ -143,6 +143,34 @@ class MarketingPostController extends Controller
             }
             throw $e;
         }
+
+        return response()->json(['post' => $this->shape($post)]);
+    }
+
+    public function move(Request $request, string $id)
+    {
+        $this->authorizeUser($request);
+        $this->exactFields($request, ['version', 'planned_date']);
+        $data = $request->validate(['version' => 'required|integer|min:1', 'planned_date' => 'required|date_format:Y-m-d']);
+        $post = DB::transaction(function () use ($id, $data) {
+            $post = $this->find($id, true);
+            $this->checkVersion($post, (int) $data['version']);
+            abort_unless($post->canMoveInCalendar(), 409, 'Only Luvep posts with editable planned dates can be moved.');
+
+            $local = $post->scheduled_at?->setTimezone('Asia/Manila');
+            if ($local?->toDateString() !== $data['planned_date']) {
+                $date = CarbonImmutable::createFromFormat('!Y-m-d', $data['planned_date'], 'Asia/Manila');
+                $post->scheduled_at = $date->setTimeFromTimeString($local?->format('H:i:s') ?? '09:00:00')->utc();
+                $post->version++;
+                if ($post->status === 'approved') {
+                    $post->status = 'in_review';
+                    $post->approved_by = $post->approved_version = $post->approval_fingerprint = null;
+                }
+                $post->save();
+            }
+
+            return $post;
+        });
 
         return response()->json(['post' => $this->shape($post)]);
     }
