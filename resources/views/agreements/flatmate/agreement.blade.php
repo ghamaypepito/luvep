@@ -128,6 +128,10 @@
             <tr><td>Pro-rated Rent</td><td>{!! $f($c['prorated_days'] ?? '', '[number of days]') !!}</td><td class="amt">NZ${!! $m($c['prorated_rent'] ?? '') !!}</td></tr>
         @endif
         <tr class="total"><td colspan="2">Total Move-in Cost</td><td class="amt">NZ${!! $m($c['total_move_in'] ?? '') !!}</td></tr>
+        @if(!empty($data['welcome_packages']['packages']) && isset($data['move_in_invoice']))
+            <tr><td colspan="2">Welcome Packages (service included)</td><td class="amt">NZ${!! $m($data['move_in_invoice']['package_subtotal']) !!}</td></tr>
+            <tr class="total"><td colspan="2">Total amount payable</td><td class="amt">NZ${!! $m($data['move_in_invoice']['total']) !!}</td></tr>
+        @endif
     </table>
 
     @if($isTransient)

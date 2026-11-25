@@ -138,6 +138,33 @@ class AgreementTerms
         return $data;
     }
 
+    /** Build the invoice from the already calculated terms and selected package snapshot. */
+    public function moveInInvoice(array $data): array
+    {
+        $costs = $data['costs'];
+        $lines = [
+            ['description' => 'Bond', 'amount' => $costs['bond'] ?? '0.00'],
+            ['description' => 'Deposit', 'amount' => $costs['deposit'] ?? '0.00'],
+            ['description' => 'Advance rent', 'amount' => $costs['rent_advance']],
+        ];
+        if ($this->cents($costs['prorated_rent']) > 0) {
+            $lines[] = ['description' => 'Pro-rated rent', 'amount' => $costs['prorated_rent']];
+        }
+        $packageTotal = 0;
+        foreach ($data['welcome_packages']['packages'] ?? [] as $package) {
+            $price = $this->cents($package['price']);
+            $lines[] = ['description' => $package['name'], 'amount' => $this->money($price)];
+            $packageTotal += $price;
+        }
+
+        return [
+            'lines' => $lines,
+            'move_in_subtotal' => $costs['total_move_in'],
+            'package_subtotal' => $this->money($packageTotal),
+            'total' => $this->money($this->cents($costs['total_move_in']) + $packageTotal),
+        ];
+    }
+
     private function cents(mixed $value): int
     {
         [$whole, $fraction] = array_pad(explode('.', (string) ($value ?: '0'), 2), 2, '');

@@ -291,6 +291,10 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <Mini label="Pro-rated days (automatic)" type="number" readOnly value={computed?.costs?.prorated_days ?? ""} />
                                     <Mini label="Pro-rated rent (automatic)" type="number" readOnly value={computed?.costs?.prorated_rent ?? ""} />
                                     <Mini label="Total move-in (automatic)" type="number" readOnly value={computed?.costs?.total_move_in ?? ""} />
+                                    {computed?.move_in_invoice && <>
+                                        <Mini label="Welcome Packages subtotal" type="number" readOnly value={computed.move_in_invoice.package_subtotal} />
+                                        <Mini label="Total amount payable" type="number" readOnly value={computed.move_in_invoice.total} />
+                                    </>}
                                     <Mini label="Advance from (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_from ?? ""} />
                                     <Mini label="Advance to (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_to ?? ""} />
                                 </div>
@@ -353,6 +357,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <a href={`/portal/accommodation/forms/agreements/${a.id}/download`} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                                         <Download size={13} /> {a.signed ? "Signed PDF" : "PDF"}
                                     </a>
+                                    {a.has_move_in_invoice && <a href={`/portal/accommodation/forms/agreements/${a.id}/move-in-invoice`} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        <Download size={13} /> Move-in invoice
+                                    </a>}
                                 </div>
                             </div>
                         ))}

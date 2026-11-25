@@ -10,6 +10,7 @@ use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Accommodation\AgreementTerms;
+use App\Services\Accommodation\WelcomePackages;
 use App\Services\PdfGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -173,6 +174,45 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame(350, $agreement->data['welcome_packages']['total']);
         $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
             ->assertSee('Grocery Package')->assertSee('Bedding Essentials Package')->assertDontSee('Kitchenware Package');
+    }
+
+    public function test_move_in_invoice_calculates_all_requested_totals_and_uses_the_issued_snapshot(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $data['tenancy'] = array_replace($data['tenancy'], [
+            'commence_date' => '2026-11-23', 'move_in_date' => '2026-11-23', 'weekly_rent' => '365',
+        ]);
+        $data['costs'] = array_replace($data['costs'], ['bond' => '365', 'deposit' => '365']);
+        $data['move_in_invoice'] = ['total' => '0.01'];
+        $path = '/portal/accommodation/forms/agreements';
+        foreach ([
+            [['kitchenware', 'grocery', 'bedding'], '600.00', '1695.00'],
+            [['kitchenware', 'grocery'], '400.00', '1495.00'],
+            [[], '0.00', '1095.00'],
+        ] as [$selection, $packageTotal, $total]) {
+            $source->update(['data' => ['welcome_packages' => WelcomePackages::snapshot($selection)]]);
+            $preview = $this->postJson("$path/preview", [
+                'source' => 'general', 'source_id' => $source->id,
+                'agreement_type' => 'standard_flatmate', 'data' => $data,
+            ])->assertOk()
+                ->assertJsonPath('data.costs.total_move_in', '1095.00')
+                ->assertJsonPath('data.move_in_invoice.package_subtotal', $packageTotal)
+                ->assertJsonPath('data.move_in_invoice.total', $total);
+
+            $agreement = $this->generate($source, $data);
+            $source->update(['data' => []]);
+            $this->assertSame($preview->json('data.move_in_invoice'), $agreement->data['move_in_invoice']);
+            $download = $this->get("$path/{$agreement->id}/move-in-invoice")->assertOk()
+                ->assertDownload("exalt-move-in-{$agreement->id}.pdf");
+            $text = (new Parser)->parseContent($download->getContent())->getText();
+            $this->assertStringContainsString(number_format((float) $total, 2), $text);
+            $this->assertStringContainsString('Advance rent', $text);
+            $this->assertSame(in_array('bedding', $selection, true), str_contains($text, 'Bedding Essentials Package'));
+            $this->assertSame(in_array('grocery', $selection, true), str_contains($text, 'Grocery Package'));
+            $this->assertSame(in_array('kitchenware', $selection, true), str_contains($text, 'Kitchenware Package'));
+        }
+        $this->actingAs(User::factory()->create(['role' => 'sales']))
+            ->get("$path/{$agreement->id}/move-in-invoice")->assertForbidden();
     }
 
     public function test_preview_generate_and_signed_copy_share_canonical_terms(): void
