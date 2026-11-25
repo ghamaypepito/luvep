@@ -2427,6 +2427,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/tenants/{tenant}/purchase-invoices', [PurchaseInvoiceController::class, 'store'])->name('purchase-invoices.store');
             Route::get('/purchase-invoices/{invoice}/files/{file}', [PurchaseInvoiceController::class, 'download'])->whereNumber('file')->name('purchase-invoices.download');
             Route::get('/gas-delivery', [GasDeliveryController::class, 'index'])->name('gas-delivery');
+            Route::post('/gas-delivery', [GasDeliveryController::class, 'store'])->name('gas-delivery.store');
             Route::get('/concerns', [App\Http\Controllers\ConcernController::class, 'index'])->name('concerns');
             Route::patch('/concerns/{concern}', [App\Http\Controllers\ConcernController::class, 'update'])->name('concerns.update');
             Route::get('/message-templates', [MessageTemplateController::class, 'index'])->name('message-templates');
