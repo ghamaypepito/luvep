@@ -120,6 +120,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertLessThan(strpos($preview, '>House Rules<'), strpos($preview, '>Terms &amp; Conditions<'));
         $this->assertLessThan(strpos($preview, '>Flat/House Sharing Agreement<'), strpos($preview, 'Exalt Welcome Packages'));
         $this->assertStringContainsString('eggs (2 dozen)', $preview);
+        $this->assertStringContainsString('occupy the designated room or rooms', $preview);
+        $this->assertStringNotContainsString('occupation of the entire Property', $preview);
         $this->assertStringNotContainsString('Injected', $preview);
 
         $agreement = $this->generate($source, $data);
@@ -130,10 +132,14 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertStringContainsString('600.00 NZD', $pdfText);
         $this->assertMatchesRegularExpression('/kitchen knife,\s+chopping board/', $pdfText);
         $source->update(['data' => []]);
-        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()->assertSee('600.00 NZD');
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
+            ->assertSee('600.00 NZD')->assertSee('occupy the designated room or rooms');
         $this->assertArrayNotHasKey('welcome_packages', $this->generate($source, $data)->data);
 
         $source->update(['data' => ['welcome_packages' => $snapshot]]);
+        $whole = $this->generate($source, $data, 'whole_property');
+        $this->get(route('agreement.sign.document', $whole->signing_token))->assertOk()
+            ->assertSee('occupation of the entire Property')->assertDontSee('occupy the designated room or rooms');
         $this->assertArrayNotHasKey('welcome_packages', $this->generate($source, $data, 'transient_flatmate')->data);
     }
 

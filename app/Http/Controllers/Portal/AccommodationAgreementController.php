@@ -314,6 +314,7 @@ class AccommodationAgreementController extends Controller
             $data['move_in_invoice'] = app(AgreementTerms::class)->moveInInvoice($data);
             if ($type === 'standard_flatmate') {
                 $data['agreement_layout'] = 'terms_first';
+                $data['agreement_occupancy'] = 'designated_rooms';
             }
         }
 
