@@ -117,6 +117,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
             'agreement_type' => 'standard_flatmate', 'data' => $data,
         ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
         $this->assertLessThan(strpos($preview, 'Exalt Welcome Packages'), strpos($preview, '>House Rules<'));
+        $this->assertLessThan(strpos($preview, '>House Rules<'), strpos($preview, '>Terms &amp; Conditions<'));
+        $this->assertLessThan(strpos($preview, '>Flat/House Sharing Agreement<'), strpos($preview, 'Exalt Welcome Packages'));
         $this->assertStringContainsString('eggs (2 dozen)', $preview);
         $this->assertStringNotContainsString('Injected', $preview);
 
@@ -124,6 +126,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame($snapshot, $agreement->data['welcome_packages']);
         $pdfText = (new Parser)->parseContent(Storage::disk('local')->get($agreement->pdf_path))->getText();
         $this->assertStringContainsString('EXALT WELCOME PACKAGES', $pdfText);
+        $this->assertLessThan(strpos($pdfText, 'FLAT/HOUSE SHARING AGREEMENT'), strpos($pdfText, 'EXALT WELCOME PACKAGES'));
         $this->assertStringContainsString('600.00 NZD', $pdfText);
         $this->assertMatchesRegularExpression('/kitchen knife,\s+chopping board/', $pdfText);
         $source->update(['data' => []]);

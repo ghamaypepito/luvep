@@ -312,6 +312,9 @@ class AccommodationAgreementController extends Controller
                 $data['welcome_packages'] = $packages;
             }
             $data['move_in_invoice'] = app(AgreementTerms::class)->moveInInvoice($data);
+            if ($type === 'standard_flatmate') {
+                $data['agreement_layout'] = 'terms_first';
+            }
         }
 
         return $data;

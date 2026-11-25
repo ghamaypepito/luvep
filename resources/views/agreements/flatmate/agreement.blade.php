@@ -29,6 +29,7 @@
     };
 
     $isTransient = $agreementType === 'transient_flatmate';
+    $termsFirst = $agreementType === 'standard_flatmate' && ($data['agreement_layout'] ?? null) === 'terms_first';
     $title = $titles[$agreementType] ?? 'Flat/House Sharing Agreement';
 
     $t = $data['tenancy'] ?? [];
@@ -42,7 +43,10 @@
 @endphp
 
 @section('body')
-    <div class="doc-title">{{ $title }}</div>
+    @if($termsFirst)
+        @include('agreements.flatmate._agreement_sections', ['pageBreakBeforeTerms' => false])
+    @endif
+    <div @class(['doc-title', 'appendix' => $termsFirst])>{{ $title }}</div>
     <p class="prop-line">PROPERTY ADDRESS: <span class="val">{!! $f($data['property_address'] ?? '', '[Full property address]') !!}</span></p>
     @if($isTransient)
         <p class="note-line">Exalt Terms and Conditions and the most recent House Rules are attached as appendices.</p>
@@ -236,22 +240,9 @@
         </div>
     @endif
 
-    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
-    <div class="appendix">@include('agreements.flatmate._terms')</div>
-    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-    @if(in_array($agreementType, ['whole_property', 'standard_flatmate'], true) && !empty($data['welcome_packages']['packages']))
-        <div class="appendix">
-            <h2 class="section">Exalt Welcome Packages</h2>
-            @foreach($data['welcome_packages']['packages'] as $package)
-                <h3 class="tc-head">{{ $package['name'] }} | ${{ number_format($package['price'], 2) }} NZD</h3>
-                @foreach($package['inclusions'] as $inclusion)
-                    <p class="clause" style="text-align: left">{{ $inclusion }}</p>
-                @endforeach
-            @endforeach
-            <p class="clause">{{ $data['welcome_packages']['service_note'] }}</p>
-            <p class="clause"><strong>Total package cost (service included): ${{ number_format($data['welcome_packages']['total'], 2) }} NZD</strong></p>
-        </div>
-    @endif
+    @unless($termsFirst)
+        @include('agreements.flatmate._agreement_sections', ['pageBreakBeforeTerms' => true])
+    @endunless
     {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
     <div class="appendix">@include('agreements.flatmate._declaration', [
         'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,
