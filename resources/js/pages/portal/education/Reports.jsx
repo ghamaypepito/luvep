@@ -205,7 +205,7 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                     <details className="rounded-xl border border-gray-200 bg-white p-4">
                         <summary className="cursor-pointer text-sm font-bold text-gray-800">Department pipeline position</summary>
                         <div className="mt-3">
-                            <p className="mb-2 text-xs text-gray-500">Shared department figures. Your contact-stage counts are shown separately in My lead contact activity.</p>
+                            <p className="mb-2 text-xs text-gray-500">Shared department figures. Your recorded contact changes are shown in the Education cards above.</p>
                             <p className="mb-3 text-[11px] leading-relaxed text-gray-500">{pipeline_history.notice || (range.all ? "Current Leads queue, including undated records." : "Recorded lead status changes only. Missing audit history stays unknown.")}</p>
                             <div className="flex flex-col lg:flex-row gap-4 items-start">
                                 <div className="w-full min-w-0 lg:flex-1">
@@ -329,13 +329,13 @@ function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActiv
         return [stage, { stage, leadStatus: true, count: clients?.length, clients }];
     }));
     const followUps = noteActivity?.counts?.follow_up?.events;
-    const stages = isEducation ? [
-        ...EDUCATION_CARD_ORDER.map((stage) => contactStages[stage] || getStage(stage)),
-        ...studentStages.filter(({ stage }) => !EDUCATION_CARD_ORDER.includes(stage) && !VISA_OUTCOMES.includes(stage)),
-    ] : studentStages;
+    const stages = isEducation ? EDUCATION_CARD_ORDER.map((stage) => contactStages[stage] || getStage(stage)) : studentStages;
+    const additionalStages = isEducation
+        ? studentStages.filter(({ stage }) => !EDUCATION_CARD_ORDER.includes(stage) && !VISA_OUTCOMES.includes(stage))
+        : [];
     const open = isEducation && VISA_OUTCOMES.includes(openStage)
         ? getStage(openStage)
-        : stages.find((s) => s.stage === openStage) || null;
+        : [...stages, ...additionalStages].find((s) => s.stage === openStage) || null;
     const switchTo = (k) => { setActive(k); setOpenStage(null); };
 
     // Cap the reveal panel to the cards' height so the two columns stay uniform
@@ -437,6 +437,17 @@ function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActiv
                             })}
                         </div>
                     )}
+                    {additionalStages.length > 0 && <details aria-label="Other Education stages" className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-gray-600">Other Education stages</summary>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {additionalStages.map(stage => <button key={stage.stage} type="button"
+                                aria-pressed={openStage === stage.stage} aria-label={`${stage.stage}: ${stage.count} ${range.all ? 'current students' : 'students with recorded entries'}`}
+                                onClick={() => setOpenStage(openStage === stage.stage ? null : stage.stage)}
+                                className="rounded-lg border border-gray-200 px-3 py-2 text-left text-xs text-gray-700 hover:border-gray-400">
+                                {stage.stage} <strong className="ml-2 tabular-nums">{stage.count}</strong>
+                            </button>)}
+                        </div>
+                    </details>}
                     <p className="mt-2 text-[11px] text-gray-400">Click any status card to open its client list on the right.</p>
                 </div>
                 {open && (

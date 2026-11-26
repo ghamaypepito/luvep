@@ -69,8 +69,13 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
         'Pre-Screening Done', 'Goal Setting Done', 'Proposal Sent', 'Engagement Sent',
         'School Enrolment', 'Conditional Offer', 'Unconditional Offer', 'Endorsed for Visa Process',
         'Visa Lodged', 'Visa Outcome (Approved / Declined)', 'Arrived in NZ', 'Started Course',
-        'Education enrolled',
     ]);
+    assert.equal(cards.children.length, 16, 'The presentation grid stays at four rows of four cards');
+    const additionalStages = document.querySelector('details[aria-label="Other Education stages"]');
+    assert.ok(additionalStages, 'Supplemental stages remain available outside the sixteen-card grid');
+    await click(additionalStages.querySelector('summary'));
+    await click(additionalStages.querySelector('button'));
+    assert.match(document.body.textContent, /Education student/, 'Supplemental stage drilldowns retain their clients');
     assert.equal(cards.children[3].getAttribute('href'), '#education-note-activity');
     assert.match(cards.children[3].textContent, /5Followed-up/);
     assert.match(cards.children[14].textContent, /No report data available/);
