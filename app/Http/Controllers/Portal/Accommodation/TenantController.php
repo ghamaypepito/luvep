@@ -63,6 +63,11 @@ class TenantController extends Controller
             'onboardingUrl' => ($source = EoiSubmission::where('converted_to_tenant_id', $tenant->id)->first(['id']))
                 ? route('portal.accommodation.applications.show', $source) : null,
             'documents' => $tenant->documents()->latest()->get(['id', 'tenant_id', 'name', 'category', 'size', 'created_at']),
+            'preTenancySources' => AccommodationAgreement::where('tenant_id', $tenant->id)->where('status', 'signed')->get()
+                ->map(fn ($a) => $a->eoi_submission_id
+                    ? ['key' => 'onboarding-'.$a->eoi_submission_id, 'url' => route('portal.accommodation.applications.show', $a->eoi_submission_id), 'label' => 'Completed pre-tenancy / onboarding #'.$a->eoi_submission_id]
+                    : ($a->pre_tenancy_form_id ? ['key' => 'general-'.$a->pre_tenancy_form_id, 'url' => route('portal.accommodation.forms.pre-tenancy.show', $a->pre_tenancy_form_id), 'label' => 'Completed pre-tenancy #'.$a->pre_tenancy_form_id] : null))
+                ->filter()->unique('key')->values(),
             'signedAgreements' => \App\Models\AccommodationAgreement::where('tenant_id', $tenant->id)
                 ->where('status', 'signed')->latest('signed_at')->get(['id', 'agreement_type', 'signed_at']),
             'historical' => $historical,
@@ -150,7 +155,11 @@ class TenantController extends Controller
     private function standaloneAgreements(Tenant $tenant)
     {
         return AccommodationAgreement::where('tenant_id', $tenant->id)->where('status', 'signed')
-            ->where('data->workflow_version', 2)
+            ->where(fn ($q) => $q->where('data->workflow_version', 2)->orWhereExists(fn ($audit) => $audit
+                ->selectRaw('1')->from('activity_logs')
+                ->whereColumn('activity_logs.entity_id', 'accommodation_agreements.id')
+                ->where('activity_logs.entity_type', AccommodationAgreement::class)
+                ->where('activity_logs.action', 'accommodation.agreement.tenant_linked')))
             ->whereNotNull('pre_tenancy_form_id')->whereNull('eoi_submission_id')->latest('id');
     }
 
@@ -318,7 +327,7 @@ class TenantController extends Controller
     /** Apply list filters + sort. Shared by index() and export(). */
     private function filteredQuery(Request $request)
     {
-        $search = $request->query('search');
+        $search = trim((string) $request->query('search', ''));
         $propertyId = $request->query('property_id');
         $status = $request->query('status');
         $sort = $request->query('sort', 'days_to_end');
@@ -329,7 +338,13 @@ class TenantController extends Controller
                 ->orWhere('family_name', 'like', "%{$search}%")
                 ->orWhere('display_name_override', 'like', "%{$search}%")
                 ->orWhere('email', 'like', "%{$search}%")
-                ->orWhere('phone', 'like', "%{$search}%")))
+                ->orWhere('phone', 'like', "%{$search}%")
+                ->orWhere(function ($names) use ($search) {
+                    foreach (preg_split('/\s+/', trim($search), -1, PREG_SPLIT_NO_EMPTY) as $word) {
+                        $names->where(fn ($part) => $part->where('first_name', 'like', "%{$word}%")->orWhere('family_name', 'like', "%{$word}%"));
+                    }
+                })
+                ->orWhereIn('id', AccommodationAgreement::select('tenant_id')->where('status', 'signed')->whereNotNull('tenant_id')->where('client_name', 'like', "%{$search}%"))))
             ->when($propertyId, fn ($q) => $q->whereIn('property_id', (array) $propertyId))
             ->when($status, function ($q) use ($status) {
                 if (in_array($status, Tenant::STATUSES, true)) {
