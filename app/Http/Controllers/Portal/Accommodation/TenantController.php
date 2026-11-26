@@ -236,7 +236,7 @@ class TenantController extends Controller
     {
         abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validate([
-            'vacate_date' => 'required|date',
+            'vacate_date' => 'required|date|before_or_equal:'.now('Pacific/Auckland')->toDateString(),
             'reason' => 'nullable|string|max:1000',
         ]);
 

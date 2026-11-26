@@ -304,6 +304,10 @@ class AccommodationRoomInventoryTest extends TestCase
         $this->assertSame(1, RoomInventory::summarize($property)['occupied']);
         $this->postJson('/portal/accommodation/tenants/'.$tenant->id.'/move', $move)->assertUnprocessable();
         $this->assertSame(1, $destination->tenants()->count());
+        $this->postJson('/portal/accommodation/tenants/'.$shared->id.'/vacate', [
+            'vacate_date' => now('Pacific/Auckland')->addDay()->toDateString(),
+        ])->assertUnprocessable()->assertJsonValidationErrors('vacate_date');
+        $this->assertSame(1, RoomInventory::summarize($property)['occupied']);
         $this->post('/portal/accommodation/tenants/'.$shared->id.'/vacate', ['vacate_date' => today()->toDateString()])->assertRedirect();
         $this->assertSame(3, RoomInventory::summarize($property)['vacant']);
 
