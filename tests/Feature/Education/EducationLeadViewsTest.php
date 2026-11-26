@@ -4,6 +4,7 @@ namespace Tests\Feature\Education;
 
 use App\Models\Lead;
 use App\Models\User;
+use App\Models\VisaType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -63,6 +64,36 @@ class EducationLeadViewsTest extends TestCase
         $this->assertSame('New', collect($response->inertiaProps()['students'])->firstWhere('id', $student->id)['status']);
         $this->assertNull($student->fresh()->education_stage);
         $this->assertNull(collect($response->inertiaProps()['students'])->firstWhere('id', $student->id)['education_stage_hint']);
+    }
+
+    public function test_affiliate_detail_displays_saved_department_stages_and_only_shows_both_for_student_visas(): void
+    {
+        $agent = User::factory()->create(['role' => 'agent']);
+        $visa = VisaType::create(['code' => 'AFF-STUDENT', 'name' => 'Student Visa (Fee Paying)', 'category' => 'Student']);
+        $student = Lead::create([
+            'first_name' => 'Student', 'last_name' => 'Referral', 'agent_id' => $agent->id, 'is_student' => true,
+            'status' => 'New', 'inz_visa_type' => $visa->name,
+            'education_stage' => 'School Enrolment', 'immigration_stage' => 'Visa Lodged',
+        ]);
+        $otherVisa = Lead::create([
+            'first_name' => 'Other', 'last_name' => 'Visa', 'agent_id' => $agent->id, 'status' => 'New',
+            'inz_visa_type' => 'Work Visa', 'education_stage' => 'On Hold', 'immigration_stage' => 'Approved Visa',
+        ]);
+        $educationOnly = Lead::create([
+            'first_name' => 'Education', 'last_name' => 'Referral', 'agent_id' => $agent->id, 'education_stage' => 'Pre-Screening Done',
+        ]);
+        $url = '/portal/education/agents/'.$agent->id.'/leads';
+        $rows = collect($this->get($url)->assertOk()->inertiaProps()['leads'])->keyBy('id');
+        $this->assertSame(['Education' => 'School Enrolment', 'Immigration' => 'Visa Lodged'], (array) $rows[$student->id]['department_stages']);
+        $this->assertSame(['Immigration' => 'Approved Visa'], (array) $rows[$otherVisa->id]['department_stages']);
+        $this->assertSame(['Education' => 'Pre-Screening Done'], (array) $rows[$educationOnly->id]['department_stages']);
+        $this->assertSame('New', $student->fresh()->status);
+
+        $student->updateQuietly(['immigration_stage' => 'Approved Visa']);
+        $rows = collect($this->get($url)->assertOk()->inertiaProps()['leads'])->keyBy('id');
+        $this->assertSame(['Education' => 'School Enrolment', 'Immigration' => 'Approved Visa'], (array) $rows[$student->id]['department_stages']);
+        Queue::assertNothingPushed();
+        Mail::assertNothingOutgoing();
     }
 
     public function test_affiliate_detail_supplies_authoritative_staff_updates_and_uses_the_education_profile(): void

@@ -73,6 +73,17 @@ const render = (Page, props) => act(async () => root.render(React.createElement(
     assert.match(updatedCell().textContent, /Stage → Contact Attempted/);
     assert.notEqual(updatedCell().textContent, before, 'New server props replace stale row dates');
     assert.ok(button('Contact Attempted'));
+    const visaReferral = { ...row, department_stages: { Education: 'School Enrolment', Immigration: 'Visa Lodged' } };
+    await render(AgentLeads, { ...props, portalBase: '/portal/education', leads: [visaReferral] });
+    const stageCell = () => document.querySelector('tbody tr').children[headers.indexOf('Stage')];
+    assert.match(stageCell().textContent, /Education: School Enrolment.*Immigration: Visa Lodged/);
+    assert.equal(stageCell().querySelector('button'), null);
+    await render(AgentLeads, { ...props, portalBase: '/portal/education', leads: [{
+        ...visaReferral, department_stages: { ...visaReferral.department_stages, Immigration: 'Approved Visa' },
+    }] });
+    assert.match(stageCell().textContent, /Immigration: Approved Visa/);
+    await render(AgentLeads, { ...props, portalBase: '/portal/sales', leads: [visaReferral] });
+    assert.ok(button('New Leads'));
 
     const Leads = await load('resources/js/pages/portal/education/Leads.jsx');
     const agreementRows = [
