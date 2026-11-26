@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\EditorialArticle;
+use App\Support\EditorialBrief;
 use Illuminate\Console\Command;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -44,14 +45,14 @@ class ImportNewsletterEditorialPlan extends Command
             'topics.*.primary' => 'required|string|max:180',
             'topics.*.metaTitle' => 'required|string|max:100',
             'topics.*.metaDescription' => 'required|string|max:220',
-            'topics.*.prompt' => 'required|string|max:16000',
+            'topics.*.prompt' => 'required|'.EditorialBrief::FIELDS['prompt'],
             'topics.*.leadSubject' => 'sometimes|string|max:250',
             'topics.*.clientSubject' => 'sometimes|string|max:250',
-            'topics.*.social' => 'sometimes|string|max:8000',
+            'topics.*.social' => 'sometimes|'.EditorialBrief::FIELDS['social'],
             'topics.*.feature' => 'sometimes|string|max:800',
             'topics.*.assetId' => 'sometimes|string|max:32',
-            'topics.*.author' => 'sometimes|string|max:120',
-            'topics.*.support' => 'sometimes|array|max:20',
+            'topics.*.author' => 'sometimes|'.EditorialBrief::FIELDS['author'],
+            'topics.*.support' => 'sometimes|'.EditorialBrief::FIELDS['support'],
             'topics.*.support.*' => 'string|max:180',
         ]);
         if ($validated->fails()) {
@@ -72,9 +73,7 @@ class ImportNewsletterEditorialPlan extends Command
                         'primary_keyword' => $topic['primary'],
                         'meta_title' => $topic['metaTitle'],
                         'meta_description' => $topic['metaDescription'],
-                        'brief' => array_intersect_key($topic, array_flip([
-                            'prompt', 'leadSubject', 'clientSubject', 'social', 'feature', 'assetId', 'author', 'support',
-                        ])),
+                        'brief' => array_intersect_key($topic, EditorialBrief::FIELDS),
                     ]);
                     $count += (int) $article->wasRecentlyCreated;
                 }
