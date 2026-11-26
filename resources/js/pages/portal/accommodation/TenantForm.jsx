@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Head, Link, useForm } from "@inertiajs/react";
 import { ArrowLeft, ChevronDown, Lock, AlertTriangle } from "lucide-react";
+import TenancyRooms from "@/components/accommodation/TenancyRooms";
 
 const dateValue = (v) => (v ? String(v).slice(0, 10) : "");
 const FIELD_CLS = "w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
@@ -49,6 +50,8 @@ export default function TenantForm({ tenant = null, property_id = null, properti
     const { data, setData, post, transform, processing, errors } = useForm({
         property_id: tenant?.property_id ?? property_id ?? "",
         unit: tenant?.unit ?? "",
+        assigned_room_ids: tenant?.assigned_room_ids ?? [],
+        room_assignment_version: tenant?.move_in_version ?? null,
         first_name: tenant?.first_name ?? "",
         family_name: tenant?.family_name ?? "",
         display_name_override: tenant?.display_name_override ?? "",
@@ -112,7 +115,7 @@ export default function TenantForm({ tenant = null, property_id = null, properti
                     <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                         <div>
                             <label className={LABEL_CLS}>Property</label>
-                            <select className={FIELD_CLS} value={data.property_id} onChange={(e) => setData("property_id", e.target.value)}>
+                            <select className={FIELD_CLS} value={data.property_id} onChange={(e) => setData(previous => ({ ...previous, property_id: e.target.value, assigned_room_ids: [] }))}>
                                 <option value="">Select a property</option>
                                 {properties.map((p) => (
                                     <option key={p.id} value={p.id}>{p.code ? `#${p.code} · ` : ""}{p.address}</option>
@@ -121,6 +124,10 @@ export default function TenantForm({ tenant = null, property_id = null, properti
                             {errors.property_id && <p className="mt-1 text-xs text-rose-600">{errors.property_id}</p>}
                         </div>
                         {f("unit", "Unit (optional)", { placeholder: "e.g. 29A" })}
+                        <div className="md:col-span-2">
+                            <TenancyRooms rooms={properties.find(p => String(p.id) === String(data.property_id))?.rooms}
+                                selected={data.assigned_room_ids} errors={errors} onChange={ids => setData("assigned_room_ids", ids)} />
+                        </div>
                     </div>
                 </Section>
 

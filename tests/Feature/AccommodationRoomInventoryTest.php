@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccommodationAgreement;
 use App\Models\ActivityLog;
 use App\Models\Property;
 use App\Models\PropertyRoomVerification;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AccommodationRoomInventoryTest extends TestCase
@@ -226,5 +228,131 @@ class AccommodationRoomInventoryTest extends TestCase
         } finally {
             (require database_path('migrations/2026_11_24_030000_create_property_room_verifications.php'))->up();
         }
+    }
+
+    public function test_room_register_totals_and_linked_signed_agreement_totals_are_independent(): void
+    {
+        $capacities = [5, 6, 4, 4, 4, 4, 4, 3, 1, 5, 3];
+        $households = [5, 4, 3, 2, 1, 3, 4, 1, 1, 7, 4];
+        $agreementCount = 0;
+        foreach ($capacities as $index => $capacity) {
+            $property = $this->property($capacity);
+            $rooms = $this->rooms($property);
+            $occupied = array_slice($rooms, 0, $capacity - ([1 => 1, 3 => 2][$index] ?? 0));
+            for ($i = 0; $i < $households[$index]; $i++) {
+                $ids = [];
+                for ($offset = $i; $offset < count($occupied); $offset += $households[$index]) {
+                    $ids[] = $occupied[$offset]['id'];
+                }
+                $tenant = $this->tenant($property, ['assigned_room_ids' => $ids ?: [$occupied[0]['id']]]);
+                $this->agreement($tenant, 'signed');
+                $agreementCount++;
+                if ($index < 3 || ($index === 3 && $i === 0)) {
+                    $this->agreement($tenant, 'signed');
+                    $agreementCount++;
+                }
+            }
+        }
+
+        $this->agreement($tenant, 'draft');
+        $this->agreement($tenant, 'signed', ['property_id' => Property::first()->id]);
+        $this->agreement($tenant, 'signed', ['tenant_id' => null]);
+        $this->agreement($tenant, 'signed', ['data' => ['tenancy' => ['commence_date' => now('Pacific/Auckland')->addDay()->toDateString()]]]);
+        $this->agreement($tenant, 'signed', ['data' => ['tenancy' => ['end_date' => now('Pacific/Auckland')->subDay()->toDateString()]]]);
+        $future = $this->tenant($property, ['contract_start' => now('Pacific/Auckland')->addDay()->toDateString()]);
+        $this->agreement($future, 'signed');
+        $past = $this->tenant($property, ['current_status' => 'vacated']);
+        $this->agreement($past, 'signed');
+
+        $stats = $this->get('/portal/accommodation/dashboard')->assertOk()->inertiaProps()['inventoryStats'];
+        $this->assertSame(48, $agreementCount);
+        foreach (['properties' => 11, 'rooms' => 43, 'occupied' => 40, 'vacant' => 3, 'available_to_let' => 3,
+            'households' => 35, 'active_agreements' => 48, 'unverified_properties' => 0] as $metric => $count) {
+            $this->assertSame($count, $stats[$metric], $metric);
+        }
+    }
+
+    public function test_move_reassignment_and_vacating_update_distinct_room_counts(): void
+    {
+        $property = $this->property(3);
+        $destination = $this->property(2);
+        [$first, $second, $third] = array_column($this->rooms($property), 'id');
+        [$destinationRoom] = array_column($this->rooms($destination), 'id');
+        $shared = $this->tenant($property, ['assigned_room_ids' => [$first]]);
+        $payload = ['property_id' => $property->id, 'first_name' => 'Room', 'family_name' => 'Tester',
+            'contract_type' => 'periodic', 'assigned_room_ids' => [$first, $second]];
+
+        $this->post('/portal/accommodation/tenants', $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $tenant = Tenant::where('first_name', 'Room')->sole();
+        $this->assertSame(2, RoomInventory::summarize($property)['occupied']);
+        $this->putJson('/portal/accommodation/tenants/'.$tenant->id, array_replace($payload, [
+            'assigned_room_ids' => [$destinationRoom], 'room_assignment_version' => $tenant->move_in_version,
+        ]))->assertUnprocessable()->assertJsonValidationErrors('assigned_room_ids');
+
+        $reassigned = array_replace($payload, ['assigned_room_ids' => [$third], 'room_assignment_version' => $tenant->move_in_version]);
+        $this->put('/portal/accommodation/tenants/'.$tenant->id, $reassigned)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame([$third], $tenant->fresh()->assigned_room_ids);
+        $this->assertSame('Room 2', RoomInventory::summarize($property)['vacancy_notes']);
+        $this->putJson('/portal/accommodation/tenants/'.$tenant->id, $payload + ['room_assignment_version' => $tenant->move_in_version])
+            ->assertUnprocessable()->assertJsonValidationErrors('assigned_room_ids');
+
+        $move = ['new_property_id' => $destination->id, 'move_date' => today()->toDateString(), 'assigned_room_ids' => [$destinationRoom]];
+        $this->post('/portal/accommodation/tenants/'.$tenant->id.'/move', $move)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('vacated', $tenant->fresh()->current_status);
+        $this->assertSame([$third], $tenant->fresh()->assigned_room_ids);
+        $this->assertSame(1, RoomInventory::summarize($destination)['occupied']);
+        $this->assertSame(1, RoomInventory::summarize($property)['occupied']);
+        $this->postJson('/portal/accommodation/tenants/'.$tenant->id.'/move', $move)->assertUnprocessable();
+        $this->assertSame(1, $destination->tenants()->count());
+        $this->post('/portal/accommodation/tenants/'.$shared->id.'/vacate', ['vacate_date' => today()->toDateString()])->assertRedirect();
+        $this->assertSame(3, RoomInventory::summarize($property)['vacant']);
+
+        $this->tenant($property);
+        $this->assertNull(RoomInventory::summarize($property)['vacant']);
+    }
+
+    public function test_register_setup_preserves_room_ids_and_rejects_destructive_or_stale_edits(): void
+    {
+        $property = $this->property(2);
+        $url = '/portal/accommodation/properties/'.$property->id;
+        $version = $this->get($url.'/edit')->assertOk()->inertiaProps()['room_register_version'];
+        $payload = $property->only(['name', 'total_rooms', 'rental_mode', 'room_type', 'bed_type', 'bathroom_type', 'rent_single', 'status']);
+        $payload['room_register_version'] = $version;
+        $payload['room_register'] = [['name' => 'Single, shared bathroom', 'hold' => false], ['name' => 'Ensuite', 'hold' => true]];
+        $this->put($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $property->refresh();
+        $this->assertSame(1, RoomInventory::summarize($property)['vacant']);
+        $this->assertSame(1, RoomInventory::summarize($property)['unavailable']);
+        $this->assertArrayNotHasKey('room_register', $property->toArray());
+        $this->putJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('room_register');
+
+        [$single, $ensuite] = $property->room_register;
+        $this->tenant($property, ['assigned_room_ids' => [$single['id']]]);
+        $payload['room_register_version'] = $this->get($url.'/edit')->inertiaProps()['room_register_version'];
+        $this->putJson($url, array_replace($payload, ['room_register' => [$ensuite]]))->assertUnprocessable()->assertJsonValidationErrors('room_register');
+        $payload['room_register'] = [array_replace($single, ['name' => 'Room A']), $ensuite];
+        $this->put($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($single['id'], $property->fresh()->room_register[0]['id']);
+        $this->assertSame(1, RoomInventory::summarize($property->fresh())['occupied']);
+    }
+
+    private function rooms(Property $property): array
+    {
+        $rooms = [];
+        for ($number = 1; $number <= $property->total_rooms; $number++) {
+            $rooms[] = ['id' => (string) Str::uuid(), 'name' => 'Room '.$number, 'hold' => false];
+        }
+        $property->forceFill(['room_register' => $rooms])->save();
+
+        return $rooms;
+    }
+
+    private function agreement(Tenant $tenant, string $status, array $extra = []): void
+    {
+        AccommodationAgreement::create(array_replace([
+            'tenant_id' => $tenant->id, 'property_id' => $tenant->property_id,
+            'client_name' => 'Synthetic agreement', 'property_address' => 'Synthetic address',
+            'agreement_type' => 'standard_flatmate', 'data' => [], 'status' => $status,
+        ], $extra));
     }
 }

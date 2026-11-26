@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import TenancyRooms from '../../../components/accommodation/TenancyRooms';
 import { useEffect, useRef, useState } from "react";
 import { Head, Link, useForm, router } from "@inertiajs/react";
 import {
@@ -320,14 +321,14 @@ function RenewModal({ tenant, onClose }) {
 }
 
 function MoveModal({ tenant, properties, onClose }) {
-    const { data, setData, post, processing, errors } = useForm({ new_property_id: "", move_date: "" });
+    const { data, setData, post, processing, errors } = useForm({ new_property_id: "", move_date: "", assigned_room_ids: [] });
     const submit = (e) => { e.preventDefault(); post(`/portal/accommodation/tenants/${tenant.id}/move`, { preserveScroll: true, onSuccess: onClose }); };
     return (
         <Modal title="Move to another property" onClose={onClose}>
             <form onSubmit={submit} className="space-y-4">
                 <div>
                     <label className={LABEL}>Destination property</label>
-                    <select className={FIELD} value={data.new_property_id} onChange={(e) => setData("new_property_id", e.target.value)}>
+                    <select className={FIELD} value={data.new_property_id} onChange={(e) => setData(previous => ({ ...previous, new_property_id: e.target.value, assigned_room_ids: [] }))}>
                         <option value="">Select a property</option>
                         {properties.filter((p) => p.id !== tenant.property_id).map((p) => (
                             <option key={p.id} value={p.id}>{p.code ? `#${p.code} · ` : ""}{p.address}</option>
@@ -335,6 +336,8 @@ function MoveModal({ tenant, properties, onClose }) {
                     </select>
                     {errors.new_property_id && <p className="mt-1 text-xs text-rose-600">{errors.new_property_id}</p>}
                 </div>
+                <TenancyRooms rooms={properties.find(p => String(p.id) === String(data.new_property_id))?.rooms}
+                    selected={data.assigned_room_ids} errors={errors} onChange={ids => setData("assigned_room_ids", ids)} />
                 <div>
                     <label className={LABEL}>Move date</label>
                     <input type="date" className={FIELD} value={data.move_date} onChange={(e) => setData("move_date", e.target.value)} />

@@ -9,7 +9,6 @@ const ACCOMMODATION_NAV = [
     { name: "Dashboard", href: "/portal/accommodation/dashboard", icon: <LayoutDashboard size={20} /> },
 
     { name: "Work", section: true },
-    { name: "Tenants", href: "/portal/accommodation/tenants", icon: <Users size={20} /> },
     { name: "Onboarding", href: "/portal/accommodation/onboarding", icon: <Workflow size={20} /> },
     { name: "Viewings", href: "/portal/accommodation/viewings", icon: <CalendarCheck size={20} /> },
     { name: "Calendar", href: "/portal/accommodation/calendar", icon: <CalendarDays size={20} /> },
@@ -23,10 +22,11 @@ const ACCOMMODATION_NAV = [
 
     { name: "Forms", section: true },
     { name: "Pre-Tenancy Form", href: "/portal/accommodation/forms/pre-tenancy", icon: <FileText size={20} /> },
-    { name: "Agreements", href: "/portal/accommodation/forms/agreements", icon: <FileSignature size={20} /> },
 
     { name: "Setup", section: true },
     { name: "Properties", href: "/portal/accommodation/properties", icon: <Home size={20} /> },
+    { name: "Tenants", href: "/portal/accommodation/tenants", icon: <Users size={20} /> },
+    { name: "Tenant agreements", href: "/portal/accommodation/forms/agreements", icon: <FileSignature size={20} /> },
 
     { name: "Reports", section: true },
     { name: "Reports", href: "/portal/accommodation/reports", icon: <BarChart3 size={20} /> },

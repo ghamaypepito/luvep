@@ -101,7 +101,13 @@ export default function PropertyDetail({ property, tenants = [], historicalTenan
             </div>
 
             {/* Tabs */}
-            <RoomVerification key={roomSummary?.version} propertyId={property.id} summary={roomSummary} canVerify={canVerifyRooms} />
+            {roomSummary?.tracked ? <Card title="Room register" icon={<Home size={18} />} internal>
+                <p className="text-sm text-gray-700">{roomSummary.state === 'verified'
+                    ? `${roomSummary.occupied} occupied · ${roomSummary.vacant} vacant · ${roomSummary.unavailable} on hold`
+                    : 'Finish the room register and assign rooms to current tenancies to see occupancy.'}</p>
+                {roomSummary.vacancy_notes && <p className="mt-2 text-sm text-gray-700">Vacant rooms: {roomSummary.vacancy_notes}</p>}
+                <Link href={`/portal/accommodation/properties/${property.id}/edit`} className="mt-3 inline-block text-sm font-semibold text-blue-700 underline">Edit the room register</Link>
+            </Card> : <RoomVerification key={roomSummary?.version} propertyId={property.id} summary={roomSummary} canVerify={canVerifyRooms} />}
             <div className="flex gap-1 border-b border-gray-100">
                 {tabs.map((t) => (
                     <button

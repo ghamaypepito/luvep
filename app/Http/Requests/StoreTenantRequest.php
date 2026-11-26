@@ -23,6 +23,9 @@ class StoreTenantRequest extends FormRequest
             // Assignment — property must exist and still be in the portfolio.
             'property_id' => ['required', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
             'unit' => 'nullable|string|max:50',
+            'assigned_room_ids' => 'sometimes|array|list|max:50',
+            'assigned_room_ids.*' => 'required|uuid|distinct',
+            'room_assignment_version' => 'sometimes|nullable|string|size:64',
 
             // Identity
             'first_name' => 'required|string|max:100',

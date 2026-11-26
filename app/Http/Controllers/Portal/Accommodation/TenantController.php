@@ -12,6 +12,7 @@ use App\Models\EoiSubmission;
 use App\Models\PreTenancyForm;
 use App\Models\Property;
 use App\Models\Tenant;
+use App\Services\Accommodation\RoomInventory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -71,7 +72,7 @@ class TenantController extends Controller
             'signedAgreements' => \App\Models\AccommodationAgreement::where('tenant_id', $tenant->id)
                 ->where('status', 'signed')->latest('signed_at')->get(['id', 'agreement_type', 'signed_at']),
             'historical' => $historical,
-            'properties' => $this->propertyOptions(), // for the "move" modal
+            'properties' => $this->propertyOptions(withRooms: true), // for the "move" modal
         ]);
     }
 
@@ -80,14 +81,24 @@ class TenantController extends Controller
         return inertia('portal/accommodation/TenantForm', [
             'tenant' => null,
             'property_id' => $request->query('property_id'),
-            'properties' => $this->propertyOptions(),
+            'properties' => $this->propertyOptions(withRooms: true),
             'options' => $this->formOptions(),
         ]);
     }
 
     public function store(StoreTenantRequest $request)
     {
-        $tenant = Tenant::create($this->cleanData($request, true));
+        $data = $this->cleanData($request, true);
+        unset($data['room_assignment_version']);
+        $tenant = DB::transaction(function () use ($request, $data) {
+            $property = Property::where('is_active', true)->lockForUpdate()->findOrFail($data['property_id']);
+            if (! empty($data['assigned_room_ids'])) {
+                RoomInventory::authorizeStaff($request);
+                RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+            }
+
+            return Tenant::create($data);
+        });
 
         return redirect()->route('portal.accommodation.tenants.show', $tenant)
             ->with('success', 'Tenant created successfully.');
@@ -98,7 +109,7 @@ class TenantController extends Controller
         return inertia('portal/accommodation/TenantForm', [
             'tenant' => $tenant,
             'property_id' => null,
-            'properties' => $this->propertyOptions(),
+            'properties' => $this->propertyOptions(withRooms: true),
             'options' => $this->formOptions(),
         ]);
     }
@@ -106,7 +117,8 @@ class TenantController extends Controller
     public function update(UpdateTenantRequest $request, Tenant $tenant)
     {
         $data = $this->cleanData($request, false);
-        DB::transaction(function () use ($tenant, $data) {
+        DB::transaction(function () use ($request, $tenant, $data) {
+            $property = Property::where('is_active', true)->lockForUpdate()->findOrFail($data['property_id']);
             $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
             if (($current->current_status === 'pending_payment' || ($data['current_status'] ?? null) === 'pending_payment')
                 && array_key_exists('current_status', $data) && $data['current_status'] !== $current->current_status) {
@@ -115,6 +127,19 @@ class TenantController extends Controller
             if ($current->current_status === 'pending_payment' && (int) $data['property_id'] !== $current->property_id) {
                 throw ValidationException::withMessages(['property_id' => 'Keep the property on the signed agreement until payment and move-in are reviewed.']);
             }
+            $previousRooms = $current->assigned_room_ids ?? [];
+            $rooms = $data['assigned_room_ids'] ?? ($property->id === $current->property_id ? $previousRooms : []);
+            if ($rooms !== $previousRooms || ($rooms && $property->id !== $current->property_id)) {
+                RoomInventory::authorizeStaff($request);
+                if (! hash_equals($current->move_in_version, $data['room_assignment_version'] ?? '')) {
+                    throw ValidationException::withMessages(['assigned_room_ids' => 'The tenancy changed. Reload before updating its rooms.']);
+                }
+                RoomInventory::validateAssignment($property, $rooms);
+                $data['assigned_room_ids'] = $rooms;
+            } else {
+                unset($data['assigned_room_ids']);
+            }
+            unset($data['room_assignment_version']);
             $current->update($data);
         });
 
@@ -249,33 +274,31 @@ class TenantController extends Controller
 
     public function moveToProperty(Tenant $tenant, MoveTenantRequest $request)
     {
-        abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validated();
+        $newTenant = DB::transaction(function () use ($tenant, $data, $request) {
+            $property = Property::where('is_active', true)->lockForUpdate()->findOrFail($data['new_property_id']);
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            abort_unless(in_array($current->current_status, Tenant::ACTIVE_STATUSES, true) && $property->id !== $current->property_id, 422, 'Only a current resident can move to a different property.');
+            if (! empty($data['assigned_room_ids'])) {
+                RoomInventory::authorizeStaff($request);
+                RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+            }
 
-        // Close out the current tenancy. ended_at is non-fillable — set directly.
-        $tenant->moved_to_property_id = $data['new_property_id'];
-        $tenant->current_status = 'vacated';
-        $tenant->ended_at = Carbon::parse($data['move_date']);
-        $tenant->notes = $this->appendNote($tenant->notes, 'Moved to property #'.$data['new_property_id'].' on '.$data['move_date']);
-        $tenant->save();
+            $current->moved_to_property_id = $property->id;
+            $current->current_status = 'vacated';
+            $current->ended_at = Carbon::parse($data['move_date']);
+            $current->notes = $this->appendNote($current->notes, 'Moved to property #'.$property->id.' on '.$data['move_date']);
+            $current->save();
 
-        // Open a fresh tenancy at the new property, carrying personal details
-        // but starting with blank contract dates/financials.
-        $newTenant = Tenant::create([
-            'property_id' => $data['new_property_id'],
-            'first_name' => $tenant->first_name,
-            'family_name' => $tenant->family_name,
-            'display_name_override' => $tenant->display_name_override,
-            'email' => $tenant->email,
-            'phone' => $tenant->phone,
-            'whatsapp' => $tenant->whatsapp,
-            'nationality' => $tenant->nationality,
-            'date_of_birth' => $tenant->date_of_birth,
-            'passport_number' => $tenant->passport_number,
-            'contract_type' => 'not_yet_defined',
-            'current_status' => 'active',
-            'notes' => $this->appendNote(null, 'Moved from property #'.$tenant->property_id.' on '.$data['move_date']),
-        ]);
+            return Tenant::create([
+                ...$current->only(['first_name', 'family_name', 'display_name_override', 'email', 'phone', 'whatsapp', 'nationality', 'date_of_birth', 'passport_number']),
+                'property_id' => $property->id,
+                'assigned_room_ids' => $data['assigned_room_ids'] ?? null,
+                'contract_type' => 'not_yet_defined',
+                'current_status' => 'active',
+                'notes' => $this->appendNote(null, 'Moved from property #'.$current->property_id.' on '.$data['move_date']),
+            ]);
+        });
 
         return redirect()->route('portal.accommodation.tenants.show', $newTenant)
             ->with('success', 'Tenant moved — a new tenancy was created at the destination property.');
@@ -393,7 +416,7 @@ class TenantController extends Controller
     }
 
     /** Active properties for filter + assignment dropdowns (bypasses $hidden). */
-    private function propertyOptions(): array
+    private function propertyOptions(bool $withRooms = false): array
     {
         return Property::where('is_active', true)
             ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED)')
@@ -402,7 +425,7 @@ class TenantController extends Controller
                 'id' => $p->id,
                 'code' => $p->code,
                 'address' => $p->address ?: $p->name,
-            ])
+            ] + ($withRooms ? ['rooms' => $p->room_register ?? []] : []))
             ->all();
     }
 

@@ -15,8 +15,7 @@ class RoomInventoryController extends Controller
 {
     public function store(Request $request, Property $property)
     {
-        $user = $request->user();
-        abort_unless($user?->is_active && ($user->isAdmin() || $user->role === 'accommodation') && ! $request->attributes->has('user_view_actor'), 403);
+        RoomInventory::authorizeStaff($request);
         abort_unless(PropertyRoomVerification::available(), 503, 'Room verification is being installed. Please retry shortly.');
         $data = $request->validate([
             'occupied' => 'required|integer|min:0|max:50', 'vacant' => 'required|integer|min:0|max:50',
@@ -29,6 +28,9 @@ class RoomInventoryController extends Controller
             $property = Property::whereKey($property->id)->lockForUpdate()->firstOrFail();
             if (! $property->is_active) {
                 throw ValidationException::withMessages(['version' => 'Reactivate this property before confirming current occupancy.']);
+            }
+            if ($property->room_register !== null) {
+                throw ValidationException::withMessages(['version' => 'This property uses room assignments. Update them in Setup to change occupancy.']);
             }
             $residents = RoomInventory::residents($property);
             $summary = RoomInventory::summarize($property, $residents);

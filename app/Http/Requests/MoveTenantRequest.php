@@ -23,6 +23,8 @@ class MoveTenantRequest extends FormRequest
                 Rule::notIn([$currentPropertyId]),
             ],
             'move_date' => 'required|date|before_or_equal:today',
+            'assigned_room_ids' => 'sometimes|array|list|max:50',
+            'assigned_room_ids.*' => 'required|uuid|distinct',
         ];
     }
 

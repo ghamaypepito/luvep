@@ -23,7 +23,7 @@ const capacities = [5,6,4,4,4,4,4,3,1,5,3], households = [5,4,3,2,1,3,4,1,1,7,4]
 const rows = capacities.map((total, index) => ({ id:index+1, name:`Synthetic Property ${index+1}`, total, households:households[index],
     occupied:total-(index===1?1:index===3?2:0), vacant:index===1?1:index===3?2:0, available_to_let:index===1?1:index===3?2:0,
     unavailable:0, state:'verified', observed_on:'2026-11-24', unlabelled_households:households[index], rental_mode:'per_room' }));
-const stats = { properties:11, rooms:43, households:35, occupied:40, vacant:3, available_to_let:3, unavailable:0,
+const stats = { properties:11, rooms:43, households:35, active_agreements:48, occupied:40, vacant:3, available_to_let:3, unavailable:0,
     unverified_properties:0, unverified_rooms:0, missing_capacity:0, rows };
 const immutable = JSON.stringify(stats);
 const root = createRoot(document.getElementById('root'));
@@ -37,7 +37,7 @@ const change = (label, value) => act(async () => {
 });
 (async () => {
     await render(Dashboard,{inventoryStats:stats, propertyStats:{available:9,unavailable:3}});
-    for(const [label,expected] of [['Active properties','11'],['Total rooms','43'],['Current household tenancies','35'],['Occupied rooms','40'],['Vacant rooms','3']]) assert.equal(value(label),expected);
+    for(const [label,expected] of [['Active properties','11'],['Total rooms','43'],['Current household tenancies','35'],['Active tenant agreements','48'],['Occupied rooms','40'],['Vacant rooms','3']]) assert.equal(value(label),expected);
     await act(async()=>card('Available rooms to let').click());
     assert.equal(document.querySelectorAll('#room-inventory tbody tr').length,2);
     assert.ok(document.querySelector('#room-inventory a[href="/portal/accommodation/properties/4"]'));

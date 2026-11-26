@@ -33,7 +33,8 @@ export default function AccommodationDashboard({
     const inventoryCards = [
         ['Active properties', inventoryStats?.properties, 'Active managed property records', '/portal/accommodation/properties'],
         ['Total rooms', inventoryStats && !inventoryStats.missing_capacity ? inventoryStats.rooms : null, 'Recorded physical room capacity', '#room-inventory'],
-        ['Current household tenancies', inventoryStats?.households, 'Couples/families count once; not individual people', '/portal/accommodation/tenants'],
+        ['Current household tenancies', inventoryStats?.households, 'One count per current tenancy record', '/portal/accommodation/tenants'],
+        ['Active tenant agreements', inventoryStats?.active_agreements, 'Signed agreements linked to current tenancies', '/portal/accommodation/forms/agreements'],
         ['Occupied rooms', complete ? inventoryStats.occupied : null, `${inventoryStats?.occupied ?? 0} verified occupied; household totals are separate`, '#room-inventory'],
         ['Vacant rooms', complete ? inventoryStats.vacant : null, `${inventoryStats?.vacant ?? 0} verified vacant; click to view properties`, '#room-inventory', 'vacant'],
         ['Available rooms to let', complete ? inventoryStats.available_to_let : null, 'Excludes bedrooms offered only as a whole-property let', '#room-inventory', 'available'],
@@ -87,10 +88,10 @@ export default function AccommodationDashboard({
                     <td className="p-2"><Link className="font-semibold text-blue-700 underline" href={`/portal/accommodation/properties/${row.id}`}>{row.code ? `#${row.code} · ` : ''}{row.name}</Link>{row.vacancy_notes && <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">{row.vacancy_notes}</p>}</td>
                     <td className="p-2">{row.total ?? 'Not set'}</td><td className="p-2">{row.households}</td>
                     <td className="p-2">{row.occupied ?? '—'}</td><td className="p-2">{row.vacant ?? '—'}</td><td className="p-2">{row.unavailable ?? '—'}</td>
-                    <td className="p-2">{row.state === 'verified' ? `Checked ${row.observed_on}` : 'Needs review'}{row.unlabelled_households > 0 && <p className="text-xs text-amber-700">{row.unlabelled_households} households need room labels</p>}</td>
+                    <td className="p-2">{row.state === 'verified' ? (row.tracked ? 'Room assignments' : `Checked ${row.observed_on}`) : 'Needs review'}{row.unlabelled_households > 0 && <p className="text-xs text-amber-700">{row.unlabelled_households} households need {row.tracked ? 'room assignments' : 'room labels'}</p>}</td>
                 </tr>)}</tbody></table></div>
                 {!inventoryRows.length && <p className="py-4 text-sm text-gray-500">No matching verified records. This does not establish that unverified properties have no vacancies.</p>}
-                <p className="mt-3 text-xs text-gray-500">Room checks become stale when recorded tenancy membership, unit labels or capacity changes. Staff can assign room labels through each tenant record; verified totals do not invent those assignments.</p>
+                <p className="mt-3 text-xs text-gray-500">Room totals update from current tenant assignments once the property register is complete. Properties awaiting setup use their latest valid room check.</p>
             </section>
             <p className="text-xs text-gray-500">Public listing availability: {propertyStats.available ?? '—'} available / {propertyStats.unavailable ?? '—'} hidden. Listing publication is separate from room vacancy.</p>
 

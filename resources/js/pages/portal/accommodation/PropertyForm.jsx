@@ -53,7 +53,7 @@ function Section({ title, hint, internal = false, defaultOpen = false, children 
     );
 }
 
-export default function PropertyForm({ property = null, options = {}, next_code = null }) {
+export default function PropertyForm({ property = null, options = {}, next_code = null, room_register = [], room_register_version = null }) {
     const isEdit = Boolean(property);
     const propertyTypes = options.property_types ?? [];
     const paymentSchedules = options.payment_schedules ?? [];
@@ -66,6 +66,8 @@ export default function PropertyForm({ property = null, options = {}, next_code 
         region: property?.region ?? "",
         property_type: property?.property_type ?? "",
         total_rooms: property?.total_rooms ?? "",
+        room_register,
+        room_register_version,
         is_active: property?.is_active ?? true,
         // Public listing
         name: property?.name ?? "",
@@ -121,9 +123,11 @@ export default function PropertyForm({ property = null, options = {}, next_code 
             : "/portal/accommodation/properties";
 
         // forceFormData is required for file uploads; _method spoofs PUT on edit.
-        if (isEdit) {
-            transform((d) => ({ ...d, _method: "put" }));
-        }
+        transform(({ room_register_version: version, room_register: rooms, ...values }) => ({
+            ...values,
+            ...(rooms.length || room_register.length ? { room_register: rooms, room_register_version: version } : {}),
+            ...(isEdit ? { _method: "put" } : {}),
+        }));
         post(url, { forceFormData: true });
     };
 
@@ -221,6 +225,31 @@ export default function PropertyForm({ property = null, options = {}, next_code 
                         </div>
                     </div>
                 </div>
+
+                <Section title="Room register" internal defaultOpen={room_register.length > 0}>
+                    <div className="space-y-3">
+                        <p className="text-sm text-gray-600">Enter each physical room once. Include the room type or bathroom details in the name so vacancies are easy to identify.</p>
+                        {data.room_register.map((room, index) => {
+                            const updateRoom = values => setData("room_register", data.room_register.map((entry, i) => i === index ? { ...entry, ...values } : entry));
+                            return <div key={room.id || `new-${index}`} className="grid gap-3 rounded-xl border border-gray-200 p-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                                <label className="text-sm font-medium text-gray-700">
+                                    Room {index + 1}
+                                    <input required maxLength={100} className={`${field} mt-1`} value={room.name} onChange={event => updateRoom({ name: event.target.value })} placeholder="e.g. Room 2 · Single, shared bathroom" />
+                                    {err(`room_register.${index}.name`)}
+                                </label>
+                                <label className="flex items-center gap-2 py-2 text-sm text-gray-700">
+                                    <input type="checkbox" checked={room.hold} onChange={event => updateRoom({ hold: event.target.checked })} />
+                                    Hold when empty
+                                </label>
+                                <button type="button" className="rounded-lg px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50" onClick={() => setData("room_register", data.room_register.filter((_, i) => i !== index))}>
+                                    Remove<span className="sr-only"> room {index + 1}</span>
+                                </button>
+                            </div>;
+                        })}
+                        {err("room_register")}
+                        <button type="button" disabled={data.room_register.length >= 50} className="rounded-lg border px-3 py-2 text-sm font-semibold text-[#1F5A8B] disabled:opacity-50" onClick={() => setData("room_register", [...data.room_register, { name: "", hold: false }])}>Add room</button>
+                    </div>
+                </Section>
 
                 {/* Public listing (existing marketing fields) */}
                 <Section title="Public listing" hint="Shown on the public accommodation page" defaultOpen={!isEdit}>

@@ -1,32 +1,25 @@
-# TKT-E2DQHZ — Accommodation property, room and household totals
+# TKT-E2DQHZ — Accommodation totals and room assignments
 
-## Findings
+The old dashboard counted listing rows and their publication status. It had no record of which physical rooms a household actually occupied. The ticket specifies 11 properties, 43 rooms, 40 occupied rooms, and three vacancies. The revised register lists 35 current households after the confirmed departure. The requester confirmed that agreements should have a separate total, with a reference count of 48.
 
-Reviewed current main and the revised register/SOP on 24 November 2026. The dashboard counts all Property rows and public-listing availability, not active physical capacity and vacancy. The existing private Property occupancy accessor counts active Tenant records, so one household is incorrectly treated as one room. Public listing status is also a different concept from a vacant room.
+## How the dashboard calculates the totals
 
-The latest source controls are 11 properties, 43 rooms, 40 occupied and 3 vacant. The workbook still has 36 household rows; the requester confirms one November 20 departure, giving 35 current household entries. All 43 room labels are blank. The Properties sheet's Roster entries column repeats room capacity and must not be used as a household total. Household labels are not a verified count of individual people.
+- Active managed properties contribute their recorded capacity. The new private room register in **Setup → Properties** gives each physical room a stable ID, a label and an optional hold when empty. Public listing details stay separate.
+- Staff select rooms in a tenancy record, at onboarding move-in or when moving a tenant to another property. An active tenancy can occupy multiple rooms. The dashboard counts the distinct assigned rooms across all current tenancies. Vacating the last household that uses a room releases it. For whole-property rentals, empty rooms are not offered individually.
+- A property needs one record per room and assignments for every current household to calculate vacancies. Once room tracking has started, incomplete assignments display as needing review. A property with no room register can use a valid dated property-level room check. Relevant changes invalidate the check.
+- Household totals use current tenancies at active properties, including notice and vacating statuses. Future starts, pending payment, archived records and departed residents are excluded. The contract end date alone does not prove departure.
+- The separate agreements total counts each signed Luvep agreement linked to an in-residence tenancy at the same active property. Recorded agreement start and end dates are evaluated using the New Zealand date. Unlinked legacy agreements are excluded until their records are reviewed and linked. Signing parties do not affect the count.
 
-## Scoped change
+## Verification and rollout
 
-- Count active managed Property records, recorded physical capacity and current household tenancies separately. Current uses existing active/notice_given/vacating statuses, excludes archived properties/soft-deleted tenants, and excludes future contract starts. An elapsed fixed-term end date does not automatically prove departure.
-- Do not infer physical occupancy from household count, free-text units, blank labels, public listing status or a guessed whole-property allocation. A dated, staff-confirmed per-property check records occupied/vacant/unavailable rooms and its source. Counts must reconcile to the property's capacity.
-- Record a hash of relevant tenancy membership/status/unit/start, capacity, active state and rental mode. Relevant changes invalidate the previous check; unknowns are visible and are not silently counted as vacant or zero. Complete portfolio occupancy figures appear only when coverage is complete. Current verified subtotals remain explained separately.
-- Available-to-let rooms exclude bedrooms in whole-property lets. The vacancy/availability cards open a filtered property breakdown with links to existing property/tenant management. Physical room labels and individual allocation remain pending data; this is not a new room-level allocation engine.
-- Property index/detail use the same new summary; the old Property accessor and public serialization are unchanged for other consumers. Public listing/EOI workflows remain separate.
-- Active ordinary Accommodation/Admin sessions may confirm counts; View-as and unrelated roles cannot. Stale forms and inconsistent values are rejected. Counts and actor-attributed before/after audit commit in one transaction. The endpoint changes no tenant, identity, rent, invoice, payment, booking, agreement, property capacity or role.
+Two additive migrations provide the manual room checks and the room register/assignments. Apply them before serving the new code. Application rollback can retain the new columns and table. Existing records are not backfilled by the migration.
 
-This is an explicit property-level verification workflow while room labels/allocations are pending. It does not automatically import the register, mark a person departed, assign rooms or claim the portal currently matches the target totals.
+Synthetic tests cover 11 properties, 43 rooms, 40 occupied, 3 vacant, 35 current households and 48 active linked agreements. They also cover shared and multi-room households, stale updates, renames, holds, moves, vacating and incomplete setup. The frontend tests exercise the separate dashboard totals and the room picker on move-in.
 
-## Deployment and verification
-
-One additive migration creates `property_room_verifications`. Existing pages still render if it is not installed; the new confirmation endpoint reports installation-unavailable. Run migration before using confirmations. Application rollback retains verification data. No source Office file was edited, and private credentials/source household names are not committed.
-
-Focused backend and actual React tests cover the 11/43/35/40/3 control, families sharing or occupying multiple rooms, whole-property exclusions, missing capacity, invalid/stale snapshots, lifecycle/date boundaries, permissions, audit rollback, missing-schema rollout, unknown-vs-zero presentation and vacancy navigation. Adjacent Property, Tenant, Agreement, Purchase Invoice and public Accommodation tests are included. Full exact-head CI and review are required before deployment.
-
-Reconcile the 11 canonical live Property IDs/capacities and reviewed household records before claiming live accuracy. Use the usual vacate workflow on the exact confirmed departed tenancy; retain history. After verified records are entered, confirm 43 = 40 + 3 and 35 household records with the requester. Keep In review until deployment and live acceptance.
+Reconcile the 11 canonical managed properties and their 43 room assignments before confirming the live figures. The workbook has blank room labels, and the ticket attachment shows the old dashboard, so neither is a room-by-room assignment source. Verify the two reported single shared-bath rooms at 97 Settlers Avenue and the ensuite room at 31 Vazey Way as part of setup. Review and link any historical signed agreements before comparing the live agreement figure to 48. Leave the ticket in review until live acceptance.
 
 ## Related TKT-HOKBXI
 
-Existing tenant/property CRUD, unit labels, document access, viewing/calendar, template management and version-2 agreement-to-pending-tenant linkage are reused. This branch does not complete the full SOP, historical agreement backfill, room-level assignment/availability, navigation renames, Friday payment authority/checklist, approved Exalt template release or package setup.
+Existing tenant/property CRUD, unit labels, document access, viewing/calendar, template management and version-2 agreement-to-pending-tenant linkage are reused. This branch does not complete the full SOP, historical agreement backfill, Friday payment authority/checklist, approved Exalt template release or package setup.
 
 Requester-approved direction: household counts first, staff room labels later, Exalt email drafts for approval, reference package items without guessed quantities/prices, and two named payment verifiers. Exact approved account identities still need resolution before financial grants; no permissions are changed here. Private source reconciliation, email drafts and item references are supplied outside Git for review.

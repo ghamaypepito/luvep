@@ -26,7 +26,7 @@ class Tenant extends Model
     public const ENDING_SOON_DAYS = 25;
 
     protected $fillable = [
-        'property_id', 'unit', 'first_name', 'family_name', 'display_name_override',
+        'property_id', 'unit', 'assigned_room_ids', 'first_name', 'family_name', 'display_name_override',
         'email', 'phone', 'whatsapp', 'nationality', 'date_of_birth', 'passport_number',
         'contract_start', 'contract_end', 'contract_type', 'open_contract_notice_weeks',
         'bond_paid_nzd', 'advance_paid_nzd', 'weekly_rent_nzd', 'weekly_utilities_nzd',
@@ -36,6 +36,7 @@ class Tenant extends Model
 
     protected $casts = [
         'contract_start' => 'date',
+        'assigned_room_ids' => 'array',
         'contract_end' => 'date',
         'date_of_birth' => 'date',
         'ended_at' => 'datetime',

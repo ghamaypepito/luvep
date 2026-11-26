@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Models\Tenant;
+use App\Services\Accommodation\RoomInventory;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PropertyController extends Controller
 {
@@ -67,6 +70,12 @@ class PropertyController extends Controller
             'region' => 'nullable|string|max:100',
             'property_type' => ['nullable', Rule::in(Property::PROPERTY_TYPES)],
             'total_rooms' => 'nullable|integer|min:1|max:50',
+            'room_register_version' => 'sometimes|nullable|string|size:64',
+            'room_register' => 'sometimes|array|list|max:50',
+            'room_register.*' => 'array:id,name,hold',
+            'room_register.*.id' => 'nullable|uuid|distinct',
+            'room_register.*.name' => 'required|string|max:100',
+            'room_register.*.hold' => 'required|boolean',
             'mercury_account_number' => 'nullable|string|max:100',
             'mercury_account_holder' => 'nullable|string|max:255',
             'property_icp' => 'nullable|string|max:100',
@@ -170,7 +179,8 @@ class PropertyController extends Controller
 
     public function store(Request $request)
     {
-        $property = Property::create($this->cleanData($request));
+        $property = new Property;
+        $this->saveProperty($request, $property, $this->cleanData($request));
         $this->storeImages($property, $request->file('images', []));
 
         return redirect()->route('portal.accommodation.properties.index')
@@ -183,6 +193,8 @@ class PropertyController extends Controller
 
         return inertia('portal/accommodation/PropertyForm', [
             'property' => $property,
+            'room_register' => $property->room_register ?? [],
+            'room_register_version' => $this->roomRegisterVersion($property),
             'options' => $this->formOptions(),
             'next_code' => null,
         ]);
@@ -190,11 +202,55 @@ class PropertyController extends Controller
 
     public function update(Request $request, Property $property)
     {
-        $property->update($this->cleanData($request, $property));
+        $data = $this->cleanData($request, $property);
+        DB::transaction(function () use ($request, $property, $data) {
+            $locked = Property::whereKey($property->id)->lockForUpdate()->firstOrFail();
+            $this->saveProperty($request, $locked, $data);
+        });
         $this->storeImages($property, $request->file('images', []));
 
         return redirect()->route('portal.accommodation.properties.show', $property)
             ->with('success', 'Property updated successfully.');
+    }
+
+    private function roomRegisterVersion(Property $property): string
+    {
+        return hash('sha256', json_encode([$property->total_rooms, $property->room_register], JSON_THROW_ON_ERROR));
+    }
+
+    private function saveProperty(Request $request, Property $property, array $data): void
+    {
+        if (array_key_exists('room_register_version', $data) || array_key_exists('room_register', $data)) {
+            RoomInventory::authorizeStaff($request);
+            if ($property->exists && ! hash_equals($this->roomRegisterVersion($property), $data['room_register_version'] ?? '')) {
+                throw ValidationException::withMessages(['room_register' => 'The property room register changed. Reload before editing it.']);
+            }
+
+            $existingIds = array_column($property->room_register ?? [], 'id');
+            $rooms = collect($data['room_register'] ?? [])->map(function ($row) use ($existingIds) {
+                if (! empty($row['id']) && ! in_array($row['id'], $existingIds, true)) {
+                    throw ValidationException::withMessages(['room_register' => 'An existing room ID is unknown. Reload the property and try again.']);
+                }
+
+                return ['id' => $row['id'] ?? (string) Str::uuid(), 'name' => trim($row['name']), 'hold' => (bool) $row['hold']];
+            });
+            if ($rooms->pluck('name')->map(fn ($name) => mb_strtolower($name))->unique()->count() !== $rooms->count()) {
+                throw ValidationException::withMessages(['room_register' => 'Give each physical room a distinct name.']);
+            }
+            $removed = array_diff($existingIds, $rooms->pluck('id')->all());
+            if ($removed && Tenant::where('property_id', $property->id)
+                ->whereIn('current_status', [...Tenant::ACTIVE_STATUSES, 'pending_payment'])
+                ->get(['assigned_room_ids'])->contains(fn ($tenant) => array_intersect($removed, $tenant->assigned_room_ids ?? []))) {
+                throw ValidationException::withMessages(['room_register' => 'Reassign the affected tenancies before removing a room.']);
+            }
+            $property->room_register = $rooms->all();
+        }
+
+        $property->fill($data);
+        if (count($property->room_register ?? []) > $property->total_rooms) {
+            throw ValidationException::withMessages(['total_rooms' => 'Total rooms must cover every room in the room register.']);
+        }
+        $property->save();
     }
 
     /** Archive (soft remove from portfolio) rather than delete. */
