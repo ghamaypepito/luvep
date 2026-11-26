@@ -4,6 +4,7 @@
 @import 'tailwindcss';
 @import './creative.css';
 @import './tickets.css';
+@import './accommodation-insights.css';
 @import "flowbite";
 
 /* Flowbite's later width utilities otherwise override responsive column widths. */

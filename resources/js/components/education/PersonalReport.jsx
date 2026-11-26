@@ -82,19 +82,6 @@ function PersonalReportContent({ data }) {
             </div>
             {notice && <p role="status" className="text-sm text-teal-700">{notice}</p>}
 
-            <section aria-label="My lead contact activity">
-                <h3 className="text-sm font-semibold">My lead contact activity</h3>
-                <p className="mt-1 text-xs text-gray-500">Only your recorded contact-stage changes for clients currently in List of Leads. Students are excluded.</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {Object.entries(data.contacts || {}).map(([label, rows]) => (
-                        <details key={label} className="rounded-xl border border-gray-200 p-3">
-                            <summary className="cursor-pointer text-sm font-semibold">{label}: {rows.length} leads</summary>
-                            {rows.length ? <ul className="mt-2 space-y-1 text-sm">{rows.map(row => <li key={row.id}>{row.name} · {new Date(row.date).toLocaleDateString("en-NZ", { timeZone: "Pacific/Auckland" })}</li>)}</ul> : <p className="mt-2 text-xs text-gray-500">No recorded contact changes for you in this range.</p>}
-                        </details>
-                    ))}
-                </div>
-            </section>
-
             <p className="text-xs text-gray-500">Totals show activities and distinct clients / names. Repeated activity for one person counts each time; manually entered names are matched by spelling, not verified identity.</p>
             <div aria-label="My activity totals" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {Object.entries(data.counts || {}).map(([key, count]) => <details key={key} className="rounded-xl bg-gray-50 p-3">

@@ -1852,6 +1852,9 @@ Route::middleware(['auth'])->group(function () {
             // EducationLayout instead of AdminLayout.
             Route::get('/schools', [\App\Http\Controllers\SchoolController::class, 'index'])->name('schools');
             Route::get('/schools/{id}/profile', [\App\Http\Controllers\SchoolController::class, 'show'])->name('schools.show');
+            Route::get('/schools/{id}/management', [\App\Http\Controllers\SchoolWorkspaceController::class, 'show']);
+            Route::post('/schools/{id}/management/{kind}/{recordId?}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'save']);
+            Route::get('/schools/{id}/management-records/{recordId}/files/{fileId}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'download']);
             Route::get('/documents', [EducationController::class, 'documents'])->name('documents');
             // Public assessment submissions (free-assessment + education-enrolment).
             Route::get('/assessments', [EducationController::class, 'assessments'])->name('assessments');
@@ -2358,6 +2361,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/properties/export', [PropertyController::class, 'export'])->name('properties.export');
             Route::post('/properties', [PropertyController::class, 'store'])->name('properties.store');
             Route::get('/properties/{property}', [PropertyController::class, 'show'])->name('properties.show');
+            Route::post('/properties/{property}/room-occupancy', [\App\Http\Controllers\Portal\RoomInventoryController::class, 'store'])->name('properties.room-occupancy');
             Route::get('/properties/{property}/edit', [PropertyController::class, 'edit'])->name('properties.edit');
             Route::match(['POST', 'PUT'], '/properties/{property}', [PropertyController::class, 'update'])->name('properties.update');
             Route::patch('/properties/{property}/archive', [PropertyController::class, 'archive'])->name('properties.archive');

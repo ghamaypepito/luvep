@@ -22,7 +22,9 @@ class MoveTenantRequest extends FormRequest
                 Rule::exists('accommodation_properties', 'id')->where('is_active', true),
                 Rule::notIn([$currentPropertyId]),
             ],
-            'move_date' => 'required|date|before_or_equal:today',
+            'move_date' => 'required|date|before_or_equal:'.now('Pacific/Auckland')->toDateString(),
+            'assigned_room_ids' => 'sometimes|array|list|max:50',
+            'assigned_room_ids.*' => 'required|uuid|distinct',
         ];
     }
 

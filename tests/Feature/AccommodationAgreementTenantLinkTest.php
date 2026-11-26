@@ -78,8 +78,13 @@ class AccommodationAgreementTenantLinkTest extends TestCase
         $this->assertSame(1, Tenant::count());
         $this->post('/portal/accommodation/tenants/'.$tenant->id.'/activate', [])->assertSessionHasErrors('payment_confirmed');
         $this->assertSame('pending_payment', $tenant->fresh()->current_status);
-        $this->post('/portal/accommodation/tenants/'.$tenant->id.'/activate', ['payment_confirmed' => true])->assertRedirect()->assertSessionHasNoErrors();
+        $roomId = (string) \Illuminate\Support\Str::uuid();
+        $property->forceFill(['total_rooms' => 1, 'room_register' => [['id' => $roomId, 'name' => 'Room A', 'hold' => false]]])->save();
+        $this->post('/portal/accommodation/tenants/'.$tenant->id.'/activate', [
+            'payment_confirmed' => true, 'assigned_room_ids' => [$roomId], 'room_assignment_version' => $tenant->move_in_version,
+        ])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame('active', $tenant->fresh()->current_status);
+        $this->assertSame([$roomId], $tenant->fresh()->assigned_room_ids);
         Mail::assertNothingOutgoing();
         Notification::assertNothingSent();
         $this->assertDatabaseHas('activity_logs', ['action' => 'accommodation.agreement.tenant_linked', 'entity_id' => $agreement->id]);

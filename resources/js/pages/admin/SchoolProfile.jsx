@@ -51,6 +51,11 @@ export default function SchoolProfile({ school = {}, portalBase = "/admin", hasA
             </div>
 
             {/* Contacts */}
+            {portalBase === '/portal/education' && (
+                <Link href={`${portalBase}/schools/${school.id}/management`} className="block rounded-xl bg-emerald-800 p-4 font-semibold text-white">
+                    School dashboard · Students, communications, courses and intakes →
+                </Link>
+            )}
             <Card icon={User} title={`Contacts${(school.contacts?.length) ? ` · ${school.contacts.length}` : ""}`}>
                 {(!school.contacts || school.contacts.length === 0) ? (
                     <p className="text-sm text-gray-400">No contacts yet.</p>

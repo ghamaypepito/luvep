@@ -176,12 +176,12 @@ export default function Properties({ properties = {}, filters = {}, options = {}
                                         </Link>
                                     </td>
                                     <td className="px-5 py-4 text-gray-700">
-                                        {p.total_rooms ? `${p.rooms_occupied ?? 0}/${p.total_rooms}` : "—"}
+                                        {p.room_summary?.total ? `${p.room_summary.occupied ?? '?'}/${p.room_summary.total}` : "Not set"}
                                     </td>
                                     <td className="px-5 py-4">
-                                        {p.occupancy_status ? (
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${OCCUPANCY_STYLES[p.occupancy_status] ?? "bg-gray-100 text-gray-500"}`}>
-                                                {cap(p.occupancy_status)}
+                                        {p.room_summary ? (
+                                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                                                {p.room_summary.state === 'verified' ? 'Verified' : 'Needs room check'}
                                             </span>
                                         ) : (
                                             <span className="text-xs text-gray-400">—</span>
