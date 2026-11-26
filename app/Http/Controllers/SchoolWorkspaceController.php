@@ -71,8 +71,12 @@ class SchoolWorkspaceController extends Controller
         $paths = [];
         try {
             foreach ($request->file('attachments', []) as $file) {
+                $path = $file->store('school-workspace/'.$id, 'local');
+                if (! $path) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['attachments' => 'The attachment could not be stored. Please try again.']);
+                }
                 $paths[] = ['name' => mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 200),
-                    'path' => $file->store('school-workspace/'.$id, 'local')];
+                    'path' => $path];
             }
             DB::transaction(function () use ($request, $id, $kind, $recordId, $validated, $fields, $paths) {
                 School::whereKey($id)->lockForUpdate()->firstOrFail();

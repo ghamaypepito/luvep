@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Program;
 use App\Models\School;
+use App\Models\SchoolWorkspaceRecord;
 use App\Services\PromoFeed;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ProgramController extends Controller
@@ -102,30 +104,50 @@ class ProgramController extends Controller
     {
         $program = Program::findOrFail($id);
         $validated = $request->validate($this->rules());
-        if ($request->has('school_id') && (string) ($validated['school_id'] ?? '') !== (string) ($program->school_id ?? '')
-            && \App\Models\SchoolWorkspaceRecord::available()
-            && \App\Models\SchoolWorkspaceRecord::where('program_id', $program->id)->exists()) {
-            throw \Illuminate\Validation\ValidationException::withMessages(['school_id' => 'This programme has school management history. Keep its school association; archive it and create a separate programme if needed.']);
-        }
-
+        $newImage = null;
+        $previousImage = null;
         if ($request->hasFile('image')) {
-            if ($program->image) {
-                Storage::disk('public')->delete($program->image);
+            $newImage = $request->file('image')->store('programs/banners', 'public');
+            if (! $newImage) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['image' => 'The programme banner could not be stored. Please try again.']);
             }
-            $validated['image'] = $request->file('image')->store('programs/banners', 'public');
+            $validated['image'] = $newImage;
         } else {
             unset($validated['image']);
         }
 
-        // Partial-payload model: only write keys the request actually sent, so
-        // a caller that posts a subset of the form can never blank out the
-        // columns it didn't include. Explicitly-cleared fields still come
-        // through (the key is present with a null/empty value).
-        $patch = collect($validated)
-            ->filter(fn ($v, $k) => $k === 'image' || $request->has($k))
-            ->all();
-
-        $program->update($patch);
+        try {
+            DB::transaction(function () use ($request, $program, $validated, &$previousImage) {
+                // Match school-workspace writes: lock schools before the programme.
+                $schoolIds = array_filter([$program->school_id, $validated['school_id'] ?? $program->school_id]);
+                School::whereIn('id', $schoolIds)->orderBy('id')->lockForUpdate()->get();
+                $locked = Program::whereKey($program->id)->lockForUpdate()->firstOrFail();
+                if ((string) $locked->school_id !== (string) $program->school_id) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['school_id' => 'The programme school changed. Reload before editing again.']);
+                }
+                $movingSchool = $request->has('school_id') && (string) ($validated['school_id'] ?? '') !== (string) ($locked->school_id ?? '');
+                $guardHistory = function () use ($locked, $movingSchool) {
+                    if ($movingSchool && SchoolWorkspaceRecord::available() && SchoolWorkspaceRecord::where('program_id', $locked->id)->exists()) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['school_id' => 'This programme has school management history. Keep its school association; archive it and create a separate programme if needed.']);
+                    }
+                };
+                $guardHistory();
+                $previousImage = $locked->image;
+                // Only supplied fields are patched; omitted fields remain intact.
+                $patch = collect($validated)->filter(fn ($value, $key) => $key === 'image' || $request->has($key))->all();
+                $locked->update($patch);
+                // A model observer can add history inside this same transaction.
+                $guardHistory();
+            });
+        } catch (\Throwable $error) {
+            if ($newImage) {
+                Storage::disk('public')->delete($newImage);
+            }
+            throw $error;
+        }
+        if ($newImage && $previousImage && $previousImage !== $newImage) {
+            Storage::disk('public')->delete($previousImage);
+        }
 
         return redirect()->back()->with('success', 'Program updated successfully.');
     }
@@ -133,15 +155,22 @@ class ProgramController extends Controller
     public function destroy($id)
     {
         $program = Program::findOrFail($id);
-        if (\App\Models\SchoolWorkspaceRecord::available() && \App\Models\SchoolWorkspaceRecord::where('program_id', $program->id)->exists()) {
+        $deleted = DB::transaction(function () use ($program) {
+            School::whereKey($program->school_id)->lockForUpdate()->first();
+            $locked = Program::whereKey($program->id)->lockForUpdate()->firstOrFail();
+            if (SchoolWorkspaceRecord::available() && SchoolWorkspaceRecord::where('program_id', $locked->id)->exists()) {
+                return null;
+            }
+            $locked->delete();
+
+            return $locked;
+        });
+        if (! $deleted) {
             return back()->with('error', 'This programme has school management history. Archive it instead of deleting it.');
         }
-
-        if ($program->image) {
-            Storage::disk('public')->delete($program->image);
+        if ($deleted->image) {
+            Storage::disk('public')->delete($deleted->image);
         }
-
-        $program->delete();
 
         return redirect()->back()->with('success', 'Program deleted successfully.');
     }

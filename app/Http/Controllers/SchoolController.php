@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\School;
+use App\Models\SchoolWorkspaceRecord;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -110,18 +112,26 @@ class SchoolController extends Controller
 
     public function destroy($id)
     {
-        $school = School::findOrFail($id);
-        if (\App\Models\SchoolWorkspaceRecord::available() && \App\Models\SchoolWorkspaceRecord::where('school_id', $school->id)->exists()) {
-            return back()->with('error', 'This school has management history. Set it inactive instead of deleting it.');
-        }
+        School::findOrFail($id);
         try {
+            $school = DB::transaction(function () use ($id) {
+                $locked = School::whereKey($id)->lockForUpdate()->firstOrFail();
+                if (SchoolWorkspaceRecord::available() && SchoolWorkspaceRecord::where('school_id', $locked->id)->exists()) {
+                    return null;
+                }
+                $locked->delete();
+
+                return $locked;
+            });
+            if (! $school) {
+                return back()->with('error', 'This school has management history. Set it inactive instead of deleting it.');
+            }
             if ($school->agreement_path) {
                 Storage::disk('local')->delete($school->agreement_path);
             }
             if ($school->logo_path) {
                 Storage::disk('public')->delete($school->logo_path);
             }
-            $school->delete();
 
             return back()->with('success', 'School removed.');
         } catch (\Throwable $e) {
