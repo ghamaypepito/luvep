@@ -222,6 +222,7 @@ export default function PropertyForm({ property = null, options = {}, next_code 
                                 <input id="is_active" type="checkbox" checked={data.is_active} onChange={(e) => setData("is_active", e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#1F5A8B] focus:ring-[#1F5A8B]" />
                                 <label htmlFor="is_active" className="text-sm font-medium text-gray-700">Active in portfolio</label>
                             </div>
+                            {err("is_active")}
                         </div>
                     </div>
                 </div>

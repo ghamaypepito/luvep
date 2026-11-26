@@ -241,8 +241,12 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame('pending_payment', Tenant::find($tenantId)->current_status);
         $this->patch($url.'/status', ['status' => 'invoice_sent', 'invoice_amount_nzd' => 1500])->assertSessionHasNoErrors();
         $this->patch($url.'/status', ['status' => 'payment_confirmed'])->assertSessionHasNoErrors();
+        $roomId = (string) \Illuminate\Support\Str::uuid();
+        $property->forceFill(['total_rooms' => 1, 'room_register' => [['id' => $roomId, 'name' => 'Room A', 'hold' => false]]])->save();
+        $payload['assigned_room_ids'] = [$roomId];
         $this->post($url.'/convert', $payload)->assertRedirect('/portal/accommodation/tenants/'.$tenantId)->assertSessionHasNoErrors();
         $this->assertSame('active', Tenant::find($tenantId)->current_status);
+        $this->assertSame([$roomId], Tenant::find($tenantId)->assigned_room_ids);
         $this->assertSame('moved_in', $source->fresh()->status);
         $this->assertSame(1, Tenant::count());
         $this->assertSame(1, $property->fresh()->rooms_occupied);

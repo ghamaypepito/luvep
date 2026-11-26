@@ -247,6 +247,9 @@ class PropertyController extends Controller
         }
 
         $property->fill($data);
+        if ($property->exists && $property->getOriginal('is_active') && ! $property->is_active && $property->activeTenants()->exists()) {
+            throw ValidationException::withMessages(['is_active' => 'Vacate or move the active tenants before archiving this property.']);
+        }
         if (count($property->room_register ?? []) > $property->total_rooms) {
             throw ValidationException::withMessages(['total_rooms' => 'Total rooms must cover every room in the room register.']);
         }
@@ -256,12 +259,18 @@ class PropertyController extends Controller
     /** Archive (soft remove from portfolio) rather than delete. */
     public function archive(Property $property)
     {
-        if ($property->activeTenants()->exists()) {
+        $archived = DB::transaction(function () use ($property) {
+            $locked = Property::whereKey($property->id)->lockForUpdate()->firstOrFail();
+            if ($locked->activeTenants()->exists()) {
+                return false;
+            }
+
+            return $locked->update(['is_active' => false]);
+        });
+        if (! $archived) {
             return redirect()->back()
                 ->with('error', 'Cannot archive a property with active tenants. Vacate or move them first.');
         }
-
-        $property->update(['is_active' => false]);
 
         return redirect()->back()->with('success', 'Property archived.');
     }

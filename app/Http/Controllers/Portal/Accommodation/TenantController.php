@@ -150,10 +150,15 @@ class TenantController extends Controller
     public function activate(Request $request, Tenant $tenant)
     {
         \App\Models\TenantDocument::authorizeStaff($request->user());
-        $request->validate(['payment_confirmed' => ['required', 'accepted']]);
+        $data = $request->validate([
+            'payment_confirmed' => 'required|accepted',
+            'assigned_room_ids' => 'sometimes|array|list|max:50',
+            'assigned_room_ids.*' => 'required|uuid|distinct',
+            'room_assignment_version' => 'sometimes|nullable|string|size:64',
+        ]);
         $agreement = $this->standaloneAgreements($tenant)->first();
         abort_unless($agreement, 422, 'Use the onboarding payment-confirmed move-in flow for this tenant.');
-        DB::transaction(function () use ($agreement, $tenant, $request) {
+        DB::transaction(function () use ($agreement, $tenant, $request, $data) {
             // Match signing's source -> agreement -> property -> tenant lock order.
             PreTenancyForm::whereKey($agreement->pre_tenancy_form_id)->lockForUpdate()->firstOrFail();
             $signed = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
@@ -162,6 +167,14 @@ class TenantController extends Controller
             abort_unless($signed->status === 'signed' && $signed->tenant_id === $current->id
                 && $current->current_status === 'pending_payment' && ! $this->hasOnboardingSource($current)
                 && $property->is_active && $current->property_id === $property->id, 422, 'This tenant is not eligible for standalone payment review.');
+            if (array_key_exists('assigned_room_ids', $data) && $data['assigned_room_ids'] !== ($current->assigned_room_ids ?? [])) {
+                RoomInventory::authorizeStaff($request);
+                if (! hash_equals($current->move_in_version, $data['room_assignment_version'] ?? '')) {
+                    throw ValidationException::withMessages(['assigned_room_ids' => 'The tenancy changed. Reload before updating its rooms.']);
+                }
+                RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+                $current->assigned_room_ids = $data['assigned_room_ids'];
+            }
             $current->update([
                 'current_status' => 'active',
                 'notes' => $this->appendNote($current->notes, 'Payment and move-in reviewed by '.$request->user()->name.' at '.now()->toIso8601String()),

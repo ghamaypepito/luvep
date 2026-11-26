@@ -333,6 +333,8 @@ class AccommodationRoomInventoryTest extends TestCase
         [$single, $ensuite] = $property->room_register;
         $this->tenant($property, ['assigned_room_ids' => [$single['id']]]);
         $payload['room_register_version'] = $this->get($url.'/edit')->inertiaProps()['room_register_version'];
+        $this->putJson($url, array_replace($payload, ['room_register' => [$single, $ensuite], 'is_active' => false]))
+            ->assertUnprocessable()->assertJsonValidationErrors('is_active');
         $this->putJson($url, array_replace($payload, ['room_register' => [$ensuite]]))->assertUnprocessable()->assertJsonValidationErrors('room_register');
         $payload['room_register'] = [array_replace($single, ['name' => 'Room A']), $ensuite];
         $this->put($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
