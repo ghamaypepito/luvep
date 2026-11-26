@@ -109,6 +109,39 @@ class LeadCommunicationsTest extends TestCase
         ]);
     }
 
+    public function test_education_can_cc_recipients_on_lead_and_student_emails(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+
+        foreach ([false, true] as $isStudent) {
+            Mail::fake();
+            $lead = $this->lead(['is_student' => $isStudent]);
+            $this->postJson("/admin/leads/{$lead->id}/communications", [
+                'body' => 'Hello', 'cc' => ['team@example.com', 'TEAM@example.com', 'other@example.com', $lead->email],
+            ])->assertOk();
+
+            Mail::assertQueued(TemplatedMessage::class, fn ($mail) => $mail->hasTo($lead->email)
+                && array_map(fn ($address) => $address->address, $mail->envelope()->cc) === ['team@example.com', 'other@example.com']);
+        }
+    }
+
+    public function test_invalid_cc_and_cc_without_education_access_do_not_queue_mail(): void
+    {
+        Mail::fake();
+        $lead = $this->lead();
+        $url = "/admin/leads/{$lead->id}/communications";
+
+        $this->actingAs(User::factory()->create(['role' => 'education']))
+            ->postJson($url, ['body' => 'Hello', 'cc' => ['invalid']])
+            ->assertUnprocessable()->assertJsonValidationErrors('cc.0');
+        $this->actingAs(User::factory()->create(['role' => 'sales']))
+            ->postJson($url, ['body' => 'Hello', 'cc' => ['team@example.com']])
+            ->assertUnprocessable()->assertJsonValidationErrors('cc');
+
+        Mail::assertNothingQueued();
+        $this->assertDatabaseCount('message_logs', 0);
+    }
+
     public function test_reply_is_blocked_when_lead_has_no_email(): void
     {
         $sales = User::factory()->create(['role' => 'sales']);

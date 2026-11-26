@@ -117,6 +117,8 @@ class LeadCommunicationsController extends Controller
 
         $data = $request->validate([
             'subject' => ['nullable', 'string', 'max:255'],
+            'cc' => [$request->user()->canAccessPortal('education') ? 'nullable' : 'prohibited', 'array', 'max:10'],
+            'cc.*' => ['required', 'string', 'max:254', 'email:filter'],
             'body' => ['nullable', 'required_without_all:attachments,document_ids', 'string', 'max:50000'],
             'attachments' => ['nullable', 'array', 'max:'.self::MAX_ATTACHMENTS],
             'attachments.*' => ['required', 'file', 'max:'.self::MAX_ATTACHMENT_KB],
@@ -147,7 +149,11 @@ class LeadCommunicationsController extends Controller
         $subject = $comms->render($lead, trim((string) ($data['subject'] ?? ''))) ?: 'A message from EP';
         $body = $comms->render($lead, $draftBody);
 
-        $log = $comms->sendComposedEmail($lead->email, $subject, $body, $attachments, $rawHtml, $lead->id);
+        $cc = collect($data['cc'] ?? [])
+            ->map(fn (string $address) => strtolower(trim($address)))
+            ->reject(fn (string $address) => $address === strtolower(trim($lead->email)))
+            ->unique()->implode(', ');
+        $log = $comms->sendComposedEmail($lead->email, $subject, $body, $attachments, $rawHtml, $lead->id, cc: $cc ?: null);
 
         if ($log->status === MessageLog::STATUS_FAILED) {
             return response()->json(['message' => 'Could not send the email. Your draft has been kept; please try again.', 'log_id' => $log->id], 502);

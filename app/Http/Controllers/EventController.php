@@ -88,6 +88,7 @@ class EventController extends Controller
 
         // Recent emails sent to this event's registrants (Email tab history).
         $sentEmails = \App\Models\MessageLog::whereIn('recipient_id', $leads->pluck('id'))
+            ->where(fn ($source) => $source->whereNull('source')->orWhere('source', '!=', 'partner-tracker'))
             ->where('channel', 'email')
             ->latest()
             ->take(50)
