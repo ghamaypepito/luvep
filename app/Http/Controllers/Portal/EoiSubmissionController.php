@@ -12,6 +12,7 @@ use App\Models\EoiSubmission;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Accommodation\RoomInventory;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
@@ -76,7 +77,7 @@ class EoiSubmissionController extends Controller
 
         return inertia('portal/accommodation/ApplicationDetails', [
             'submission' => $submission,
-            'options' => $this->options(),
+            'options' => $this->options(withRooms: true),
             'allowedTransitions' => OnboardingPipeline::allowedFrom($submission->status),
             'agreement' => $agreement ? [
                 'id' => $agreement->id,
@@ -166,12 +167,21 @@ class EoiSubmissionController extends Controller
         $data = $request->validated();
         $version = $data['expected_tenant_version'] ?? null;
         unset($data['expected_tenant_version']);
-        $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $data, $version) {
+        $tenant = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $submission, $data, $version) {
             // Both signing and move-in acquire the source first. Never decide to
             // create a tenant from the stale route-bound snapshot.
             $source = EoiSubmission::whereKey($submission->id)->lockForUpdate()->firstOrFail();
             if (! in_array($source->status, ['payment_confirmed', 'moved_in'], true)) {
                 return null;
+            }
+            $property = Property::where('is_active', true)->lockForUpdate()->findOrFail($data['property_id']);
+            if (array_key_exists('assigned_room_ids', $data)) {
+                if ($data['assigned_room_ids'] === [] && ! RoomInventory::tenantTrackingAvailable()) {
+                    unset($data['assigned_room_ids']);
+                } else {
+                    RoomInventory::authorizeStaff($request);
+                    RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+                }
             }
             if ($source->converted_to_tenant_id) {
                 $tenant = Tenant::whereKey($source->converted_to_tenant_id)->lockForUpdate()->firstOrFail();
@@ -275,7 +285,7 @@ class EoiSubmissionController extends Controller
         return $query->latest();
     }
 
-    private function options(): array
+    private function options(bool $withRooms = false): array
     {
         return [
             'stages' => OnboardingPipeline::STAGES,
@@ -283,18 +293,19 @@ class EoiSubmissionController extends Controller
             'statuses' => OnboardingPipeline::allStatuses(),
             'transitions' => OnboardingPipeline::TRANSITIONS,
             'auto_timestamp' => OnboardingPipeline::AUTO_TIMESTAMP,
-            'properties' => $this->propertyOptions(),
+            'properties' => $this->propertyOptions($withRooms),
             'team' => $this->teamOptions(),
             'contract_types' => Tenant::CONTRACT_TYPES,
         ];
     }
 
-    private function propertyOptions(): array
+    private function propertyOptions(bool $withRooms): array
     {
         return Property::where('is_active', true)
             ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED)')
             ->get()
-            ->map(fn (Property $p) => ['id' => $p->id, 'code' => $p->code, 'address' => $p->address ?: $p->name])
+            ->map(fn (Property $p) => ['id' => $p->id, 'code' => $p->code, 'address' => $p->address ?: $p->name]
+                + ($withRooms ? ['rooms' => $p->room_register ?? []] : []))
             ->all();
     }
 

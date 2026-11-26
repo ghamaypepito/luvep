@@ -1,5 +1,6 @@
 import { useForm } from "@inertiajs/react";
 import { X } from "lucide-react";
+import TenancyRooms from "../accommodation/TenancyRooms";
 
 const FIELD = "w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#1F5A8B] focus:ring-[#1F5A8B]";
 const LABEL = "block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1";
@@ -30,10 +31,11 @@ export default function ConvertTenantModal({ submission, properties = [], contra
     const existing = submission.converted_tenant?.current_status === 'pending_payment' ? submission.converted_tenant : null;
     const start = (existing?.contract_start ? String(existing.contract_start).slice(0, 10) : "") || (submission.move_in_date ? String(submission.move_in_date).slice(0, 10) : "") || today();
 
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, transform, processing, errors } = useForm({
         expected_tenant_version: existing?.move_in_version ?? null,
         property_id: existing?.property_id ?? submission.property_id ?? "",
         unit: existing?.unit ?? "",
+        assigned_room_ids: existing?.assigned_room_ids ?? [],
         first_name: existing?.first_name ?? first,
         family_name: existing?.family_name ?? family,
         display_name_override: existing?.display_name_override ?? "",
@@ -51,6 +53,10 @@ export default function ConvertTenantModal({ submission, properties = [], contra
 
     const submit = (e) => {
         e.preventDefault();
+        transform(({ assigned_room_ids, ...values }) => ({
+            ...values,
+            ...(assigned_room_ids.length || existing?.assigned_room_ids?.length ? { assigned_room_ids } : {}),
+        }));
         post(`/portal/accommodation/applications/${submission.id}/convert`, { preserveScroll: true });
     };
 
@@ -84,7 +90,7 @@ export default function ConvertTenantModal({ submission, properties = [], contra
                     <SubHeading>Property</SubHeading>
                     <div className="sm:col-span-2">
                         <label className={LABEL}>Property</label>
-                        <select className={FIELD} value={data.property_id} onChange={(e) => setData("property_id", e.target.value)}>
+                        <select className={FIELD} value={data.property_id} disabled={Boolean(existing)} onChange={(e) => setData(previous => ({ ...previous, property_id: e.target.value, assigned_room_ids: [] }))}>
                             <option value="">Select a property</option>
                             {properties.map((p) => (
                                 <option key={p.id} value={p.id}>{p.code ? `#${p.code} · ` : ""}{p.address}</option>
@@ -93,6 +99,10 @@ export default function ConvertTenantModal({ submission, properties = [], contra
                         {errors.property_id && <p className="mt-1 text-xs text-rose-600">{errors.property_id}</p>}
                     </div>
                     {f("unit", "Unit (optional)")}
+                    <div className="sm:col-span-2">
+                        <TenancyRooms rooms={properties.find(p => String(p.id) === String(data.property_id))?.rooms}
+                            selected={data.assigned_room_ids} errors={errors} onChange={ids => setData("assigned_room_ids", ids)} />
+                    </div>
 
                     <SubHeading>Personal</SubHeading>
                     {f("first_name", "First name")}

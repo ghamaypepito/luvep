@@ -1,4 +1,5 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import TenancyRooms from '../../../components/accommodation/TenancyRooms';
 import { useEffect, useRef, useState } from "react";
 import { Head, Link, useForm, router } from "@inertiajs/react";
 import {
@@ -214,12 +215,12 @@ export default function TenantDetail({ tenant, historical = [], properties = [],
             {modal === "vacate" && <VacateModal tenant={tenant} onClose={() => setModal(null)} />}
             {modal === "renew" && <RenewModal tenant={tenant} onClose={() => setModal(null)} />}
             {modal === "move" && <MoveModal tenant={tenant} properties={properties} onClose={() => setModal(null)} />}
-            {modal === 'activate' && <ActivationModal tenant={tenant} onClose={() => setModal(null)} />}
+            {modal === 'activate' && <ActivationModal tenant={tenant} rooms={properties.find(p => p.id === tenant.property_id)?.rooms} onClose={() => setModal(null)} />}
         </div>
     );
 }
 
-function ActivationModal({ tenant, onClose }) {
+function ActivationModal({ tenant, rooms, onClose }) {
     const dialog = useRef(null);
     useEffect(() => {
         const trigger = document.activeElement;
@@ -227,7 +228,11 @@ function ActivationModal({ tenant, onClose }) {
         element.showModal();
         return () => { element.close(); trigger?.focus(); };
     }, []);
-    const { data, setData, post, processing, errors } = useForm({ payment_confirmed: false });
+    const { data, setData, post, processing, errors } = useForm({
+        payment_confirmed: false,
+        assigned_room_ids: tenant.assigned_room_ids ?? [],
+        room_assignment_version: tenant.move_in_version,
+    });
     const submit = (event) => {
         event.preventDefault();
         post(`/portal/accommodation/tenants/${tenant.id}/activate`, { preserveScroll: true, onSuccess: onClose });
@@ -236,6 +241,8 @@ function ActivationModal({ tenant, onClose }) {
         <h3 className="mb-4 text-lg font-bold text-gray-900">Complete payment review</h3>
         <form onSubmit={submit} className="space-y-4">
             <p className="text-sm text-gray-600">Review the recorded payments and move-in arrangements for {tenant.display_name}. Confirming activates this existing tenant in occupancy and the rent roll.</p>
+            <TenancyRooms rooms={rooms} selected={data.assigned_room_ids} errors={errors}
+                onChange={ids => setData('assigned_room_ids', ids)} />
             <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" autoFocus checked={data.payment_confirmed} onChange={event => setData('payment_confirmed', event.target.checked)} />
                 I have confirmed payment and approved move-in.
@@ -320,14 +327,14 @@ function RenewModal({ tenant, onClose }) {
 }
 
 function MoveModal({ tenant, properties, onClose }) {
-    const { data, setData, post, processing, errors } = useForm({ new_property_id: "", move_date: "" });
+    const { data, setData, post, processing, errors } = useForm({ new_property_id: "", move_date: "", assigned_room_ids: [] });
     const submit = (e) => { e.preventDefault(); post(`/portal/accommodation/tenants/${tenant.id}/move`, { preserveScroll: true, onSuccess: onClose }); };
     return (
         <Modal title="Move to another property" onClose={onClose}>
             <form onSubmit={submit} className="space-y-4">
                 <div>
                     <label className={LABEL}>Destination property</label>
-                    <select className={FIELD} value={data.new_property_id} onChange={(e) => setData("new_property_id", e.target.value)}>
+                    <select className={FIELD} value={data.new_property_id} onChange={(e) => setData(previous => ({ ...previous, new_property_id: e.target.value, assigned_room_ids: [] }))}>
                         <option value="">Select a property</option>
                         {properties.filter((p) => p.id !== tenant.property_id).map((p) => (
                             <option key={p.id} value={p.id}>{p.code ? `#${p.code} · ` : ""}{p.address}</option>
@@ -335,6 +342,8 @@ function MoveModal({ tenant, properties, onClose }) {
                     </select>
                     {errors.new_property_id && <p className="mt-1 text-xs text-rose-600">{errors.new_property_id}</p>}
                 </div>
+                <TenancyRooms rooms={properties.find(p => String(p.id) === String(data.new_property_id))?.rooms}
+                    selected={data.assigned_room_ids} errors={errors} onChange={ids => setData("assigned_room_ids", ids)} />
                 <div>
                     <label className={LABEL}>Move date</label>
                     <input type="date" className={FIELD} value={data.move_date} onChange={(e) => setData("move_date", e.target.value)} />
