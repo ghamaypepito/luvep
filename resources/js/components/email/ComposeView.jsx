@@ -17,9 +17,9 @@ const isFullHtml = (html) => /^\s*<(!doctype|html)\b/i.test(html || "");
  * picked leads and/or typed addresses, subject, the shared body editor +
  * drag-and-drop builder, attachments).
  */
-export default function ComposeView({ basePath = "/admin/email/compose", sent = [], templates = [] }) {
+export default function ComposeView({ basePath = "/admin/email/compose", sent = [], templates = [], partnerRecipient = null }) {
     const [leads, setLeads] = useState([]);      // [{id,name,email}]
-    const [emails, setEmails] = useState([]);     // [string]
+    const [emails, setEmails] = useState(partnerRecipient ? [partnerRecipient.email.toLowerCase()] : []);     // [string]
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
     const [designJson, setDesignJson] = useState(null);
@@ -77,7 +77,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     };
 
     const resetForm = () => {
-        setLeads([]); setEmails([]); setSubject(""); setBody(""); setDesignJson(null);
+        setLeads([]); setEmails(partnerRecipient ? [partnerRecipient.email.toLowerCase()] : []); setSubject(""); setBody(""); setDesignJson(null);
         setAttachments([]); setQuery(""); setSuggestions([]);
         setSendErrors({});
     };
@@ -89,6 +89,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
         setSendErrors({});
         setSending(true);
         const fd = new FormData();
+        if (partnerRecipient) fd.append("partner_id", partnerRecipient.id);
         leads.forEach((l) => fd.append("lead_ids[]", l.id));
         emails.forEach((e) => fd.append("emails[]", e));
         fd.append("subject", subject);
@@ -154,6 +155,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                         </div>
 
                         <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                            {partnerRecipient && <p className="rounded-lg bg-emerald-50 p-3 text-sm">Partner: {partnerRecipient.name}. This email will appear in the Partner Activity Tracker after it is sent. Reply status can be updated there.</p>}
                             {/* Recipients */}
                             <div className="relative">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">To</span>
@@ -162,9 +164,9 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                         <span key={`l${l.id}`} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full pl-2 pr-1 py-0.5"><User size={11} /> {l.name} <button type="button" onClick={() => removeLead(l.id)} className="hover:text-indigo-900"><X size={12} /></button></span>
                                     ))}
                                     {emails.map((e) => (
-                                        <span key={`e${e}`} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full pl-2 pr-1 py-0.5">{e} <button type="button" onClick={() => removeEmail(e)} className="hover:text-gray-900"><X size={12} /></button></span>
+                                        <span key={`e${e}`} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full pl-2 pr-1 py-0.5">{e} <button type="button" disabled={!!partnerRecipient} onClick={() => removeEmail(e)} className="hover:text-gray-900"><X size={12} /></button></span>
                                     ))}
-                                    <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onRecipientKey} placeholder={leads.length || emails.length ? "" : "Type a name to find a lead, or an email address…"} className="flex-1 min-w-[160px] outline-none text-sm py-1" />
+                                    <input disabled={!!partnerRecipient} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onRecipientKey} placeholder={leads.length || emails.length ? "" : "Type a name to find a lead, or an email address…"} className="flex-1 min-w-[160px] outline-none text-sm py-1" />
                                 </div>
                                 {(suggestions.length > 0 || (isEmail(query))) && (
                                     <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 max-h-64 overflow-y-auto">

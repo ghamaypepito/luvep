@@ -2065,6 +2065,7 @@ class CaseProfileController extends Controller
         }
 
         return DB::table('message_logs')
+            ->where(fn ($source) => $source->whereNull('source')->orWhere('source', '!=', 'partner-tracker'))
             ->where(function ($q) use ($lead) {
                 $q->where(function ($qq) use ($lead) {
                     $qq->where('recipient_type', 'lead')
