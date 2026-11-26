@@ -1,6 +1,6 @@
 # TKT-BBOQ6I — LIA-reviewed VIF additions
 
-Status: implementation branch. Check the current PR CI result and obtain staging/LIA acceptance before closure. Do not mark Done from this document alone.
+Status, 26 November 2026: requester confirmed Hendry/Nova approval of the wording and completeness of all six forms and authorised release after checks pass. The earlier business-acceptance hold below is historical and is superseded by that confirmation. Final integration tests, separate review, exact-revision CI and deployed verification remain required before Done.
 
 ## Findings
 
@@ -86,3 +86,7 @@ Regression coverage includes keyed/single/encoded lists, canonical clears, unkno
 Rendered-content comparisons are strict, including numeric-looking identifier text such as `001234` versus `1234`. The authenticated client update now renders/writes the replacement VIF and updates its document pointer/status while holding the same fresh intake lock and database transaction as the answer changes. Explicit generation uses that same lock. Render, failed/throwing storage and document-pointer failures roll back answer changes and preserve the previous approved document/file; failed unique candidates are removed when storage permits. Change notices are registered after commit, so a rolled-back edit sends none. An identical retry therefore remains a real edit and succeeds normally.
 
 The actual generic client editor captures its initial baseline and posts only changed top-level keys and changed supplemental keys, excluding staff-only fields. Unchanged or reverted saves do not post. Assessment controls are disabled while saving so a late response cannot discard a newly typed draft; a failed response restores editable controls and retains the draft for retry. A successful canonical response resets both current values and baseline, preserving newer staff context/siblings from other tabs. Regression coverage includes all three numeric-identifier writer paths, render/write/pointer failure and retry, transaction/notification ordering, and actual React stale-tab, category/sibling, no-op and canonical-response behavior. These remain technical checks; LIA review and release verification are still pending.
+
+## Release acceptance — 26 November 2026
+
+The requester answered **Yes—release after checks pass** when asked whether Hendry/Nova had now approved wording/completeness for all six VIFs. This is recorded as requester confirmation of their review, not an adviser approval or eligibility decision on any client record. The approved question catalogue is unchanged from the synthetic review revision32ef2fea. Current main aacff595 is integrated for final verification, including existing English evidence, client identity, document retention and other released workflows. No backfill, real client submission, role change, external passport processing or automatic adviser approval is part of this release. Preserve the nullable supplemental-answer columns and existing files on application rollback; do not run the destructive migration down method as an application rollback.
