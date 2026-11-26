@@ -95,6 +95,7 @@ class AccommodationController extends Controller
     {
         try {
             return inertia('portal/accommodation/Dashboard', [
+                'inventoryStats' => \App\Services\Accommodation\RoomInventory::dashboard(),
                 'propertyStats' => [
                     'total' => Property::count(),
                     'available' => Property::where('status', 'available')->count(),
@@ -113,6 +114,8 @@ class AccommodationController extends Controller
             Log::error('Accommodation dashboard failed', ['error' => $e->getMessage()]);
 
             return inertia('portal/accommodation/Dashboard', [
+                'inventoryStats' => null,
+                'inventoryError' => 'The dashboard figures could not be loaded. Please retry; missing figures are not zero.',
                 'propertyStats' => array_fill_keys(['total', 'available', 'unavailable'], 0),
                 'applicationStats' => array_fill_keys(['total', 'new', 'hot', 'cold'], 0),
                 'recentProperties' => collect(),

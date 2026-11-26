@@ -23,6 +23,8 @@ class ConvertToTenantRequest extends FormRequest
             'expected_tenant_version' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/D'],
             'property_id' => ['required', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
             'unit' => ['nullable', 'string', 'max:50'],
+            'assigned_room_ids' => 'sometimes|array|list|max:50',
+            'assigned_room_ids.*' => 'required|uuid|distinct',
             'first_name' => ['required', 'string', 'max:100'],
             'family_name' => ['required', 'string', 'max:100'],
             'display_name_override' => ['nullable', 'string', 'max:200'],

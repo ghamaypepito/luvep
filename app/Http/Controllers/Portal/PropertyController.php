@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Models\Tenant;
+use App\Services\Accommodation\RoomInventory;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PropertyController extends Controller
 {
@@ -35,7 +38,7 @@ class PropertyController extends Controller
             'suburb' => ['nullable', Rule::in(['Hobsonville', 'Glenfield', 'Kelston', 'Hillsborough', 'Sunnynook'])],
             'rental_mode' => ['required', Rule::in(Property::RENTAL_MODES)],
             // Per-room fields
-            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'ensuite'])],
+            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'couple', 'ensuite'])],
             'has_wardrobe' => 'boolean',
             'bed_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'double'])],
             'bathroom_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['shared', 'private'])],
@@ -67,6 +70,12 @@ class PropertyController extends Controller
             'region' => 'nullable|string|max:100',
             'property_type' => ['nullable', Rule::in(Property::PROPERTY_TYPES)],
             'total_rooms' => 'nullable|integer|min:1|max:50',
+            'room_register_version' => 'sometimes|nullable|string|size:64',
+            'room_register' => 'sometimes|array|list|max:50',
+            'room_register.*' => 'array:id,name,hold',
+            'room_register.*.id' => 'nullable|uuid|distinct',
+            'room_register.*.name' => 'required|string|max:100',
+            'room_register.*.hold' => 'required|boolean',
             'mercury_account_number' => 'nullable|string|max:100',
             'mercury_account_holder' => 'nullable|string|max:255',
             'property_icp' => 'nullable|string|max:100',
@@ -97,7 +106,7 @@ class PropertyController extends Controller
         $sort = $request->query('sort', 'code');         // code | address | latest
 
         $properties = Property::with('images')
-            ->withCount('activeTenants') // drives rooms_occupied / occupancy_status
+            ->withCount('activeTenants')
             ->when($search, fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$search}%")
                 ->orWhere('code', 'like', "%{$search}%")
@@ -117,8 +126,13 @@ class PropertyController extends Controller
             ->when(! in_array($sort, ['address', 'latest'], true), fn ($q) => $q
                 ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED), code'))
             ->paginate(15)
-            ->withQueryString()
-            ->through(fn (Property $p) => $p->makeVisible(self::VISIBLE_IN_PORTAL));
+            ->withQueryString();
+        $summaries = \App\Services\Accommodation\RoomInventory::forProperties($properties->getCollection())->keyBy('id');
+        $properties->through(function (Property $p) use ($summaries) {
+            $p->makeVisible(self::VISIBLE_IN_PORTAL);
+            $p->room_summary = $summaries->get($p->id);
+            return $p;
+        });
 
         return inertia('portal/accommodation/Properties', [
             'properties' => $properties,
@@ -147,6 +161,9 @@ class PropertyController extends Controller
             'property' => $property,
             'tenants' => $tenants->whereIn('current_status', Tenant::ACTIVE_STATUSES)->values(),
             'historicalTenants' => $tenants->where('current_status', 'vacated')->values(),
+            'roomSummary' => \App\Services\Accommodation\RoomInventory::summarize($property),
+            'canVerifyRooms' => request()->user()?->is_active && (request()->user()->isAdmin() || request()->user()->role === 'accommodation')
+                && ! request()->attributes->has('user_view_actor') && $property->is_active,
             'activity' => [],
         ]);
     }
@@ -162,7 +179,8 @@ class PropertyController extends Controller
 
     public function store(Request $request)
     {
-        $property = Property::create($this->cleanData($request));
+        $property = new Property;
+        $this->saveProperty($request, $property, $this->cleanData($request));
         $this->storeImages($property, $request->file('images', []));
 
         return redirect()->route('portal.accommodation.properties.index')
@@ -175,6 +193,8 @@ class PropertyController extends Controller
 
         return inertia('portal/accommodation/PropertyForm', [
             'property' => $property,
+            'room_register' => $property->room_register ?? [],
+            'room_register_version' => $this->roomRegisterVersion($property),
             'options' => $this->formOptions(),
             'next_code' => null,
         ]);
@@ -182,22 +202,76 @@ class PropertyController extends Controller
 
     public function update(Request $request, Property $property)
     {
-        $property->update($this->cleanData($request, $property));
+        $data = $this->cleanData($request, $property);
+        DB::transaction(function () use ($request, $property, $data) {
+            $locked = Property::whereKey($property->id)->lockForUpdate()->firstOrFail();
+            $this->saveProperty($request, $locked, $data);
+        });
         $this->storeImages($property, $request->file('images', []));
 
         return redirect()->route('portal.accommodation.properties.show', $property)
             ->with('success', 'Property updated successfully.');
     }
 
+    private function roomRegisterVersion(Property $property): string
+    {
+        return hash('sha256', json_encode([$property->total_rooms, $property->room_register], JSON_THROW_ON_ERROR));
+    }
+
+    private function saveProperty(Request $request, Property $property, array $data): void
+    {
+        if (array_key_exists('room_register_version', $data) || array_key_exists('room_register', $data)) {
+            RoomInventory::authorizeStaff($request);
+            abort_unless(RoomInventory::tenantTrackingAvailable(), 503, 'Room tracking is being installed. Try again shortly.');
+            if ($property->exists && ! hash_equals($this->roomRegisterVersion($property), $data['room_register_version'] ?? '')) {
+                throw ValidationException::withMessages(['room_register' => 'The property room register changed. Reload before editing it.']);
+            }
+
+            $existingIds = array_column($property->room_register ?? [], 'id');
+            $rooms = collect($data['room_register'] ?? [])->map(function ($row) use ($existingIds) {
+                if (! empty($row['id']) && ! in_array($row['id'], $existingIds, true)) {
+                    throw ValidationException::withMessages(['room_register' => 'An existing room ID is unknown. Reload the property and try again.']);
+                }
+
+                return ['id' => $row['id'] ?? (string) Str::uuid(), 'name' => trim($row['name']), 'hold' => (bool) $row['hold']];
+            });
+            if ($rooms->pluck('name')->map(fn ($name) => mb_strtolower($name))->unique()->count() !== $rooms->count()) {
+                throw ValidationException::withMessages(['room_register' => 'Give each physical room a distinct name.']);
+            }
+            $removed = array_diff($existingIds, $rooms->pluck('id')->all());
+            if ($removed && Tenant::where('property_id', $property->id)
+                ->whereIn('current_status', [...Tenant::ACTIVE_STATUSES, 'pending_payment'])
+                ->get(['assigned_room_ids'])->contains(fn ($tenant) => array_intersect($removed, $tenant->assigned_room_ids ?? []))) {
+                throw ValidationException::withMessages(['room_register' => 'Reassign the affected tenancies before removing a room.']);
+            }
+            $property->room_register = $rooms->all();
+        }
+
+        $property->fill($data);
+        if ($property->exists && $property->getOriginal('is_active') && ! $property->is_active && $property->activeTenants()->exists()) {
+            throw ValidationException::withMessages(['is_active' => 'Vacate or move the active tenants before archiving this property.']);
+        }
+        if (count($property->room_register ?? []) > $property->total_rooms) {
+            throw ValidationException::withMessages(['total_rooms' => 'Total rooms must cover every room in the room register.']);
+        }
+        $property->save();
+    }
+
     /** Archive (soft remove from portfolio) rather than delete. */
     public function archive(Property $property)
     {
-        if ($property->activeTenants()->exists()) {
+        $archived = DB::transaction(function () use ($property) {
+            $locked = Property::whereKey($property->id)->lockForUpdate()->firstOrFail();
+            if ($locked->activeTenants()->exists()) {
+                return false;
+            }
+
+            return $locked->update(['is_active' => false]);
+        });
+        if (! $archived) {
             return redirect()->back()
                 ->with('error', 'Cannot archive a property with active tenants. Vacate or move them first.');
         }
-
-        $property->update(['is_active' => false]);
 
         return redirect()->back()->with('success', 'Property archived.');
     }

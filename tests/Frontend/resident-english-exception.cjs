@@ -25,7 +25,7 @@ function load(file, extra = '') {
         if (name === 'sonner') return { toast: { success: empty, error: empty } };
         if (name === 'lucide-react') return new Proxy({}, { get: () => empty });
         if (name.endsWith('/data/assessmentSections')) return { ASSESSMENT_SECTIONS: { resident: [{ title: 'English & Family', fields: [['english_evidence', 'English Language Evidence'], ['english_test_score', 'Score'], ['job_title', 'Job']] }] }, fieldKind: () => 'text' };
-        if (name.startsWith('@/')) return Object.assign(empty, { default: empty, AiAssessmentReviewModal: empty });
+        if (name.startsWith('@/')) return Object.assign(empty, { default: empty, AiAssessmentReviewModal: empty, VifSupplementEditor: empty });
         return module.require(name);
     };
     component.filename = path.resolve('resident-evidence-test.cjs'); component.paths = module.paths;
@@ -110,7 +110,10 @@ async function change(element, value) {
     assert.equal(document.querySelector('input').value, 'Chef');
     assert.match(document.body.textContent, /Not Required · Recorded by staff/);
     await act(async () => button('Save changes').click());
-    assert.deepEqual(clientSave, { field_values: { job_title: 'Chef' } });
+    assert.equal(clientSave, undefined, 'An unchanged client save does not post protected or ordinary fields');
+    await change(document.querySelector('input'), 'Updated Chef');
+    await act(async () => button('Save changes').click());
+    assert.deepEqual(clientSave, { field_values: { job_title: 'Updated Chef' } });
     await act(async () => root.unmount());
     console.log('Resident English evidence: required reason, save/errors/history and public read-only controls passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

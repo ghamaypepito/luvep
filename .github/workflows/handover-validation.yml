@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Verify PDF worker build compatibility
-        run: node --test tests/js/pdf-worker-build.test.mjs tests/js/critical-dependencies.test.mjs
+        run: node --test tests/js/pdf-worker-build.test.mjs tests/js/critical-dependencies.test.mjs tests/js/vif-supplement.test.mjs tests/js/vif-supplement-editing.test.mjs tests/js/vif-client-refresh.test.mjs
       - name: Configure isolated test environment
         run: |
           cp .env.example .env
@@ -37,8 +37,10 @@ jobs:
       - name: Verify workspace interactions and installation
         run: |
           node tests/Frontend/accommodation-carousel.cjs
+          node tests/Frontend/accommodation-tenant-link.cjs
           node tests/Frontend/accommodation-agreements.cjs
           node tests/Frontend/accommodation-move-in.cjs
+          node tests/Frontend/accommodation-room-inventory.cjs
           node tests/Frontend/brief-references.cjs
           node tests/Frontend/compose-studio.cjs
           node tests/Frontend/compose-video.cjs
@@ -58,6 +60,7 @@ jobs:
           node tests/Frontend/education-cost-breakdown.cjs
           node tests/Frontend/english-agreement-access.cjs
           node tests/Frontend/offer-of-place-inbox.cjs
+          node tests/Frontend/partner-activity-tracker.cjs
           node tests/Frontend/affiliate-performance.cjs
           node tests/Frontend/education-lead-filter-headings.cjs
           node tests/Frontend/affiliate-onboarding.cjs

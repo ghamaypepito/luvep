@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import React, { useState, useEffect } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -56,6 +57,7 @@ function loadDraft() {
 export default function FamilyInterestPage() {
     const draft = loadDraft();
     const { data, setData, post, processing, errors: serverErrors } = useForm({
+        vif_answers: {},
         terms_accepted: false,
         family_name: '', first_name: '', other_names: '', gender: '', dob: '',
         partnership_status: '', country_of_birth: '', place_of_birth: '',
@@ -313,6 +315,7 @@ export default function FamilyInterestPage() {
                 <>
                     <SectionTitle title="Other contacts" />
                     <TextareaField label="Contacts in New Zealand? (relationship, name, address, phone)" value={data.nz_contacts} onChange={set('nz_contacts')} />
+                    <VifSupplementFields type="family" values={data} onChange={setData} errors={errors} />
                     <SectionTitle title="Declaration" />
                     <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-6 text-sm text-gray-600 leading-relaxed">
                         <p className="font-bold text-[#282728] mb-2">

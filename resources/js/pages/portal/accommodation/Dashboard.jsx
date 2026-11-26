@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Head, Link } from "@inertiajs/react";
 import { Home, CheckCircle, EyeOff, ClipboardList, Inbox, Plus } from "lucide-react";
 
@@ -21,12 +22,26 @@ export default function AccommodationDashboard({
     applicationStats = {},
     recentProperties = [],
     recentApplications = [],
+    inventoryStats = null,
+    inventoryError = null,
 }) {
+    const [roomFilter, setRoomFilter] = useState('all');
     const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(0)}`);
+    const complete = inventoryStats && !inventoryStats.unverified_properties && !inventoryStats.missing_capacity;
+    const inventoryRows = (inventoryStats?.rows || []).filter(row => roomFilter === 'all'
+        || (roomFilter === 'vacant' ? row.vacant > 0 : roomFilter === 'available' ? row.available_to_let > 0 : row.state !== 'verified'));
+    const inventoryCards = [
+        ['Active properties', inventoryStats?.properties, 'Active managed property records', '/portal/accommodation/properties'],
+        ['Total rooms', inventoryStats && !inventoryStats.missing_capacity ? inventoryStats.rooms : null, 'Recorded physical room capacity', '#room-inventory'],
+        ['Current household tenancies', inventoryStats?.households, 'One count per current tenancy record', '/portal/accommodation/tenants'],
+        ['Active tenant agreements', inventoryStats?.active_agreements, 'Signed agreements linked to current tenancies', '/portal/accommodation/forms/agreements'],
+        ['Occupied rooms', complete ? inventoryStats.occupied : null, `${inventoryStats?.occupied ?? 0} verified occupied; household totals are separate`, '#room-inventory'],
+        ['Vacant rooms', complete ? inventoryStats.vacant : null, `${inventoryStats?.vacant ?? 0} verified vacant; click to view properties`, '#room-inventory', 'vacant'],
+        ['Available rooms to let', complete ? inventoryStats.available_to_let : null, 'Excludes bedrooms offered only as a whole-property let', '#room-inventory', 'available'],
+        ['Unavailable rooms', complete ? inventoryStats.unavailable : null, 'Verified rooms not available to rent', '#room-inventory'],
+    ];
 
     const cards = [
-        { label: "Total properties", value: propertyStats.total ?? 0, icon: <Home className="w-5 h-5" />, dark: true, foot: <span className="text-xs text-gray-400">all listings</span> },
-        { label: "Available", value: propertyStats.available ?? 0, icon: <CheckCircle className="w-5 h-5" />, foot: <span className="text-xs text-gray-400">{propertyStats.unavailable ?? 0} hidden</span> },
         { label: "Leads", value: applicationStats.total ?? 0, icon: <ClipboardList className="w-5 h-5" />, foot: <span className="text-xs text-gray-400">{applicationStats.hot ?? 0} hot · {applicationStats.cold ?? 0} cold</span> },
         { label: "New leads", value: applicationStats.new ?? 0, icon: <Inbox className="w-5 h-5" />, foot: <span className="text-xs text-gray-400">awaiting review</span> },
     ];
@@ -38,7 +53,7 @@ export default function AccommodationDashboard({
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Accommodation</h1>
-                    <p className="text-sm text-gray-500">Property listings and Expression of Interest leads.</p>
+                    <p className="text-sm text-gray-500">Active properties, household tenancies and verified room inventory.</p>
                 </div>
                 <Link
                     href="/portal/accommodation/properties/create"
@@ -47,6 +62,38 @@ export default function AccommodationDashboard({
                     <Plus size={18} /> New property
                 </Link>
             </div>
+
+            {inventoryError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{inventoryError}</p>}
+            {inventoryStats && !complete && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                {inventoryStats.unverified_properties} properties need a room check; {inventoryStats.unverified_rooms} known-capacity rooms are not verified.
+                {' '}{inventoryStats.missing_capacity > 0 && `${inventoryStats.missing_capacity} properties also need a room capacity.`}
+                {' '}Unassigned rooms are not assumed vacant. <a href="#room-inventory" onClick={() => setRoomFilter('unverified')} className="underline">Review properties</a>
+            </div>}
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3" aria-label="Property and room totals">
+                {inventoryCards.map(([label, value, note, href, filter]) => {
+                    const content = <><p className="text-sm text-gray-600">{label}</p><p className="mt-2 text-3xl font-bold">{value ?? '—'}</p><p className="mt-2 text-xs text-gray-500">{note}</p></>;
+                    return href.startsWith('#') ? <a key={label} href={href} onClick={() => setRoomFilter(filter || 'all')} className="rounded-3xl border bg-white p-5 shadow-sm hover:border-blue-300">{content}</a>
+                        : <Link key={label} href={href} className="rounded-3xl border bg-white p-5 shadow-sm hover:border-blue-300">{content}</Link>;
+                })}
+            </div>
+            <section id="room-inventory" className="rounded-3xl border bg-white p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">Room inventory by property</h2>
+                    <select aria-label="Room inventory filter" className="rounded-lg border p-2 text-sm" value={roomFilter} onChange={event => setRoomFilter(event.target.value)}>
+                        <option value="all">All active properties</option><option value="vacant">Verified vacancies</option><option value="available">Available to let per room</option><option value="unverified">Needs verification</option>
+                    </select>
+                </div>
+                <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>
+                    {['Property', 'Rooms', 'Households', 'Occupied', 'Vacant', 'Unavailable', 'Verification'].map(label => <th className="p-2" key={label}>{label}</th>)}
+                </tr></thead><tbody>{inventoryRows.map(row => <tr key={row.id} className="border-t">
+                    <td className="p-2"><Link className="font-semibold text-blue-700 underline" href={`/portal/accommodation/properties/${row.id}`}>{row.code ? `#${row.code} · ` : ''}{row.name}</Link>{row.vacancy_notes && <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">{row.vacancy_notes}</p>}</td>
+                    <td className="p-2">{row.total ?? 'Not set'}</td><td className="p-2">{row.households}</td>
+                    <td className="p-2">{row.occupied ?? '—'}</td><td className="p-2">{row.vacant ?? '—'}</td><td className="p-2">{row.unavailable ?? '—'}</td>
+                    <td className="p-2">{row.state === 'verified' ? (row.tracked ? 'Room assignments' : `Checked ${row.observed_on}`) : 'Needs review'}{row.unlabelled_households > 0 && <p className="text-xs text-amber-700">{row.unlabelled_households} households need {row.tracked ? 'room assignments' : 'room labels'}</p>}</td>
+                </tr>)}</tbody></table></div>
+                {!inventoryRows.length && <p className="py-4 text-sm text-gray-500">No matching verified records. This does not establish that unverified properties have no vacancies.</p>}
+                <p className="mt-3 text-xs text-gray-500">Room totals update from current tenant assignments once the property register is complete. Properties awaiting setup use their latest valid room check.</p>
+            </section>
+            <p className="text-xs text-gray-500">Public listing availability: {propertyStats.available ?? '—'} available / {propertyStats.unavailable ?? '—'} hidden. Listing publication is separate from room vacancy.</p>
 
             {/* Stat cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -322,6 +322,7 @@ export default function AgentsIndex({
     return (
         <div className="affiliate-page affiliate-report mx-auto max-w-[1450px] space-y-5 text-[#192821]">
             <Head title="Affiliate Partners" />
+            <a href="/portal/education/partner-tracker" className="mb-4 inline-block rounded-lg border px-3 py-2 text-sm font-semibold">Partner Activity Tracker</a>
             <style>{`@media print { body * { visibility: hidden; } .affiliate-report, .affiliate-report * { visibility: visible; } .affiliate-report { position: absolute; inset: 0; width: 100%; max-width: none; padding: 16px; background: white; } .affiliate-report .print-hidden, .affiliate-report .print-hidden * { display: none !important; } .affiliate-report .overflow-x-auto { overflow: visible; } .affiliate-report table { font-size: 10px; } .affiliate-report * { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }`}</style>
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>

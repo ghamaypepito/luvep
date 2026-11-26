@@ -1,3 +1,4 @@
+import { VifSupplementEditor } from '@/components/visa/VifSupplementFields';
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import {
@@ -1103,6 +1104,8 @@ export function IntakeViewModal({ intake: i, data: providedData, loading: provid
                                     </section>
                                 );
                             })}
+                            <VifSupplementEditor type={i.visa_type} values={data?.vif_values}
+                                saveUrl={`/portal/immigration/intakes/${i.visa_type}/${i.id}`} csrfHeaders={assessCsrf()} onSaved={setDataPatch} />
                         </>
                         )}
                     </div>

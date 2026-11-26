@@ -20,6 +20,7 @@ Route::middleware(['auth', \App\Http\Middleware\EnsureSocialTeamAccess::class])-
     Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
     Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
     Route::get('/social/marketing/posts/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'show'])->whereUuid('id')->middleware('throttle:60,1');
+    Route::patch('/social/marketing/posts/{id}/planned-date', [\App\Http\Controllers\Admin\MarketingPostController::class, 'move'])->whereUuid('id')->middleware('throttle:15,1');
     Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
     Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
     Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');

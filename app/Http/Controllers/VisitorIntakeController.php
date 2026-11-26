@@ -33,6 +33,7 @@ class VisitorIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('visitor', \App\Support\VifSupplement::normalizeInput('visitor', $request->all())));
         $validated = $request->validate($this->rules());
 
         try {
@@ -88,6 +89,7 @@ class VisitorIntakeController extends Controller
     private function rules(): array
     {
         return [
+            ...\App\Support\VifSupplement::rules('visitor'),
             // Shared document-tab rules (passport, visa copies, files, …).
             ...$this->intakeDocumentRules(),
             'family_name' => 'required|string|max:255',

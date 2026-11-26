@@ -271,7 +271,7 @@ class CommunicationService
      * the caller. Logs with source='compose' and recipient_type 'lead'/'raw'.
      * $rawHtml=true sends a self-contained builder email (no branded shell).
      */
-    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false): MessageLog
+    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false, ?int $partnerId = null): MessageLog
     {
         // Primary To address(es) plus any template "To — also send to" extras,
         // lower-cased and deduped. Accepts a single address or a list (a staff
@@ -282,10 +282,10 @@ class CommunicationService
             ->filter()->unique()->values()->all();
 
         $log = $this->log([
-            'source' => 'compose',
+            'source' => $partnerId ? 'partner-tracker' : 'compose',
             'channel' => MessageLog::CHANNEL_EMAIL,
-            'recipient_type' => $leadId ? 'lead' : 'raw',
-            'recipient_id' => $leadId,
+            'recipient_type' => $partnerId ? 'user' : ($leadId ? 'lead' : 'raw'),
+            'recipient_id' => $partnerId ?? $leadId,
             'recipient_address' => implode(', ', $recipients),
             'subject' => $subject,
             'body' => $body,

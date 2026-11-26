@@ -76,6 +76,7 @@ class Property extends Model
         'bedrooms' => 'integer',
         'bathrooms' => 'integer',
         'rooms_layout' => 'array',
+        'room_register' => 'array',
         'total_rooms' => 'integer',
         'bond_total_nzd' => 'decimal:2',
         'advance_total_nzd' => 'decimal:2',
@@ -96,7 +97,7 @@ class Property extends Model
         'property_manager_name', 'property_manager_phone', 'property_manager_email',
         'pm_payment_schedule', 'power_due_date', 'water_due_date', 'internet_due_date',
         'last_gas_purchase', 'uses_bottled_gas', 'is_active', 'notes',
-        'rooms_occupied', 'occupancy_status',
+        'rooms_occupied', 'occupancy_status', 'room_register',
     ];
 
     protected $appends = ['cover_image', 'rooms_occupied', 'occupancy_status'];

@@ -8,6 +8,7 @@ use App\Models\StudentIntake;
 use App\Models\VisaType;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Maps the four public visa-interest intake models to the
@@ -62,10 +63,19 @@ final class IntakeVisaTypeMap
      * Resolve the VisaType row that pairs with the given intake-model
      * class, or null if no candidate code or category matches.
      *
-     * @param  class-string  $intakeClass
+     * @param  class-string|Model  $intakeClass
      */
-    public static function resolve(string $intakeClass): ?VisaType
+    public static function resolve(string|Model $intakeClass, ?string $workCategory = null): ?VisaType
     {
+        if ($intakeClass instanceof Model) {
+            $category = $intakeClass instanceof WorkIntake ? ($intakeClass->vif_answers['work_visa_category'] ?? null) : null;
+            $workCategory = is_string($category) ? $category : null;
+            $intakeClass = $intakeClass::class;
+        }
+        if ($intakeClass === WorkIntake::class && $workCategory === 'Post-Study Work Visa') {
+            return VisaType::whereIn('code', ['POST_STUDY_WORK', 'PSWV'])->first();
+        }
+
         $config = self::MAP[$intakeClass] ?? null;
         if (! $config) {
             return null;
@@ -76,7 +86,21 @@ final class IntakeVisaTypeMap
         // who renames the "SMC" code (e.g. to "RESIDENT_SMC") still
         // resolves through `category = Resident`.
         return VisaType::query()->whereIn('code', $config['code'])->first()
-            ?: VisaType::query()->where('category', $config['category'])->first();
+            ?: VisaType::query()->where('category', $config['category'])
+                ->when($intakeClass === WorkIntake::class, fn ($query) => $query->whereNotIn('code', ['POST_STUDY_WORK', 'PSWV']))->first();
+    }
+
+    /** Update only the assessment paired with a staff/client's stated Work category. */
+    public static function syncWorkCategory(WorkIntake $intake, string $errorField): void
+    {
+        $visa = self::resolve($intake);
+        if (! $visa) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                $errorField => 'This work visa category is not configured. Please contact the Immigration team.',
+            ]);
+        }
+        \App\Models\Assessment::where('intakeable_type', WorkIntake::class)->where('intakeable_id', $intake->id)
+            ->update(['visa_type_id' => $visa->id]);
     }
 
     /**
