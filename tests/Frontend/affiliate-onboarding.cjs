@@ -98,6 +98,20 @@ const input = async (selector, value) => act(async () => {
     assert.equal(resumed.data.draft_version, 3);
     assert.equal(resumed.data.phone, '456');
     assert.equal(resumed.data.intent, 'submit');
+    await act(async () => resumed.options.onError({ draft_version: 'Refresh before saving.' }));
+    // Inertia preserves the form after errors but refreshes server props.
+    await render(Progress, { application: { name: 'Changed in another tab', status: 'Draft' }, draft: {
+        name: 'Changed in another tab', email: 'demo@example.test', phone: '999', location: 'Canada', company: '', draft_version: 4, save_url: '/private-save',
+    } });
+    await submit();
+    const stale = requests.pop();
+    assert.equal(stale.data.phone, '456');
+    assert.equal(stale.data.draft_version, 3, 'Preserved input must retain its original revision after an error');
+    await act(async () => stale.options.onSuccess({ props: { draft: {
+        name: 'Demo', email: 'demo@example.test', phone: '456', location: 'Canada', company: '', draft_version: 5,
+    } } }));
+    await submit();
+    assert.equal(requests.pop().data.draft_version, 5, 'Successful save replaces the form and revision together');
     await render(Progress, { application: { name: 'Demo', status: 'Awaiting signatures' }, agreement: {
         id: 7, version: 2, status: 'Generated', sign_url: '/exact-sign-link', document_url: '/own-pdf', review_url: '/private-review?signature=exact', download_url: '/own-download', fields: [], initial: {},
     } });

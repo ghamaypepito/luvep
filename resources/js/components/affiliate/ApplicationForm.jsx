@@ -10,14 +10,22 @@ const fields = [
 ];
 
 export default function ApplicationForm({ draft = null, onSuccess }) {
-    const form = useForm(Object.fromEntries(fields.map(([key]) => [key, draft?.[key] || ""]).concat([["consent", false]])));
+    const form = useForm({ ...Object.fromEntries(fields.map(([key]) => [key, draft?.[key] || ""])), consent: false, ...(draft ? { draft_version: draft.draft_version } : {}) });
     const [saved, setSaved] = useState(false);
     const submit = event => {
         event.preventDefault();
         if (form.processing) return;
         const intent = event.nativeEvent.submitter?.value || "submit";
-        form.transform(data => ({ ...data, intent, ...(draft ? { draft_version: draft.draft_version } : {}) }));
-        form.post(draft?.save_url || "/affiliate/apply", { onSuccess: () => { setSaved(intent === "save"); onSuccess?.(form.data.email); } });
+        form.transform(data => ({ ...data, intent }));
+        form.post(draft?.save_url || "/affiliate/apply", { onSuccess: page => {
+            // The revision belongs to this field snapshot. Error redirects can
+            // refresh props while Inertia preserves older input; never pair them.
+            const savedDraft = page?.props.draft;
+            if (draft && savedDraft) {
+                for (const key of [...fields.map(([key]) => key), 'draft_version']) form.setData(key, savedDraft[key] ?? "");
+            }
+            setSaved(intent === "save"); onSuccess?.(form.data.email);
+        } });
     };
     return <form onSubmit={submit} className="mt-7 space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
