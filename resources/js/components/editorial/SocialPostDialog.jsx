@@ -22,7 +22,10 @@ export default function SocialPostDialog({ postId, initialDate = '', canApprove 
     const [mode, setMode] = useState('approval');
     const [unconfirmedSave, setUnconfirmedSave] = useState(false);
     const readOnly = unconfirmedSave || frozen.includes(post?.status);
-    const dirty = post ? JSON.stringify(form) !== JSON.stringify(values(post)) || !!media || removeMedia : Object.entries(form).some(([key, value]) => !['service', 'post_type', 'schedule_date', 'schedule_time', 'publish_now'].includes(key) && !!value) || !!media;
+    const savedForm = values(post);
+    const dirty = post ? JSON.stringify(form) !== JSON.stringify(savedForm) || !!media || removeMedia : Object.entries(form).some(([key, value]) => !['service', 'post_type', 'schedule_date', 'schedule_time', 'publish_now'].includes(key) && !!value) || !!media;
+    const dateOnly = post?.can_move && mode === 'schedule' && form.schedule_date && form.schedule_date !== savedForm.schedule_date && !media && !removeMedia
+        && Object.entries(form).every(([key, value]) => key === 'schedule_date' || value === savedForm[key]);
     const account = connection?.accounts?.find(account => account.selected);
     const changed = (key, value) => { setForm(previous => ({ ...previous, [key]: value })); setErrors({}); setMessage(''); setConfirmDelivery(false); };
     useEffect(() => { dialog.current.showModal(); closeRef.current.focus(); }, []);
@@ -66,6 +69,14 @@ export default function SocialPostDialog({ postId, initialDate = '', canApprove 
         busy.current = true; setPending(action); setErrors({}); setMessage('');
         let current = post, stage = action;
         try {
+            if (action === 'move') {
+                const { data } = await axios.patch(api + '/' + post.id + '/planned-date', { version: post.version, planned_date: form.schedule_date }, { headers });
+                setPost(data.post);
+                setForm(values(data.post));
+                setMessage(post.status === 'approved' ? 'Date updated. The new date needs approval.' : 'Date updated in Luvep.');
+                onSaved();
+                return;
+            }
             if (action === 'save' || action === 'submit-save') {
                 stage = 'save';
                 const data = new FormData();
@@ -133,12 +144,13 @@ export default function SocialPostDialog({ postId, initialDate = '', canApprove 
             </div>
             <footer className="social-dialog-footer"><button type="button" className="calendar-button secondary" disabled={!!pending} onClick={close}>Close</button><div>
                 {connectionError && <button type="button" className="calendar-text-button" disabled={!!pending} onClick={() => setConnectionAttempt(value => value + 1)}>Check GHL account again</button>}
-                {!loading && !loadError && !readOnly && <>
+                {!loading && !loadError && !readOnly && (dateOnly ?
+                    <button type="button" className="calendar-button" disabled={!!pending} onClick={() => write('move')}>{pending ? 'Saving…' : 'Save date'}</button> : <>
                     <button type="button" className="calendar-button secondary" disabled={!!pending || (!!post && !dirty)} onClick={() => write('save')}>Save draft</button>
                     {(!post || dirty) && mode !== 'draft' ? <button type="button" className="calendar-button" disabled={!!pending} onClick={() => write('submit-save')}>{pending ? 'Saving…' : 'Save & submit for review'}</button> : post && ['draft', 'changes_requested'].includes(post.status) && !dirty && <button type="button" className="calendar-button" disabled={!!pending} onClick={() => write('submit')}>Submit for review</button>}
                     {canApprove && post?.status === 'in_review' && !dirty && <><button type="button" className="calendar-button secondary" disabled={!!pending || !reviewNote.trim()} onClick={() => write('changes')}>Request changes</button><button type="button" className="calendar-button" disabled={!!pending} onClick={() => write('approve')}>Approve this version</button></>}
                     {canPublish && post?.status === 'approved' && !dirty && <button type="button" className="calendar-button" disabled={!!pending || !ready || confirmDelivery} onClick={() => setConfirmDelivery(true)}>{form.publish_now ? 'Post now through GHL' : 'Schedule through GHL'}</button>}
-                </>}
+                </>)}
             </div></footer>
         </div>
         {driveOpen && <SocialDrivePicker onClose={closeDrive} onSelect={(asset, file) => { if (file) selectMedia(file); setForm(previous => { const type = !post && !previous.campaign && previous.post_type === 'post' ? asset.post_type || 'post' : previous.post_type; return { ...previous, post_type: type, campaign: previous.campaign || asset.name, caption: previous.caption || (type === 'story' ? '' : asset.caption || '') }; }); closeDrive(); }} />}

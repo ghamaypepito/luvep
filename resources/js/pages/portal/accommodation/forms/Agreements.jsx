@@ -336,6 +336,8 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <StatusBadge status={a.status} />
                                 </div>
                                 <div className="flex items-center gap-1.5">
+                                    {a.tenant_id && <a href={`/portal/accommodation/tenants/${a.tenant_id}`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Open tenant</a>}
+                                    {a.can_link_tenant && !a.tenant_id && <a href={`/portal/accommodation/forms/agreements/${a.id}/tenant-link`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Link tenant</a>}
                                     {a.can_resend_copy && <button onClick={() => resend(a)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700">Resend signed copy</button>}
                                     {a.signing_url && !a.signed && (
                                         <>

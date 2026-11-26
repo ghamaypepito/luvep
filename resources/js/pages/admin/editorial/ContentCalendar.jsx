@@ -17,14 +17,16 @@ const dayLabel = new Intl.DateTimeFormat('en-PH', { timeZone: 'UTC', weekday: 'l
 function TopicButton({ topic, onClick, onDragStart, onDragEnd }) {
     const movable = topic.status === 'draft' && !topic.published_slug;
     return <button type="button" className="calendar-article-event" aria-label={topic.title + ', Article, ' + topic.status.replaceAll('_', ' ')}
-        onClick={onClick} draggable={movable} onDragStart={movable ? event => onDragStart(event, topic) : undefined} onDragEnd={movable ? onDragEnd : undefined}>
+        onClick={onClick} draggable={movable} onDragStart={movable ? event => onDragStart(event, 'article', topic) : undefined} onDragEnd={movable ? onDragEnd : undefined}>
         <span className="calendar-event-compact" aria-hidden="true">A</span><span className="calendar-event-title">{topic.title}</span>
         {topic.pillar && <small className="calendar-event-meta">{topic.pillar}</small>}
         <span className="calendar-event-status"><ArticleStatus status={topic.status} />{topic.published_slug && topic.status !== 'published' && <small>Live version</small>}</span>
     </button>;
 }
-function SocialButton({ post, onClick }) {
-    return <button type="button" className="calendar-social-event" aria-label={post.title + ', Social post, ' + (socialStatus[post.status] || post.status) + (post.source === 'ghl' ? ', GHL' : '')} onClick={onClick}>
+function SocialButton({ post, onClick, onDragStart, onDragEnd }) {
+    const movable = post.source !== 'ghl' && post.can_move === true;
+    return <button type="button" className="calendar-social-event" aria-label={post.title + ', Social post, ' + (socialStatus[post.status] || post.status) + (post.source === 'ghl' ? ', GHL' : '')}
+        onClick={onClick} draggable={movable} onDragStart={movable ? event => onDragStart(event, 'social', post) : undefined} onDragEnd={movable ? onDragEnd : undefined}>
         <span className="calendar-event-compact" aria-hidden="true">S</span><span className="calendar-event-title">{post.title}</span><small className="calendar-event-meta">{post.planned_time} · {socialStatus[post.status] || post.status}{post.source === 'ghl' && ' · GHL'}</small>
     </button>;
 }
@@ -80,23 +82,34 @@ export default function ContentCalendar({ month, topics = [], undated = [], canP
         setSelection(null); setChoosingDate(null);
         requestAnimationFrame(() => (opener.current?.isConnected ? opener.current : newArticle.current)?.focus());
     }
-    function startDrag(event, topic) {
+    function startDrag(event, kind, item) {
         if (moving.current) { event.preventDefault(); return; }
-        event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(topic.id)); setMoveMessage(''); setDragging(topic);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(item.id));
+        setMoveMessage('');
+        setDragging({ kind, item });
     }
     function endDrag() { setDragging(null); setDropDate(null); }
-    async function moveDraft(event, date) {
+    async function moveContent(event, date) {
         if (!dragging || moving.current) return;
         event.preventDefault();
-        const topic = dragging, plannedDate = dayKey(date);
+        const { kind, item } = dragging, plannedDate = dayKey(date);
         endDrag();
-        if (topic.planned_date === plannedDate) return;
+        if (item.planned_date === plannedDate) return;
+        const isSocial = kind === 'social';
+        const endpoint = isSocial ? '/social/marketing/posts/' : path + '/articles/';
         moving.current = true;
         try {
-            await axios.patch(path + '/articles/' + topic.id + '/planned-date', { planned_date: plannedDate, revision: topic.revision }, { headers: { Accept: 'application/json' } });
-            setMoveMessage('Moved to ' + dayLabel.format(date) + '.');
-        } catch (error) { setMoveMessage(error.response?.data?.message || 'The draft could not be moved. Try again.'); }
-        finally { router.reload({ only: ['topics', 'undated'], onFinish: () => { moving.current = false; } }); }
+            await axios.patch(endpoint + item.id + '/planned-date', {
+                planned_date: plannedDate,
+                ...(isSocial ? { version: item.version } : { revision: item.revision }),
+            }, { headers: { Accept: 'application/json' } });
+            setMoveMessage('Moved to ' + dayLabel.format(date) + '.' + (isSocial && item.status === 'approved' ? ' The new date needs approval.' : ''));
+        } catch (error) {
+            setMoveMessage(error.response?.data?.message || 'The date change could not be confirmed. Check the calendar before trying again.');
+        } finally {
+            router.reload({ only: isSocial ? ['socialPosts', 'undatedSocialPosts'] : ['topics', 'undated'], onFinish: () => { moving.current = false; } });
+        }
     }
     return <div className="calendar-workspace mx-auto max-w-[1500px] pb-12">
         <Head title="Content Calendar" />
@@ -114,7 +127,7 @@ export default function ContentCalendar({ month, topics = [], undated = [], canP
         </section>
         <div className="calendar-layout"><section aria-labelledby="calendar-month" className="editorial-calendar">
             <div className="calendar-month-toolbar"><div><h2 id="calendar-month">{monthLabel.format(firstDay)}</h2><p>Manila time</p></div><nav aria-label="Calendar month"><Link className="calendar-icon" href={path + '?month=' + dayKey(new Date(Date.UTC(year, monthNumber - 2, 1))).slice(0, 7)} aria-label="Previous month"><ChevronLeft size={16} /></Link><Link className="calendar-button secondary" href={path + '?month=' + today.slice(0, 7)}>Today</Link><Link className="calendar-icon" href={path + '?month=' + dayKey(new Date(Date.UTC(year, monthNumber, 1))).slice(0, 7)} aria-label="Next month"><ChevronRight size={16} /></Link></nav></div>
-            <p className="calendar-help">Drag an unpublished article draft to another day. Open a Luvep social post to edit; GHL posts open in a read-only preview.</p>
+            <p className="calendar-help">Drag an article draft or a Luvep social post with an editable date to another day. You can also open the item and change its date. GHL posts open in a read-only preview.</p>
             {moveMessage && <p className="calendar-move-message" role="status">{moveMessage}</p>}
             {topics.length === 0 && calendarSocials.length === 0 && <p className="calendar-help">{currentGhl.loading || currentGhl.error ? 'No Luvep content is planned for this month.' : 'No content is planned for this month.'} Choose a day to add an article or social post.</p>}
             <div className="editorial-calendar-weekdays">{weekdays.map(day => <span key={day}>{day}</span>)}</div>
@@ -125,16 +138,16 @@ export default function ContentCalendar({ month, topics = [], undated = [], canP
                     onClick={event => { if (!dragging && !event.target.closest('button,a,input')) chooseDate(event, dateKey); }}
                     onDragOver={event => { if (!dragging || moving.current) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropDate(dateKey); }}
                     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropDate(current => current === dateKey ? null : current); }}
-                    onDrop={event => moveDraft(event, date)}
+                    onDrop={event => moveContent(event, date)}
                     className={'editorial-calendar-day' + (!dayTopics.length && !daySocials.length ? ' editorial-calendar-day-empty' : '') + (date.getUTCMonth() !== firstDay.getUTCMonth() ? ' calendar-outside' : '')}>
                     <button type="button" className={'calendar-day-create' + (dateKey === today ? ' calendar-today' : '')} aria-label={'Add content on ' + dayLabel.format(date)} onClick={event => chooseDate(event, dateKey)}><time dateTime={dateKey} aria-current={dateKey === today ? 'date' : undefined}>{date.getUTCDate()}</time><Plus size={12} aria-hidden="true" /></button>
                     {!!dayTopics.length && <ul>{dayTopics.map(topic => <li key={topic.id}><TopicButton topic={topic} onClick={event => openArticle(event, topic.id)} onDragStart={startDrag} onDragEnd={endDrag} /></li>)}</ul>}
-                    {!!daySocials.length && <ul>{daySocials.map(post => <li key={(post.source || 'local') + post.id}><SocialButton post={post} onClick={event => openPost(event, post)} /></li>)}</ul>}
+                    {!!daySocials.length && <ul>{daySocials.map(post => <li key={(post.source || 'local') + post.id}><SocialButton post={post} onClick={event => openPost(event, post)} onDragStart={startDrag} onDragEnd={endDrag} /></li>)}</ul>}
                 </div>;
             })}</div><div className="calendar-legend"><span>Article</span><span>Social post</span></div>
         </section><aside className="calendar-upcoming"><h2>Coming up</h2>{upcoming.length ? upcoming.map(item => <button type="button" key={item.kind + (item.source || 'local') + item.id} onClick={event => item.kind === 'social' ? openPost(event, item) : openArticle(event, item.id)}><time>{item.planned_date}</time><strong>{item.title}</strong><small>{item.kind === 'social' ? 'Social · ' + (socialStatus[item.status] || item.status) + (item.source === 'ghl' ? ' · GHL' : '') : 'Article · ' + item.status.replaceAll('_', ' ')}</small></button>) : <p>No upcoming content in this month.</p>}</aside></div>
         <section className="calendar-undated" aria-labelledby="undated-drafts"><h2 id="undated-drafts"><CalendarDays size={18} aria-hidden="true" /> Undated drafts</h2>{undated.length ? <ul>{undated.map(topic => <li key={topic.id}><TopicButton topic={topic} onClick={event => openArticle(event, topic.id)} onDragStart={startDrag} onDragEnd={endDrag} /></li>)}</ul> : <p>Drafts without a planned date appear here.</p>}</section>
-        {!!undatedSocials.length && <section className="calendar-undated"><h2>Undated social posts</h2><p>Latest 100 Luvep posts without a planned time, and loaded GHL posts without a date.</p><ul>{undatedSocials.map(post => <li key={(post.source || 'local') + post.id}><SocialButton post={post} onClick={event => openPost(event, post)} /></li>)}</ul></section>}
+        {!!undatedSocials.length && <section className="calendar-undated"><h2>Undated social posts</h2><p>Latest 100 Luvep posts without a planned time, and loaded GHL posts without a date.</p><ul>{undatedSocials.map(post => <li key={(post.source || 'local') + post.id}><SocialButton post={post} onClick={event => openPost(event, post)} onDragStart={startDrag} onDragEnd={endDrag} /></li>)}</ul></section>}
         {choosingDate && <ContentTypeDialog date={choosingDate} onClose={close} onChoose={kind => { setChoosingDate(null); setSelection({ kind, id: null, date: choosingDate }); }} />}
         {selection?.kind === 'social' && <SocialPostDialog key={selection.id || 'new-social'} postId={selection.id} initialDate={selection.date} canApprove={canApproveSocialPosts} canPublish={canPublishSocialPosts} onClose={close} onSaved={() => router.reload({ only: ['socialPosts', 'undatedSocialPosts'] })} />}
         {selection?.kind === 'ghl' && <GhlPostDialog post={selection.post} onClose={close} onOpenLocal={id => setSelection({ kind: 'social', id })} />}

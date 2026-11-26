@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class PropertyControllerTest extends TestCase
@@ -83,6 +84,29 @@ class PropertyControllerTest extends TestCase
         $property = Property::first();
         $this->assertCount(2, $property->images);
         Storage::disk('public')->assertExists($property->images->first()->path);
+    }
+
+    public function test_room_type_can_be_saved_and_reopened_for_all_per_room_options(): void
+    {
+        $this->actingAs($this->accommodationUser());
+        $url = '/portal/accommodation/properties';
+
+        foreach (['single', 'couple', 'ensuite'] as $roomType) {
+            $payload = $this->payload(['name' => "Sample {$roomType} room", 'room_type' => $roomType]);
+            $this->post($url, $payload)->assertSessionHasNoErrors()->assertRedirect($url);
+            $property = Property::where('name', $payload['name'])->firstOrFail();
+            $this->assertSame($roomType, $property->room_type);
+        }
+
+        $property = Property::where('room_type', 'single')->firstOrFail();
+        $this->put("{$url}/{$property->id}", $this->payload(['name' => $property->name, 'room_type' => 'couple']))
+            ->assertSessionHasNoErrors()->assertRedirect("{$url}/{$property->id}");
+        $this->get("{$url}/{$property->id}/edit")->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('property.room_type', 'couple'));
+
+        $this->putJson("{$url}/{$property->id}", $this->payload(['room_type' => 'unsupported']))
+            ->assertUnprocessable()->assertJsonValidationErrors('room_type');
+        $this->assertSame('couple', $property->fresh()->room_type);
     }
 
     public function test_update_edits_fields_and_appends_images(): void
