@@ -9,6 +9,7 @@ use App\Models\StudentIntake;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Support\IntakeVisaTypeMap;
+use App\Support\VifSupplement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -64,7 +65,8 @@ class IntakeTypeConverter
         // The new intake needs a paired Assessment to appear in the Visa
         // Assessment list, and that needs the target visa type to exist. Resolve
         // it up front so we never create an orphan intake with no assessment.
-        $visaType = IntakeVisaTypeMap::resolve($targetClass);
+        $visaType = IntakeVisaTypeMap::resolve($targetClass, $targetClass === WorkIntake::class && is_array($source->vif_answers)
+            ? ($source->vif_answers['work_visa_category'] ?? null) : null);
         if (! $visaType) {
             throw new \RuntimeException("The {$targetType} visa type isn't configured yet — add it under Visa Types first.");
         }
@@ -82,6 +84,13 @@ class IntakeTypeConverter
         // A staff evidence decision belongs to its original intake, not a new assessment.
         if (($attrs['english_evidence'] ?? null) === ResidentIntake::ENGLISH_NOT_REQUIRED) {
             unset($attrs['english_evidence'], $attrs['english_test_score'], $attrs['english_test_date']);
+        }
+
+        // Supplemental questions are visa-specific even though the JSON column is shared.
+        if (isset($attrs['vif_answers'])) {
+            $attrs['vif_answers'] = is_array($attrs['vif_answers'])
+                ? array_intersect_key($attrs['vif_answers'], array_flip(VifSupplement::answerKeys($targetType)))
+                : null;
         }
 
         // Carry the surname across the last_name <-> family_name naming split.
@@ -106,6 +115,7 @@ class IntakeTypeConverter
         // other forms don't collect. Seed those with safe placeholders so the
         // record saves; they're visa-specific and the client completes them.
         $this->fillRequiredDefaults($target, $attrs);
+        $attrs = VifSupplement::normalizeInput($targetType, $attrs);
 
         /** @var Model $new */
         $new = $targetClass::create($attrs);

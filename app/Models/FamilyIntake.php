@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 class FamilyIntake extends Model
 {
     protected $fillable = [
+        'vif_answers',
         'intake_id', 'status', 'edit_token',
         // A — Identity
         'family_name', 'first_name', 'other_names', 'gender', 'dob',
@@ -41,6 +42,7 @@ class FamilyIntake extends Model
     ];
 
     protected $casts = [
+        'vif_answers' => 'array',
         'dob' => 'date',
         'signature_date' => 'date',
         'previous_work' => 'array',
