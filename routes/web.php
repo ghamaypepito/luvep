@@ -2086,6 +2086,13 @@ Route::middleware(['auth'])->group(function () {
                 ->where(['type' => 'resident|work|student|visitor|family|free', 'id' => '[0-9]+'])
                 ->name('assessments.notes.store');
             Route::get('/cases', [ImmigrationController::class, 'cases'])->name('cases');
+            $employerCases = \App\Http\Controllers\Portal\ImmigrationEmployerController::class;
+            Route::get('/employer-job-checks', [$employerCases, 'index'])->name('employer-job-checks.index');
+            Route::get('/employer-job-checks/{jobCheck}', [$employerCases, 'index'])->whereNumber('jobCheck')->name('employer-job-checks.show');
+            Route::post('/employer-job-checks/employers', [$employerCases, 'storeEmployer'])->name('employer-job-checks.employers.store');
+            Route::patch('/employer-job-checks/employers/{employer}', [$employerCases, 'updateEmployer'])->whereNumber('employer')->name('employer-job-checks.employers.update');
+            Route::post('/employer-job-checks', [$employerCases, 'storeCase'])->name('employer-job-checks.store');
+            Route::patch('/employer-job-checks/{jobCheck}', [$employerCases, 'updateCase'])->whereNumber('jobCheck')->name('employer-job-checks.update');
             $archive = \App\Http\Controllers\Immigration\CaseArchiveController::class;
             Route::get('/cases/archived', [$archive, 'index'])->name('cases.archived');
             Route::post('/cases/{id}/archive', [$archive, 'archive'])->whereNumber('id')->name('cases.archive');

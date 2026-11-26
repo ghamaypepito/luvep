@@ -35,6 +35,8 @@ export default function ImmigrationLayout({ children }) {
             badgeTone: "default",
             children: [
                 { name: "List of Cases", href: "/portal/immigration/cases",            icon: <Globe size={16} /> },
+                ...(['admin', 'super_admin', 'immigration', 'immigration_manager', 'immigration_adviser'].includes(props.auth?.user?.role)
+                    ? [{ name: "Employer Job Checks", href: "/portal/immigration/employer-job-checks", icon: <ClipboardCheck size={16} /> }] : []),
                 { name: "Engagement",    href: "/portal/immigration/cases/engagement", icon: <FileSignature size={16} /> },
                 { name: "Invoice",       href: "/portal/immigration/cases/invoice",    icon: <ReceiptText size={16} /> },
                 { name: "Initial Agreement", href: "/portal/immigration/client-documents", icon: <FileText size={16} /> },
