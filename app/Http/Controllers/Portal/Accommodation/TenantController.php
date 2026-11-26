@@ -141,6 +141,9 @@ class TenantController extends Controller
             } else {
                 unset($data['assigned_room_ids']);
             }
+            if ($property->id !== $current->property_id && $current->residency_started_on) {
+                $current->residency_started_on = null;
+            }
             unset($data['room_assignment_version']);
             $current->update($data);
         });

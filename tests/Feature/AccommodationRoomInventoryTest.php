@@ -245,6 +245,16 @@ class AccommodationRoomInventoryTest extends TestCase
         ])->assertRedirect()->assertSessionHasNoErrors();
         $this->assertSame($start, $tenant->fresh()->residency_started_on->toDateString());
         $this->assertSame(1, RoomInventory::summarize($property)['occupied']);
+
+        $destination = $this->property(1);
+        [$destinationRoom] = $this->rooms($destination);
+        $this->put('/portal/accommodation/tenants/'.$tenant->id, [
+            'property_id' => $destination->id, 'first_name' => $tenant->first_name, 'family_name' => $tenant->family_name,
+            'contract_type' => $tenant->contract_type, 'contract_start' => now('Pacific/Auckland')->addWeek()->toDateString(),
+            'assigned_room_ids' => [$destinationRoom['id']], 'room_assignment_version' => $tenant->fresh()->move_in_version,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertNull($tenant->fresh()->residency_started_on);
+        $this->assertSame(0, RoomInventory::summarize($destination)['occupied']);
     }
 
     public function test_room_register_totals_and_linked_signed_agreement_totals_are_independent(): void
