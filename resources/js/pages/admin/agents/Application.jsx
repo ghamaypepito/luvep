@@ -22,7 +22,7 @@ export default function Application({ application }) {
         <section className="rounded-2xl border border-[#e1e7dc] bg-white p-6">
             <h2 className="text-lg font-semibold">Application details</h2>
             <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-                {[["Email", application.email], ["Phone", application.phone], ["Country or location", application.location], ["Company", application.company], ["Submitted", date(application.created_at)], ["Email verified", date(application.verified_at)], ["Reviewed", date(application.reviewed_at)], ["Reviewer", application.reviewer], ["Selected agreement", application.agreement_version && "Version " + application.agreement_version], ["Activated", date(application.activated_at)]]
+                {[["Email", application.email], ["Phone", application.phone], ["Country or location", application.location], ["Company", application.company], ["Started", date(application.created_at)], ["Submitted", date(application.submitted_at)], ["Email verified", date(application.verified_at)], ["Reviewed", date(application.reviewed_at)], ["Reviewer", application.reviewer], ["Selected agreement", application.agreement_version && "Version " + application.agreement_version], ["Activated", date(application.activated_at)]]
                     .filter(([,value]) => value).map(([label,value]) => <div key={label}><dt className="text-xs text-[#53655a]">{label}</dt><dd className="mt-1 break-words text-sm font-semibold">{value}</dd></div>)}
             </dl>
         </section>

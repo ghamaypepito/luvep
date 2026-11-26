@@ -3,16 +3,18 @@ import { router } from "@inertiajs/react";
 import { CheckCircle2, Clock3, FileSignature } from "lucide-react";
 import ApplicationLayout from "../../components/affiliate/ApplicationLayout";
 import AgreementSignModal from "../../components/AgreementSignModal";
+import ApplicationForm from "../../components/affiliate/ApplicationForm";
 
 const instructions = {
-    "Awaiting email verification": "Confirm your email address to send your application to EP for review.",
+    "Awaiting email verification": "Confirm your email address to continue your saved application or check its progress.",
+    "Draft": "Your details are saved. Finish them below when you’re ready, then submit for EP review.",
     "Awaiting review": "EP is reviewing your application. We’ll email you when there’s an update.",
     "Awaiting signatures": "EP has approved your application. Your account opens when you and EP have signed the same agreement.",
     "Declined": "EP has reviewed your application and declined it.",
     "Activated": "You and EP have signed your onboarding agreement.",
 };
 
-export default function Progress({ application, verifyUrl, setupUrl, agreement }) {
+export default function Progress({ application, verifyUrl, setupUrl, agreement, draft }) {
     const [signing, setSigning] = useState(false);
     const [verifying, setVerifying] = useState(false);
     return <ApplicationLayout title="Your affiliate application" description={application.name}>
@@ -24,6 +26,7 @@ export default function Progress({ application, verifyUrl, setupUrl, agreement }
                 onClick={() => router.post(verifyUrl, {}, { onStart: () => setVerifying(true), onFinish: () => setVerifying(false) })}>Confirm my email</button>}
             {setupUrl && <a href={setupUrl} className="affiliate-button affiliate-button-primary mt-4">Set up your portal password</a>}
         </section>
+        {draft && <ApplicationForm draft={draft} />}
         {agreement && <section className="mt-6 space-y-4">
             <div className="flex items-center gap-3"><span className="affiliate-icon"><FileSignature size={19} /></span><div>
                 <h2 className="text-lg font-semibold">Affiliate Partner Agreement</h2>
@@ -35,6 +38,12 @@ export default function Progress({ application, verifyUrl, setupUrl, agreement }
                         {label}<span className="flex items-center gap-1.5">{signed ? <CheckCircle2 size={15} /> : <Clock3 size={15} />}{signed ? "Signed" : "Pending"}</span>
                     </li>)}
             </ul>
+            {agreement.review_url && <div>
+                <h3 className="font-semibold">Review your agreement</h3>
+                <p className="my-2 text-sm text-[#53655a]">Read the contract below, then select Sign agreement to sign online. Downloading is optional. Your signed copy stays in Agreement History.</p>
+                <iframe title="Review your Affiliate Partner Agreement" src={agreement.review_url} sandbox="" referrerPolicy="no-referrer"
+                    className="h-[60vh] min-h-[360px] w-full rounded-xl border border-[#e2e9dd] bg-white" />
+            </div>}
             <div className="flex flex-wrap gap-2">
                 <a className="affiliate-button" href={agreement.document_url} target="_blank" rel="noreferrer">View PDF</a>
                 <a className="affiliate-button" href={agreement.download_url}>Download PDF</a>

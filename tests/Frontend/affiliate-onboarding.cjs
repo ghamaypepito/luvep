@@ -66,6 +66,9 @@ const input = async (selector, value) => act(async () => {
         await input(`[name="${key}"]`, value);
     }
     await click(document.querySelector('[name=consent]'));
+    assert.ok(button('Save application'));
+    await act(async () => document.querySelector('form').dispatchEvent(Object.assign(new Event('submit', { bubbles: true, cancelable: true }), { submitter: button('Save application') })));
+    assert.equal(requests.pop().data.intent, 'save');
     await submit();
     const apply = requests.pop();
     assert.equal(apply.url, '/affiliate/apply');
@@ -84,9 +87,22 @@ const input = async (selector, value) => act(async () => {
     await render(Progress, { application: { name: 'Demo', status: 'Awaiting email verification' }, verifyUrl: '/verified-link' });
     await click(button('Confirm my email'));
     assert.equal(requests.pop().url, '/verified-link');
-    await render(Progress, { application: { name: 'Demo', status: 'Awaiting signatures' }, agreement: {
-        id: 7, version: 2, status: 'Generated', sign_url: '/exact-sign-link', document_url: '/own-pdf', download_url: '/own-download', fields: [], initial: {},
+    await render(Progress, { application: { name: 'Demo', status: 'Draft' }, draft: {
+        name: 'Demo', email: 'demo@example.test', phone: '', location: '', company: '', draft_version: 3, save_url: '/private-save',
     } });
+    assert.equal(document.querySelector('[name=email]').readOnly, true);
+    await input('[name=phone]', '456');
+    await submit();
+    const resumed = requests.pop();
+    assert.equal(resumed.url, '/private-save');
+    assert.equal(resumed.data.draft_version, 3);
+    assert.equal(resumed.data.phone, '456');
+    assert.equal(resumed.data.intent, 'submit');
+    await render(Progress, { application: { name: 'Demo', status: 'Awaiting signatures' }, agreement: {
+        id: 7, version: 2, status: 'Generated', sign_url: '/exact-sign-link', document_url: '/own-pdf', review_url: '/private-review?signature=exact', download_url: '/own-download', fields: [], initial: {},
+    } });
+    assert.equal(document.querySelector('iframe[title="Review your Affiliate Partner Agreement"]').getAttribute('src'), '/private-review?signature=exact');
+    assert.equal(document.querySelector('iframe').getAttribute('sandbox'), '');
     assert.ok(document.querySelector('a[href="/own-download"]'));
     await click(button('Sign agreement'));
     await click(button('Sign agreement →'));

@@ -15,12 +15,32 @@ use Illuminate\Validation\ValidationException;
 
 class AffiliateOnboarding
 {
-    public function submit(array $data): void
+    public function submit(array $data, bool $draft = false): void
     {
-        $application = AffiliateApplication::firstOrCreate(['email' => $data['email']], ['uuid' => (string) Str::uuid(), 'consented_at' => now()] + $data);
+        $application = AffiliateApplication::firstOrCreate(['email' => $data['email']], [
+            'uuid' => (string) Str::uuid(), 'consented_at' => now(), 'submitted_at' => $draft ? null : now(),
+        ] + $data);
         if ($application->wasRecentlyCreated) {
             $this->sendStatus($application);
         }
+    }
+
+    public function saveDraft(AffiliateApplication $application, array $data, int $version, bool $submit): void
+    {
+        DB::transaction(function () use ($application, $data, $version, $submit) {
+            $locked = AffiliateApplication::whereKey($application->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->verified_at, 403);
+            if ($locked->submitted_at || $locked->decision) {
+                throw ValidationException::withMessages(['application' => 'This application has already been submitted. Refresh to see its progress.']);
+            }
+            if ($locked->draft_version !== $version) {
+                throw ValidationException::withMessages(['draft_version' => 'Your application changed in another window. Refresh before saving again.']);
+            }
+            $locked->update($data + ['draft_version' => $version + 1, 'submitted_at' => $submit ? now() : null]);
+            ActivityLog::record($submit ? 'affiliate.application.submitted' : 'affiliate.application.saved', [
+                'entity_type' => AffiliateApplication::class, 'entity_id' => $locked->id,
+            ]);
+        });
     }
 
     public function sendStatus(AffiliateApplication $application): void
@@ -29,7 +49,8 @@ class AffiliateOnboarding
         $version = $application->matchesPartner($application->user) && ($agreement?->sent_at || $application->activated_at)
             ? $agreement?->id : null;
         $text = match (true) {
-            ! $application->verified_at => 'Confirm your email address so the EP team can review your affiliate application.',
+            ! $application->verified_at => 'Open your private link to confirm your email address and continue your EP affiliate application.',
+            ! $application->submitted_at => 'Your application is saved. Use your private link to finish your details and submit them to EP.',
             (bool) $application->activated_at => 'Your EP affiliate application is complete. Open your application for your signed agreement and password setup.',
             default => 'Open your private EP affiliate application to see its progress.',
         };
@@ -41,7 +62,7 @@ class AffiliateOnboarding
         abort_unless($reviewer->isAdmin(), 403);
         DB::transaction(function () use ($application, $reviewer, $approve) {
             $application = AffiliateApplication::whereKey($application->id)->lockForUpdate()->firstOrFail();
-            if (! $application->verified_at || $application->decision) {
+            if (! $application->verified_at || ! $application->submitted_at || $application->decision) {
                 throw ValidationException::withMessages(['application' => 'Only a verified application awaiting review can be decided.']);
             }
             if ($approve) {
