@@ -179,7 +179,8 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                         department: Education / English / Immigration, each under its
                         own real status set) */}
                     <Section n="01" title="Education">
-                        <DepartmentBreakdown departments={departments} range={range} activeKey={departmentKey} setActive={setActiveDepartment} />
+                        <DepartmentBreakdown departments={departments} range={range} activeKey={departmentKey} setActive={setActiveDepartment}
+                            contacts={personalReport?.contacts} noteActivity={summary.note_activity} />
                     </Section>
 
                     {/* Section 02 — ePortal Programs */}
@@ -197,7 +198,7 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                         <ConclusionCard conclusion={conclusion} />
                     </Section>
 
-                    <EducationNoteActivityReport data={summary.note_activity} />
+                    <div id="education-note-activity"><EducationNoteActivityReport data={summary.note_activity} /></div>
 
                     {departmentKey && <EducationReportInsights insights={departments[departmentKey].insights} department={DEPT_META[departmentKey].label} range={range} />}
 
@@ -304,18 +305,37 @@ function Section({ n, title, children }) {
 // Immigration) has its OWN status set; a client can appear under more than one
 // department, matching the Students-page tab badges. Click a status card to
 // reveal the clients sitting at it.
-function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActive }) {
+const EDUCATION_CARD_ORDER = [
+    "New Lead", "Contact Attempted", "Contacted for Booking", "Followed-up",
+    "Pre-Screening Done", "Goal Setting Done", "Proposal Sent", "Engagement Sent",
+    "School Enrolment", "Conditional Offer", "Unconditional Offer", "Endorsed to Immigration",
+    "Visa Lodged", "Visa Outcome", "Arrived in NZ", "Started Course",
+];
+const VISA_OUTCOMES = ["Approved Visa", "Declined Visa"];
+const EDUCATION_CARD_LABELS = { "New Lead": "New Leads", "Endorsed to Immigration": "Endorsed for Visa Process" };
+
+function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActive, contacts, noteActivity }) {
     const keys = Object.keys(DEPT_META).filter((k) => departments[k]);
     const [openStage, setOpenStage] = useState(null);
     const dept = departments[activeKey] || { total: 0, event_count: 0, stages: [] };
     const meta = DEPT_META[activeKey] || DEPT_META.education;
     const studentStages = dept.stages.filter(({ stage }) => stage !== "No stage set"
         && !["Contact Attempted", "Contacted", "Contacted for Booking"].includes(stage));
-    const stages = activeKey === "education" ? [
-        studentStages.find(({ stage }) => stage === "New Lead") || { stage: "New Lead", count: 0, clients: [] },
-        ...studentStages.filter(({ stage }) => stage !== "New Lead"),
+    const isEducation = activeKey === "education";
+    const stagesByName = new Map(studentStages.map((stage) => [stage.stage, stage]));
+    const getStage = (stage) => stagesByName.get(stage) || { stage, count: 0, clients: [] };
+    const contactStages = Object.fromEntries([["Contact Attempted", "Contact Attempted"], ["Contacted for Booking", "Contacted"]].map(([stage, key]) => {
+        const clients = contacts?.[key];
+        return [stage, { stage, leadStatus: true, count: clients?.length, clients }];
+    }));
+    const followUps = noteActivity?.counts?.follow_up?.events;
+    const stages = isEducation ? [
+        ...EDUCATION_CARD_ORDER.map((stage) => contactStages[stage] || getStage(stage)),
+        ...studentStages.filter(({ stage }) => !EDUCATION_CARD_ORDER.includes(stage) && !VISA_OUTCOMES.includes(stage)),
     ] : studentStages;
-    const open = openStage ? stages.find((s) => s.stage === openStage) || null : null;
+    const open = isEducation && VISA_OUTCOMES.includes(openStage)
+        ? getStage(openStage)
+        : stages.find((s) => s.stage === openStage) || null;
     const switchTo = (k) => { setActive(k); setOpenStage(null); };
 
     // Cap the reveal panel to the cards' height so the two columns stay uniform
@@ -368,21 +388,50 @@ function DepartmentBreakdown({ departments = {}, range = {}, activeKey, setActiv
                     {stages.length === 0 ? (
                         <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center text-[13px] text-gray-400">No {meta.label.toLowerCase()} clients in this period.</div>
                     ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        <div className={isEducation ? "grid grid-cols-2 lg:grid-cols-4 gap-3" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"}>
                             {stages.map((s) => {
+                                const label = isEducation ? EDUCATION_CARD_LABELS[s.stage] || s.stage : s.stage;
+                                const cardClass = "text-left rounded-2xl border border-gray-100 shadow-sm p-4 bg-white";
+                                if (isEducation && s.stage === "Visa Outcome") {
+                                    return <div key={s.stage} className={cardClass}>
+                                        <p className="text-[12.5px] font-bold text-gray-900">Visa Outcome (Approved / Declined)</p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {VISA_OUTCOMES.map((stage) => (
+                                                <button key={stage} type="button" aria-pressed={openStage === stage}
+                                                    onClick={() => setOpenStage(openStage === stage ? null : stage)}
+                                                    className="rounded border border-gray-200 px-2 py-1 text-xs font-semibold">
+                                                    {stage.replace(" Visa", "")}: {getStage(stage).count}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>;
+                                }
+                                if (isEducation && s.stage === "Followed-up" && followUps != null) {
+                                    return <a key={s.stage} className={cardClass} href="#education-note-activity">
+                                        <span className="block text-right text-3xl font-black tabular-nums">{followUps}</span>
+                                        <p className="mt-2 text-[12.5px] font-bold">Followed-up</p>
+                                    </a>;
+                                }
+                                if (isEducation && ((s.stage === "Arrived in NZ" && !stagesByName.has(s.stage)) || s.stage === "Followed-up" || s.count == null)) {
+                                    return <div key={s.stage} className={cardClass}>
+                                        <span className="block text-right text-3xl text-gray-400">—</span>
+                                        <p className="mt-2 text-[12.5px] font-bold">{label}</p>
+                                        <p className="text-[11px] text-gray-500">No report data available</p>
+                                    </div>;
+                                }
                                 const selected = openStage === s.stage;
                                 const people = s.leadStatus ? "leads" : "students";
                                 return (
                                     <button key={s.stage} type="button" onClick={() => setOpenStage(selected ? null : s.stage)}
-                                        title={range.all ? `Click to see current ${people} at this stage` : `Click to see ${people} with a recorded entry during these dates`}
+                                        title={s.leadStatus ? "Click to see your recorded contact changes" : range.all ? `Click to see current ${people} at this stage` : `Click to see ${people} with a recorded entry during these dates`}
                                         aria-pressed={selected}
-                                        aria-label={`${s.stage}: ${s.count} ${range.all ? `current ${people}` : `${people} with recorded entries`}`}
+                                        aria-label={`${label}: ${s.count} ${s.leadStatus ? "leads with recorded contact changes" : range.all ? `current ${people}` : `${people} with recorded entries`}`}
                                         className={`text-left rounded-2xl border shadow-sm p-4 bg-white transition-all ${selected ? `ring-2 ${meta.ring} ring-offset-1 border-transparent` : "border-gray-100 hover:border-gray-300 hover:shadow-md"}`}>
                                         <div className="flex items-center justify-between">
-                                            {range.all && <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${meta.chip}`}>Current</span>}
+                                            {range.all && !s.leadStatus && <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${meta.chip}`}>Current</span>}
                                             <span className="ml-auto text-3xl font-black tabular-nums leading-none text-gray-900">{s.count}</span>
                                         </div>
-                                        <p className="text-[12.5px] font-bold mt-2 text-gray-900">{s.stage}</p>
+                                        <p className="text-[12.5px] font-bold mt-2 text-gray-900">{label}</p>
                                     </button>
                                 );
                             })}

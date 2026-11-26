@@ -45,18 +45,41 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
         ...props,
         departments: { ...props.departments, education: { ...props.departments.education, stages: [
             { stage: 'New Lead', count: 1, clients: [] },
+            { stage: 'Approved Visa', count: 1, clients: [{ id: 20, name: 'Approved example' }] },
+            { stage: 'Declined Visa', count: 1, clients: [{ id: 21, name: 'Declined example' }] },
             ...props.departments.education.stages,
             { stage: 'No stage set', count: 3, clients: [] },
         ] } },
+        personalReport: { notes: {}, contacts: {
+            'Contact Attempted': [{ id: 14, name: 'My contact', date: '2026-11-01T00:00:00Z' }],
+            Contacted: [],
+        } },
+        summary: { note_activity: { total: 5, clients: 3, counts: {
+            follow_up: { label: 'Follow-ups', events: 5, clients: 3 },
+        }, entries: { data: [], last_page: 1 } } },
         register: { ...props.register,
             'Contact Attempted': [{ id: 12, name: 'Attempted lead', date: null }],
             'Contacted for Booking': [{ id: 13, name: 'Reached lead', date: null }],
         },
     };
     await render(contactProps);
-    const statusCards = [...document.querySelectorAll('button[aria-label$="with recorded entries"]')];
-    assert.deepEqual(statusCards.map(node => node.querySelector('p').textContent), ['New Lead', 'Education enrolled']);
-    assert.ok(statusCards.every(node => !node.textContent.includes('Period')));
+    const cards = document.querySelector('button[aria-label^="New Leads:"]').parentElement;
+    assert.deepEqual([...cards.children].map(node => node.querySelector('p').textContent), [
+        'New Leads', 'Contact Attempted', 'Contacted for Booking', 'Followed-up',
+        'Pre-Screening Done', 'Goal Setting Done', 'Proposal Sent', 'Engagement Sent',
+        'School Enrolment', 'Conditional Offer', 'Unconditional Offer', 'Endorsed for Visa Process',
+        'Visa Lodged', 'Visa Outcome (Approved / Declined)', 'Arrived in NZ', 'Started Course',
+        'Education enrolled',
+    ]);
+    assert.equal(cards.children[3].getAttribute('href'), '#education-note-activity');
+    assert.match(cards.children[3].textContent, /5Followed-up/);
+    assert.match(cards.children[14].textContent, /No report data available/);
+    await click(cards.children[1]);
+    assert.match(document.body.textContent, /My contact/);
+    await click(button('Approved: 1'));
+    assert.match(document.body.textContent, /Approved example/);
+    await click(button('Declined: 1'));
+    assert.match(document.body.textContent, /Declined example/);
     assert.doesNotMatch(document.body.textContent, /Attempted lead|Reached lead/, 'Shared contact totals must not appear as student accomplishments');
     await render(props);
     assert.match(document.querySelector('h1').nextElementSibling.textContent, /1 Nov – 2 Nov/, 'NZ calendar date labels must not shift date-only boundaries into tomorrow');
