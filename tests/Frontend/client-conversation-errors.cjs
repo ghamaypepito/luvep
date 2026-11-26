@@ -6,6 +6,7 @@ const path = require('node:path');
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test/portal/education/leads/7' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event', 'MouseEvent', 'FormData']) global[key] = dom.window[key];
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
+HTMLElement.prototype.scrollIntoView = function () {};
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const React = require('react');
 const { act } = React;
