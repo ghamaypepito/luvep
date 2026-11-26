@@ -1,0 +1,7 @@
+# Module access save verification
+
+Module Management keeps draft selections locally until Save access completes. Rejected saves previously retained the draft toggle and did not display server validation errors. A successful redirect alone did not provide an account-specific acknowledgement of returned stored grants.
+
+The page now displays validation failures, verifies the selected account's returned saved grants against the submitted set, and shows a named success acknowledgement only when they match. The module-save endpoint no longer emits a global success toast before that check. A mismatch displays an error and restores returned stored options. Editing or changing accounts clears the acknowledgement. Account selection and module toggles are held while a module save is pending. Toggle states are exposed to assistive technology. Existing server validation, authorization, grant auditing, role and portal boundaries are retained.
+
+The actual React regression covers rejected responses, mismatched successful redirects, verified responses, refresh, legacy parent/child normalization and preservation of existing grants. Real HTTP grant/revoke and account-isolation tests remain the persistence proof. This change does not claim to reconstruct an unrecorded historical production request, grant access automatically or repair unrelated concurrent full-set overwrite behavior. Live activation requires verification of the intended saved grant and its audit before ticket closure.

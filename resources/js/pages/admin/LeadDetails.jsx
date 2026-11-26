@@ -1,5 +1,8 @@
 import MediaAttachButton from '@/components/media/MediaAttachButton';
+import { educationDocumentSections } from '@/components/education/educationDocumentSections';
+import EducationAge from '@/components/education/EducationAge';
 import EducationNoteReportControl, { educationNoteSubmission } from '@/components/education/EducationNoteReportControl';
+import EducationNoteDocuments from '@/components/education/EducationNoteDocuments';
 import MediaPicker from '@/components/media/MediaPicker';
 import AddPathwayButton from '@/components/leads/AddPathwayButton';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
@@ -545,7 +548,7 @@ function ProgramReviewModal({ program, leadId, writeBase, onClose }) {
 const WriteBaseContext = React.createContext('/admin');
 const useWriteBase = () => useContext(WriteBaseContext);
 
-export default function LeadDetails({ lead: backendLead, proposal = null, activity = [], stageTimeline = [], checklistFiles = {}, documentThreads = [], programOptions = [], documentOrphans = [], statuses = [], stageLists = {}, notes = [], tags = [], allTags = [], tasks = [], staffOptions = [], eventRegistration = null, currentUser = null, portalBase = '/admin', writeBase = '/admin', overview = null }) {
+export default function LeadDetails({ lead: backendLead, proposal = null, activity = [], stageTimeline = [], checklistFiles = {}, documentThreads = [], programOptions = [], documentOrphans = [], statuses = [], stageLists = {}, notes = [], tags = [], allTags = [], tasks = [], staffOptions = [], eventRegistration = null, currentUser = null, portalBase = '/admin', writeBase = '/admin', overview = null, ageReferenceDate = null }) {
     // Derive the "Back to Leads" URL from the current path so sales users
     // return to /portal/sales/leads, education users to /portal/education/leads,
     // and admins to /admin/leads — never a 403.
@@ -1093,9 +1096,10 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
             )}
 
             {/* ── Documents tab ── */}
-            {activeTab === 'documents' && (
-                <DocumentsPanel lead={backendLead} checklistFiles={checklistFiles} orphans={documentOrphans} currentUser={currentUser} threads={documentThreads} staffOptions={staffOptions} />
-            )}
+            {activeTab === 'documents' && <>
+                <DocumentsPanel lead={backendLead} checklistFiles={checklistFiles} orphans={documentOrphans} currentUser={currentUser} threads={documentThreads} staffOptions={staffOptions} education={portalBase === "/portal/education" || (portalBase === "/admin" && currentUser?.role === "education")} />
+                <EducationNoteDocuments notes={notes} portalBase={portalBase} currentUser={currentUser} />
+            </>}
 
             {/* ── Communications tab — message history sent to this lead ── */}
             {activeTab === 'communications' && (
@@ -1341,10 +1345,9 @@ export default function LeadDetails({ lead: backendLead, proposal = null, activi
                             <Field editing={editing} label="Gender" field="gender" form={form} setF={setF} errors={errors} type="select" options={GENDER_OPTIONS} />
                             <Field editing={editing} label="Marital Status" field="marital_status" form={form} setF={setF} errors={errors} type="select" options={MARITAL_OPTIONS} />
                             <Field editing={editing} label="Date of Birth" field="dob" form={form} setF={setF} errors={errors} type="date" />
-                            {/* Age is derived from DOB by the Lead model
-                                (see getAgeAttribute) — read-only, always
-                                shown so staff don't have to do the math. */}
-                            <DataRow label="Age" value={form.age != null && form.age !== '' ? `${form.age}` : null} />
+                            {ageReferenceDate
+                                ? <EducationAge dob={form.dob} referenceDate={ageReferenceDate} fallbackAge={!backendLead.dob ? form.age : null} />
+                                : <DataRow label="Age" value={form.age != null && form.age !== '' ? `${form.age}` : null} />}
                             <Field editing={editing} label="Country of Birth" field="country_of_birth" form={form} setF={setF} errors={errors} />
                             <Field editing={editing} label="Place of Birth" field="place_of_birth" form={form} setF={setF} errors={errors} />
                             <Field editing={editing} label="Citizenship" field="citizenship" form={form} setF={setF} errors={errors} />
@@ -4163,7 +4166,7 @@ function ChecklistNotesCell({ value, onSave }) {
     );
 }
 
-function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser = null, threads = [], staffOptions = [] }) {
+function DocumentsPanel({ lead, checklistFiles = {}, orphans: suppliedOrphans = [], currentUser = null, threads = [], staffOptions = [], education = false }) {
     const writeBase = useWriteBase();
     // Bucket document threads by the checklist item they're anchored to
     // (anchor_key = checklist_key), so each row can render its own discussion.
@@ -4224,12 +4227,14 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
     // public tracker. Immigration cases keep the full checklist (they manage
     // every section). Ordering: Personal → Offer & Academic → Agreements.
     const sections = React.useMemo(() => {
-        const base = lead?.is_immigration_case
+        const sharedBase = lead?.is_immigration_case
             ? CHECKLIST
             : ['personal', 'academic', 'agreements']
                 .map((k) => CHECKLIST.find((s) => s.key === k))
                 .filter(Boolean)
                 .map((section) => ({ ...section, items: section.items.filter((item) => item.id !== 'agree.proposal') }));
+
+        const base = educationDocumentSections(sharedBase, education);
 
         // Per-lead ad-hoc documents (leads.custom_documents) drop into the
         // folder staff chose — this lead only. Each is a custom.* item so
@@ -4257,7 +4262,19 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
             .map(([sec, items]) => ({ key: 'lead_custom_' + sec.replace(/\W+/g, '_').toLowerCase(), section: sec, items }));
 
         return [...merged, ...leftover];
-    }, [lead?.is_immigration_case, lead?.custom_documents]);
+    }, [lead?.is_immigration_case, lead?.custom_documents, education]);
+
+    // Files with retired keys or keys outside this checklist still belong to
+    // the lead. Keep them accessible without treating them as approved requirements.
+    const orphans = React.useMemo(() => {
+        const visibleKeys = new Set(sections.flatMap((section) => section.items.map((item) => item.id)));
+        const visibleIds = new Set(Object.entries(checklistFiles)
+            .filter(([key]) => visibleKeys.has(key)).flatMap(([, files]) => files.map((file) => file.id)));
+        const otherFiles = Object.entries(checklistFiles)
+            .filter(([key]) => !visibleKeys.has(key)).flatMap(([, files]) => files);
+        return [...new Map([...suppliedOrphans, ...otherFiles]
+            .filter((file) => !visibleIds.has(file.id)).map((file) => [file.id, file])).values()];
+    }, [sections, checklistFiles, suppliedOrphans]);
 
     // Folder choices for the "Add document" modal — the standard folders plus
     // the catch-all "Additional Documents".
@@ -4522,7 +4539,7 @@ function DocumentsPanel({ lead, checklistFiles = {}, orphans = [], currentUser =
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
                     onMouseDown={(e) => { if (e.target === e.currentTarget) setDownloadOpen(false); }}
                 >
-                    <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[85vh]">
+                    <div role="dialog" aria-modal="true" aria-label="Download documents" className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2.5 bg-gray-50/40">
                             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
                                 <Download size={16} />

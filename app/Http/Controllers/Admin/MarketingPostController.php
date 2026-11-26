@@ -19,9 +19,9 @@ class MarketingPostController extends Controller
 {
     private const FROZEN = ['scheduling', 'scheduled', 'published', 'needs_reconciliation'];
 
-    private function authorizeUser(Request $request, bool $super = false): void
+    private function authorizeUser(Request $request): void
     {
-        abort_unless($request->user() && ($super ? $request->user()->isSuperAdmin() : $request->user()->isAdmin()), 403);
+        abort_unless($request->user()?->canUseSocialMarketing(), 403);
     }
 
     private function find(string $id, bool $lock = false): MarketingPost
@@ -35,7 +35,7 @@ class MarketingPostController extends Controller
     {
         $nz = $post->scheduled_at?->setTimezone('Pacific/Auckland');
 
-        return ['id' => $post->id, 'version' => $post->version, 'campaign' => $post->campaign,
+        return ['id' => $post->id, 'version' => $post->version, 'campaign' => $post->campaign, 'brief' => $post->brief,
             'service' => $post->service, 'caption' => $post->caption, 'status' => $post->status,
             'schedule_date' => $nz?->toDateString(), 'schedule_time' => $nz?->format('H:i'),
             'scheduled_at' => $post->scheduled_at?->utc()->toIso8601String(),
@@ -43,7 +43,7 @@ class MarketingPostController extends Controller
             'media_url' => $post->media_path ? route('marketing.posts.media', ['id' => $post->id]) : null,
             'media_mime' => $post->media_mime, 'post_type' => $post->post_type ?: 'post',
             'first_comment' => $post->first_comment ?? '', 'publish_now' => (bool) $post->publish_now,
-            'calendar_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
+            'can_move' => $post->canMoveInCalendar(), 'calendar_date' => $post->scheduled_at?->setTimezone('Asia/Manila')->toDateString(),
             'calendar_time' => $post->scheduled_at?->setTimezone('Asia/Manila')->format('H:i'),
             'review_note' => $post->review_note, 'ghl_post_id' => $post->ghl_post_id,
             'updated_at' => $post->updated_at?->toIso8601String(), 'approved_by' => $post->approved_by];
@@ -67,7 +67,7 @@ class MarketingPostController extends Controller
         $posts = MarketingPost::where('location_id', GhlConnection::LOCATION)->where('account_id', GhlSocialReader::ACCOUNT)
             ->latest('updated_at')->limit(200)->get()->map(fn ($p) => $this->shape($p));
 
-        return response()->json(['posts' => $posts, 'can_approve' => $request->user()->isSuperAdmin(),
+        return response()->json(['posts' => $posts, 'can_approve' => $request->user()->canApproveSocialPosts(), 'can_publish' => $request->user()->canPublishSocialPosts(), 'can_manage_identity' => $request->user()->isSuperAdmin(),
             'ghl_user_configured' => trim((string) Setting::get('ghl_connector.user_id', '')) !== '']);
     }
 
@@ -75,21 +75,22 @@ class MarketingPostController extends Controller
     {
         $this->authorizeUser($request);
 
-        return response()->json(['post' => $this->shape($this->find($id)), 'can_approve' => $request->user()->isSuperAdmin()], 200, ['Cache-Control' => 'private, no-store']);
+        return response()->json(['post' => $this->shape($this->find($id)), 'can_approve' => $request->user()->canApproveSocialPosts(), 'can_publish' => $request->user()->canPublishSocialPosts(), 'can_manage_identity' => $request->user()->isSuperAdmin()], 200, ['Cache-Control' => 'private, no-store']);
     }
 
     public function store(Request $request)
     {
         $this->authorizeUser($request);
-        $this->exactFields($request, ['id', 'version', 'campaign', 'service', 'caption', 'schedule_date', 'schedule_time', 'schedule_timezone', 'media', 'remove_media', 'post_type', 'first_comment', 'publish_now']);
+        $this->exactFields($request, ['id', 'version', 'brief', 'campaign', 'service', 'caption', 'schedule_date', 'schedule_time', 'schedule_timezone', 'media', 'remove_media', 'post_type', 'first_comment', 'publish_now']);
         $data = $request->validate(['id' => ['nullable', 'uuid'], 'version' => ['required_with:id', 'integer', 'min:1'],
+            'brief' => ['nullable', 'string', 'max:3000'],
             'campaign' => ['required', 'string', 'max:200'], 'service' => ['required', 'string', 'max:200'],
             'caption' => ['nullable', 'required_unless:post_type,story', 'string', 'max:12000'],
             'post_type' => ['sometimes', Rule::in(['post', 'reel', 'story'])], 'first_comment' => ['nullable', 'string', 'max:8000'],
             'publish_now' => ['sometimes', 'boolean'], 'remove_media' => ['sometimes', 'boolean'],
             'schedule_timezone' => ['sometimes', Rule::in(['Asia/Manila', 'Pacific/Auckland'])], 'schedule_date' => ['nullable', 'required_with:schedule_time', 'date_format:Y-m-d'],
             'schedule_time' => ['nullable', 'required_with:schedule_date', 'date_format:H:i'],
-            'media' => ['nullable', 'file', 'mimetypes:image/png,image/jpeg,image/webp,image/gif,video/mp4', 'max:51199']]);
+            'media' => ['nullable', 'file', new \App\Rules\SocialMediaFile]]);
         $scheduledAt = null;
         if (! empty($data['schedule_date']) && ! empty($data['schedule_time'])) {
             $local = $data['schedule_date'].' '.$data['schedule_time'];
@@ -99,14 +100,6 @@ class MarketingPostController extends Controller
             }
         }
         $file = $request->file('media');
-        if ($file && ! str_starts_with($file->getMimeType(), 'video/')) {
-            $pixels = @getimagesize($file->getRealPath());
-            if (! $pixels || $pixels[0] > 8192 || $pixels[1] > 8192 || ($pixels[0] * $pixels[1]) > 40000000
-                || ! in_array($pixels['mime'] ?? '', ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], true)
-                || $pixels['mime'] !== $file->getMimeType() || $file->getSize() >= 10 * 1024 * 1024) {
-                throw ValidationException::withMessages(['media' => 'Upload a valid image under 10MB, 8192px per side and 40 megapixels.']);
-            }
-        }
         if ($file && $request->boolean('remove_media')) {
             throw ValidationException::withMessages(['media' => 'Choose a replacement or remove the current media.']);
         }
@@ -133,7 +126,7 @@ class MarketingPostController extends Controller
                     $post->media_mime = $file->getMimeType();
                     $post->media_hash = hash_file('sha256', $file->getRealPath());
                 }
-                $post->fill(['campaign' => $data['campaign'], 'service' => $data['service'], 'caption' => $data['caption'] ?? '',
+                $post->fill(['brief' => array_key_exists('brief', $data) ? $data['brief'] : $post->brief, 'campaign' => $data['campaign'], 'service' => $data['service'], 'caption' => $data['caption'] ?? '',
                     'post_type' => $data['post_type'] ?? $post->post_type ?? 'post',
                     'first_comment' => array_key_exists('first_comment', $data) ? ($data['first_comment'] === '' ? null : $data['first_comment']) : $post->first_comment,
                     'publish_now' => $data['publish_now'] ?? $post->publish_now ?? false,
@@ -154,9 +147,38 @@ class MarketingPostController extends Controller
         return response()->json(['post' => $this->shape($post)]);
     }
 
+    public function move(Request $request, string $id)
+    {
+        $this->authorizeUser($request);
+        $this->exactFields($request, ['version', 'planned_date']);
+        $data = $request->validate(['version' => 'required|integer|min:1', 'planned_date' => 'required|date_format:Y-m-d']);
+        $post = DB::transaction(function () use ($id, $data) {
+            $post = $this->find($id, true);
+            $this->checkVersion($post, (int) $data['version']);
+            abort_unless($post->canMoveInCalendar(), 409, 'Only Luvep posts with editable planned dates can be moved.');
+
+            $local = $post->scheduled_at?->setTimezone('Asia/Manila');
+            if ($local?->toDateString() !== $data['planned_date']) {
+                $date = CarbonImmutable::createFromFormat('!Y-m-d', $data['planned_date'], 'Asia/Manila');
+                $post->scheduled_at = $date->setTimeFromTimeString($local?->format('H:i:s') ?? '09:00:00')->utc();
+                $post->version++;
+                if ($post->status === 'approved') {
+                    $post->status = 'in_review';
+                    $post->approved_by = $post->approved_version = $post->approval_fingerprint = null;
+                }
+                $post->save();
+            }
+
+            return $post;
+        });
+
+        return response()->json(['post' => $this->shape($post)]);
+    }
+
     private function review(Request $request, string $id, string $action)
     {
-        $this->authorizeUser($request, $action !== 'submit');
+        $this->authorizeUser($request);
+        abort_unless($action === 'submit' || $request->user()->canApproveSocialPosts(), 403);
         $this->exactFields($request, $action === 'changes' ? ['version', 'note'] : ['version']);
         $data = $request->validate(['version' => ['required', 'integer', 'min:1'], 'note' => [$action === 'changes' ? 'required' : 'nullable', 'string', 'max:2000']]);
         $post = DB::transaction(function () use ($request, $id, $action, $data) {
@@ -200,7 +222,8 @@ class MarketingPostController extends Controller
 
     public function schedule(Request $request, string $id, GhlPublisher $publisher)
     {
-        $this->authorizeUser($request, true);
+        $this->authorizeUser($request);
+        abort_unless($request->user()->canPublishSocialPosts(), 403);
         $this->exactFields($request, ['version']);
         $data = $request->validate(['version' => ['required', 'integer', 'min:1']]);
         // Check approved state before even issuing a provider account read.

@@ -272,7 +272,9 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
             if (view === "registration" && l.source_key !== "registration") return false;
             const hay = `${l.name || ""} ${l.email || ""} ${l.lead_id || ""} ${l.phone || ""} ${l.source || ""}`.toLowerCase();
             const matchSearch  = !q || hay.includes(q);
-            const matchStatus  = statusFilter === "All" || l.status === statusFilter;
+            const matchStatus = statusFilter === "All" || (statusFilter === "Consultancy Agreement"
+                ? ["Consultancy Agreement", "Consultancy Agreement Sent", "Consultancy Agreement Signed"].includes(l.status)
+                : l.status === statusFilter);
             const matchGoal    = !adv.goal_status || l.goal_setting_status === adv.goal_status;
             const matchPre     = !adv.pre_screened_by || l.pre_screened_by === adv.pre_screened_by;
             const matchProgram = !adv.program || l.program_offered === adv.program;
@@ -477,8 +479,11 @@ export default function SalesLeads({ leads = [], statuses = [], programs = [], s
                             >
                                 All
                             </button>
-                            {/* Surface 6 most pipeline-critical filters; the rest are reachable via the per-row dropdown */}
-                            {["New Leads", "Contact Attempted", "Qualified", "Booked Consultation", "Consultancy Agreement", "Visa Process"].map((s) => (
+                            {/* Education does not use the agreement/visa quick-filter headings. Keep all saved stages available through existing controls. */}
+                            {(portal === "education"
+                                ? ["New Leads", "Contact Attempted", "Qualified", "Booked Consultation"]
+                                : ["New Leads", "Contact Attempted", "Qualified", "Booked Consultation", "Consultancy Agreement", "Visa Process"]
+                            ).map((s) => (
                                 <button
                                     key={s}
                                     type="button"
@@ -1342,6 +1347,7 @@ const NAME_SUFFIXES = ["Jr.", "Sr.", "II", "III", "IV", "V"];
 function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions = [], agents = [] }) {
     const [open, setOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [errors, setErrors] = useState({});
     const blank = {
         first_name: "", last_name: "", suffix: "", email: "", phone: "", status: statuses[0] || "New Leads", assessment_date: "",
         pre_screened_by: "", pre_screening_notes: "", program_offered: "", agent_id: "",
@@ -1369,11 +1375,20 @@ function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions 
     const submit = (e) => {
         e.preventDefault();
         if (!form.first_name.trim()) return;
+        setErrors({});
         setSaving(true);
         router.post(`${portalBase}/leads`, form, {
             preserveScroll: true,
             forceFormData: true,
-            onSuccess: () => { setForm(blank); setOpen(false); },
+            onSuccess: (page) => {
+                if (page.props.flash?.error) {
+                    setErrors({ error: page.props.flash.error });
+                    return;
+                }
+                setForm(blank);
+                setOpen(false);
+            },
+            onError: (messages) => setErrors(messages),
             onFinish: () => setSaving(false),
         });
     };
@@ -1403,6 +1418,11 @@ function AddLeadButton({ portalBase, statuses = [], programs = [], staffOptions 
                         </div>
 
                         <form onSubmit={submit} className="px-6 py-4 space-y-3 overflow-y-auto">
+                            {Object.keys(errors).length > 0 && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                                <p className="font-semibold">Could not add the lead. Your details are still here.</p>
+                                {Object.entries(errors).map(([key, message]) => <p key={key}>{message}</p>)}
+                            </div>}
+
                             {/* Core details — 3 across so they sit in tidy rows. */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
                                 <Field label="First name" required>

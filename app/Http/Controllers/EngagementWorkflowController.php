@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 
 class EngagementWorkflowController extends Controller
 {
+    public const SERVICE_CURRENCY_RULE = 'sometimes|required|in:USD,NZD';
+
     public const SERVICE_FEE_RULE = 'nullable|numeric|decimal:0,2|min:0|max:9999999';
 
     private function lead($id): Lead
@@ -22,6 +24,8 @@ class EngagementWorkflowController extends Controller
 
     public function prepare(Request $request, EngagementPackWorkflow $workflow, $id)
     {
+        $consultation = $request->input('engagement_type') === 'initial_consultation';
+        $faceToFace = $request->input('consultation_mode', 'online') === 'face_to_face';
         $data = $request->validate([
             'engagement_type' => ['required', Rule::in(['immigration_advice', 'initial_consultation', 'oia'])],
             'types' => 'required|array|min:1|max:5', 'types.*' => 'required|string|distinct',
@@ -30,11 +34,14 @@ class EngagementWorkflowController extends Controller
             'fee_location' => ['nullable', Rule::in(['onshore', 'offshore'])],
             'include_gst' => 'sometimes|boolean', 'professional_fee' => 'nullable|numeric|min:0|max:9999999',
             'service_fee' => self::SERVICE_FEE_RULE,
+            'service_currency' => 'exclude_unless:engagement_type,initial_consultation|'.self::SERVICE_CURRENCY_RULE,
             'pack_id' => 'nullable|uuid',
             'consultation_date' => 'required_if:engagement_type,initial_consultation|nullable|date_format:Y-m-d',
             'consultation_time' => 'required_if:engagement_type,initial_consultation|nullable|date_format:H:i',
             'consultation_timezone' => 'required_if:engagement_type,initial_consultation|nullable|timezone',
-            'meeting_link' => 'required_if:engagement_type,initial_consultation|nullable|url:https|max:1000',
+            'consultation_mode' => ['sometimes', 'required', Rule::in(['online', 'face_to_face'])],
+            'meeting_link' => [Rule::excludeIf(! $consultation || $faceToFace), Rule::requiredIf($consultation && ! $faceToFace), 'nullable', 'url:https', 'max:1000'],
+            'consultation_address' => [Rule::excludeIf(! $consultation || ! $faceToFace), Rule::requiredIf($consultation && $faceToFace), 'nullable', 'string', 'max:2000'],
         ]);
 
         return response()->json($workflow->prepare($this->lead($id), $data));

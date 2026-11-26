@@ -5,7 +5,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import { toast } from "sonner";
 import {
     FileSignature, Search, Plus, X, Download, Check,
-    FileText, Loader2, Mail, Eye, Trash2, ExternalLink, Copy, Link2, ScrollText, Send as SendIcon, CheckCircle2,
+    FileText, Loader2, Mail, Eye, Archive, ExternalLink, Copy, Link2, ScrollText, Send as SendIcon, CheckCircle2,
 } from "lucide-react";
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
@@ -143,38 +143,57 @@ function ClientLink({ url }) {
 }
 
 /**
- * Delete a case's whole generated engagement pack in one call. Confirms
- * first (naming the case + document count), then removes the stored files
- * and their rows server-side.
+ * Remove one pack from the active workspace without changing its documents or Finance.
  */
-function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
+function ArchiveEngagementButton({ caseId, caseName, packId, documentId }) {
     const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const inFlight = useRef(false);
+    const finish = () => { inFlight.current = false; setBusy(false); };
+    const showError = (errors) => {
+        const detail = Object.values(errors || {}).flat().filter((value) => typeof value === "string" && value.trim()).join(" ");
+        const message = detail || "Could not archive the engagement. Please refresh and try again.";
+        setError(message);
+        toast.error(message);
+    };
 
     const remove = async () => {
-        const ok = await confirmDialog({
-            title: "Delete engagement documents?",
-            message: `Delete all ${count} engagement document${count === 1 ? '' : 's'} for ${caseName}? This removes the files permanently.`,
-            confirmText: "Delete", tone: "danger",
-        });
-        if (! ok) return;
+        if (inFlight.current) return;
+        inFlight.current = true;
         setBusy(true);
-        router.delete(`/admin/leads/${caseId}/engagement/documents?pack_id=${encodeURIComponent(packId || "legacy")}`, {
-            preserveScroll: true,
-            onError: () => toast.error("Could not delete the documents."),
-            onFinish: () => setBusy(false),
-        });
+        setError("");
+        try {
+            const ok = await confirmDialog({
+                title: "Archive engagement?",
+                message: `Remove this engagement for ${caseName} from the active Engagement list? Its documents, signing links and existing Finance records will remain unchanged.`,
+                confirmText: "Archive",
+            });
+            if (!ok) { finish(); return; }
+            router.post(`/portal/immigration/cases/${caseId}/engagement/archive`, { pack_id: packId || "legacy", document_id: documentId }, {
+                preserveScroll: true,
+                preserveState: true,
+                onError: showError,
+                onFinish: finish,
+            });
+        } catch {
+            showError({ error: "Could not archive the engagement. Please refresh and try again." });
+            finish();
+        }
     };
 
     return (
-        <button
-            type="button"
-            onClick={remove}
-            disabled={busy}
-            title={`Delete all ${count} engagement document(s) for ${caseName}`}
-            className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-rose-500 hover:border-rose-300 hover:bg-rose-50 transition-colors disabled:opacity-40"
-        >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={13} />}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+            <button
+                type="button"
+                onClick={remove}
+                disabled={busy || !documentId}
+                title={`Archive engagement for ${caseName}`}
+                className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Archive size={13} />}
+            </button>
+            {error && <p role="alert" className="max-w-64 whitespace-normal text-xs text-rose-700">{error}</p>}
+        </div>
     );
 }
 
@@ -184,7 +203,7 @@ function DeleteCaseDocsButton({ caseId, caseName, count, packId }) {
  * IAA standard docs), preview each live, then generate. The Written
  * Agreement's fees are pulled from the case's visa on the Visas page.
  */
-export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, internalSignatureNotificationsReady = false }) {
+export default function Engagement({ cases = [], documents = [], generated = [], signers = [], default_signer_id = null, me_id = null, activityLog = [], search = "", canUploadSignature = false, canArchiveEngagement = false, internalSignatureNotificationsReady = false }) {
     const [query, setQuery] = useState(search);
     useEffect(() => { setQuery(search); }, [search]);
     const searchEngagements = (value) => {
@@ -426,8 +445,7 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                 </div>
                                             )}
                                         </td>
-                                        {/* Actions — open the client's tracker, or
-                                            delete the case's whole pack. */}
+                                        {/* Actions — inspect or archive only this workspace entry. */}
                                         <td className="px-3 py-3 pr-4 whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
@@ -439,12 +457,12 @@ export default function Engagement({ cases = [], documents = [], generated = [],
                                                     <ScrollText size={13} />
                                                 </button>
                                                 {canUploadSignature && !c.signed && !c.is_draft && c.documents.some((doc) => ['written_agreement', 'initial_consultation', 'oia'].includes(doc.type_key) && !doc.signed) && <button type="button" onClick={() => setSignatureFor(c)} className="rounded-lg border px-2 py-1 text-[11px] font-semibold text-teal-800">Upload signature</button>}
-                                                <DeleteCaseDocsButton
+                                                {canArchiveEngagement && <ArchiveEngagementButton
                                                     caseId={c.case_id}
                                                     packId={c.pack_id}
                                                     caseName={c.case_name}
-                                                    count={c.documents.length}
-                                                />
+                                                    documentId={c.documents.find((doc) => doc.type_key !== "invoice")?.id}
+                                                />}
                                             </div>
                                         </td>
                                     </tr>
@@ -612,6 +630,8 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [engagementType, setEngagementType] = useState(draft?.engagement_type || "immigration_advice");
     const specialService = engagementType !== "immigration_advice";
     const consultation = engagementType === "initial_consultation";
+    const [consultationCurrency, setConsultationCurrency] = useState(draft?.engagement_settings?.service_currency || (draft?.engagement_type === "initial_consultation" && draft?.currency) || "NZD");
+    const serviceCurrency = consultation ? consultationCurrency : "NZD";
     const [serviceFees, setServiceFees] = useState(() => ({ [engagementType]: draft?.engagement_settings?.service_fee }));
     const defaultServiceFee = consultation ? 250 : 500;
     const serviceFee = serviceFees[engagementType];
@@ -621,6 +641,8 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
     const [consultationDate, setConsultationDate] = useState(draft?.engagement_settings?.consultation_date || "");
     const [consultationTime, setConsultationTime] = useState(draft?.engagement_settings?.consultation_time || "");
     const [consultationTimezone, setConsultationTimezone] = useState(draft?.engagement_settings?.consultation_timezone || "Pacific/Auckland");
+    const [consultationMode, setConsultationMode] = useState(draft?.engagement_settings?.consultation_mode || "online");
+    const [consultationAddress, setConsultationAddress] = useState(draft?.engagement_settings?.consultation_address || "");
     const [meetingLink, setMeetingLink] = useState(draft?.engagement_settings?.meeting_link || "");
     const documents = useMemo(() => specialService ? [
         { key: engagementType, label: consultation ? "Initial Consultation Agreement" : "OIA Engagement Agreement", dynamic: true },
@@ -841,25 +863,29 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
         (!selectedCase[feeFields.normal] || !selectedCase[feeFields.inz]);
     const missingSignature = selectedTypes.some((key) => ["written_agreement", "initial_consultation", "oia"].includes(key)) && selectedSigner && !selectedSigner.has_signature;
 
+    const consultationDetails = {
+        consultation_date: consultationDate, consultation_time: consultationTime, consultation_timezone: consultationTimezone,
+        consultation_mode: consultationMode,
+        ...(consultationMode === "face_to_face" ? { consultation_address: consultationAddress } : { meeting_link: meetingLink }),
+    };
     const settings = {
         engagement_type: engagementType, types: selectedTypes, signer_id: signerId,
         assist_signer_id: assistSignerId, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst, professional_fee: feeOverride !== "" ? Number(feeOverride) : null,
         ...(specialService ? { service_fee: serviceFeeOverride } : {}),
-        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
-            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}),
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}),
         ...(draft?.pack_id && draft.pack_id !== "legacy" ? { pack_id: draft.pack_id } : {}),
         revision: familyRefresh,
     };
     const flow = useEngagementWorkflow(selectedCase?.id, settings, draft, onClose);
     const submitting = !!flow.busy;
+    const missingClientEmail = Boolean(selectedCase && !selectedCase.email);
     const previewParameters = new URLSearchParams({
         engagement_type: engagementType, fee_tier: feeTier, fee_location: feeLocation,
         include_gst: includeGst ? "1" : "0", signer: signerId || "", assist_signer: assistSignerId || "",
         ...(feeOverride !== "" ? { professional_fee: feeOverride } : {}),
         ...(serviceFeeOverride !== null && serviceFeeValid ? { service_fee: Number(serviceFeeOverride) } : {}),
-        ...(consultation ? { consultation_date: consultationDate, consultation_time: consultationTime,
-            consultation_timezone: consultationTimezone, meeting_link: meetingLink } : {}), _r: familyRefresh,
+        ...(consultation ? { ...consultationDetails, service_currency: consultationCurrency } : {}), _r: familyRefresh,
     });
     const preparedPreview = flow.prepared?.documents.find((doc) => doc.type === previewType)?.preview_url;
     const savedPreview = !flow.prepared && flow.savedPackId ? draft?.documents?.find((doc) => doc.type_key === previewType)?.view_url : null;
@@ -961,9 +987,21 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                 <label className="block text-xs font-medium text-gray-700">Time zone
                                     <input value={consultationTimezone} onChange={(e) => setConsultationTimezone(e.target.value)} placeholder="Pacific/Auckland" className={`${ctrlCls} mt-1.5`} />
                                 </label>
-                                <label className="block text-xs font-medium text-gray-700">Google Meet link
-                                    <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/…" className={`${ctrlCls} mt-1.5`} />
+                                <label className="block text-xs font-medium text-gray-700">Consultation Mode
+                                    <select value={consultationMode} onChange={(e) => setConsultationMode(e.target.value)} required className={`${ctrlCls} mt-1.5`}>
+                                        <option value="online">Online Consultation</option>
+                                        <option value="face_to_face">Face-to-Face Consultation</option>
+                                    </select>
                                 </label>
+                                {consultationMode === "face_to_face" ? (
+                                    <label className="block text-xs font-medium text-gray-700">Consultation Address
+                                        <textarea value={consultationAddress} onChange={(e) => setConsultationAddress(e.target.value)} required maxLength={2000} rows={3} placeholder="Enter the consultation address" className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                ) : (
+                                    <label className="block text-xs font-medium text-gray-700">Google Meet link
+                                        <input type="url" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} required maxLength={1000} placeholder="https://meet.google.com/…" className={`${ctrlCls} mt-1.5`} />
+                                    </label>
+                                )}
                             </div>}
 
                             <div className="grid grid-cols-2 gap-2 items-start">
@@ -1152,8 +1190,15 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
 
                             </>}
                             {specialService && <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+                                {consultation && <label htmlFor="consultation-currency" className="mb-3 block text-xs font-semibold">Currency
+                                    <select id="consultation-currency" value={consultationCurrency} disabled={!!draft?.signed}
+                                        onChange={(event) => setConsultationCurrency(event.target.value)} className={`${ctrlCls} mt-1.5`}>
+                                        <option value="USD">USD - US Dollar</option>
+                                        <option value="NZD">NZD - New Zealand Dollar</option>
+                                    </select>
+                                </label>}
                                 <label className="block text-xs font-semibold">
-                                    {consultation ? "Booking fee (USD, ex GST)" : "Service fee (NZD, ex GST)"}
+                                    {consultation ? `Booking fee (${serviceCurrency}, ex GST)` : "Service fee (NZD, ex GST)"}
                                     <input type="text" inputMode="decimal" disabled={!!draft?.signed}
                                         value={serviceFee ?? defaultServiceFee.toFixed(2)} placeholder={defaultServiceFee.toFixed(2)}
                                         onChange={(event) => setServiceFees({ ...serviceFees, [engagementType]: event.target.value })}
@@ -1173,10 +1218,10 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                                     </select>
                                 </label>
                                 {serviceFeeValid && <dl aria-label="Service fee summary" className="mt-3 space-y-1 text-xs tabular-nums">
-                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee)}</dd></div>
+                                    <div className="flex justify-between"><dt>Professional fee (ex GST)</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee)}</dd></div>
                                     <div className="flex justify-between"><dt>GST ({GST_PCT}%)</dt><dd>{fmtFee(serviceGst)}</dd></div>
                                     <div className="flex justify-between"><dt>Disbursements</dt><dd>{fmtFee(0)}</dd></div>
-                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{consultation ? "USD" : "NZD"} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
+                                    <div className="flex justify-between border-t border-teal-200 pt-1 font-semibold"><dt>Total amount</dt><dd>{serviceCurrency} {fmtFee(baseServiceFee + serviceGst)}</dd></div>
                                 </dl>}
                                 <p className="mt-1 text-xs">{consultation ? "Non-refundable; credited toward a subsequent visa processing engagement." : "Payable in advance. No visa application disbursement is included."}</p>
                                 <p className="mt-1 text-xs">Client and adviser details are filled from their portal records.</p>
@@ -1270,8 +1315,11 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                 {/* Generate, save and reviewed sending are distinct operations. */}
                 <div className="border-t border-gray-100 px-5 py-3 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                     <div className="min-w-0 text-xs text-gray-600">
-                        <p>{flow.savedPackId ? "Draft saved. Ready to review the email." : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
+                        <p>{flow.savedPackId ? (missingClientEmail ? "Draft saved." : "Draft saved. Ready to review the email.") : flow.prepared ? "Generated for preview. Save as Draft to keep these documents." : "Generate the documents, then save a draft before reviewing the email."}</p>
                         <p className="mt-1">Generate and Save as Draft do not send email.</p>
+                        {missingClientEmail && <p id="engagement-missing-email" role="alert" className="mt-2 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            Verify &amp; Email is disabled because this client has no email address. Add their email to the client record, refresh this page, and reopen the draft.
+                        </p>}
                         {flow.error && !flow.review && <p role="alert" className="mt-2 max-w-xl text-red-700">{flow.error}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1285,7 +1333,7 @@ export function NewEngagementModal({ cases, documents: baseDocuments, signers = 
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                             {flow.busy === "save" ? "Saving…" : "Save as Draft"}
                         </button>
-                        <button type="button" onClick={flow.verify} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
+                        <button type="button" onClick={flow.verify} aria-describedby={missingClientEmail ? "engagement-missing-email" : undefined} disabled={!flow.savedPackId || submitting || !selectedCase?.email}
                             className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
                             {flow.busy === "review" ? "Preparing review…" : "Verify & Email"}
                         </button>

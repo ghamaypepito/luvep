@@ -140,10 +140,17 @@ const timer = () => document.querySelector('[data-testid="work-timer"]');
     await click(button('Refresh clock'));
     assert.equal(document.querySelector('[role="alert"]'), null);
 
-    current = { ...current, status: 'off_shift', can_clock_in: false, completed_today: true };
+    current = { ...current, status: 'working', working_seconds: 35999, max_working_seconds: 36000 };
+    await act(async () => window.dispatchEvent(new dom.window.Event('online')));
+    now += 5000;
+    await act(async () => [...timers.values()].find(({ delay }) => delay === 1000).callback());
+    assert.equal(timer().textContent.trim(), '10:00:00', 'The live timer must stop extrapolating at the server work limit');
+    assert.equal(button('Start break').disabled, true, 'A reached work limit cannot start another break');
+
+    current = { ...current, status: 'off_shift', can_clock_in: false, completed_today: true, automatically_clocked_out: true };
     await act(async () => window.dispatchEvent(new dom.window.Event('online')));
     assert.equal(button('Clock in').disabled, true);
-    assert.match(document.querySelector('.hr-clock-paused').textContent, /Your shift is complete/);
+    assert.match(document.querySelector('.hr-clock-paused').textContent, /Automatically clocked out after 10 hours of work/);
 
     const team = {
         summary: { working: 1, on_break: 2, off_shift: 1 },

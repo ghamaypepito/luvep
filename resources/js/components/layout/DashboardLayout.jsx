@@ -4,7 +4,7 @@ import PreviewBanner from '../hr/PreviewBanner';
 import '../../../css/hr.css';
 import { Link, usePage, router } from "@inertiajs/react";
 import { useState, useEffect } from "react";
-import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Eye, ArrowLeft, Sparkles, LayoutGrid, GraduationCap, Languages, Globe, Building2, Building, Wallet, UserRound, Users, KeyRound, FolderOpen, BookOpen } from "lucide-react";
 
 // Admin-area restricted modules that, when granted via Module Management, should
 // surface as a sidebar link for a NON-admin staffer (admins already see them in
@@ -61,6 +61,7 @@ export default function DashboardLayout({
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { url, props } = usePage();
     const user = props.auth?.user;
+    const isMediaDrive = url.split(/[?#]/)[0].endsWith('/media-drive') && user?.role !== 'lead';
 
     // Department portals this user can switch between (their role + any granted
     // in Module Management). Empty unless there's more than one.
@@ -186,6 +187,7 @@ export default function DashboardLayout({
     const handleLogout = () => router.post("/logout");
 
     const getPageTitle = () => {
+        if (url.split("?")[0] === "/help-center") return "Help Center";
         if (url.split("?")[0].endsWith("/media-drive")) return user?.role === "lead" ? "Shared folders" : "Media Drive";
         for (const item of nav) {
             if (item.href && isPathMatch(item.href)) return item.name;
@@ -197,9 +199,9 @@ export default function DashboardLayout({
 
     const SidebarContent = () => (
         <>
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-50/50 lg:border-none">
+            <div className="md-workspace-brand-row flex items-center justify-between px-6 py-5 border-b border-gray-50/50 lg:border-none">
                 <div>
-                    <h2 className="text-2xl font-black tracking-tighter text-gray-900">{brand}</h2>
+                    {isMediaDrive || brand === 'EP.' ? <img className="md-workspace-brand block h-[60px] w-[100px] object-contain object-left" src="/images/ep-logo.png" alt="EP" width="100" height="60"/> : <h2 className="text-2xl font-black tracking-tighter text-gray-900">{brand}</h2>}
                     {subtitle && (
                         <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">{subtitle}</p>
                     )}
@@ -345,6 +347,7 @@ export default function DashboardLayout({
                         <Link
                             key={item.name}
                             href={item.href}
+                            aria-current={isActive ? "page" : undefined}
                             className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 group ${
                                 isActive
                                     ? `${accent} text-white shadow-md`
@@ -366,6 +369,7 @@ export default function DashboardLayout({
                         <Link
                             key={item.href}
                             href={item.href}
+                            aria-current={active ? "page" : undefined}
                             className={`flex items-center gap-3 px-3 py-2 text-[13px] font-medium rounded-lg transition-colors ${
                                 active
                                     ? "bg-gray-100 text-gray-900"
@@ -377,6 +381,11 @@ export default function DashboardLayout({
                         </Link>
                     );
                 })}
+                {props.auth?.can_view_help && (
+                    <Link href="/help-center" aria-current={url.split("?")[0] === "/help-center" ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-800 ${url.split("?")[0] === "/help-center" ? "bg-emerald-50 text-emerald-900" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}`}>
+                        <BookOpen size={18} aria-hidden="true" /> Help Center
+                    </Link>
+                )}
                 {settingsHref && (
                     <Link
                         href={settingsHref}
@@ -399,7 +408,7 @@ export default function DashboardLayout({
     );
 
     return (
-        <div className="flex h-screen bg-[#F5F5F7] font-sans selection:bg-gray-800 selection:text-white overflow-hidden">
+        <div className={`flex h-screen bg-[#F5F5F7] font-sans selection:bg-gray-800 selection:text-white overflow-hidden ${isMediaDrive ? "media-drive-workspace" : ""}`}>
             {/* Mobile Sidebar Overlay */}
             {sidebarOpen && (
                 <div
@@ -418,7 +427,7 @@ export default function DashboardLayout({
             </aside>
 
             {/* Desktop Sidebar */}
-            <aside className="hidden lg:flex flex-col w-64 bg-[#F5F5F7] h-screen shrink-0 pb-4 pt-4 pl-4">
+            <aside className="md-workspace-sidebar hidden lg:flex flex-col w-64 bg-[#F5F5F7] h-screen shrink-0 pb-4 pt-4 pl-4">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-50 flex-1 flex flex-col overflow-hidden">
                     {SidebarContent()}
                 </div>
@@ -427,12 +436,12 @@ export default function DashboardLayout({
             {/* Main content */}
             <div className="flex flex-col flex-1 overflow-hidden">
                 {/* Top Navbar */}
-                <header className="flex items-center justify-between px-8 py-3 bg-[#F5F5F7] lg:bg-transparent">
+                <header className="md-workspace-topbar flex items-center justify-between px-8 py-3 bg-[#F5F5F7] lg:bg-transparent">
                     <div className="flex items-center gap-4">
                         <button className="lg:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-200 rounded-xl" onClick={() => setSidebarOpen(true)}>
                             <Menu className="w-5 h-5" />
                         </button>
-                        <h1 className="text-2xl font-bold text-gray-900 hidden lg:block tracking-tight">{getPageTitle()}</h1>
+                        {isMediaDrive ? <p className="md-workspace-context hidden lg:block">Workspace <span>/ Media Drive</span></p> : <h1 className="text-2xl font-bold text-gray-900 hidden lg:block tracking-tight">{getPageTitle()}</h1>}
                     </div>
 
                     <div className="flex items-center gap-4 lg:gap-5 mt-2">
@@ -479,7 +488,7 @@ export default function DashboardLayout({
 
                 <PreviewBanner />
                 {/* Content */}
-                <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-2">
+                <main className="md-workspace-main flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-2">
                     {/* Cross-portal admin banner — shown when an admin user is viewing a department portal. */}
                     {(user?.role === "admin" || user?.role === "super_admin") && url.startsWith("/portal/") && (
                         <div className="mb-4 flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-gray-900 text-white text-sm shadow-sm">
@@ -492,7 +501,7 @@ export default function DashboardLayout({
                             </Link>
                         </div>
                     )}
-                    <h1 className="text-2xl font-bold text-gray-900 lg:hidden mb-6 tracking-tight">{getPageTitle()}</h1>
+                    {!isMediaDrive && <h1 className="text-2xl font-bold text-gray-900 lg:hidden mb-6 tracking-tight">{getPageTitle()}</h1>}
                     <ClockWidget />
                     {children}
                 </main>

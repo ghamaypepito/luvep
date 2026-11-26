@@ -1337,16 +1337,19 @@ class LeadDocumentController extends Controller
     }
 
     /**
-     * Delete every generated engagement document for a case in one call —
-     * the Engagement workspace shows one row per case, so its Delete action
-     * clears that case's whole engagement pack (files + rows, plus any
-     * captured client signature).
+     * Legacy pack deletion for other portals. Immigration uses Engagement
+     * Archive; permanent whole-case deletion belongs to Archived Cases.
      */
     public function destroyEngagementDocs(Request $request, $leadId)
     {
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $leadId) {
-            Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
-            $lead = Lead::findOrFail($leadId);
+            $lead = Lead::whereKey($leadId)->lockForUpdate()->firstOrFail();
+            if (Lead::immigrationCase()->whereKey($lead->id)->exists()) {
+                abort_unless(\App\Services\Immigration\EngagementArchive::permitted($request->user()), 403);
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'archive' => 'Use Archive in Engagement to remove this entry. Permanent case deletion is available only to Admins from Archived Cases.',
+                ]);
+            }
 
             try {
                 // Delete the whole engagement pack: the 4 pack documents
@@ -1516,13 +1519,16 @@ class LeadDocumentController extends Controller
         $engageType = $this->engagementTypeFor($type);
         $engagementType = $type === 'engage_invoice' ? $request->query('engagement_type', 'immigration_advice') : $engageType;
         $serviceFee = in_array($engagementType, ['initial_consultation', 'oia'], true)
-            ? $request->validate(['service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE])
+            ? $request->validate([
+                'service_fee' => EngagementWorkflowController::SERVICE_FEE_RULE,
+                ...($engagementType === 'initial_consultation' ? ['service_currency' => EngagementWorkflowController::SERVICE_CURRENCY_RULE] : []),
+            ])
             : [];
 
         // The invoice rides in the engagement pack but renders through the
         // InvoiceGenerator, priced off the same tier / location / GST / fee.
         if ($type === 'engage_invoice') {
-            $engOverrides = $serviceFee;
+            $engOverrides = array_merge($serviceFee, $request->only(['consultation_mode', 'meeting_link', 'consultation_address']));
             if (in_array($request->query('fee_tier'), \App\Models\VisaType::FEE_TIERS, true)) {
                 $engOverrides['fee_tier'] = $request->query('fee_tier');
             }
@@ -1568,7 +1574,7 @@ class LeadDocumentController extends Controller
             if ($profFee !== null && $profFee !== '' && is_numeric($profFee)) {
                 $opts['professional_fee'] = (float) $profFee;
             }
-            $opts = array_merge($opts, $request->only(['consultation_date', 'consultation_time', 'consultation_timezone', 'meeting_link']));
+            $opts = array_merge($opts, $request->only(['consultation_date', 'consultation_time', 'consultation_timezone', 'consultation_mode', 'meeting_link', 'consultation_address']));
             $html = app(EngagementDocumentGenerator::class)->renderHtml($lead, $engageType, $opts);
 
             return response($html)->header('Content-Type', 'text/html; charset=utf-8');
@@ -1798,6 +1804,7 @@ class LeadDocumentController extends Controller
     {
         $validated = $request->validate([
             'kind' => 'nullable|string|in:proposal,agreement',
+            'document_id' => 'nullable|integer|min:1',
             // Optional: the shortlisted program the lead settled on. Only
             // meaningful for proposals; must be one of the lead's picks.
             'preferred_program_id' => 'nullable|integer',
@@ -1814,6 +1821,14 @@ class LeadDocumentController extends Controller
             }
 
             $kind = $validated['kind'] ?? 'agreement';
+            $agreementContext = [];
+            if ($kind === 'agreement') {
+                $document = isset($validated['document_id'])
+                    ? $lead->documents()->findOrFail($validated['document_id'])
+                    : $lead->documents()->whereIn('checklist_key', ['agree.consultancy', 'agree.engagement_english'])
+                        ->where('source', LeadDocument::SOURCE_GENERATED)->orderByDesc('id')->first();
+                $agreementContext = \App\Services\EnglishAgreementAccess::emailContext($document);
+            }
 
             // Record which program the lead chose, when staff pass it from the
             // Notify modal. Only for proposals, and only if it's in the lead's
@@ -1851,13 +1866,13 @@ class LeadDocumentController extends Controller
             // suggested programs. Falls back to the plain Mailable if the
             // template is missing/inactive or has no email channel.
             $templateKey = $kind === 'proposal' ? 'program_proposal' : 'consultancy_agreement';
-            $vars = $kind === 'proposal' ? $this->proposalProgramVars($lead) : [];
+            $vars = $kind === 'proposal' ? $this->proposalProgramVars($lead) : $agreementContext;
 
             $res = app(\App\Services\CommunicationService::class)
                 ->sendTemplated($templateKey, $lead, $vars);
 
             if (! $res['email']) {
-                Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, $kind));
+                Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, $kind, $agreementContext['agreement_url'] ?? null));
             }
 
             // Start the post-proposal feedback drip (day 1/2/5) on an actual
@@ -1932,7 +1947,7 @@ class LeadDocumentController extends Controller
      * false advances the status but skips the built-in send (so a configured
      * client automation can own the email without a double-send).
      */
-    public function sendConsultancyAgreementEmail(Lead $lead, bool $sendMail = true): bool
+    public function sendConsultancyAgreementEmail(Lead $lead, bool $sendMail = true, ?LeadDocument $document = null): bool
     {
         $stages = \App\Models\Lead::STAGES;
         $curIdx = array_search($lead->status, $stages, true);
@@ -1946,7 +1961,11 @@ class LeadDocumentController extends Controller
             return false;
         }
 
-        app(\App\Services\CommunicationService::class)->sendTemplated('consultancy_agreement', $lead);
+        $context = \App\Services\EnglishAgreementAccess::emailContext($document);
+        $result = app(\App\Services\CommunicationService::class)->sendTemplated('consultancy_agreement', $lead, $context);
+        if ($context && ! ($result['email'] ?? null)) {
+            Mail::to($lead->email)->send(new \App\Mail\DocumentReadyNotification($lead, 'agreement', $context['agreement_url']));
+        }
 
         return true;
     }
@@ -2083,6 +2102,15 @@ class LeadDocumentController extends Controller
         $lead = $this->portalLead();
         abort_unless($lead, 403);
 
+        $checklists = app(\App\Services\Immigration\CaseChecklistService::class);
+        $hidden = $checklists->hiddenKeysFor($lead);
+        $clientVisible = fn (LeadDocument $doc) => (! $doc->checklist_key || ! in_array($doc->checklist_key, $hidden, true))
+            && ($doc->source_variant !== 'engagement:written_agreement' || $doc->isClientSharedWrittenAgreement());
+        $clientDocuments = $lead->documents()->orderBy('created_at')->orderBy('id')->get()->filter($clientVisible);
+        $visibleIds = $clientDocuments->modelKeys();
+
+        $clientPdfKeys = app(\App\Services\Immigration\CaseChecklistService::class)->clientPdfKeys($lead);
+        $requestBindings = $clientPdfKeys ? app(\App\Services\Immigration\CaseChecklistService::class)->requestBindingsFor($lead) : [];
         $requests = $lead->documentRequests()
             ->with('latestDocument')
             ->orderByDesc('created_at')
@@ -2095,22 +2123,17 @@ class LeadDocumentController extends Controller
                 // 'rfi' groups these under a "Request Information" section the
                 // client uploads their INZ-requested documents into.
                 'origin' => $r->origin,
+                'client_pdf_only' => app(\App\Services\Immigration\CaseChecklistService::class)->requestRequiresPdf($lead, $r->id, $clientPdfKeys, $requestBindings),
                 'requested_at' => $r->requested_at,
-                'latest_document' => $r->latestDocument ? $this->docSerialize($r->latestDocument) : null,
+                'latest_document' => $r->latestDocument && in_array($r->latestDocument->id, $visibleIds, true) ? $this->docSerialize($r->latestDocument) : null,
             ]);
 
-        $sharedByStaff = LeadDocument::where('lead_id', $lead->id)
-            ->where('status', LeadDocument::STATUS_STAFF_SHARED)
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn (LeadDocument $d) => $this->docSerialize($d));
+        $sharedByStaff = $clientDocuments->where('status', LeadDocument::STATUS_STAFF_SHARED)
+            ->sortByDesc('created_at')->map(fn (LeadDocument $d) => $this->docSerialize($d))->values();
 
         // Files uploaded against Documents-tab checklist items, grouped by
         // the item's frontend key so the gated section flow can render them.
-        $checklistFiles = LeadDocument::where('lead_id', $lead->id)
-            ->whereNotNull('checklist_key')
-            ->orderBy('created_at')
-            ->get()
+        $checklistFiles = $clientDocuments->whereNotNull('checklist_key')
             ->groupBy('checklist_key')
             ->map(fn ($files) => $files->map(fn ($f) => [
                 'id' => $f->id,
@@ -2132,8 +2155,19 @@ class LeadDocumentController extends Controller
         $checklist = [];
         $vifItem = null;
         if ($lead->is_immigration_case) {
-            $grouped = app(\App\Services\Immigration\CaseChecklistService::class)->groupedByCategory($lead);
+            $definitions = collect($checklists->forCase($lead))->keyBy('key');
+            $grouped = $checklists->groupedByCategory($lead);
             foreach ($grouped as $category => $items) {
+                $items = array_map(function ($item) use ($visibleIds, $clientDocuments, $checklists, $definitions) {
+                    if (($item['document_id'] ?? null) && ! in_array($item['document_id'], $visibleIds, true)) {
+                        $keys = $checklists->itemKeys($definitions->get($item['key'], $item));
+                        $doc = $clientDocuments->last(fn ($candidate) => in_array($candidate->checklist_key, $keys, true));
+                        $item = array_replace($item, ['document_id' => $doc?->id, 'status' => $doc?->status ?? 'not_submitted',
+                            'uploaded_at' => $doc?->created_at?->toIso8601String(), 'note' => $doc?->note]);
+                    }
+
+                    return $item;
+                }, $items);
                 foreach ($items as $it) {
                     if (($it['key'] ?? null) === 'svf' && empty($it['hidden'])) {
                         $vifItem = $it;
@@ -2184,7 +2218,8 @@ class LeadDocumentController extends Controller
 
         $request->validate([
             'files' => 'required|array|min:1|max:10',
-            'files.*' => UploadValidation::document(),
+            'files.*' => app(\App\Services\Immigration\CaseChecklistService::class)->clientRequiresPdf($lead, $key)
+                ? UploadValidation::pdfDocument() : UploadValidation::document(),
         ]);
 
         try {
@@ -2236,7 +2271,7 @@ class LeadDocumentController extends Controller
         if ($doc->status === LeadDocument::STATUS_APPROVED) {
             return back()->with('error', 'This document has been approved and can no longer be removed.');
         }
-        if ($doc->source === 'generated' || $doc->isEducationAgreement()) {
+        if ($doc->source === 'generated' || $doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement') {
             return back()->with('error', 'This document was prepared for you and cannot be removed.');
         }
 
@@ -2264,9 +2299,11 @@ class LeadDocumentController extends Controller
             return back()->with('error', 'This document has been approved and can no longer be replaced.');
         }
 
-        abort_if($doc->isEducationAgreement(), 409, 'Issued agreements cannot be replaced.');
+        abort_if($doc->isEducationAgreement() || $doc->source_variant === 'engagement:written_agreement', 409, 'Issued agreements cannot be replaced.');
 
-        $request->validate(['file' => 'required|'.UploadValidation::document()]);
+        $rule = app(\App\Services\Immigration\CaseChecklistService::class)->documentRequiresPdf($lead, $doc)
+            ? UploadValidation::pdfDocument() : UploadValidation::document();
+        $request->validate(['file' => 'required|'.$rule]);
         $file = $request->file('file');
         [$path, $displayName] = $this->storeChecklistFile($file, $lead, $doc->checklist_key ?? 'other');
 
@@ -2376,11 +2413,19 @@ class LeadDocumentController extends Controller
             abort_unless($req, 403, 'Request does not belong to you.');
         }
 
+        $checklist = app(\App\Services\Immigration\CaseChecklistService::class);
+        $pdfOnly = isset($req) && $checklist->requestRequiresPdf($lead, $req->id);
+        $boundKeys = $pdfOnly ? $checklist->requestChecklistKeys($lead, $req->id) : [];
+        if ($pdfOnly) {
+            $request->validate(['file' => 'required|'.UploadValidation::pdfDocument()]);
+        }
+
         $path = $request->file('file')->store("lead-documents/{$lead->id}", self::DISK);
 
         $document = LeadDocument::create([
             'lead_id' => $lead->id,
             'request_id' => $request->input('request_id'),
+            'checklist_key' => count($boundKeys) === 1 ? $boundKeys[0] : null,
             'original_name' => $request->file('file')->getClientOriginalName(),
             'file_path' => $path,
             'mime' => $request->file('file')->getMimeType(),
@@ -2491,13 +2536,18 @@ class LeadDocumentController extends Controller
     {
         $doc = LeadDocument::findOrFail($docId);
         $user = Auth::user();
+        if ($user->isLead() && $doc->source_variant === 'engagement:written_agreement') {
+            abort_unless($doc->lead_id === $user->lead_id && $doc->isClientSharedWrittenAgreement(), 404);
+        }
         if ($doc->media_file_id) {
-            $file=app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc,$user);
+            $file = app(\App\Services\MediaDrive\Attachments::class)->documentFile($doc, $user);
             if ($user->isLead()) {
-                $hidden=app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
-                abort_if($doc->checklist_key && in_array($doc->checklist_key,$hidden,true),404);
+                $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($doc->lead);
+                abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
             }
-            return app(\App\Services\MediaDrive\Library::class)->stream($file,$request->boolean('inline'));
+            if (! $doc->client_signed_at && ! $doc->client_signature_path) {
+                return app(\App\Services\MediaDrive\Library::class)->stream($file, $request->boolean('inline'));
+            }
         }
 
         // Lead users can only download files tied to their own lead record.

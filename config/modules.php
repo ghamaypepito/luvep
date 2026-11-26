@@ -26,6 +26,20 @@ return [
     |
     */
     'restricted' => [
+        'case_name_correction' => [
+            'label' => 'Name Correction — Immigration',
+            'description' => 'Allow an individually authorized Immigration manager to correct applicant and dependant names. No case archiving, role changes or other Admin access.',
+            'admin_default' => true,
+        ],
+        'social_marketing' => [
+            'label' => 'Social & Marketing — Digital team',
+            'description' => 'Create social drafts, use Content Planner and access the private Social Drive. Admins can approve social posts. Publishing requires the separate Social Post Publishing permission.',
+            'admin_default' => true,
+        ],
+        'social_publishing' => [
+            'label' => 'Social Post Publishing',
+            'description' => 'Send only the current approved social post version to GHL. Requires Social & Marketing access; does not grant approval or connection settings.',
+        ],
         'client_pathways' => [
             'label' => 'Add client pathways',
             'description' => 'Allow lead-handling staff to add Student, Immigration, English or Accommodation pathways from List of Leads. Does not grant access to other department portals.',
@@ -102,7 +116,11 @@ return [
         // Ships hidden; a super admin grants it per agent from Module Management.
         'referral_cases' => [
             'label' => 'Cases (referral portal)',
-            'description' => "Let a recruiting agent see a list of the immigration cases their own referrals became. Read-only — scoped to that agent's referrals.",
+            'description' => "Manage permitted actions on the agent's own referred Immigration cases, including case edits and documents. Advice-bearing actions remain licence-gated. Department-wide Immigration portal access is separate.",
+        ],
+        'assigned_immigration_cases' => [
+            'label' => 'Assigned Immigration cases (Agent helper)',
+            'description' => 'Only explicitly helper-assigned cases: summaries, visible uploaded files and requested uploads. No finance, notes, stages, signatures or approvals. Existing referral access is separate.',
         ],
     ],
 

@@ -20,7 +20,13 @@ class PortalDashboardPerformanceTest extends TestCase
         $this->actingAs($staff);
         $first = null;
         for ($i = 0; $i < 8; $i++) {
-            $lead = Lead::create(['first_name' => 'Sample', 'last_name' => (string) $i, 'created_at' => now()->subMinutes($i + 1)]);
+            $createdAt = now()->subMinutes($i + 1)->startOfSecond();
+            $lead = Lead::make(['first_name' => 'Sample', 'last_name' => (string) $i]);
+            // created_at is intentionally not mass assignable. Set the fixture
+            // timestamp explicitly so recency does not depend on test speed.
+            $lead->created_at = $createdAt;
+            $lead->save();
+            $this->assertTrue($lead->fresh()->created_at->equalTo($createdAt));
             $lead->notes()->create(['kind' => 'general', 'body' => "Note {$i}", 'user_id' => $staff->id]);
             $first ??= $lead;
         }

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Head, Link, usePage } from "@inertiajs/react";
+import { useEffect, useMemo, useState } from "react";
+import { Head, Link, router, usePage } from "@inertiajs/react";
 import {
     AlertTriangle, CheckCircle2, ChevronRight, Clock, FileText,
     Filter, FolderOpen, Hash, Inbox, Search, XCircle, Download, Eye,
@@ -55,14 +55,14 @@ const initials = (name = "") =>
     name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase();
 
 export default function EducationDocuments({
-    pending = [], stale = [], rejected = [], folders = [],
+    pending = [], stale = [], rejected = [], folders = [], folderFilters = null, folderPagination = null,
 }) {
-    const [view, setView] = useState("queue"); // queue | folders
+    const url = usePage().url || "";
+    const [view, setView] = useState(new URLSearchParams(url.split("?")[1]).get("view") === "folders" ? "folders" : "queue"); // queue | folders
     const totalAttention  = pending.length + stale.length + rejected.length;
 
     // Derive the portal base from the URL so Immigration can re-export
     // this page and the lead-detail links land in the right portal.
-    const url = usePage().url || "";
     const portalBase = url.startsWith("/portal/immigration") ? "/portal/immigration" : "/portal/education";
 
     return (
@@ -105,7 +105,7 @@ export default function EducationDocuments({
 
             {view === "queue"
                 ? <QueueView pending={pending} stale={stale} rejected={rejected} portalBase={portalBase} />
-                : <FoldersView folders={folders} portalBase={portalBase} />
+                : <FoldersView folders={folders} portalBase={portalBase} filters={folderFilters} pagination={folderPagination} />
             }
         </div>
     );
@@ -424,11 +424,16 @@ function StatTile({ label, value, icon, tone = "amber", active = false, onClick 
 
 // ── Folders view (unchanged) ───────────────────────────────────────────────
 
-function FoldersView({ folders, portalBase = "/portal/education" }) {
-    const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState("All");
+function FoldersView({ folders, portalBase = "/portal/education", filters = null, pagination = null }) {
+    const [search, setSearch] = useState(filters?.search || "");
+    const [statusFilter, setStatusFilter] = useState(filters?.status || "All");
+    useEffect(() => { setSearch(filters?.search || ""); setStatusFilter(filters?.status || "All"); }, [filters?.search, filters?.status]);
+    const visit = (status = statusFilter) => router.get(`${portalBase}/documents`, {
+        view: 'folders', search, folder_status: status,
+    }, { preserveState: true, preserveScroll: true });
 
     const filtered = useMemo(() => {
+        if (pagination) return folders;
         const q = search.toLowerCase().trim();
         return folders.filter((f) => {
             const hay = `${f.name || ""} ${f.lead_id || ""}`.toLowerCase();
@@ -440,28 +445,30 @@ function FoldersView({ folders, portalBase = "/portal/education" }) {
                 (statusFilter === "In progress"     && f.total > 0 && f.approved < f.total && f.pending === 0 && f.rejected === 0);
             return matchSearch && matchStatus;
         });
-    }, [folders, search, statusFilter]);
+    }, [folders, search, statusFilter, pagination]);
 
     return (
         <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="relative w-full lg:w-80">
+                <form onSubmit={(event) => { event.preventDefault(); if (pagination) visit(); }} className="relative w-full lg:w-80 flex gap-2">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
+                        aria-label="Search students"
                         placeholder="Search students…"
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm placeholder-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
                     />
-                </div>
+                    {pagination && <button type="submit" className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-gray-200">Search</button>}
+                </form>
                 <div className="flex items-center gap-2 flex-wrap">
                     <Filter size={12} className="text-gray-400" />
                     {["All", "Needs attention", "In progress", "Complete"].map((s) => (
                         <button
                             key={s}
                             type="button"
-                            onClick={() => setStatusFilter(s)}
+                            onClick={() => { setStatusFilter(s); if (pagination) visit(s); }}
                             className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
                                 statusFilter === s ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
                             }`}
@@ -472,6 +479,13 @@ function FoldersView({ folders, portalBase = "/portal/education" }) {
                 </div>
             </div>
 
+            {pagination && <nav aria-label="Student folder pages" className="flex items-center justify-between text-sm text-gray-600">
+                <span>{pagination.from || 0}–{pagination.to || 0} of {pagination.total} folders</span>
+                <div className="flex gap-3">
+                    {pagination.previous && <Link href={pagination.previous} preserveState preserveScroll>Previous</Link>}
+                    {pagination.next && <Link href={pagination.next} preserveState preserveScroll>Next</Link>}
+                </div>
+            </nav>}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {filtered.length === 0 ? (
                     <div className="p-14 text-center text-gray-400">

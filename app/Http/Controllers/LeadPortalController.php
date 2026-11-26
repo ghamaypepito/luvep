@@ -1004,6 +1004,42 @@ class LeadPortalController extends Controller
         return $this->trackerView('overview');
     }
 
+    public function previewAgreement(\Illuminate\Http\Request $request, $docId)
+    {
+        $lead = $this->resolveLeadOrLogout();
+        if (! $lead instanceof Lead) {
+            return $lead;
+        }
+        $this->portalAgreement($lead, $docId);
+        $request->query->set('inline', '1');
+
+        return app(LeadDocumentController::class)->download($request, $docId);
+    }
+
+    public function signAgreement(\Illuminate\Http\Request $request, $docId)
+    {
+        $lead = $this->resolveLeadOrLogout();
+        if (! $lead instanceof Lead) {
+            return $lead;
+        }
+        $this->portalAgreement($lead, $docId);
+
+        return app(LeadTrackingController::class)->signDocumentForLead($request, $lead, $docId);
+    }
+
+    private function portalAgreement(Lead $lead, $docId): LeadDocument
+    {
+        $doc = $lead->documents()->whereKey($docId)->firstOrFail();
+        abort_unless($doc->source === LeadDocument::SOURCE_GENERATED || $doc->status === LeadDocument::STATUS_STAFF_SHARED, 404);
+        abort_unless($doc->source_variant === 'engagement:written_agreement' || $doc->isEducationAgreement(), 403);
+        abort_if($doc->source_variant === 'engagement:written_agreement' && ! $doc->isClientSharedWrittenAgreement(), 404);
+        abort_if($doc->status === LeadDocument::STATUS_REJECTED, 409, 'This agreement is unavailable for signing.');
+        $hidden = app(\App\Services\Immigration\CaseChecklistService::class)->hiddenKeysFor($lead);
+        abort_if($doc->checklist_key && in_array($doc->checklist_key, $hidden, true), 404);
+
+        return $doc;
+    }
+
     private function trackerView(string $tab)
     {
         $lead = $this->resolveLeadOrLogout();
@@ -1019,11 +1055,17 @@ class LeadPortalController extends Controller
         // buildTrackerPayload builds shared-document URLs against the no-login
         // /track/{code} route. A signed-in client must go through their own
         // authenticated portal route instead — the /track route can 404 here
-        // (tracker gating / no code context). Rewrite view + download links.
+        // (tracker gating / no code context). Rewrite every document action.
         $payload['shared_documents'] = collect($payload['shared_documents'] ?? [])
             ->map(function (array $d) {
                 $d['view_url'] = "/portal/lead/documents/{$d['id']}/download?inline=1";
                 $d['download_url'] = "/portal/lead/documents/{$d['id']}/download";
+                if ($d['preview_url'] ?? null) {
+                    $d['preview_url'] = "/portal/lead/documents/{$d['id']}/preview";
+                }
+                if ($d['sign_url'] ?? null) {
+                    $d['sign_url'] = "/portal/lead/documents/{$d['id']}/sign";
+                }
 
                 return $d;
             })->all();

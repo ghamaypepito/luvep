@@ -1,0 +1,69 @@
+/* Compose-only art direction; other workspace views retain their existing layout. */
+body[data-workspace-view="compose"]{--green:#214f44;--pale:#eef3e9;--ground:#f4f6f2;--ink:#203e36;--line:#dce5dc}
+body[data-workspace-view="compose"] .sidebar{background:#fff;border-radius:22px;margin:14px;width:222px;top:0;bottom:0;height:calc(100vh - 28px);box-shadow:0 1px 4px #203e3610}
+body[data-workspace-view="compose"] .nav.active{background:#d5edab;color:#203e36;box-shadow:none}
+body[data-workspace-view="compose"] .topbar{background:transparent;border:0}
+body[data-workspace-view="compose"] .heading{margin-bottom:24px}
+body[data-workspace-view="compose"] .heading h1{font-size:32px;letter-spacing:-1px}
+body[data-workspace-view="compose"] .test-release-banner,body[data-workspace-view="compose"] .sync-strip{border-radius:14px;background:#fff;border-color:#dce5dc}
+body[data-workspace-view="compose"] .workspace-summary{display:none}
+#compose-view .compose-grid{grid-template-columns:minmax(0,1.25fr) minmax(280px,.85fr);gap:22px;align-items:start}
+#compose-view .composer-panel,#compose-view .compose-preview{border:1px solid #dce5dc;border-radius:20px;background:#fff;box-shadow:none;overflow:hidden;min-width:0}
+#compose-view .composer-intro{padding:24px 26px 12px;border:0;background:#fff}
+#compose-view .composer-intro h2{font-size:23px;letter-spacing:-.5px}
+#compose-view .composer-intro p{font-size:13px;color:#607268;max-width:55ch}
+#compose-view .compose-modes{border-bottom:1px solid #dce5dc;padding:8px 26px 18px;gap:8px;background:#fff;flex-wrap:wrap}
+#compose-view .compose-modes button{border-radius:9px;background:#f3f5f1;border:1px solid transparent;color:#607268;padding:10px 12px}
+#compose-view .compose-modes button.active{background:#d5edab;color:#203e36;border-color:#c9e49a}
+#compose-view #compose-form{padding:22px 26px}
+#compose-view input:not([type=checkbox]):not([type=file]),#compose-view textarea,#compose-view select{background:#fbfcfa;border:1px solid #cfdbce;border-radius:10px;min-height:43px;font:inherit;max-width:100%}
+#compose-view input:focus-visible,#compose-view textarea:focus-visible,#compose-view button:focus-visible,#ep-layout-dialog :focus-visible{outline:3px solid #91ae71;outline-offset:3px}
+#compose-view #campaign-brief{min-height:125px;resize:vertical}
+#compose-view #generate-campaign{background:#214f44;color:#fff;border-color:#214f44;margin:14px 0 8px;min-height:48px;font-weight:700}
+#compose-view .platform-options{gap:8px;flex-wrap:wrap}
+#compose-view .platform-options label{border:1px solid #dce5dc;border-radius:9px;background:#fff;font-size:12px;padding:8px 10px}
+#compose-view .platform-options label:has(input:checked){border-color:#93b074;background:#eef5e5}
+#compose-view .compose-upload{border:1px dashed #acbea6;background:#f6f9f2;border-radius:12px;padding:17px;margin:16px 0}
+#compose-view .compose-preview{padding:24px;position:sticky;top:20px}
+#compose-view .compose-mini-post{border:1px solid #dce5dc;border-radius:14px;overflow:hidden;background:#fff}
+#compose-view .mini-art{background:#edf3e5;min-height:230px}
+#compose-view .workflow-explainer{margin-top:20px;border:0;border-radius:14px;background:#f3f7ec;padding:18px}
+#compose-view .manual-flow-note,#compose-view .integration-note{border:1px solid #e1e8dc;border-radius:12px;background:#fff;padding:16px;margin-top:16px}
+#compose-view .compose-footer{border-top:1px solid #dce5dc;margin-top:20px;padding-top:20px}
+.studio-eyebrow{display:block;text-transform:uppercase;letter-spacing:1.8px;font-size:10px;font-weight:700;color:#607268;margin-bottom:8px}
+.studio-steps{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}.studio-steps span{background:#e9f1dc;border-radius:8px;padding:7px 10px;font-size:12px;color:#365541}
+#ep-layout-dialog{margin:auto;width:calc(100% - 24px);max-width:1080px;max-height:calc(100dvh - 28px);border:1px solid #dce5dc;border-radius:22px;background:#fff;color:#203e36;padding:24px;overflow:auto}
+#ep-layout-dialog::backdrop{background:#1c342e99}
+#ep-layout-dialog .dialog-heading{align-items:start}#ep-layout-dialog h2{font-size:25px;letter-spacing:-.6px}
+#ep-layout-dialog input,#ep-layout-dialog textarea,#ep-layout-dialog select{display:block;width:100%;padding:10px 12px;font:inherit;color:inherit;background:#fbfcfa;border:1px solid #cfdbce;border-radius:9px;min-width:0}
+#ep-layout-dialog label{display:block;font-size:12px;font-weight:700;margin:14px 0 7px}
+#ep-layout-dialog .caption-suggestion-actions{margin:22px 0 12px;flex-wrap:wrap}
+#ep-layout-dialog button:disabled{opacity:.45;cursor:not-allowed}
+#ep-layout-status{padding:10px 0;font-size:13px}
+.studio-result-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;border-top:1px solid #dce5dc;padding-top:8px}
+.studio-art-preview{min-width:0;background:#f4f7ef;border-radius:14px;padding:18px}
+#ep-layout-canvas{display:block;width:100%;height:auto;max-height:470px;object-fit:contain;margin-top:16px}
+.studio-result-editor{min-width:0}
+@media(max-width:1100px){#compose-view .compose-grid{grid-template-columns:minmax(0,1fr)}#compose-view .compose-preview{position:static}}
+@media(max-width:700px){body[data-workspace-view="compose"] .sidebar{border-radius:0;margin:0;width:100%;height:auto}#compose-view .composer-intro,#compose-view #compose-form,#compose-view .compose-preview{padding:18px}#compose-view .compose-modes{padding:8px 18px 16px}.studio-result-grid{grid-template-columns:minmax(0,1fr)}#ep-layout-dialog{padding:18px}#compose-view input,#compose-view textarea,#compose-view select{font-size:16px!important}}
+#compose-view .mini-art:not(.uploaded):has(#compose-image[hidden])::before{content:'Your artwork preview appears here';display:grid;place-content:center;min-height:230px;padding:30px;color:#65795c;font-size:13px;text-align:center}
+body[data-workspace-view="compose"] .test-release-banner,body[data-workspace-view="compose"] .test-release-banner + .sync-strip{display:none}
+#compose-view .composer-panel{padding:0}
+#compose-view>.sync-strip{padding:16px 20px;gap:12px;margin-bottom:20px}
+#compose-view .studio-steps{margin:14px 0 4px}
+#compose-view .composer-intro{padding-bottom:8px}
+#compose-view .compose-upload{margin:16px 0}
+#compose-view .platform-options span{background:transparent;padding:0}
+#ep-layout-dialog[open]{display:flex;flex-direction:column;overflow:hidden}
+#ep-layout-dialog>.dialog-heading,#ep-layout-dialog>.hint,#ep-layout-status{flex-shrink:0}
+#ep-layout-result:not([hidden]){display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#ep-layout-dialog .studio-result-grid{min-height:0;overflow-y:auto;flex:1}
+#ep-layout-dialog .caption-suggestion-actions,#ep-layout-result>.hint{flex-shrink:0}
+@media(max-height:800px){#ep-layout-canvas{max-height:310px}#ep-layout-dialog{padding:18px}#ep-layout-dialog .caption-suggestion-actions{margin:12px 0 8px}#ep-layout-status{padding:6px 0}.studio-art-preview{padding:12px}}
+body[data-workspace-view="compose"] .shell{margin-left:236px}
+@media(max-width:780px){body[data-workspace-view="compose"] .shell{margin-left:0}body[data-workspace-view="compose"] .sidebar{width:100%;height:auto;margin:0;border-radius:0;box-shadow:none}}
+@media(max-height:800px){#ep-layout-canvas{max-height:220px}.studio-result-editor label{margin:10px 0 6px}#ep-layout-dialog .studio-result-editor textarea{height:65px}#ep-layout-dialog .studio-result-editor input,#ep-layout-dialog .studio-result-editor select{padding:8px 10px}}
+#ep-layout-dialog[data-output="video"] label[for="ep-layout-format"],#ep-layout-dialog[data-output="video"] #ep-layout-format,#ep-layout-dialog[data-output="video"] #ep-layout-png,#ep-layout-dialog[data-output="video"] #ep-layout-source,#ep-layout-dialog[data-output="video"] #ep-layout-pack,#ep-layout-dialog[data-output="video"] #ep-layout-apply{display:none}
+.studio-video-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.studio-video-actions button{font:inherit;font-size:12px}
+#ep-video-progress{width:100%;accent-color:#214f44;margin:10px 0}#ep-video-preview{display:block;width:100%;max-height:420px;object-fit:contain;margin:16px 0;background:#214f44;border-radius:12px}#ep-video-preview[hidden]{display:none}#ep-video-help{font-size:11px;margin:8px 0}
+@media(max-height:800px){#ep-video-preview{max-height:240px}}

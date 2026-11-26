@@ -61,6 +61,78 @@ class CaseChecklistService
         return array_merge($this->normaliseItems($this->universalItemsFor($lead)), $base);
     }
 
+    /** Use the resolved case checklist, including aliases; never infer policy from labels. */
+    public function clientRequiresPdf(Lead $lead, ?string $key): bool
+    {
+        return in_array($key, $this->clientPdfKeys($lead), true);
+    }
+
+    /** Resolve once per list operation; the supplied items are already case-resolved. */
+    public function clientPdfKeys(Lead $lead, ?array $items = null): array
+    {
+        $pdfKey = match ($this->resolveVisaType($lead)?->code) {
+            'SMCRV', 'SMCRV1' => 'police_clearance',
+            'PRSWV' => 'police_nbi_clearance',
+            'AEWV', 'WORK_AEWV' => 'police_certificate',
+            default => null,
+        };
+        if ($pdfKey === null) {
+            return [];
+        }
+        $result = [];
+        foreach ($items ?? $this->forCase($lead) as $item) {
+            $keys = $this->itemKeys($item);
+            if (in_array($pdfKey, $keys, true)) {
+                $result = array_merge($result, $keys);
+            }
+        }
+
+        return array_values(array_unique($result));
+    }
+
+    /** Requests have no typed slot column; only existing same-case uploads establish binding. */
+    public function requestChecklistKeys(Lead $lead, int $requestId): array
+    {
+        return LeadDocument::where('lead_id', $lead->id)->where('request_id', $requestId)
+            ->whereNotNull('checklist_key')->pluck('checklist_key')->unique()->values()->all();
+    }
+
+    /** Same-case binding snapshot for one list operation; no per-row queries or cache. */
+    public function requestBindingsFor(Lead $lead): array
+    {
+        $bindings = [];
+        foreach (LeadDocument::where('lead_id', $lead->id)->whereNotNull('request_id')
+            ->whereNotNull('checklist_key')->distinct()->get(['request_id', 'checklist_key']) as $document) {
+            $bindings[$document->request_id][] = $document->checklist_key;
+        }
+
+        return $bindings;
+    }
+
+    public function requestRequiresPdf(Lead $lead, int $requestId, ?array $pdfKeys = null, ?array $requestBindings = null): bool
+    {
+        $pdfKeys ??= $this->clientPdfKeys($lead);
+        if ($pdfKeys === []) {
+            return false;
+        }
+        $keys = $requestBindings !== null ? ($requestBindings[$requestId] ?? []) : $this->requestChecklistKeys($lead, $requestId);
+        foreach ($keys as $key) {
+            if (in_array($key, $pdfKeys, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function documentRequiresPdf(Lead $lead, LeadDocument $document, ?array $pdfKeys = null, ?array $requestBindings = null): bool
+    {
+        $pdfKeys ??= $this->clientPdfKeys($lead);
+
+        return in_array($document->checklist_key, $pdfKeys, true)
+            || ($document->request_id && $this->requestRequiresPdf($lead, $document->request_id, $pdfKeys, $requestBindings));
+    }
+
     /** Historical PRSWV sponsor visa keys describe one requirement; retain both upload keys. */
     public function consolidateAliases(Lead $lead, array $items): array
     {
@@ -75,6 +147,7 @@ class CaseChecklistService
                 if (($item['key'] ?? null) === 'sponsor_nz_visa') {
                     $item['aliases'] = ['nz_visa'];
                 }
+
                 return $item;
             })->values()->all();
     }
@@ -94,6 +167,7 @@ class CaseChecklistService
                 $hidden = array_merge($hidden, $keys);
             }
         }
+
         return array_values(array_unique($hidden));
     }
 
@@ -193,15 +267,17 @@ class CaseChecklistService
             return [];
         }
 
+        $pdfKeys = $this->clientPdfKeys($lead, $items);
         $docsByKey = $this->latestDocumentsByKey($lead);
         $hidden = $this->hiddenKeysFor($lead);
 
-        return collect($items)->map(function (array $item) use ($docsByKey, $hidden) {
+        return collect($items)->map(function (array $item) use ($docsByKey, $hidden, $pdfKeys) {
             $doc = collect($this->itemKeys($item))->map(fn ($key) => $docsByKey->get($key))->filter()->sortByDesc('created_at')->first();
 
             return [
                 'key' => $item['key'],
                 'aliases' => $item['aliases'] ?? [],
+                'client_pdf_only' => in_array($item['key'], $pdfKeys, true),
                 'label' => $item['label'],
                 'hint' => $item['hint'] ?? null,
                 'required' => (bool) ($item['required'] ?? false),

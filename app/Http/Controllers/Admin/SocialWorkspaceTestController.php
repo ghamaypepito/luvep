@@ -20,6 +20,7 @@ class SocialWorkspaceTestController extends Controller
         $html = file_get_contents($path);
         $html = str_replace('<head>', '<head><meta name="csrf-token" content="'.htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8').'"><base href="/social/workspace-test/v1/">', $html);
         $html = str_replace('href="#" aria-label="EP workspace"', 'href="/social/compose#" aria-label="EP workspace"', $html);
+        $html = str_replace('__SOCIAL_ADMIN_SETTINGS__', $request->user()->isAdmin() ? 'true' : 'false', $html);
         $state = $ghl->state();
         $status = $state['verified'] ? 'EP GHL account access verified · '.$state['account_count'].' accounts. Live calendar and insights connect to Luv, Ep; scheduling requires saved approval.' : 'Verify EP GHL account access in the connection settings. Live sync is not enabled.';
         $html = str_replace('__GHL_ACCOUNT_STATUS__', htmlspecialchars($status, ENT_QUOTES, 'UTF-8'), $html);

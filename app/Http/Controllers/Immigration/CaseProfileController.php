@@ -11,12 +11,12 @@ use App\Models\LeadNote;
 use App\Models\ResidentIntake;
 use App\Models\StudentIntake;
 use App\Models\User;
-use App\Support\CaseRecordAccess;
 use App\Models\VisitorIntake;
 use App\Models\WorkIntake;
 use App\Services\Immigration\CaseChecklistService;
 use App\Services\Immigration\RecentVisaDocuments;
 use App\Services\Immigration\VisaProgressService;
+use App\Support\CaseRecordAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -46,15 +46,7 @@ class CaseProfileController extends Controller
 {
     public function show(Lead $lead, CaseChecklistService $checklist, string $page = 'portal/immigration/CaseProfile')
     {
-        $user = auth()->user();
-        abort_unless($user instanceof User, 403);
-
-        $this->ensureCanViewCases($user);
-
-        // Match the Cases list, including older Education handoffs whose case
-        // flag was never stamped. Plain leads remain excluded. Reading a case
-        // must not rewrite its conversion flags, dates or audit history.
-        abort_unless(Lead::immigrationCase()->whereKey($lead->getKey())->exists(), 404);
+        $user = $this->guardListedCase($lead);
 
         $this->writeAuditView($lead, $user);
 
@@ -155,8 +147,9 @@ class CaseProfileController extends Controller
                 ];
             })(),
             // Cases the dependant can be related to (defaults to this case).
-            'canCorrectCaseNames' => CaseRecordAccess::canManage(request()),
+            'canCorrectCaseNames' => CaseRecordAccess::canCorrectNames(request()),
             'caseOptions' => Lead::immigrationCase()
+                ->when($user->role === 'agent', fn ($query) => $query->where('agent_id', $user->id))
                 ->orderBy('first_name')->limit(500)
                 ->get(['id', 'lead_id', 'first_name', 'last_name'])
                 ->map(fn ($l) => [
@@ -606,11 +599,25 @@ class CaseProfileController extends Controller
 
     public function updateDependent(Request $request, Lead $lead, \App\Models\CaseDependent $dependent)
     {
-        $this->guardCase($lead);
+        $this->guardListedCase($lead);
         abort_unless($dependent->lead_id === $lead->id, 404);
         $data = $request->validate($this->dependentRules($dependent->linked_lead_id));
         CaseRecordAccess::authorizeNameChanges($request, $dependent, $data, ['first_name', 'middle_name', 'family_name']);
-        $dependent->update($data);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($dependent, $data, $lead) {
+            $previousNames = $dependent->only(['first_name', 'middle_name', 'family_name']);
+            $dependent->update($data);
+            $nameChanges = [];
+            foreach ($previousNames as $field => $old) {
+                if ($dependent->wasChanged($field)) {
+                    $nameChanges[$field] = ['old' => $old, 'new' => $dependent->{$field}];
+                }
+            }
+            if ($nameChanges) {
+                \App\Models\ActivityLog::record('case.dependent_name_corrected', ['properties' => [
+                    'subject_type' => 'Lead', 'subject_id' => $lead->id, 'dependent_id' => $dependent->id, 'changes' => $nameChanges,
+                ]]);
+            }
+        });
 
         return back()->with('success', 'Dependant updated.');
     }
@@ -1512,6 +1519,18 @@ class CaseProfileController extends Controller
         return back()->with('success', 'Document moved to Recent visa / eVisa.');
     }
 
+    /** Profile and name edits share the Cases list's legacy handoff membership. */
+    private function guardListedCase(Lead $lead): User
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        $this->ensureCanViewCases($user);
+        // Never repair conversion flags or handoff history while opening/saving.
+        abort_unless(Lead::immigrationCase()->whereKey($lead->getKey())->exists(), 404);
+
+        return $user;
+    }
+
     /** Shared case guard for the process endpoints. */
     private function guardCase(Lead $lead): User
     {
@@ -1564,10 +1583,7 @@ class CaseProfileController extends Controller
      *  personal details from the Case Profile "Personal" tab. */
     public function updatePersonal(Request $request, Lead $lead)
     {
-        $user = auth()->user();
-        abort_unless($user instanceof User, 403);
-        $this->ensureCanViewCases($user);
-        abort_unless($lead->is_immigration_case, 404);
+        $this->guardListedCase($lead);
 
         $validated = $request->validate([
             'first_name' => 'required|string|max:120',

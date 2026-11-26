@@ -30,7 +30,7 @@ class IntakeSyncsToCaseTest extends TestCase
         $case = $this->existingCase();
 
         $this->post('/work-interest', [
-            'first_name' => 'Ana', 'family_name' => 'Cruz', 'dob' => '1992-04-11',
+            'first_name' => 'Ana', 'family_name' => 'Old', 'dob' => '1992-04-11',
             'email' => 'ana@example.com', 'phone' => '+64 21 999 0000',
             'country_of_citizenship' => 'Philippines', 'declaration_accepted' => true,
         ])->assertSessionHasNoErrors();
@@ -52,7 +52,7 @@ class IntakeSyncsToCaseTest extends TestCase
         $case = $this->existingCase(['inz_visa_type' => 'Student Visa (Fee Paying)']);
 
         $this->post('/work-interest', [
-            'first_name' => 'Ana', 'family_name' => 'Cruz', 'dob' => '1992-04-11',
+            'first_name' => 'Ana', 'family_name' => 'Old', 'dob' => '1992-04-11',
             'email' => 'ana@example.com', 'phone' => '+64 21 999 0000',
             'country_of_citizenship' => 'Philippines', 'declaration_accepted' => true,
         ])->assertSessionHasNoErrors();

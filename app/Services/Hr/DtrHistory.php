@@ -94,11 +94,11 @@ class DtrHistory
             'can_decide' => $acknowledgement->status === 'pending' && $this->reportSnapshot($acknowledgement->entry) === $acknowledgement->snapshot && $this->canDecide($actor, $acknowledgement)];
     }
 
-    /** Team scope excludes self; employees read their own history from My time records. */
+    /** Super Admin can read every employee; decision policies still forbid self-review. */
     public function team(User $actor): Builder
     {
         $access = app(HrAccess::class);
-        $scope = HrEmployee::where('user_id', '!=', $actor->id);
+        $scope = HrEmployee::with('user')->whereHas('user')->when(! $actor->isSuperAdmin(), fn ($q) => $q->where('user_id', '!=', $actor->id));
         if (! $access->internal($actor)) {
             return $scope->whereRaw('1 = 0');
         }

@@ -20,7 +20,7 @@ class Tenant extends Model
 
     public const CONTRACT_TYPES = ['fixed_term', 'periodic', 'open', 'not_yet_defined'];
 
-    public const STATUSES = ['active', 'notice_given', 'vacating', 'vacated', 'breached'];
+    public const STATUSES = ['pending_payment', 'active', 'notice_given', 'vacating', 'vacated', 'breached'];
 
     /** Window (days) before contract_end that flags a tenancy as "ending soon". */
     public const ENDING_SOON_DAYS = 25;
@@ -49,7 +49,7 @@ class Tenant extends Model
         'passport_number' => 'encrypted',
     ];
 
-    protected $appends = ['display_name', 'weekly_total_due', 'days_to_end', 'contract_status'];
+    protected $appends = ['display_name', 'weekly_total_due', 'days_to_end', 'contract_status', 'move_in_version'];
 
     // ---- Relationships ----------------------------------------------------
 
@@ -77,6 +77,16 @@ class Tenant extends Model
     // placeholder wired up once the Viewers/Onboarding module is built.
 
     // ---- Computed accessors ----------------------------------------------
+
+    public function getMoveInVersionAttribute(): string
+    {
+        // Hash persisted values, including same-second updates. This is a
+        // stale-form check, not an authorization credential.
+        $attributes = $this->getRawOriginal();
+        ksort($attributes);
+
+        return hash('sha256', json_encode($attributes, JSON_THROW_ON_ERROR));
+    }
 
     public function getDisplayNameAttribute(): string
     {

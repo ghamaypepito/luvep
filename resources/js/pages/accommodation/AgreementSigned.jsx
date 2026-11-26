@@ -2,7 +2,7 @@ import { Head } from "@inertiajs/react";
 import { CheckCircle2 } from "lucide-react";
 
 // Confirmation shown after a client e-signs their Exalt agreement.
-export default function AgreementSigned({ clientName, typeLabel }) {
+export default function AgreementSigned({ clientName, typeLabel, downloadUrl }) {
     return (
         <div className="min-h-screen bg-[#eef0f4]">
             <Head title="Agreement signed" />
@@ -14,6 +14,7 @@ export default function AgreementSigned({ clientName, typeLabel }) {
                         Your <strong>{typeLabel}</strong> has been signed. Our team has been notified and will be in touch
                         with the next steps.
                     </p>
+                    {downloadUrl && <a href={downloadUrl} className="mt-4 inline-block font-semibold text-blue-700 underline">Download your signed agreement</a>}
                     <p className="mt-4 text-sm text-gray-500">We&rsquo;re looking forward to having you with us 😊</p>
                 </div>
             </div>

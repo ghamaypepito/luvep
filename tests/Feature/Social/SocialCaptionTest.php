@@ -75,7 +75,7 @@ class SocialCaptionTest extends TestCase
     public function test_layout_returns_validated_editable_design_data_without_uploaded_images_leaving_browser(): void
     {
         $this->connect();
-        $design = ['headline' => 'Your next chapter', 'supporting_copy' => 'Explore study planning with EP.', 'cta' => 'Book a conversation', 'caption' => 'Talk to the EP team.', 'layout' => 'photo-top'];
+        $design = ['headline' => 'Your next chapter', 'supporting_copy' => 'Explore study planning with EP.', 'cta' => 'Book a conversation', 'caption' => 'Talk to the EP team.', 'captions' => ['Instagram' => 'Explore your next step with EP.'], 'layout' => 'photo-top'];
         Http::fake(['api.anthropic.com/*' => Http::response(['content' => [['type' => 'text', 'text' => json_encode($design)]]])]);
         $this->postJson('/social/workspace-test/ai/layout', array_merge($this->payload(), ['brief' => 'Use my uploaded photo and a short headline.']))->assertOk()->assertJsonPath('design.headline', $design['headline'])->assertJsonPath('draft', true);
         Http::assertSentCount(1);
@@ -87,6 +87,24 @@ class SocialCaptionTest extends TestCase
         $this->connect();
         Http::fake(['api.anthropic.com/*' => Http::response(['content' => [['type' => 'text', 'text' => 'private-malformed-response']]])]);
         $this->postJson('/social/workspace-test/ai/layout', array_merge($this->payload(), ['brief' => 'Make a layout']))->assertStatus(502)->assertDontSee('private-malformed-response');
+    }
+
+    public function test_post_set_returns_copy_for_every_selected_platform_and_enforces_short_platform_limits(): void
+    {
+        $this->connect();
+        $channels = ['Facebook', 'Instagram', 'LinkedIn', 'Pinterest', 'TikTok', 'YouTube', 'X', 'Threads'];
+        $design = ['headline' => 'Your next chapter', 'supporting_copy' => 'Explore your next step with EP.', 'cta' => 'Talk to the team', 'caption' => 'Plan with EP.', 'layout' => 'photo-top',
+            'captions' => array_fill_keys($channels, 'Plan your next step with EP.')];
+        $payload = [...$this->payload(), 'channels' => $channels, 'brief' => 'Create branded graphics without a photograph.'];
+        Http::fake(function () use (&$design) {
+            return Http::response(['content' => [['type' => 'text', 'text' => json_encode($design)]]]);
+        });
+        $this->postJson('/social/workspace-test/ai/layout', $payload)->assertOk()->assertJsonPath('design.captions.X', 'Plan your next step with EP.')->assertJsonCount(8, 'design.captions');
+        $design['captions']['X'] = str_repeat('x', 281);
+        $this->postJson('/social/workspace-test/ai/layout', $payload)->assertStatus(502)->assertJsonPath('error', 'invalid_design')->assertDontSee(str_repeat('x', 281));
+        unset($design['captions']['X']);
+        $this->postJson('/social/workspace-test/ai/layout', $payload)->assertStatus(502);
+        $this->postJson('/social/workspace-test/ai/layout', [...$payload, 'channels' => ['X', 'X']])->assertUnprocessable();
     }
 
     public function test_layout_is_protected_and_validates_brief_before_provider_call(): void
@@ -135,7 +153,7 @@ class SocialCaptionTest extends TestCase
     public function test_layout_includes_references_and_keeps_them_out_of_response_and_logs(): void
     {
         $this->connect();
-        $design = ['headline' => 'Visit campus', 'supporting_copy' => 'Explore your next step.', 'cta' => 'Talk to EP', 'caption' => 'Plan with EP.', 'layout' => 'photo-top'];
+        $design = ['headline' => 'Visit campus', 'supporting_copy' => 'Explore your next step.', 'cta' => 'Talk to EP', 'caption' => 'Plan with EP.', 'captions' => ['Instagram' => 'Plan with EP.'], 'layout' => 'photo-top'];
         Http::fake(['api.anthropic.com/*' => Http::response(['content' => [['type' => 'text', 'text' => json_encode($design)]]])]);
         $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('private-notes.txt', 'Private reference marker 82913');
         $this->post('/social/workspace-test/ai/layout', array_merge($this->payload(), ['brief' => 'Use my references.', 'references' => [$file]]), ['Accept' => 'application/json'])->assertOk()->assertDontSee('82913')->assertDontSee('private-notes.txt');

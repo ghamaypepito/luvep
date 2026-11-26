@@ -72,6 +72,19 @@ class ModuleManagementTest extends TestCase
         $this->assertNotContains('not_a_real_module', $admin->fresh()->grantedModules());
     }
 
+    public function test_module_save_returns_fresh_stored_grants_without_an_unverified_global_toast(): void
+    {
+        $this->withoutVite();
+        $super = User::factory()->create(['role' => 'super_admin']);
+        $manager = User::factory()->create(['role' => 'immigration_manager', 'module_permissions' => ['dtr.reports']]);
+        $this->actingAs($super)->from('/admin/module-management')->post('/admin/module-management/'.$manager->id, [
+            'modules' => ['dtr.reports', 'case_name_correction'],
+        ])->assertRedirect('/admin/module-management')->assertSessionHasNoErrors()->assertSessionMissing('success');
+        $this->get('/admin/module-management')->assertOk()->assertInertia(fn ($page) => $page->where('users', fn ($users) => collect($users)
+            ->contains(fn ($user) => $user['id'] === $manager->id && $user['modules'] === ['dtr.reports', 'case_name_correction'])));
+        $this->assertSame(['dtr.reports', 'case_name_correction'], $manager->fresh()->module_permissions);
+    }
+
     public function test_super_admin_sees_every_restricted_module_implicitly(): void
     {
         $super = User::factory()->create(['role' => 'super_admin']);

@@ -10,10 +10,13 @@ class ClaudeClient
     public function __construct(private ClaudeSettings $settings) {}
 
     /** Fixed destination, separate trusted instructions, optional staff reference blocks, text-only replies. Never log prompts or provider bodies. */
-    public function chat(array $messages, string $surface, array $references = []): array
+    public function chat(array $messages, string $surface, array $references = [], ?int $maxTokens = null): array
     {
         if (! in_array($surface, ['pathy', 'staff'], true)) {
             throw new \InvalidArgumentException('Unknown assistant.');
+        }
+        if ($maxTokens !== null && ($surface !== 'staff' || $maxTokens < 1 || $maxTokens > 6000)) {
+            throw new \InvalidArgumentException('Invalid staff output budget.');
         }
         $empty = ['content' => null, 'tokens' => null, 'model' => $this->settings->model($surface), 'error' => 'not_configured'];
         $key = $this->settings->apiKey();
@@ -43,7 +46,7 @@ class ClaudeClient
                 ->timeout((int) config('claude.timeout_seconds', 35))->connectTimeout(5)
                 ->post('https://api.anthropic.com/v1/messages', [
                     'model' => $this->settings->model($surface), 'system' => $system,
-                    'messages' => $turns, 'max_tokens' => (int) config("claude.max_tokens.{$surface}"),
+                    'messages' => $turns, 'max_tokens' => $maxTokens ?? (int) config("claude.max_tokens.{$surface}"),
                     ...$options,
                 ]);
             if (! $response->successful()) {

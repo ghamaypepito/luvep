@@ -22,9 +22,18 @@ class CaseRecordAccess
         abort_if(! self::canManage($request) && Lead::immigrationCase()->whereKey($ids)->exists(), 403);
     }
 
+    public static function canCorrectNames(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user?->is_active && ! $request->attributes->has('user_view_actor')
+            && ($user->isAdmin() || ($user->role === \App\Models\User::ROLE_IMMIGRATION_MANAGER
+                && in_array('case_name_correction', $user->grantedModules(), true)));
+    }
+
     public static function nameLocked(Request $request, Lead $record): bool
     {
-        return ! self::canManage($request) && self::isExistingCase($record);
+        return ! self::canCorrectNames($request) && self::isExistingCase($record);
     }
 
     public static function preserveCaseIdentity(Lead $record, array $submission): array
@@ -43,12 +52,12 @@ class CaseRecordAccess
     /** Staff can save other case details while preserving the existing name. */
     public static function authorizeNameChanges(Request $request, Model $record, array $values, array $fields): void
     {
-        if (self::canManage($request)) {
+        if (self::canCorrectNames($request)) {
             return;
         }
         foreach ($fields as $field) {
             if (array_key_exists($field, $values) && (string) $values[$field] !== (string) $record->getOriginal($field)) {
-                throw ValidationException::withMessages([$field => 'Only an Admin or Super Admin can correct a case name.']);
+                throw ValidationException::withMessages([$field => 'Case name corrections require Admin access or an explicit Name Correction grant.']);
             }
         }
     }

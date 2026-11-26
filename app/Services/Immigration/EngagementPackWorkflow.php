@@ -54,6 +54,9 @@ class EngagementPackWorkflow
                     : 'Initial visa consultation - non-refundable booking fee, credited toward a subsequent visa processing engagement',
                 'quantity' => 1, 'unit_price' => $pricing['professional_excl'],
             ]];
+            if ($type === 'initial_consultation') {
+                $items[0]['description'] .= '. '.EngagementDocumentGenerator::consultationArrangement($settings);
+            }
             if ($pricing['include_gst']) {
                 $items[] = ['description' => 'GST (15%)', 'quantity' => 1, 'unit_price' => $pricing['gst']];
             }
@@ -276,6 +279,11 @@ class EngagementPackWorkflow
             'invoice_total' => $invoice?->invoice_total !== null ? number_format((float) $invoice->invoice_total, 2) : '',
             'currency' => $invoice?->notes['engagement_currency'] ?? 'NZD'];
         $serviceType = $docs->first()->notes['engagement_type'] ?? 'immigration_advice';
+        $consultationHtml = '';
+        if ($serviceType === 'initial_consultation') {
+            $settings = $docs->first()->notes['engagement_settings'] ?? [];
+            $consultationHtml = view('emails.initial-consultation-details', ['consultation' => $settings])->render();
+        }
         $templateKey = match ($serviceType) {
             'initial_consultation' => 'initial_consultation_agreement', 'oia' => 'oia_engagement', default => 'migration_agreement',
         };
@@ -286,6 +294,15 @@ class EngagementPackWorkflow
             $comm = app(CommunicationService::class);
             $subject = $comm->render($lead, (string) $template->email_subject, $context);
             $body = $comm->render($lead, (string) $template->email_body, $context, true);
+            if ($consultationHtml !== '') {
+                // Preserve legacy Markdown and keep designer email details inside its body.
+                if (! preg_match('/<[a-z][\s\S]*>/i', $body)) {
+                    $body = Str::markdown($body);
+                }
+                $body = preg_match('/<\/body\s*>/i', $body)
+                    ? preg_replace_callback('/<\/body\s*>/i', fn ($match) => $consultationHtml.$match[0], $body, 1)
+                    : $body.$consultationHtml;
+            }
             $mail = new TemplatedMessage($subject, $body, [], $template->banner_image, $template->footer_image,
                 null, $template->from_email, $template->from_name, $template->cc, $template->bcc,
                 $template->branding, filled($template->design_json), $template->reply_to_email, $template->reply_to_name);
@@ -302,7 +319,7 @@ class EngagementPackWorkflow
             $name = e($lead->first_name);
             $list = implode('', array_map(fn ($file) => '<li>'.e($file['name']).'</li>', $files));
             $body = '<p>Dear '.$name.',</p><p>Your engagement documents are attached for review.</p><ul>'.$list.'</ul><p><a href="'.e($link).'">Open and sign your agreement</a></p>';
-            $html = (new TemplatedMessage($subject, $body, branding: 'immigration'))->render();
+            $html = (new TemplatedMessage($subject, $body.$consultationHtml, branding: 'immigration'))->render();
         }
         $data = compact('files', 'to', 'subject', 'html', 'delivery') + [
             'lead_id' => $lead->id, 'pack_id' => $packId, 'fingerprint' => $this->fingerprint($lead, $docs),

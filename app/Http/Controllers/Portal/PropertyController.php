@@ -35,7 +35,7 @@ class PropertyController extends Controller
             'suburb' => ['nullable', Rule::in(['Hobsonville', 'Glenfield', 'Kelston', 'Hillsborough', 'Sunnynook'])],
             'rental_mode' => ['required', Rule::in(Property::RENTAL_MODES)],
             // Per-room fields
-            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'ensuite'])],
+            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'couple', 'ensuite'])],
             'has_wardrobe' => 'boolean',
             'bed_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'double'])],
             'bathroom_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['shared', 'private'])],
@@ -204,6 +204,9 @@ class PropertyController extends Controller
 
     public function destroy(Property $property)
     {
+        if (\App\Models\AccommodationAgreement::where('property_id', $property->id)->exists()) {
+            return back()->with('error', 'This property has issued agreements. Archive it to preserve those records.');
+        }
         // A property with active tenants cannot be removed — they must be
         // vacated/moved first. (The model enforces this too, for safety.)
         if ($property->activeTenants()->exists()) {

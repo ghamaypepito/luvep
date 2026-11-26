@@ -112,7 +112,7 @@ export default function TrackingPage({
     const [journeyOpen, setJourneyOpen] = useState(false);
 
     const openUpload = (item = null) => {
-        setUploadPreselect(item ? { key: item.key, label: item.label, hint: item.hint } : null);
+        setUploadPreselect(item ? { key: item.key, label: item.label, hint: item.hint, client_pdf_only: item.client_pdf_only } : null);
         setUploadOpen(true);
     };
     const closeUpload = () => {
@@ -1602,6 +1602,7 @@ function DocumentsHubTab({
                         : 'submitted';
         return {
             key: it.key,
+            client_pdf_only: it.client_pdf_only,
             section: parsed.section,
             // Universal items carry a bare label (no "Section · Name"), so use
             // the label as the display name.
@@ -2523,7 +2524,7 @@ function SharedDocRow({ doc: d }) {
  * Client signing modal for the Written Agreement — draw a signature on the
  * canvas, watch it land on the document live, then submit.
  */
-function ClientSignModal({ doc: d, onClose }) {
+export function ClientSignModal({ doc: d, onClose }) {
     const [submitting, setSubmitting] = useState(false);
     const [hasDrawing, setHasDrawing] = useState(false);
     const [error, setError] = useState(null);
@@ -2745,6 +2746,7 @@ function groupChecklistBySection(items, uploadedKeys) {
         }
         byKey.get(section).push({
             key: it.key,
+            client_pdf_only: it.client_pdf_only,
             section,
             name,
             label: it.label,
@@ -3101,6 +3103,7 @@ function DocUploadModal({ open, onClose, code, lead = null, visa = null, documen
                                     ? 'Upload the face image as a JPEG (.jpg) file.'
                                     : 'Upload this document as a PDF (.pdf) file.'}
                                 {' '}Up to 10 files (max 50&nbsp;MB each).
+                                {docType?.client_pdf_only && ' Rescan before uploading if any details are unclear.'}
                             </p>
                             {(errors.files || errors['files.0']) && (
                                 <p className="text-[11px] text-red-500">{errors.files || errors['files.0']}</p>
@@ -3208,10 +3211,11 @@ function DocEditModal({ code, doc, onClose }) {
                             <input
                                 type="file"
                                 className="hidden"
-                                accept=".pdf,.doc,.docx,.xls,.csv,.jpg,.jpeg,.png,.gif"
+                                accept={doc.client_pdf_only ? ".pdf" : ".pdf,.doc,.docx,.xls,.csv,.jpg,.jpeg,.png,.gif"}
                                 onChange={(e) => setData('file', e.target.files?.[0] || null)}
                             />
                         </label>
+                        {doc.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                         {errors.file && <p className="text-[11px] text-red-500 mt-1">{errors.file}</p>}
                     </div>
                 </form>

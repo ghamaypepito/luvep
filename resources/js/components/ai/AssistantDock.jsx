@@ -9,7 +9,7 @@ export default function AssistantDock({ initialPage }) {
     const current = useGlobalPage();
     const page = current?.component || Object.hasOwn(current?.props || {}, 'auth') ? current : initialPage;
     const auth = page?.props?.auth;
-    const internal = /^\/(admin|portal|assistant|ep-agent|ep-manager)(\/|\?|$)/.test(page?.url || '') || page?.component?.startsWith('hr/');
+    const internal = /^\/(admin|portal|assistant|ep-agent|ep-manager|help-center)(\/|\?|$)/.test(page?.url || '') || page?.component?.startsWith('hr/');
     if (!internal || !auth?.user || ['lead', 'revoked_lead'].includes(auth.user.role)) return null;
     if (auth.ep_agent?.enabled) return <Suspense fallback={null}><EpDock key={auth.user.id} portals={auth.ep_agent.portals} fullPage={['/ep-agent','/ep-manager'].includes(page?.url?.split('?')[0])} /></Suspense>;
     if (auth.ai_enabled === false) return null;

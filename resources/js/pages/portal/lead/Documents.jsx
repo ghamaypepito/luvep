@@ -199,11 +199,12 @@ function RequestCard({ req }) {
                         )}
                         {doc && <StatusPill status={doc.status} />}
                     </div>
+                    {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                     {req.description && <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">{req.description}</p>}
                 </div>
                 {!approved && (
                     <>
-                        <input ref={fileRef} type="file" onChange={onFile} className="hidden" />
+                        <input ref={fileRef} type="file" accept={req.client_pdf_only ? ".pdf" : undefined} onChange={onFile} className="hidden" />
                         <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#282728] text-white rounded-lg text-[11px] font-bold uppercase tracking-wider hover:bg-black transition-colors disabled:opacity-50">
                             {uploading ? <Loader size={11} className="animate-spin" /> : <Upload size={11} />}
@@ -359,12 +360,13 @@ function RequestRow({ req }) {
                         <p className="text-sm font-medium text-[#282728] leading-tight">
                             {req.label}{req.required && <span className="ml-1 text-rose-500">*</span>}
                         </p>
-                        {req.description && <p className="text-[10.5px] text-gray-500 mt-0.5 max-w-[320px]">{req.description}</p>}
+                        {req.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
+                    {req.description && <p className="text-[10.5px] text-gray-500 mt-0.5 max-w-[320px]">{req.description}</p>}
                     </div>
                 </div>
             </td>
             <td className="px-4 py-3">
-                <input ref={fileRef} type="file" onChange={onFile} className="hidden" />
+                <input ref={fileRef} type="file" accept={req.client_pdf_only ? ".pdf" : undefined} onChange={onFile} className="hidden" />
                 {doc ? (
                     <div className="flex items-center gap-2 flex-wrap">
                         <FileChip f={doc} />
@@ -406,12 +408,13 @@ function ChecklistRow({ item, files }) {
                         <p className="text-sm font-medium text-[#282728] leading-tight">
                             {item.label}{item.required && <span className="ml-1 text-rose-500">*</span>}
                         </p>
+                        {item.client_pdf_only && <p className="text-xs text-gray-500 mt-1">PDF only · Up to 50 MB per file. Rescan before uploading if any details are unclear.</p>}
                         {item.hint && <p className="text-[10.5px] text-gray-500 mt-0.5 max-w-[320px]">{item.hint}</p>}
                     </div>
                 </div>
             </td>
             <td className="px-4 py-3">
-                <input ref={fileRef} type="file" multiple onChange={onFile} className="hidden" />
+                <input ref={fileRef} type="file" multiple accept={item.client_pdf_only ? ".pdf" : undefined} onChange={onFile} className="hidden" />
                 {files.length ? (
                     <div className="flex flex-col gap-1.5">
                         {files.map((f) => <FileChip key={f.id} f={f} />)}

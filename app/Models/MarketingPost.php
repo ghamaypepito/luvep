@@ -19,6 +19,12 @@ class MarketingPost extends Model
         return ['version' => 'integer', 'approved_version' => 'integer', 'scheduled_at' => 'immutable_datetime', 'publish_now' => 'boolean'];
     }
 
+    public function canMoveInCalendar(): bool
+    {
+        return ! $this->publish_now && ! $this->ghl_post_id
+            && in_array($this->status, ['draft', 'in_review', 'changes_requested', 'approved'], true);
+    }
+
     public function fingerprint(): string
     {
         $content = [
@@ -32,6 +38,10 @@ class MarketingPost extends Model
         }
         if ($this->first_comment !== null && $this->first_comment !== '') {
             $content[] = ['first_comment' => $this->first_comment];
+        }
+
+        if ($this->brief) {
+            $content[] = ['brief' => $this->brief];
         }
 
         return hash('sha256', json_encode($content, JSON_THROW_ON_ERROR));

@@ -24,7 +24,11 @@ function PersonalReportContent({ data }) {
     const listHeading = useRef(null);
     const closeEdit = () => {
         const trigger = editTrigger.current;
-        (trigger?.isConnected ? trigger : listHeading.current)?.focus();
+        const day = trigger?.closest("details[data-activity-day]");
+        const target = trigger?.isConnected
+            ? (day && !day.open ? day.querySelector("summary") : trigger)
+            : listHeading.current;
+        target?.focus();
         setEditing(null);
     };
 
@@ -53,6 +57,15 @@ function PersonalReportContent({ data }) {
         });
     };
     const entries = data.entries || { data: [], current_page: 1, last_page: 1 };
+    const groupedDays = new Map();
+    for (const entry of entries.data) {
+        if (!groupedDays.has(entry.date)) groupedDays.set(entry.date, []);
+        groupedDays.get(entry.date).push(entry);
+    }
+    const activityDays = [...groupedDays.entries()].sort(([a], [b]) => b.localeCompare(a));
+    const dayLabel = date => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-NZ", {
+        weekday: "long", day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+    });
     const setListKind = value => {
         const params = Object.fromEntries(new URLSearchParams(window.location.search));
         delete params.activity_page;
@@ -105,9 +118,21 @@ function PersonalReportContent({ data }) {
                         {Object.entries(data.kinds || {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                 </label>
-                {entries.data.length ? <table className="w-full text-left text-xs">
+                <p className="mb-3 text-xs text-gray-500">Expand a day to see its recorded activities. Daily counts follow the activity filter and include entries on other pages. Repeated activities for one person count separately.</p>
+                {entries.data.length ? <div className="space-y-3">{activityDays.map(([date, rows]) => {
+                    const total = data.daily_counts?.[date];
+                    const hasDailyTotal = Number.isInteger(total);
+                    const count = hasDailyTotal ? total : rows.length;
+                    return <details key={date} data-activity-day={date} className="rounded-xl border border-gray-200">
+                        <summary className="cursor-pointer px-3 py-3 text-sm font-semibold" tabIndex={0}>
+                            <time dateTime={date}>{dayLabel(date)}</time>
+                            {" / "}{count} {count === 1 ? "activity" : "activities"}{!hasDailyTotal && " shown on this page"}
+                        </summary>
+                        <div className="overflow-x-auto px-2 pb-2">
+                            {hasDailyTotal && total > rows.length && <p className="px-2 pb-2 text-xs text-gray-500">Showing {rows.length} of {total} activities for this day on this page. Use Previous or Next activities to see the remaining entries.</p>}
+                            <table className="w-full text-left text-xs">
                     <thead><tr><th className="p-2">Date</th><th className="p-2">Client</th><th className="p-2">Activity</th><th className="p-2">Reported status</th><th className="p-2">Details</th><th className="p-2">Action</th></tr></thead>
-                    <tbody>{entries.data.map(entry => <tr key={entry.id} className="border-t border-gray-100">
+                    <tbody>{rows.map(entry => <tr key={entry.id} className="border-t border-gray-100">
                         <td className="p-2">{entry.date}</td><td className="p-2">{entry.client}{entry.external && <span className="block text-gray-500">Name only · not linked to a portal record</span>}</td><td className="p-2">{data.kinds[entry.kind] || entry.kind}</td>
                         <td className="p-2">{entry.reported_status || "—"}</td>
                         <td className="whitespace-pre-wrap p-2">{entry.details}</td>
@@ -123,7 +148,10 @@ function PersonalReportContent({ data }) {
                             </div>
                         </td>
                     </tr>)}</tbody>
-                </table> : <p className="text-sm text-gray-500">No accomplishments recorded for you in this range.</p>}
+                </table>
+                        </div>
+                    </details>;
+                })}</div> : <p className="text-sm text-gray-500">No accomplishments recorded for you in this range.</p>}
                 {entries.last_page > 1 && <div className="mt-3 flex items-center gap-3 text-sm">
                     <button type="button" disabled={!entries.prev_page_url} onClick={() => router.get(entries.prev_page_url, {}, { preserveState: true, preserveScroll: true })}>Previous activities</button>
                     <span>Page {entries.current_page} of {entries.last_page}</span>

@@ -4,6 +4,7 @@ import { Plus, Pencil, Eye, Users, Search, Download, Archive, ArchiveRestore } f
 import Pagination from "@/components/ui/Pagination";
 
 const STATUS_STYLES = {
+    pending_payment: "bg-amber-50 text-amber-800",
     active: "bg-emerald-50 text-emerald-700",
     notice_given: "bg-amber-50 text-amber-700",
     vacating: "bg-orange-50 text-orange-700",
@@ -11,6 +12,7 @@ const STATUS_STYLES = {
     breached: "bg-rose-50 text-rose-600",
 };
 const STATUS_LABEL = {
+    pending_payment: "Pending payment",
     active: "Active", notice_given: "Notice given", vacating: "Vacating",
     vacated: "Vacated", breached: "Breached",
 };

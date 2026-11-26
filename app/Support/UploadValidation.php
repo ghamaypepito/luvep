@@ -44,6 +44,12 @@ class UploadValidation
         return 'file|mimes:'.self::DOCUMENT_MIMES.'|max:'.self::DOCUMENT_MAX_KB;
     }
 
+    /** Content and filename must both identify a PDF. */
+    public static function pdfDocument(): string
+    {
+        return 'file|mimes:pdf|extensions:pdf|max:'.self::DOCUMENT_MAX_KB;
+    }
+
     /** Rule fragment for a single image file. */
     public static function image(): string
     {

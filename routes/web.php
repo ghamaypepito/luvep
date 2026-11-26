@@ -407,6 +407,13 @@ Route::middleware(['throttle:tracker', 'tracker.enabled'])->group(function () {
     Route::get('/track/{code}/agreements/{token}/signed', [\App\Http\Controllers\Tracker\TrackerAgreementController::class, 'signedConfirmation'])->name('track.agreements.signed');
 });
 
+// Password-free access to one issued English agreement; never the case tracker.
+Route::middleware(['signed', 'throttle:tracker'])->group(function () {
+    Route::get('/english-agreements/{document}', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'show'])->whereNumber('document')->name('english-agreement.show');
+    Route::get('/english-agreements/{document}/pdf', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'download'])->whereNumber('document')->name('english-agreement.download');
+    Route::post('/english-agreements/{document}/sign', [\App\Http\Controllers\EnglishAgreementAccessController::class, 'sign'])->whereNumber('document')->name('english-agreement.sign');
+});
+
 // Standalone engagement-signing surface. The per-lead token
 // (leads.engagement_signing_token) is the bearer credential; it grants access
 // to ONLY that lead's engagement-pack documents (not the whole case), so it is
@@ -518,6 +525,8 @@ Route::post('/api/sync-calendar', [App\Http\Controllers\SyncController::class, '
 // Authenticated areas — every staff user must be logged in ('auth'); role
 // middleware nested below narrows each section ('portal:admin', 'portal:sales', …).
 Route::middleware(['auth'])->group(function () {
+
+    Route::get('/help-center', [\App\Http\Controllers\HelpCenterController::class, 'index'])->name('help-center');
 
     Route::get('/creative-requests', [\App\Http\Controllers\CreativeRequestController::class, 'index'])->name('creative.index');
     Route::get('/creative-requests/task/{task}', [\App\Http\Controllers\CreativeRequestController::class, 'forTask'])->whereNumber('task');
@@ -851,35 +860,8 @@ Route::middleware(['auth'])->group(function () {
         // Inertia page under resources/js/pages/admin/social/. The bare /social
         // entry redirects to /social/compose so the sidebar link always lands
         // on a usable screen.
-        Route::prefix('admin/content-calendar')->name('admin.editorial.')->controller(\App\Http\Controllers\Admin\EditorialCalendarController::class)->group(function () {
-            Route::get('/', 'index')->name('calendar');
-            Route::get('/articles/{article}', 'show')->whereNumber('article')->name('show');
-            Route::post('/articles', 'store')->name('store');
-            Route::put('/articles/{article}', 'update')->whereNumber('article')->name('update');
-            Route::patch('/articles/{article}/planned-date', 'move')->whereNumber('article')->name('move');
-            Route::post('/articles/{article}/submit', 'submit')->whereNumber('article')->name('submit');
-            Route::post('/articles/{article}/approve', 'approve')->whereNumber('article')->name('approve');
-            Route::post('/articles/{article}/publish', 'publish')->whereNumber('article')->name('publish');
-        });
-
-        Route::get('/social', fn () => redirect('/social/compose'))->name('social');
         Route::get('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'index'])->middleware('throttle:15,1');
         Route::post('/social/marketing/identity', [\App\Http\Controllers\Admin\GhlIdentityController::class, 'update'])->middleware('throttle:10,1');
-        Route::get('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'index'])->middleware('throttle:60,1');
-        Route::post('/social/marketing/posts', [\App\Http\Controllers\Admin\MarketingPostController::class, 'store'])->middleware('throttle:15,1');
-        Route::get('/social/marketing/posts/{id}', [\App\Http\Controllers\Admin\MarketingPostController::class, 'show'])->whereUuid('id')->middleware('throttle:60,1');
-        Route::get('/social/marketing/posts/{id}/media', [\App\Http\Controllers\Admin\MarketingPostController::class, 'media'])->name('marketing.posts.media');
-        Route::post('/social/marketing/posts/{id}/submit', [\App\Http\Controllers\Admin\MarketingPostController::class, 'submit'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/approve', [\App\Http\Controllers\Admin\MarketingPostController::class, 'approve'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/changes', [\App\Http\Controllers\Admin\MarketingPostController::class, 'changes'])->middleware('throttle:15,1');
-        Route::post('/social/marketing/posts/{id}/schedule', [\App\Http\Controllers\Admin\MarketingPostController::class, 'schedule'])->middleware('throttle:15,1');
-        Route::get('/social/ghl/accounts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'accounts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/posts', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'posts'])->middleware('throttle:30,1');
-        Route::get('/social/ghl/insights', [\App\Http\Controllers\Admin\GhlSocialReaderController::class, 'insights'])->middleware('throttle:30,1');
-        Route::get('/social/compose', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'index'])->name('social.compose');
-        Route::get('/social/workspace-test/v1/{path}', [\App\Http\Controllers\Admin\SocialWorkspaceTestController::class, 'asset'])->where('path', '.*');
-        Route::post('/social/workspace-test/ai/caption', \App\Http\Controllers\Admin\SocialCaptionController::class)->middleware('throttle:5,1');
-        Route::post('/social/workspace-test/ai/layout', [\App\Http\Controllers\Admin\SocialCaptionController::class, 'layout'])->middleware('throttle:5,1');
         Route::get('/social/compose/legacy', fn () => inertia('admin/social/Compose'))->name('social.compose.legacy');
         Route::get('/social/scheduled', fn () => inertia('admin/social/Scheduled'))->name('social.scheduled');
         Route::get('/social/inbox', fn () => inertia('admin/social/Inbox'))->name('social.inbox');
@@ -1500,6 +1482,13 @@ Route::middleware(['auth'])->group(function () {
         // but can't touch stage/status, convert, or delete (those stay with
         // sales/admin). Everything here is scoped to the agent's own leads.
         Route::middleware('portal:agent')->prefix('agent')->name('portal.agent.')->group(function () {
+            Route::middleware('module:assigned_immigration_cases')->group(function () {
+                $assigned = \App\Http\Controllers\Portal\AssignedCaseController::class;
+                Route::get('/assigned-cases', [$assigned, 'index'])->name('assigned-cases');
+                Route::get('/assigned-cases/{lead}', [$assigned, 'show'])->whereNumber('lead')->name('assigned-cases.show');
+                Route::get('/assigned-cases/{lead}/documents/{document}/download', [$assigned, 'download'])->whereNumber(['lead', 'document'])->name('assigned-cases.download');
+                Route::post('/assigned-cases/{lead}/uploads', [$assigned, 'upload'])->whereNumber('lead')->name('assigned-cases.upload');
+            });
             Route::get('/dashboard', [\App\Http\Controllers\Portal\AgentController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'leads'])->name('leads');
             Route::post('/leads', [\App\Http\Controllers\Portal\AgentController::class, 'storeLead'])->name('leads.store');
@@ -1780,6 +1769,10 @@ Route::middleware(['auth'])->group(function () {
         // page. Admins satisfy every portal:* check via canAccessPortal(), so
         // they can view any role's dashboard.
         Route::middleware('portal:education')->prefix('education')->name('portal.education.')->group(function () {
+            Route::get('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'index']);
+            Route::get('/cost-breakdowns/rates', [\App\Http\Controllers\EducationCostBreakdownController::class, 'rates'])->middleware('throttle:60,1');
+            Route::post('/cost-breakdowns', [\App\Http\Controllers\EducationCostBreakdownController::class, 'generate']);
+
             Route::get('/dashboard', [EducationController::class, 'dashboard'])->name('dashboard');
             Route::get('/leads', [EducationController::class, 'leads'])->name('leads');
             Route::get('/leads/proposals-agreements', [SalesController::class, 'proposalsAgreementsPage'])->name('leads.proposals-agreements');
@@ -2094,6 +2087,7 @@ Route::middleware(['auth'])->group(function () {
             // /cases/{lead}/... routes below; both are single-segment literals
             // so they never collide with the {lead} binding.
             Route::get('/cases/engagement', [ImmigrationController::class, 'engagement'])->name('cases.engagement');
+            Route::post('/cases/{id}/engagement/archive', [\App\Http\Controllers\EngagementArchiveController::class, 'store'])->whereNumber('id')->name('cases.engagement.archive');
             Route::post('/engagement/documents/{document}/signature', [\App\Http\Controllers\StaffEngagementSignatureController::class, 'store'])->whereNumber('document')->middleware('throttle:20,1');
             Route::get('/cases/invoice', [ImmigrationController::class, 'invoice'])->name('cases.invoice');
             // INZ Forms console — generate/send INZ forms across all cases.
@@ -2133,6 +2127,8 @@ Route::middleware(['auth'])->group(function () {
                 ->name('cases.profile');
             Route::post('/cases/{lead}/documents/other', [\App\Http\Controllers\Immigration\OtherCaseDocumentController::class, 'store'])
                 ->name('cases.documents.other');
+            Route::get('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'show'])->whereNumber('lead')->name('cases.helper');
+            Route::post('/cases/{lead}/helper', [\App\Http\Controllers\Immigration\CaseHelperController::class, 'store'])->whereNumber('lead')->name('cases.helper.store');
             Route::post('/cases/{lead}/documents/recent-visa-category', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'addRecentVisaCategory'])
                 ->name('cases.documents.recent-visa-category');
             Route::post('/cases/{lead}/documents/{document}/recent-visa', [\App\Http\Controllers\Immigration\CaseProfileController::class, 'moveDocumentToRecentVisa'])
@@ -2360,6 +2356,7 @@ Route::middleware(['auth'])->group(function () {
             // the resource so it isn't captured as /tenants/{tenant}.
             Route::get('/tenants/export', [TenantController::class, 'export'])->name('tenants.export');
             Route::post('/tenants/{tenant}/notice', [TenantController::class, 'markNoticeGiven'])->name('tenants.notice');
+            Route::post('/tenants/{tenant}/activate', [TenantController::class, 'activate'])->name('tenants.activate');
             Route::post('/tenants/{tenant}/vacate', [TenantController::class, 'markVacated'])->name('tenants.vacate');
             Route::post('/tenants/{tenant}/renew', [TenantController::class, 'markRenewed'])->name('tenants.renew');
             Route::post('/tenants/{tenant}/move', [TenantController::class, 'moveToProperty'])->name('tenants.move');
@@ -2486,6 +2483,8 @@ Route::middleware(['auth'])->group(function () {
             // New sidebar sections — most are placeholders while the full
             // workflow ships incrementally.
             Route::get('/tracker', [App\Http\Controllers\LeadPortalController::class, 'tracker'])->name('tracker');
+            Route::get('/documents/{docId}/preview', [App\Http\Controllers\LeadPortalController::class, 'previewAgreement'])->whereNumber('docId')->name('documents.preview');
+            Route::post('/documents/{docId}/sign', [App\Http\Controllers\LeadPortalController::class, 'signAgreement'])->whereNumber('docId')->name('documents.sign');
             // Requirements = the tracker's checklist view (sidebar item).
             Route::get('/requirements', [App\Http\Controllers\LeadPortalController::class, 'requirements'])->name('requirements');
             Route::get('/journey', [App\Http\Controllers\LeadPortalController::class, 'journey'])->name('journey');
@@ -2542,3 +2541,5 @@ Route::get('/social/marketing/media/{id}', [\App\Http\Controllers\Admin\Marketin
 require __DIR__.'/media-drive.php';
 
 require __DIR__.'/ep-agent.php';
+
+require __DIR__.'/social-marketing.php';

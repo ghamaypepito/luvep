@@ -68,6 +68,200 @@ class EngagementWorkflowTest extends TestCase
             ->assertOk()->json();
     }
 
+    public function test_explicit_usd_consultation_currency_is_preserved_in_previews_draft_and_signing(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+        $settings = array_replace($this->settings(), [
+            'consultation_mode' => 'face_to_face', 'consultation_address' => '20 Example Road, Auckland',
+            'service_fee' => '300.00', 'service_currency' => 'USD', 'include_gst' => false,
+        ]);
+        $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+        foreach (['engage_initial_consultation', 'engage_invoice'] as $type) {
+            $this->get("{$base}/generate/{$type}/preview?{$query}")->assertOk()->assertSee('USD')->assertDontSee('NZD');
+        }
+        $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()->assertJsonPath('currency', 'USD')->json();
+        $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+        $docs = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+        foreach ($docs as $doc) {
+            $this->assertSame('USD', $doc->notes['engagement_currency']);
+            $this->assertSame('USD', $doc->notes['engagement_settings']['service_currency']);
+            $text = (new Parser)->parseContent(Storage::disk('local')->get($doc->file_path))->getText();
+            $this->assertStringContainsString('USD', $text);
+            $this->assertStringNotContainsString('NZD', $text);
+            $this->assertStringContainsString('300.00', $text);
+        }
+        $agreement = $docs->firstWhere('source_variant', 'engagement:initial_consultation');
+        $snapshot = $agreement->notes['engagement_payload'];
+        $html = app(EngagementDocumentGenerator::class)->renderHtml($this->lead, 'initial_consultation', ['payload_snapshot' => $snapshot]);
+        $this->assertStringContainsString('USD', $html);
+        $this->assertStringNotContainsString('NZD', $html);
+        foreach (['EUR', null, ['NZD']] as $invalid) {
+            $this->postJson("{$base}/engagement/prepare", array_replace($settings, ['service_currency' => $invalid]))
+                ->assertUnprocessable()->assertJsonValidationErrors('service_currency');
+        }
+        $this->assertSame('NZD', EngagementDocumentGenerator::servicePricing('oia', ['service_currency' => 'USD'])['currency']);
+        Mail::assertNothingOutgoing();
+        $review = $this->postJson("{$base}/engagement/review", ['pack_id' => $saved['pack_id']])->assertOk()->json();
+        $this->postJson("{$base}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+        Mail::assertSent(\App\Mail\ReviewedEngagementMail::class, function ($mail) use ($review) {
+            $this->assertSame($review['html'], $mail->htmlBody);
+            foreach ($mail->files as $file) {
+                $text = (new Parser)->parseContent(base64_decode($file['bytes']))->getText();
+                $this->assertStringContainsString('USD', $text);
+                $this->assertStringNotContainsString('NZD', $text);
+                $this->assertStringContainsString('300.00', $text);
+            }
+            return $mail->hasTo('fixture@example.test');
+        });
+        $invoice = $docs->firstWhere('source_variant', 'invoice');
+        $this->assertDatabaseHas('finance_receivables', [
+            'invoice_document_id' => $invoice->id, 'currency' => 'USD', 'amount' => 300,
+        ]);
+        $signing = '/engagement/'.$agreement->notes['engagement_signing_token'].'/documents/'.$agreement->id;
+        $this->post($signing.'/sign', [
+            'signer_name' => 'Fixture Client',
+            'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertNotNull($agreement->fresh()->client_signed_at);
+        $signedText = (new Parser)->parseContent(Storage::disk('local')->get($agreement->file_path))->getText();
+        $this->assertStringContainsString('USD', $signedText);
+        $this->assertStringNotContainsString('NZD', $signedText);
+        $this->assertStringContainsString('300.00', $signedText);
+    }
+
+    public function test_consultation_sections_flow_without_a_blank_page_before_cancellation(): void
+    {
+        $this->lead->forceFill(['first_name' => 'Sample Arpankumar', 'middle_name' => null, 'last_name' => 'CLIENT'])->save();
+        foreach (['online', 'face_to_face'] as $mode) {
+            $settings = array_replace($this->settings(), [
+                'consultation_mode' => $mode, 'service_fee' => '300.00',
+                'consultation_address' => '4/15 Example Way, Albany, Auckland 0632',
+            ]);
+            $pdf = app(EngagementDocumentGenerator::class)->pdfBinary($this->lead, 'initial_consultation', $settings);
+            $pages = (new Parser)->parseContent($pdf)->getPages();
+            $this->assertCount(2, $pages, 'The consultation must not add a third page before section 5.');
+            $lastPage = end($pages)->getText();
+            $this->assertStringContainsString('4. Visa Processing', $lastPage);
+            $this->assertStringContainsString('5. Cancellation', $lastPage);
+            $this->assertStringContainsString('7. Acknowledgment', $lastPage);
+        }
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_consultation_requires_only_the_selected_arrangement(): void
+    {
+        $url = "/admin/leads/{$this->lead->id}/engagement/prepare";
+        foreach ([null, 'online'] as $mode) {
+            $settings = array_replace($this->settings(), ['meeting_link' => '', 'consultation_address' => 'Unused address']);
+            if ($mode !== null) {
+                $settings['consultation_mode'] = $mode;
+            }
+            $this->postJson($url, $settings)->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        }
+        $face = array_replace($this->settings(), ['consultation_mode' => 'face_to_face', 'meeting_link' => 'invalid']);
+        $this->postJson($url, $face)->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        $this->postJson($url, $face + ['consultation_address' => '   '])->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        $this->postJson($url, $face + ['consultation_address' => '20 Example Road, Auckland'])->assertOk();
+        $this->postJson($url, array_replace($this->settings(), ['consultation_mode' => 'unknown']))
+            ->assertUnprocessable()->assertJsonValidationErrors('consultation_mode');
+        $this->postJson($url, array_replace($this->settings(), ['meeting_link' => 'http://meet.google.com/test']))
+            ->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        $this->postJson($url, array_replace($this->settings(), ['meeting_link' => 'https://meet.google.com/'.str_repeat('x', 1000)]))
+            ->assertUnprocessable()->assertJsonValidationErrors('meeting_link');
+        $this->postJson($url, $face + ['consultation_address' => str_repeat('A', 2001)])
+            ->assertUnprocessable()->assertJsonValidationErrors('consultation_address');
+        foreach ([null, ['face_to_face']] as $invalidMode) {
+            $this->postJson($url, array_replace($this->settings(), ['consultation_mode' => $invalidMode]))
+                ->assertUnprocessable()->assertJsonValidationErrors('consultation_mode');
+        }
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_consultation_arrangement_survives_preview_save_email_and_signing(): void
+    {
+        $base = "/admin/leads/{$this->lead->id}";
+        foreach (['online', 'face_to_face'] as $mode) {
+            $online = $mode === 'online';
+            $label = $online ? 'Online Consultation' : 'Face-to-Face Consultation';
+            $detail = $online ? 'https://meet.google.com/abc-defg-hij' : '20 Example Road, Auckland';
+            $settings = array_replace($this->settings(), [
+                'consultation_mode' => $mode, 'consultation_address' => $online ? 'UNUSED ADDRESS' : $detail,
+                'meeting_link' => $online ? $detail : 'https://meet.google.com/unused-link',
+            ]);
+            $query = http_build_query($settings + ['signer' => $this->adviser->id]);
+            foreach (['engage_initial_consultation', 'engage_invoice'] as $type) {
+                $this->get("{$base}/generate/{$type}/preview?{$query}")->assertOk()->assertSee($label)->assertSee($detail)
+                    ->assertDontSee('UNUSED ADDRESS')->assertDontSee('unused-link');
+            }
+            $prepared = $this->postJson("{$base}/engagement/prepare", $settings)->assertOk()->json();
+            $saved = $this->postJson("{$base}/engagement/save", ['token' => $prepared['token']])->assertOk()->json();
+            $docs = LeadDocument::where('notes->engagement_pack_id', $saved['pack_id'])->get();
+            foreach ($docs as $doc) {
+                $this->assertSame($mode, $doc->notes['engagement_settings']['consultation_mode']);
+                $this->assertArrayNotHasKey($online ? 'consultation_address' : 'meeting_link', $doc->notes['engagement_settings']);
+                $text = (new Parser)->parseContent(Storage::disk('local')->get($doc->file_path))->getText();
+                $this->assertStringContainsString($label, $text);
+                $this->assertStringContainsString($detail, $text);
+                $this->assertStringNotContainsString('unused-link', $text);
+                $this->assertStringNotContainsString('UNUSED ADDRESS', $text);
+            }
+            $review = $this->postJson("{$base}/engagement/review", ['pack_id' => $saved['pack_id']])->assertOk()->json();
+            $this->assertStringContainsString($label, $review['html']);
+            $this->assertStringContainsString($detail, $review['html']);
+            Mail::assertNothingOutgoing();
+            $agreement = $docs->firstWhere('source_variant', 'engagement:initial_consultation');
+            $this->postJson("{$base}/engagement/send-reviewed", ['token' => $review['token']])->assertOk();
+            Mail::assertSent(\App\Mail\ReviewedEngagementMail::class, function ($mail) use ($review, $label, $detail, $online) {
+                $this->assertSame($review['html'], $mail->htmlBody);
+                $this->assertStringContainsString($label, $mail->htmlBody);
+                $this->assertStringContainsString($detail, $mail->htmlBody);
+                $this->assertStringNotContainsString($online ? 'UNUSED ADDRESS' : 'unused-link', $mail->htmlBody);
+                return $mail->hasTo('fixture@example.test') && count($mail->files) === 2;
+            });
+            Mail::fake();
+            $signing = '/engagement/'.$agreement->notes['engagement_signing_token'].'/documents/'.$agreement->id;
+            $this->get($signing.'/preview')->assertOk()->assertSee($label)->assertSee($detail);
+            $this->post($signing.'/sign', [
+                'signer_name' => 'Fixture Client',
+                'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            ])->assertRedirect()->assertSessionHasNoErrors();
+            $this->assertNotNull($agreement->fresh()->client_signed_at);
+            $text = (new Parser)->parseContent(Storage::disk('local')->get($agreement->file_path))->getText();
+            $this->assertStringContainsString($label, $text);
+            $this->assertStringContainsString($detail, $text);
+            Mail::fake();
+        }
+    }
+
+    public function test_custom_consultation_email_includes_escaped_arrangement_details(): void
+    {
+        $template = \App\Models\MessageTemplate::create([
+            'key' => 'initial_consultation_agreement', 'name' => 'Consultation fixture', 'department' => '',
+            'is_active' => true, 'channels' => ['email'], 'email_subject' => 'Consultation',
+            'email_body' => '<p>Review your agreement.</p>',
+        ]);
+        $settings = array_replace($this->settings(), [
+            'consultation_mode' => 'face_to_face', 'meeting_link' => '',
+            'consultation_address' => '20 Example Road <script>alert(1)</script>',
+        ]);
+        $base = "/admin/leads/{$this->lead->id}/engagement";
+        $prepared = $this->postJson($base.'/prepare', $settings)->assertOk()->json();
+        $saved = $this->postJson($base.'/save', ['token' => $prepared['token']])->assertOk()->json();
+        $review = $this->postJson($base.'/review', ['pack_id' => $saved['pack_id']])->assertOk()->json();
+        $this->assertStringContainsString('Review your agreement.', $review['html']);
+        $this->assertStringContainsString('Face-to-Face Consultation', $review['html']);
+        $this->assertStringContainsString('&lt;script&gt;', $review['html']);
+        $this->assertStringNotContainsString('<script>', $review['html']);
+        foreach (['**Review your agreement.**', '<html><body><p>Review your agreement.</p></body></html>'] as $body) {
+            $template->update(['email_body' => $body, 'design_json' => str_starts_with($body, '<html>') ? ['body' => []] : null]);
+            $html = $this->postJson($base.'/review', ['pack_id' => $saved['pack_id']])->assertOk()->json('html');
+            $this->assertStringContainsString('Face-to-Face Consultation', $html);
+            $this->assertStringNotContainsString('**Review', $html);
+            $this->assertLessThan(stripos($html, '</body>'), strpos($html, 'Face-to-Face Consultation'));
+        }
+        Mail::assertNothingOutgoing();
+    }
+
     public function test_prepare_and_save_never_send_and_save_is_idempotent(): void
     {
         \App\Models\EmailAutomationMessage::create([
@@ -78,7 +272,7 @@ class EngagementWorkflowTest extends TestCase
         ]);
         $p = $this->prepare();
         $this->assertDatabaseCount('lead_documents', 0);
-        $this->assertSame('USD', $p['currency']);
+        $this->assertSame('NZD', $p['currency']);
         $this->assertEquals(250, $p['total']);
         $this->get($p['documents'][0]['preview_url'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $a = $this->postJson("/admin/leads/{$this->lead->id}/engagement/save", ['token' => $p['token']])->assertOk()->json();
@@ -104,7 +298,7 @@ class EngagementWorkflowTest extends TestCase
         $entry = FinanceReceivable::sole();
         $this->assertSame($doc->id, $entry->invoice_document_id);
         $this->assertSame($doc->invoice_number, $entry->invoice_no);
-        $this->assertSame('USD', $entry->currency);
+        $this->assertSame('NZD', $entry->currency);
         $this->assertSame('250.00', $entry->amount);
         $this->get($url)->assertInertia(fn (Assert $page) => $page
             ->has('rows', 1)->where('rows.0.invoice_no', $doc->invoice_number)
@@ -126,7 +320,7 @@ class EngagementWorkflowTest extends TestCase
     {
         $base = "/admin/leads/{$this->lead->id}";
 
-        foreach ([['initial_consultation', 'USD', '315.25', true, 362.54], ['oia', 'NZD', '620.10', false, 620.10]] as [$type, $currency, $fee, $includeGst, $total]) {
+        foreach ([['initial_consultation', 'NZD', '315.25', true, 362.54], ['oia', 'NZD', '620.10', false, 620.10]] as [$type, $currency, $fee, $includeGst, $total]) {
             $settings = $this->settings($type) + ['service_fee' => $fee, 'include_gst' => $includeGst];
             $query = http_build_query($settings + ['signer' => $this->adviser->id]);
             $this->get("{$base}/generate/engage_{$type}/preview?{$query}")->assertOk()->assertSee($fee);
@@ -164,7 +358,7 @@ class EngagementWorkflowTest extends TestCase
     public function test_each_service_honours_gst_selection_in_preview_saved_pdf_and_reopened_draft(): void
     {
         $base = "/admin/leads/{$this->lead->id}";
-        foreach (['initial_consultation' => 'USD', 'oia' => 'NZD'] as $type => $currency) {
+        foreach (['initial_consultation' => 'NZD', 'oia' => 'NZD'] as $type => $currency) {
             foreach ([false, true] as $includeGst) {
                 foreach (['0.00', '123.45'] as $fee) {
                     $gst = $includeGst ? round((float) $fee * 0.15, 2) : 0;
@@ -307,7 +501,7 @@ class EngagementWorkflowTest extends TestCase
         }
         $this->assertStringNotContainsString('Hendry DAI', $html);
         $html = $generator->renderHtml($this->lead, 'initial_consultation', $this->settings());
-        foreach (['Fixture Middle Client', 'Test Adviser', '10:30', 'Pacific/Auckland', 'https://meet.google.com/abc-defg-hij', '250.00', 'USD'] as $text) {
+        foreach (['Fixture Middle Client', 'Test Adviser', '10:30', 'Pacific/Auckland', 'https://meet.google.com/abc-defg-hij', '250.00', 'NZD'] as $text) {
             $this->assertStringContainsString($text, $html);
         }
     }
@@ -513,7 +707,8 @@ class EngagementWorkflowTest extends TestCase
 
     public function test_invoice_workspace_keeps_usd_and_nzd_totals_separate(): void
     {
-        $this->save();
+        $prepared = $this->postJson("/admin/leads/{$this->lead->id}/engagement/prepare", $this->settings() + ['service_currency' => 'USD'])->assertOk()->json();
+        $this->postJson("/admin/leads/{$this->lead->id}/engagement/save", ['token' => $prepared['token']])->assertOk();
         $this->save('oia');
         $this->get('/portal/immigration/cases/invoice')->assertOk()->assertInertia(fn ($page) => $page
             ->has('generated', 2)->where('generated.0.currency', 'NZD')->where('generated.0.total_amount', 575)

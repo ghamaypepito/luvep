@@ -1,3 +1,4 @@
+import CostBreakdownBuilder from '@/components/education/CostBreakdownBuilder';
 import ApprovalReviewLink from '@/components/verification/ApprovalReviewLink';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -61,9 +62,9 @@ export default function ProposalsAgreements({
     });
     const visibleSuggestions = suggestions.filter((s) => ! dismissedSug[s.id]);
     // Notify-lead flow — opens a small confirm dialog with an email
-    // preview, then fires the queued mailable pointing at /track/{code}.
-    const [notifyTarget, setNotifyTarget] = useState(null); // { lead, kind }
-    const openNotify = (row, kind) => setNotifyTarget({ lead: row, kind });
+    // preview, then sends the selected agreement's client link or the tracker.
+    const [notifyTarget, setNotifyTarget] = useState(null); // { lead, kind, document }
+    const openNotify = (row, kind, document = null) => setNotifyTarget({ lead: row, kind, document });
     const closeNotify = () => setNotifyTarget(null);
 
     const activeRows = tab === 'agreements' ? agreements : proposals;
@@ -181,9 +182,13 @@ export default function ProposalsAgreements({
                         label="Agreements"
                         count={agreements.length}
                     />
+                    {portal === 'education' && <button type="button" onClick={() => setTab('breakdown')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-3 text-xs font-bold transition-colors -mb-px border-b-2 ${tab === 'breakdown' ? 'text-gray-900 border-gray-900' : 'text-gray-400 border-transparent hover:text-gray-700'}`}>
+                        <FileText size={13} /> Breakdown Cost
+                    </button>}
                 </div>
 
-                {filtered.length === 0 ? (
+                {portal === 'education' && tab === 'breakdown' ? <CostBreakdownBuilder /> : filtered.length === 0 ? (
                     <div className="p-16 text-center text-gray-400">
                         <FileText size={26} className="mx-auto mb-2 text-gray-300" />
                         <p className="text-sm font-medium">
@@ -203,7 +208,7 @@ export default function ProposalsAgreements({
                         portalBase={portalBase}
                         fmtSize={fmtSize}
                         fmtDate={fmtDate}
-                        onNotify={(row) => openNotify(row, 'agreement')}
+                        onNotify={(row, doc) => openNotify(row, 'agreement', doc)}
                         onEdit={openNewWithPrefill}
                     />
                 )}
@@ -1118,7 +1123,7 @@ function DocumentRowActions({ doc, lead, onNotify, onEdit, pending = false }) {
 
     const handleEmail = () => {
         setOpen(false);
-        onNotify(lead);
+        onNotify(lead, doc);
     };
 
     const handleSendForVerification = () => {
@@ -1572,8 +1577,9 @@ function NotifyLeadModal({ target, onClose }) {
     }, [target]);
 
     if (! target) return null;
-    const { lead, kind } = target;
+    const { lead, kind, document: selectedDocument } = target;
     const isProposal = kind === 'proposal';
+    const directEnglishAgreement = !isProposal && selectedDocument?.checklist_key === 'agree.engagement_english';
     const programs   = lead.programs || [];
     const nounTitle  = isProposal ? 'Proposal' : 'Agreement';
     const noun       = nounTitle.toLowerCase();
@@ -1584,6 +1590,7 @@ function NotifyLeadModal({ target, onClose }) {
     const send = () => {
         setSending(true);
         const payload = { kind };
+        if (!isProposal && selectedDocument?.id) payload.document_id = selectedDocument.id;
         // Record the lead's program pick alongside the notification so the
         // list highlights it. Sent only for proposals; null clears it.
         if (isProposal) payload.preferred_program_id = selectedProgramId;
@@ -1603,7 +1610,7 @@ function NotifyLeadModal({ target, onClose }) {
                             Notify lead
                         </h3>
                         <p className="text-xs text-gray-500 mt-0.5">
-                            Sends {lead.name || 'the lead'} an email pointing at their tracker.
+                            Sends {lead.name || 'the lead'} an email pointing at {directEnglishAgreement ? 'this English agreement. No portal login required.' : 'their tracker.'}
                         </p>
                     </div>
                     <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center shrink-0">
@@ -1693,9 +1700,9 @@ function NotifyLeadModal({ target, onClose }) {
                         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Preview</p>
                         <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-4 py-3 text-[12px] text-gray-700 leading-relaxed space-y-2">
                             <p><span className="font-semibold">Hi {firstName},</span></p>
-                            <p>We've prepared your {noun} and it's waiting on your personal tracker. Open the link below to review it — no login required.</p>
+                            <p>{directEnglishAgreement ? 'Your English agreement is ready. The document link lets you review and sign without a portal password and is valid for seven days.' : `We've prepared your ${noun} and it's waiting on your personal tracker. Open the link below to review it — no login required.`}</p>
                             <div className="inline-block px-3 py-1.5 rounded-md bg-gray-900 text-white text-[11px] font-bold">
-                                Open my tracker →
+                                {directEnglishAgreement ? 'Open English agreement →' : 'Open my tracker →'}
                             </div>
                             <p className="text-[11px] text-gray-500 italic">Ngā mihi, The EP team</p>
                         </div>
