@@ -68,7 +68,9 @@ export function ViewingCalendar({ insights, onMonthChange }) {
     const firstDay = (month.getUTCDay() + 6) % 7;
     const totalDays = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)).getUTCDate();
     const bookings = calendar.bookings || [];
-    const visible = selected ? bookings.filter(item => item.date === selected) : bookings;
+    const currentMonth = calendar.month === insights.as_of?.slice(0, 7);
+    const visible = selected ? bookings.filter(item => item.date === selected) : currentMonth
+        ? bookings.filter(item => item.date >= insights.as_of && item.status?.toLowerCase() !== 'completed') : bookings;
     const changeMonth = delta => {
         const next = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + delta, 1, 12));
         onMonthChange?.(next.toISOString().slice(0, 7));
@@ -90,12 +92,12 @@ export function ViewingCalendar({ insights, onMonthChange }) {
                     className={`${selected === day ? 'is-selected' : ''} ${count ? 'has-viewing' : ''}`} onClick={() => setSelected(day)}>{i + 1}{count > 0 && <i/>}</button>;
             })}
         </div>
-        <div className="ai-schedule-label"><h3>{selected ? dateLabel(selected, {month:'long'}) : 'This month'}</h3>{selected && <button type="button" onClick={() => setSelected(null)}>All viewings</button>}<span>{visible.length} booked</span></div>
+        <div className="ai-schedule-label"><h3>{selected ? dateLabel(selected, {month:'long'}) : currentMonth ? 'Today & upcoming' : 'This month'}</h3>{selected && <button type="button" onClick={() => setSelected(null)}>Reset dates</button>}<span>{visible.length} booked</span></div>
         <ul className="ai-viewings">{visible.slice(0, 4).map(item => <li key={item.id}>
             <div className="ai-viewing-date"><strong>{item.date.slice(8)}</strong><span>{dateLabel(item.date, {day:undefined,month:'short'})}</span></div>
             <div><p>{item.name || 'Property viewing'}</p><span>{item.property || 'Property to be confirmed'}</span><small>{item.time || 'Time to be confirmed'} · {item.status}</small></div>
         </li>)}</ul>
-        {!visible.length && <p className="ai-empty">{selected ? 'No viewings booked for this day.' : 'No viewings booked for this month.'}</p>}
+        {!visible.length && <p className="ai-empty">{selected ? 'No viewings booked for this day.' : currentMonth ? 'No upcoming viewings this month.' : 'No viewings booked for this month.'}</p>}
         <Link className="ai-text-link" href="/portal/accommodation/viewings">View all viewings <ArrowUpRight size={15}/></Link>
         <p className="ai-footnote">New Zealand dates · Cancelled bookings excluded.</p>
     </section>;

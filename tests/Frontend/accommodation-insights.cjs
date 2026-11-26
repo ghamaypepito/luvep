@@ -30,8 +30,10 @@ const render=(C,props)=>act(async()=>root.render(React.createElement(C,props)));
     assert.equal(document.querySelector('[data-total="completed"]').textContent,'1');
     const months=[];
     await render(ViewingCalendar,{insights:{as_of:'2026-11-26',calendar:{month:'2026-11',bookings:[
+        ...[1,2,3,4].map(day=>({id:10+day,date:`2026-11-0${day}`,time:'10:30',name:'Earlier visitor '+day,property:'Test property',status:'Completed'})),
         {id:1,date:'2026-11-27',time:'10:30',name:'Synthetic visitor',property:'Test property',status:'Confirmed'}]}},onMonthChange:m=>months.push(m)});
     assert.match(document.body.textContent,/Synthetic visitor/);
+    assert.doesNotMatch(document.querySelector('.ai-viewings').textContent,/Earlier visitor/,'Upcoming viewings are not hidden behind earlier bookings');
     await act(async()=>document.querySelector('[aria-label="Next month"]').click());assert.deepEqual(months,['2026-12']);
     await act(async()=>document.querySelector('[aria-label="26 November 2026, 0 viewings"]').click());
     assert.match(document.body.textContent,/No viewings booked for this day/);assert.doesNotMatch(document.body.textContent,/Synthetic visitor/);
