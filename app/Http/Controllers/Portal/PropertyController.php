@@ -222,6 +222,7 @@ class PropertyController extends Controller
     {
         if (array_key_exists('room_register_version', $data) || array_key_exists('room_register', $data)) {
             RoomInventory::authorizeStaff($request);
+            abort_unless(RoomInventory::tenantTrackingAvailable(), 503, 'Room tracking is being installed. Try again shortly.');
             if ($property->exists && ! hash_equals($this->roomRegisterVersion($property), $data['room_register_version'] ?? '')) {
                 throw ValidationException::withMessages(['room_register' => 'The property room register changed. Reload before editing it.']);
             }

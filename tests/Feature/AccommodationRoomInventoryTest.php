@@ -220,6 +220,8 @@ class AccommodationRoomInventoryTest extends TestCase
     {
         $property = $this->property();
         \Illuminate\Support\Facades\Schema::drop('property_room_verifications');
+        \Illuminate\Support\Facades\Schema::table('accommodation_tenants', fn ($table) => $table->dropColumn(['assigned_room_ids', 'residency_started_on']));
+        \Illuminate\Support\Facades\Schema::table('accommodation_properties', fn ($table) => $table->dropColumn('room_register'));
         try {
             $this->get('/portal/accommodation/dashboard')->assertOk();
             $this->get('/portal/accommodation/properties')->assertOk();
@@ -228,6 +230,21 @@ class AccommodationRoomInventoryTest extends TestCase
         } finally {
             (require database_path('migrations/2026_11_24_030000_create_property_room_verifications.php'))->up();
         }
+    }
+
+    public function test_early_renewal_keeps_the_existing_room_occupied(): void
+    {
+        $property = $this->property(1);
+        [$room] = $this->rooms($property);
+        $start = now('Pacific/Auckland')->subMonth()->toDateString();
+        $tenant = $this->tenant($property, ['contract_start' => $start, 'assigned_room_ids' => [$room['id']]]);
+
+        $this->post('/portal/accommodation/tenants/'.$tenant->id.'/renew', [
+            'new_contract_start' => now('Pacific/Auckland')->addWeek()->toDateString(),
+            'new_contract_end' => now('Pacific/Auckland')->addMonth()->toDateString(),
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($start, $tenant->fresh()->residency_started_on->toDateString());
+        $this->assertSame(1, RoomInventory::summarize($property)['occupied']);
     }
 
     public function test_room_register_totals_and_linked_signed_agreement_totals_are_independent(): void

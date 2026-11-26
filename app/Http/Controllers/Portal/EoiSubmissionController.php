@@ -176,8 +176,12 @@ class EoiSubmissionController extends Controller
             }
             $property = Property::where('is_active', true)->lockForUpdate()->findOrFail($data['property_id']);
             if (array_key_exists('assigned_room_ids', $data)) {
-                RoomInventory::authorizeStaff($request);
-                RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+                if ($data['assigned_room_ids'] === [] && ! RoomInventory::tenantTrackingAvailable()) {
+                    unset($data['assigned_room_ids']);
+                } else {
+                    RoomInventory::authorizeStaff($request);
+                    RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+                }
             }
             if ($source->converted_to_tenant_id) {
                 $tenant = Tenant::whereKey($source->converted_to_tenant_id)->lockForUpdate()->firstOrFail();

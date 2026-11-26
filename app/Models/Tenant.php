@@ -37,6 +37,7 @@ class Tenant extends Model
     protected $casts = [
         'contract_start' => 'date',
         'assigned_room_ids' => 'array',
+        'residency_started_on' => 'date',
         'contract_end' => 'date',
         'date_of_birth' => 'date',
         'ended_at' => 'datetime',

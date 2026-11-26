@@ -13,13 +13,14 @@ return new class extends Migration
         });
         Schema::table('accommodation_tenants', function (Blueprint $table) {
             $table->json('assigned_room_ids')->nullable();
+            $table->date('residency_started_on')->nullable();
         });
     }
 
     public function down(): void
     {
         Schema::table('accommodation_tenants', function (Blueprint $table) {
-            $table->dropColumn('assigned_room_ids');
+            $table->dropColumn(['assigned_room_ids', 'residency_started_on']);
         });
         Schema::table('accommodation_properties', function (Blueprint $table) {
             $table->dropColumn('room_register');

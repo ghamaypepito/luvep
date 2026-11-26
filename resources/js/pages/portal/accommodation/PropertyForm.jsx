@@ -123,9 +123,10 @@ export default function PropertyForm({ property = null, options = {}, next_code 
             : "/portal/accommodation/properties";
 
         // forceFormData is required for file uploads; _method spoofs PUT on edit.
-        transform(({ room_register_version: version, room_register: rooms, ...values }) => ({
+        transform(({ room_register_version: version, room_register: rooms, total_rooms: capacity, ...values }) => ({
             ...values,
-            ...(rooms.length || room_register.length ? { room_register: rooms, room_register_version: version } : {}),
+            ...(String(capacity) !== String(property?.total_rooms ?? "") ? { total_rooms: capacity } : {}),
+            ...(JSON.stringify(rooms) !== JSON.stringify(room_register) ? { room_register: rooms, room_register_version: version } : {}),
             ...(isEdit ? { _method: "put" } : {}),
         }));
         post(url, { forceFormData: true });

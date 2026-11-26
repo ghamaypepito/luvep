@@ -95,6 +95,8 @@ class TenantController extends Controller
             if (! empty($data['assigned_room_ids'])) {
                 RoomInventory::authorizeStaff($request);
                 RoomInventory::validateAssignment($property, $data['assigned_room_ids']);
+            } else {
+                unset($data['assigned_room_ids']);
             }
 
             return Tenant::create($data);
@@ -272,15 +274,26 @@ class TenantController extends Controller
         abort_if($tenant->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
         $data = $request->validated();
 
-        $tenant->update([
-            'contract_start' => $data['new_contract_start'],
-            'contract_end' => $data['new_contract_end'],
-            'current_status' => $tenant->current_status === 'notice_given' ? 'active' : $tenant->current_status,
-            'notes' => $this->appendNote(
-                $tenant->notes,
-                'Renewed: '.$data['new_contract_start'].' → '.$data['new_contract_end']
-            ),
-        ]);
+        DB::transaction(function () use ($data, $tenant) {
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            abort_if($current->current_status === 'pending_payment', 422, 'Complete payment and move-in review before using resident actions.');
+            $today = now('Pacific/Auckland')->toDateString();
+            if (in_array($current->current_status, Tenant::ACTIVE_STATUSES, true)
+                && RoomInventory::tenantTrackingAvailable()
+                && ! $current->residency_started_on
+                && (! $current->contract_start || $current->contract_start->toDateString() <= $today)) {
+                $current->residency_started_on = $current->contract_start?->toDateString() ?? $today;
+            }
+            $current->update([
+                'contract_start' => $data['new_contract_start'],
+                'contract_end' => $data['new_contract_end'],
+                'current_status' => $current->current_status === 'notice_given' ? 'active' : $current->current_status,
+                'notes' => $this->appendNote(
+                    $current->notes,
+                    'Renewed: '.$data['new_contract_start'].' → '.$data['new_contract_end']
+                ),
+            ]);
+        });
 
         return redirect()->back()->with('success', 'Tenancy renewed.');
     }
@@ -306,7 +319,7 @@ class TenantController extends Controller
             return Tenant::create([
                 ...$current->only(['first_name', 'family_name', 'display_name_override', 'email', 'phone', 'whatsapp', 'nationality', 'date_of_birth', 'passport_number']),
                 'property_id' => $property->id,
-                'assigned_room_ids' => $data['assigned_room_ids'] ?? null,
+                ...(! empty($data['assigned_room_ids']) ? ['assigned_room_ids' => $data['assigned_room_ids']] : []),
                 'contract_type' => 'not_yet_defined',
                 'current_status' => 'active',
                 'notes' => $this->appendNote(null, 'Moved from property #'.$current->property_id.' on '.$data['move_date']),

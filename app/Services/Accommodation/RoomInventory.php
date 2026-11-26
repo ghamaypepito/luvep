@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class RoomInventory
@@ -20,21 +21,37 @@ class RoomInventory
             && ! $request->attributes->has('user_view_actor'), 403);
     }
 
-    private static function currentTenants(): Builder
+    public static function tenantTrackingAvailable(): bool
     {
-        return Tenant::query()->active()
-            ->where(fn ($q) => $q->whereNull('contract_start')->orWhereDate('contract_start', '<=', now('Pacific/Auckland')->toDateString()));
+        return Schema::hasColumn('accommodation_tenants', 'residency_started_on');
     }
 
-    private const RESIDENT_FIELDS = ['id', 'property_id', 'unit', 'current_status', 'contract_start', 'assigned_room_ids'];
+    private static function currentTenants(bool $tracking): Builder
+    {
+        $today = now('Pacific/Auckland')->toDateString();
+        $contractStarted = fn ($q) => $q->whereNull('contract_start')->orWhereDate('contract_start', '<=', $today);
+
+        return Tenant::query()->active()
+            ->when($tracking, fn ($q) => $q->where(fn ($q) => $q->whereDate('residency_started_on', '<=', $today)
+                ->orWhere(fn ($q) => $q->whereNull('residency_started_on')->where($contractStarted))),
+                fn ($q) => $q->where($contractStarted));
+    }
+
+    private const LEGACY_FIELDS = ['id', 'property_id', 'unit', 'current_status', 'contract_start'];
+
+    private const RESIDENT_FIELDS = [...self::LEGACY_FIELDS, 'assigned_room_ids', 'residency_started_on'];
 
     public static function residents(Property $property): Collection
     {
-        return self::currentTenants()->where('property_id', $property->id)->orderBy('id')->get(self::RESIDENT_FIELDS);
+        $tracking = self::tenantTrackingAvailable();
+
+        return self::currentTenants($tracking)->where('property_id', $property->id)->orderBy('id')
+            ->get($tracking ? self::RESIDENT_FIELDS : self::LEGACY_FIELDS);
     }
 
     public static function validateAssignment(Property $property, array $ids): void
     {
+        abort_if($ids && ! self::tenantTrackingAvailable(), 503, 'Room assignments are being installed. Try again shortly.');
         if (array_diff($ids, array_column($property->room_register ?? [], 'id'))) {
             throw ValidationException::withMessages(['assigned_room_ids' => 'Select rooms from the current register for this property.']);
         }
@@ -101,16 +118,18 @@ class RoomInventory
 
     public static function dashboard(): array
     {
+        $tracking = self::tenantTrackingAvailable();
+        $propertyFields = ['id', 'name', 'code', 'total_rooms', 'is_active', 'rental_mode'];
         $properties = Property::where('is_active', true)->orderBy('code')->orderBy('id')
-            ->get(['id', 'name', 'code', 'total_rooms', 'is_active', 'rental_mode', 'room_register']);
-        $rows = self::forProperties($properties);
+            ->get($tracking ? [...$propertyFields, 'room_register'] : $propertyFields);
+        $rows = self::forProperties($properties, $tracking);
         $today = now('Pacific/Auckland')->toDateString();
         $activeAgreements = AccommodationAgreement::where('status', AccommodationAgreement::STATUS_SIGNED)
             ->where(fn ($q) => $q->whereNull('data->tenancy->commence_date')
                 ->orWhere('data->tenancy->commence_date', '')->orWhereDate('data->tenancy->commence_date', '<=', $today))
             ->where(fn ($q) => $q->whereNull('data->tenancy->end_date')
                 ->orWhere('data->tenancy->end_date', '')->orWhereDate('data->tenancy->end_date', '>=', $today))
-            ->whereExists(self::currentTenants()->select('accommodation_tenants.id')
+            ->whereExists(self::currentTenants($tracking)->select('accommodation_tenants.id')
                 ->whereIn('accommodation_tenants.property_id', $properties->pluck('id'))
                 ->whereColumn('accommodation_tenants.id', 'accommodation_agreements.tenant_id')
                 ->whereColumn('accommodation_tenants.property_id', 'accommodation_agreements.property_id')->toBase())
@@ -126,10 +145,11 @@ class RoomInventory
             'rows' => $rows->all()];
     }
 
-    public static function forProperties(Collection $properties): Collection
+    public static function forProperties(Collection $properties, ?bool $tracking = null): Collection
     {
-        $residents = self::currentTenants()->whereIn('property_id', $properties->pluck('id'))
-            ->orderBy('id')->get(self::RESIDENT_FIELDS)->groupBy('property_id');
+        $tracking ??= self::tenantTrackingAvailable();
+        $residents = self::currentTenants($tracking)->whereIn('property_id', $properties->pluck('id'))
+            ->orderBy('id')->get($tracking ? self::RESIDENT_FIELDS : self::LEGACY_FIELDS)->groupBy('property_id');
         $installed = PropertyRoomVerification::available();
         $checks = $installed ? PropertyRoomVerification::whereIn('property_id', $properties->pluck('id'))->get()->keyBy('property_id') : collect();
 
