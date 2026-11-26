@@ -52,6 +52,11 @@ class SchoolController extends Controller
             'portalBase' => $isEducation ? '/portal/education' : '/admin',
             'hasAgreement' => (bool) $school->agreement_path,
             'canViewAgreement' => $canViewAgreement,
+            'workspace' => $isEducation && $request->user()?->is_active
+                && ($request->user()->isAdmin() || $request->user()->role === 'education')
+                && ! $request->attributes->has('user_view_actor')
+                && \App\Models\SchoolWorkspaceRecord::available()
+                    ? \App\Services\SchoolWorkspaceData::forSchool($request, $school) : null,
             // Agreement always downloads through the admin route (admin-gated).
             'agreementUrl' => $school->agreement_path ? "/admin/schools/{$school->id}/agreement" : null,
         ]);
@@ -106,6 +111,9 @@ class SchoolController extends Controller
     public function destroy($id)
     {
         $school = School::findOrFail($id);
+        if (\App\Models\SchoolWorkspaceRecord::available() && \App\Models\SchoolWorkspaceRecord::where('school_id', $school->id)->exists()) {
+            return back()->with('error', 'This school has management history. Set it inactive instead of deleting it.');
+        }
         try {
             if ($school->agreement_path) {
                 Storage::disk('local')->delete($school->agreement_path);
