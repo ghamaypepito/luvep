@@ -453,6 +453,8 @@ Route::controller(\App\Http\Controllers\AffiliateApplicationController::class)->
         ->middleware([\App\Http\Middleware\PrivateAffiliateLink::class, 'signed:relative', 'throttle:60,1'])->name('affiliate.application.')->group(function () {
             Route::get('/', 'status')->name('status');
             Route::post('/verify', 'verify')->name('verify');
+            Route::post('/save', 'save')->name('save');
+            Route::get('/review', 'review')->name('review');
             Route::get('/document', 'document')->name('document');
             Route::get('/download', 'document')->name('download');
             Route::post('/sign', 'sign')->name('sign');

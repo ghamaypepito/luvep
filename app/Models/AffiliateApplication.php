@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\URL;
 
 class AffiliateApplication extends Model
 {
-    protected $fillable = ['uuid', 'name', 'email', 'phone', 'location', 'company', 'consented_at', 'verified_at', 'decision', 'reviewed_at', 'reviewed_by', 'user_id', 'agreement_id', 'activated_at'];
+    protected $fillable = ['uuid', 'name', 'email', 'phone', 'location', 'company', 'consented_at', 'verified_at', 'submitted_at', 'draft_version', 'decision', 'reviewed_at', 'reviewed_by', 'user_id', 'agreement_id', 'activated_at'];
 
-    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'reviewed_at' => 'datetime', 'activated_at' => 'datetime'];
+    protected $casts = ['consented_at' => 'datetime', 'verified_at' => 'datetime', 'submitted_at' => 'datetime', 'draft_version' => 'integer', 'reviewed_at' => 'datetime', 'activated_at' => 'datetime'];
 
     public function user(): BelongsTo
     {
@@ -29,6 +29,7 @@ class AffiliateApplication extends Model
             $this->activated_at !== null => 'Activated',
             $this->decision === 'approved' => 'Awaiting signatures',
             $this->decision === 'declined' => 'Declined',
+            $this->verified_at !== null && $this->submitted_at === null => 'Draft',
             $this->verified_at !== null => 'Awaiting review',
             default => 'Awaiting email verification',
         };
