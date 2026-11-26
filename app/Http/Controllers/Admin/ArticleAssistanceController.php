@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Rules\SocialMediaFile;
 use App\Services\Claude\ClaudeClient;
+use App\Support\EditorialBrief;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -16,8 +17,7 @@ class ArticleAssistanceController extends Controller
 {
     public function generate(Request $request, ClaudeClient $client)
     {
-        $data = $request->validate(['brief' => 'required|array:prompt,feature,social,leadSubject,clientSubject,assetId',
-            'brief.prompt' => 'required|string|min:20|max:6000', 'brief.*' => 'nullable|string|max:6000',
+        $data = $request->validate([...EditorialBrief::rules(forGeneration: true),
             'author' => 'nullable|string|max:120', 'pillar' => ['nullable', Rule::in(['Study', 'Immigration', 'Employment', 'Settlement'])],
             'visual_format' => ['required', Rule::in(['featured', 'carousel'])]]);
         $slideRule = $data['visual_format'] === 'carousel' ? 'required|array|min:3|max:5' : 'required|array|size:1';

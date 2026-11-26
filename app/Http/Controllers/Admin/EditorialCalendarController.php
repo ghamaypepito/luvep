@@ -8,6 +8,7 @@ use App\Models\EditorialSocialDelivery;
 use App\Models\MarketingPost;
 use App\Services\Ghl\GhlConnection;
 use App\Services\Ghl\GhlSocialReader;
+use App\Support\EditorialBrief;
 use App\Support\Seo;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -181,8 +182,7 @@ class EditorialCalendarController extends Controller
             $slug->ignore($article->id);
         }
         $draft = $request->validate([
-            'brief' => 'nullable|array:prompt,feature,social,leadSubject,clientSubject,assetId',
-            'brief.*' => 'nullable|string|max:6000',
+            ...EditorialBrief::rules(),
             'featured_images' => 'nullable|array|max:5',
             'featured_images.*' => 'required|array:url,alt',
             'featured_images.*.url' => 'required|string|url:https|max:2000',

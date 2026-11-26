@@ -1,0 +1,109 @@
+.accommodation-insights{--ai-ink:#173e38;--ai-muted:#60706a;--ai-green:#245b4c;--ai-lime:#d6e99d;--ai-line:#e5eae3;--ai-ground:#f2f5ef;max-width:1440px;margin:0 auto;padding:8px 4px 40px;color:var(--ai-ink);display:flex;flex-direction:column;gap:24px;font-variant-numeric:tabular-nums}
+.accommodation-insights h1,.accommodation-insights h2,.accommodation-insights h3,.accommodation-insights p{margin:0}
+.accommodation-insights h1{font-size:clamp(26px,2.4vw,36px);font-weight:600;letter-spacing:-1.1px;line-height:1.2}
+.accommodation-insights h2{font-size:20px;font-weight:600;letter-spacing:-.5px;line-height:1.3}
+.accommodation-insights h3{font-size:14px;font-weight:600}
+.accommodation-insights a,.accommodation-insights button,.accommodation-insights select{transition:background-color .15s,border-color .15s}
+.accommodation-insights :is(a,button,select,input,textarea):focus-visible{outline:2px solid #245b4c;outline-offset:4px}
+.accommodation-insights .ai-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:0 4px 4px}
+.accommodation-insights .ai-header p{color:var(--ai-muted);font-size:15px;margin-top:10px}
+.accommodation-insights .ai-tabs{display:flex;gap:6px;margin-bottom:20px;font-size:13px;font-weight:600}
+.accommodation-insights .ai-tabs a{padding:7px 14px;border-radius:8px;color:var(--ai-muted)}
+.accommodation-insights .ai-tabs a[aria-current=page]{background:var(--ai-lime);color:#243e22}
+.accommodation-insights .ai-header-actions{display:flex;flex-direction:column;align-items:flex-end;gap:14px;flex-shrink:0}
+.accommodation-insights .ai-snapshot{font-size:12px;color:var(--ai-muted)}
+.accommodation-insights .ai-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#194e47;color:white;padding:13px 20px;border-radius:12px;font-size:13px;font-weight:600;min-height:44px}
+.accommodation-insights .ai-primary:hover{background:#123b35}
+.accommodation-insights .ai-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:white;border:1px solid var(--ai-line);border-radius:20px;overflow:hidden}
+.accommodation-insights .ai-summary>a{padding:24px 26px;min-width:0;position:relative;border-bottom:1px solid var(--ai-line)}
+.accommodation-insights .ai-summary>a:nth-child(n+5){border-bottom:0;padding-top:18px;padding-bottom:18px;background:#fafbf8}
+.accommodation-insights .ai-summary>a:not(:nth-child(4n)):after{content:"";position:absolute;right:0;top:22px;bottom:22px;border-right:1px solid var(--ai-line)}
+.accommodation-insights .ai-summary>a:hover{background:#f3f7e9}
+.accommodation-insights .ai-metric-label{font-size:13px;color:var(--ai-muted);line-height:1.4}
+.accommodation-insights .ai-metric-value{font-size:36px;font-weight:600;letter-spacing:-1px;line-height:1.2;margin-top:8px}
+.accommodation-insights .ai-summary>a:nth-child(n+5) .ai-metric-value{font-size:26px}
+.accommodation-insights .ai-metric-note{margin-top:8px;font-size:11px;color:var(--ai-muted);line-height:1.5}
+.accommodation-insights .ai-panel{min-width:0;background:white;border:1px solid var(--ai-line);border-radius:20px;padding:26px}
+.accommodation-insights .ai-main-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:24px;align-items:start}
+.accommodation-insights .ai-bottom-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.accommodation-insights .ai-panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+.accommodation-insights .ai-panel-heading p{font-size:12px;color:var(--ai-muted);margin-top:6px}
+.accommodation-insights .ai-icon-link{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:#f4f6f1;flex-shrink:0}
+.accommodation-insights .ai-icon-link:hover{background:var(--ai-lime)}
+.accommodation-insights .ai-occupancy-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:22px}
+.accommodation-insights .ai-occupancy-head strong{font-size:44px;font-weight:500;letter-spacing:-2px;line-height:1}
+.accommodation-insights .ai-occupancy-head>div:first-child>span{display:block;font-size:12px;color:var(--ai-muted);margin-top:9px}
+.accommodation-insights .ai-legend{display:flex;flex-wrap:wrap;gap:13px;font-size:11px;color:var(--ai-muted)}
+.accommodation-insights .ai-legend>span{display:inline-flex;align-items:center;gap:5px}
+.accommodation-insights .ai-dot{width:7px;height:7px;border-radius:2px;display:inline-block}
+.accommodation-insights .occupied{background:#285e4f}
+.accommodation-insights .vacant{background:#d6e99d}
+.accommodation-insights .unavailable{background:#d9a194}
+.accommodation-insights .created{background:#d6dfd8}
+.accommodation-insights .ai-coverage{font-size:12px;line-height:1.6;padding:12px 14px;background:#fff6df;border-radius:9px;color:#7c5620;margin-bottom:20px}
+.accommodation-insights .ai-property-bars{padding:0;list-style:none;display:flex;flex-direction:column;gap:15px}
+.accommodation-insights .ai-bar-caption{display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:12px;margin-bottom:7px}
+.accommodation-insights .ai-bar-caption a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:78%;font-weight:500}
+.accommodation-insights .ai-bar-caption>span{flex-shrink:0;color:var(--ai-muted);font-size:11px}
+.accommodation-insights .ai-room-bar{height:8px;border-radius:3px;overflow:hidden;display:flex;background:#eef1eb}
+.accommodation-insights .ai-room-bar.is-unknown{background:repeating-linear-gradient(135deg,#e7ece5,#e7ece5 5px,#f7f9f4 5px,#f7f9f4 10px)}
+.accommodation-insights .ai-footnote{font-size:11px;color:var(--ai-muted);line-height:1.6;margin-top:20px}
+.accommodation-insights .ai-month-nav{display:flex;justify-content:space-between;align-items:center;margin:0 0 18px}
+.accommodation-insights .ai-month-nav>div{display:flex;gap:6px}
+.accommodation-insights .ai-month-nav button{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid var(--ai-line);border-radius:7px;background:white}
+.accommodation-insights .ai-month-nav button:hover{background:#edf4dc}
+.accommodation-insights .ai-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px 2px;text-align:center}
+.accommodation-insights .ai-weekday{font-size:10px;color:var(--ai-muted);padding-bottom:6px}
+.accommodation-insights .ai-calendar-grid button{position:relative;justify-self:center;min-height:32px;width:32px;border-radius:50%;font-size:12px;background:white;border:1px solid transparent;display:flex;align-items:center;justify-content:center}
+.accommodation-insights .ai-calendar-grid button[aria-current=date]{border-color:#94b190}
+.accommodation-insights .ai-calendar-grid button.is-selected{background:#245b4c;color:white;border-color:#245b4c}
+.accommodation-insights .ai-calendar-grid button:hover{background:#eaf2d7;color:#173e38}
+.accommodation-insights .ai-calendar-grid button i{position:absolute;width:3px;height:3px;bottom:3px;background:currentColor;border-radius:50%}
+.accommodation-insights .ai-schedule-label{margin-top:23px;padding-top:18px;border-top:1px dashed var(--ai-line);display:flex;gap:10px;align-items:center}
+.accommodation-insights .ai-schedule-label>span{margin-left:auto;font-size:11px;color:var(--ai-muted)}
+.accommodation-insights .ai-schedule-label button{font-size:11px;text-decoration:underline;min-height:24px}
+.accommodation-insights .ai-viewings{list-style:none;padding:0;margin:16px 0;display:flex;flex-direction:column;gap:10px}
+.accommodation-insights .ai-viewings li{display:flex;gap:12px;align-items:flex-start;padding:12px;background:#f2f6e8;border-radius:12px}
+.accommodation-insights .ai-viewings li:nth-child(2n){background:#f5f4ee}
+.accommodation-insights .ai-viewing-date{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:36px;padding:5px 0;background:white;border-radius:8px}
+.accommodation-insights .ai-viewing-date strong{font-size:17px;line-height:1.2;font-weight:500}
+.accommodation-insights .ai-viewing-date span{font-size:10px;color:var(--ai-muted)}
+.accommodation-insights .ai-viewings p{font-size:12px;font-weight:600;line-height:1.5}
+.accommodation-insights .ai-viewings li>div:last-child>span{font-size:11px;color:var(--ai-muted);display:block;overflow-wrap:anywhere}
+.accommodation-insights .ai-viewings small{font-size:10px;display:block;color:var(--ai-muted);margin-top:5px}
+.accommodation-insights .ai-text-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;min-height:32px}
+.accommodation-insights .ai-empty{font-size:13px;color:var(--ai-muted);padding:24px 0;line-height:1.6}
+.accommodation-insights .ai-error{background:#fff0e8;border:1px solid #efc7b6;border-radius:12px;padding:16px;color:#873d28;font-size:13px}
+.accommodation-insights .ai-inventory select{border:1px solid var(--ai-line);background:#f7f9f3;border-radius:9px;padding:9px 26px 9px 11px;font-size:12px;max-width:100%;min-height:36px}
+.accommodation-insights .ai-table-scroll{overflow:auto;max-width:100%;outline-offset:1px}
+.accommodation-insights .ai-inventory table{border-collapse:collapse;width:100%;font-size:12px;min-width:780px}
+.accommodation-insights .ai-inventory th{font-size:11px;font-weight:500;color:var(--ai-muted);text-align:right;white-space:nowrap;border-bottom:1px solid var(--ai-line);padding:12px 10px}
+.accommodation-insights .ai-inventory td{border-bottom:1px solid #eff1ed;text-align:right;padding:15px 10px;vertical-align:middle}
+.accommodation-insights .ai-inventory :is(th,td):first-child{text-align:left;padding-left:0;max-width:285px}
+.accommodation-insights .ai-inventory :is(th,td):last-child{text-align:left;min-width:135px}
+.accommodation-insights .ai-inventory td>a{font-weight:600;line-height:1.5}
+.accommodation-insights .ai-inventory td p{font-size:11px;color:var(--ai-muted);line-height:1.5;margin-top:5px;white-space:pre-wrap}
+.accommodation-insights .ai-status{font-size:10px;line-height:1.4;display:inline-block;padding:5px 8px;border-radius:6px;background:#f5efdf;color:#725827;text-transform:none;white-space:nowrap}
+.accommodation-insights .ai-status.is-verified{background:#eef3e5;color:#31553f}
+.accommodation-insights .ai-recent-list{list-style:none;margin:0;padding:0}
+.accommodation-insights .ai-recent-list li{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:15px 0;border-bottom:1px solid #eff1ed}
+.accommodation-insights .ai-recent-list li:last-child{border-bottom:0}
+.accommodation-insights .ai-recent-list a{font-size:13px;font-weight:600}
+.accommodation-insights .ai-recent-list li>div>span:not(.ai-status){display:block;font-size:11px;color:var(--ai-muted);margin-top:4px}
+.accommodation-insights .ai-recent-list small{display:block;font-size:10px;color:var(--ai-muted);margin-top:6px;text-align:right}
+.accommodation-insights .ai-task-totals{display:flex;gap:36px;margin:8px 0 22px}
+.accommodation-insights .ai-task-totals>div{display:flex;flex-direction:column;gap:6px}
+.accommodation-insights .ai-task-totals span{font-size:12px;color:var(--ai-muted)}
+.accommodation-insights .ai-task-totals strong{font-size:40px;font-weight:500;letter-spacing:-1px}
+.accommodation-insights .ai-task-chart{display:flex;gap:14px;align-items:flex-end;margin-top:40px;min-height:190px}
+.accommodation-insights .ai-task-day{flex:1;min-width:0;text-align:center}
+.accommodation-insights .ai-task-bars{height:150px;display:flex;gap:5px;align-items:flex-end;justify-content:center;border-bottom:1px solid var(--ai-line)}
+.accommodation-insights .ai-task-bars>div{position:relative;width:30%;max-width:30px;border-radius:6px 6px 0 0;min-height:0}
+.accommodation-insights .ai-task-bars span{font-size:10px;position:absolute;top:-20px;left:50%;transform:translateX(-50%);color:var(--ai-muted)}
+.accommodation-insights .ai-task-day time{display:block;font-size:11px;margin-top:10px;color:var(--ai-muted)}
+.accommodation-insights .ai-current-snapshot{padding:4px 4px 0}
+.accommodation-insights .ai-current-snapshot p{font-size:13px;color:var(--ai-muted);margin-top:6px}
+@media(min-width:1280px){.accommodation-insights .ai-main-grid{grid-template-columns:minmax(0,1.65fr) minmax(340px,1fr)}}
+@media(max-width:1100px){.accommodation-insights .ai-summary>a{padding:20px}.accommodation-insights .ai-main-grid{grid-template-columns:minmax(0,1fr)}.accommodation-insights .ai-calendar{max-width:none}.accommodation-insights .ai-calendar-grid{max-width:420px;margin:auto}.accommodation-insights .ai-header{align-items:flex-start}.accommodation-insights .ai-header-actions{max-width:240px}}
+@media(max-width:640px){.accommodation-insights{gap:18px;padding-top:0}.accommodation-insights .ai-header{flex-direction:column;gap:16px}.accommodation-insights .ai-header-actions{align-items:flex-start;max-width:none;width:100%;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}.accommodation-insights .ai-snapshot{font-size:11px}.accommodation-insights .ai-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.accommodation-insights .ai-summary>a{padding:18px 16px!important;border-bottom:1px solid var(--ai-line)!important}.accommodation-insights .ai-summary>a:nth-last-child(-n+2){border-bottom:0!important}.accommodation-insights .ai-summary>a:nth-child(2n):after{display:none}.accommodation-insights .ai-summary>a:after{top:15px;bottom:15px}.accommodation-insights .ai-metric-value{font-size:32px}.accommodation-insights .ai-metric-note{font-size:10px}.accommodation-insights .ai-panel{padding:20px}.accommodation-insights .ai-panel-heading{flex-wrap:wrap}.accommodation-insights .ai-occupancy-head{align-items:flex-start;flex-direction:column}.accommodation-insights .ai-bottom-grid{grid-template-columns:1fr}.accommodation-insights .ai-bar-caption a{max-width:70%}.accommodation-insights .ai-task-chart{gap:8px}.accommodation-insights h2{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.accommodation-insights *{transition:none!important}}
