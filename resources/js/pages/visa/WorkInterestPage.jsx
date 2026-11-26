@@ -1,3 +1,4 @@
+import VifSupplementFields from '@/components/visa/VifSupplementFields';
 import React, { useState, useEffect } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
@@ -23,6 +24,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOTAL_STEPS = 9;
 
 const FIELD_TO_STEP = {
+    'vif_answers.work_visa_category': 2,
     terms_accepted: 1,
     family_name: 2, first_name: 2, other_names: 2, gender: 2, dob: 2,
     country_of_birth: 2, place_of_birth: 2, current_address: 2, email: 2, phone: 2,
@@ -97,6 +99,7 @@ function DocRow({ id, label, hint, files = [], onChange }) {
 export default function WorkInterestPage() {
     const draft = loadDraft();
     const { data, setData, post, processing, errors: serverErrors } = useForm({
+        vif_answers: {},
         family_name: '', first_name: '', other_names: '', gender: '', dob: '',
         country_of_birth: '', place_of_birth: '', current_address: '',
         email: '', phone: '', country_of_citizenship: '', other_citizenships: '',
@@ -205,6 +208,7 @@ export default function WorkInterestPage() {
                 if (!data.over_24_months) errs.over_24_months = 'Please answer';
                 break;
             case 4:
+                if (data.vif_answers?.work_visa_category === 'Post-Study Work Visa') break;
                 if (!data.employer_name?.trim()) errs.employer_name = 'Employer name is required';
                 if (!data.employer_is_family) errs.employer_is_family = 'Please answer';
                 if (!data.job_start_date) errs.job_start_date = 'Start date is required';
@@ -268,7 +272,7 @@ export default function WorkInterestPage() {
                 const badKeys = Object.keys(errs);
                 let firstInvalid = null;
                 for (const k of badKeys) {
-                    const stepNum = FIELD_TO_STEP[k];
+                    const stepNum = FIELD_TO_STEP[k] || (k.startsWith('vif_answers.') || k.startsWith('qualifications.') || k.startsWith('family_members.') || k.startsWith('nz_contacts.') ? TOTAL_STEPS : undefined);
                     if (stepNum && (firstInvalid === null || stepNum < firstInvalid)) {
                         firstInvalid = stepNum;
                     }
@@ -305,12 +309,13 @@ export default function WorkInterestPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data]);
 
+    const workVisaLabel = data.vif_answers?.work_visa_category === 'Post-Study Work Visa' ? 'Post-Study Work Visa' : 'Work Visa (AEWV)';
     const steps = [
         {
             title: 'Terms',
             render: () => (
                 <IntakeTermsStep
-                    visaLabel="Work Visa (AEWV)"
+                    visaLabel="Work Visa (AEWV / Post-Study)"
                     accepted={data.terms_accepted}
                     onAccept={set('terms_accepted')}
                     error={errors.terms_accepted}
@@ -321,6 +326,7 @@ export default function WorkInterestPage() {
             title: 'Identity',
             render: () => (
                 <>
+                    <VifSupplementFields type="work" values={data} onChange={setData} errors={errors} categoryOnly />
                     <SectionTitle title="Identity" subtitle="Write N/A if a field doesn't apply." />
                     <FieldGrid>
                         <TextField label="Family name" value={data.family_name} onChange={set('family_name')} required error={errors.family_name} />
@@ -382,15 +388,16 @@ export default function WorkInterestPage() {
             render: () => (
                 <>
                     <SectionTitle title="New Zealand Employer Details" />
+                    {data.vif_answers?.work_visa_category === 'Post-Study Work Visa' && <p className="mb-4 text-sm text-gray-600">For a Post-Study Work Visa, complete employer details only if applicable.</p>}
                     <FieldGrid>
-                        <TextField label="Employer name" value={data.employer_name} onChange={set('employer_name')} required error={errors.employer_name} />
+                        <TextField label="Employer name" value={data.employer_name} onChange={set('employer_name')} required={data.vif_answers?.work_visa_category !== 'Post-Study Work Visa'} error={errors.employer_name} />
                         <YesNoField label="Is your employer a family member?" value={data.employer_is_family} onChange={set('employer_is_family')} error={errors.employer_is_family} />
                         {data.employer_is_family === 'Yes' && (
                             <TextField label="Relationship" value={data.employer_family_relation} onChange={set('employer_family_relation')} />
                         )}
                         <YesNoField label="Will you be self-employed?" value={data.self_employed} onChange={set('self_employed')} />
-                        <DateField label="Date job is available / work starts" value={data.job_start_date} onChange={set('job_start_date')} required error={errors.job_start_date} />
-                        <TextField label="Minimum hourly rate of pay (NZD)" type="number" value={data.hourly_rate} onChange={set('hourly_rate')} hint="e.g. 29.66" required error={errors.hourly_rate} />
+                        <DateField label="Date job is available / work starts" value={data.job_start_date} onChange={set('job_start_date')} required={data.vif_answers?.work_visa_category !== 'Post-Study Work Visa'} error={errors.job_start_date} />
+                        <TextField label="Minimum hourly rate of pay (NZD)" type="number" value={data.hourly_rate} onChange={set('hourly_rate')} hint="e.g. 29.66" required={data.vif_answers?.work_visa_category !== 'Post-Study Work Visa'} error={errors.hourly_rate} />
                         <YesNoField label="Do you intend to support any dependent children on a visitor/student visa?" value={data.supports_dependent_children} onChange={set('supports_dependent_children')} />
                         <SelectField label="Do you know your Job Skills Level as per ANZSCO or NOL?" value={data.job_skills_level} onChange={set('job_skills_level')} options={['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'No']} />
                     </FieldGrid>
@@ -525,6 +532,7 @@ export default function WorkInterestPage() {
             title: 'Declaration',
             render: () => (
                 <>
+                    <VifSupplementFields type="work" values={data} onChange={setData} errors={errors} hideCategory />
                     <SectionTitle title="Declaration" />
                     <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-6 text-sm text-gray-600 leading-relaxed">
                         <p className="font-bold text-[#282728] mb-2">
@@ -563,8 +571,8 @@ export default function WorkInterestPage() {
     return (
         <>
             <IntakeFormShell
-                title="Work Visa (AEWV) — Applicant Information"
-                visaLabel="AEWV — Work"
+                title={`${workVisaLabel} — Applicant Information`}
+                visaLabel={workVisaLabel}
                 steps={steps}
                 onSubmit={submit}
                 processing={processing}
@@ -582,7 +590,7 @@ export default function WorkInterestPage() {
                 onClose={() => setShowConfirm(false)}
                 onConfirm={confirmSubmit}
                 processing={processing}
-                visaLabel="Work Visa (AEWV)"
+                visaLabel={workVisaLabel}
                 submitLabel="Submit intake"
                 summaryItems={[
                     ['Name', `${data.first_name} ${data.family_name}`.trim()],
@@ -595,7 +603,7 @@ export default function WorkInterestPage() {
             <IntakeSuccessModal
                 open={showSuccess}
                 onClose={() => setShowSuccess(false)}
-                visaLabel={flash?.intake_submitted || 'Work Visa (AEWV)'}
+                visaLabel={flash?.intake_submitted || workVisaLabel}
             />
         </>
     );

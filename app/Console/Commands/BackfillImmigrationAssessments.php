@@ -40,28 +40,15 @@ class BackfillImmigrationAssessments extends Command
 
         foreach (IntakeVisaTypeMap::intakeClasses() as $intakeClass) {
             $label  = IntakeVisaTypeMap::label($intakeClass);
-            $visaType = IntakeVisaTypeMap::resolve($intakeClass);
-
-            if (! $visaType) {
-                $this->warn("  · {$label} — VisaType not seeded; logging warning and skipping all rows.");
-                Log::warning('Backfill: VisaType not found for intake class', [
-                    'intake_class' => $intakeClass,
-                ]);
-                // Still walk the table so the "skipped" count reflects
-                // historical rows that can't be paired without seeding.
-                $count = $intakeClass::query()->count();
-                $totals['missing_visa_type'] += $count;
-                continue;
-            }
-
             $this->line("");
             $this->info("→ {$label} ({$intakeClass})");
 
+            $visaTypes = [];
             $created = 0;
             $skipped = 0;
 
             // chunkById keeps memory predictable on large tables.
-            $intakeClass::query()->orderBy('id')->chunkById(200, function ($intakes) use ($visaType, $dryRun, &$created, &$skipped) {
+            $intakeClass::query()->orderBy('id')->chunkById(200, function ($intakes) use ($dryRun, &$created, &$skipped, &$totals, &$visaTypes) {
                 foreach ($intakes as $intake) {
                     $exists = Assessment::query()
                         ->where('intakeable_type', $intake::class)
@@ -70,6 +57,20 @@ class BackfillImmigrationAssessments extends Command
 
                     if ($exists) {
                         $skipped++;
+                        continue;
+                    }
+
+                    $category = $intake instanceof \App\Models\WorkIntake ? ($intake->vif_answers['work_visa_category'] ?? null) : null;
+                    $key = is_string($category) ? $category : '';
+                    if (! array_key_exists($key, $visaTypes)) {
+                        $visaTypes[$key] = IntakeVisaTypeMap::resolve($intake);
+                        if (! $visaTypes[$key]) {
+                            Log::warning('Backfill: VisaType not found for intake category', ['intake_class' => $intake::class]);
+                        }
+                    }
+                    $visaType = $visaTypes[$key];
+                    if (! $visaType) {
+                        $totals['missing_visa_type']++;
                         continue;
                     }
 

@@ -34,6 +34,7 @@ class FamilyIntakeController extends Controller
             ->map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v)
             ->all());
 
+        $request->merge(\App\Support\VifSupplement::activeData('family', \App\Support\VifSupplement::normalizeInput('family', $request->all())));
         $validated = $request->validate($this->rules());
 
         try {
@@ -94,6 +95,7 @@ class FamilyIntakeController extends Controller
         $yn = 'nullable|string|max:10';
 
         return [
+            ...\App\Support\VifSupplement::rules('family'),
             // Shared document-tab rules (passport, visa copies, files, …).
             ...$this->intakeDocumentRules(),
             // A — Identity
