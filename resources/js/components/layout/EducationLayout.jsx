@@ -40,6 +40,7 @@ export default function EducationLayout({ children }) {
             : []),
         { name: "Task Board", href: "/portal/education/tasks", icon: <CheckSquare size={20} />, badge: badges.tasks_open, badgeTone: badges.tasks_overdue > 0 ? "danger" : "default" },
 
+        ...(modules.includes("agents") ? [{ name: "Partner Activity Tracker", href: "/portal/education/partner-tracker", icon: <Users size={20} /> }] : []),
         { name: "Setup", section: true },
         {
             name: "Emails",
