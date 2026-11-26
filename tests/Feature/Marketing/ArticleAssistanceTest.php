@@ -83,6 +83,43 @@ class ArticleAssistanceTest extends TestCase
         $this->assertDatabaseCount('editorial_articles', 0);
     }
 
+    public function test_imported_briefs_can_generate_and_save_without_losing_planning_fields(): void
+    {
+        $this->connect();
+        $disk = Storage::fake('local');
+        $prompt = str_repeat('Explain how to prepare questions for the team. ', 145).'End of brief.';
+        $disk->put('editorial/plan.json', json_encode([[
+            'id' => 'EP-01',
+            'title' => 'Plan your next conversation',
+            'slug' => 'plan-your-next-conversation',
+            'date' => '2026-11-26',
+            'pillar' => 'Study',
+            'primary' => 'study planning',
+            'metaTitle' => 'Study planning with EP',
+            'metaDescription' => 'Organise your questions.',
+            'prompt' => $prompt,
+            'author' => 'EP Editorial Team',
+            'support' => ['study questions', 'first conversation'],
+        ]], JSON_THROW_ON_ERROR));
+        $this->artisan('editorial:import-newsletter-plan', ['path' => $disk->path('editorial/plan.json')])->assertSuccessful();
+        $draft = EditorialArticle::sole();
+        $url = self::ARTICLES.'/'.$draft->id;
+        $brief = $this->getJson($url)->assertOk()->json('brief');
+        Http::fake(['api.anthropic.com/*' => Http::response(['content' => [['type' => 'text', 'text' => json_encode($this->generatedContent())]]])]);
+
+        $generated = $this->postJson(self::GENERATE, ['brief' => $brief, 'visual_format' => 'featured'])
+            ->assertOk()->assertJsonPath('article.meta_title', 'Study planning with EP')->json('article');
+        Http::assertSent(fn ($request) => json_decode($request['messages'][0]['content'], true)['brief'] === $brief);
+        $this->assertNull($draft->fresh()->body_html);
+        $this->putJson($url, [...$generated, 'revision' => $draft->revision, 'brief' => $brief])->assertOk()
+            ->assertJsonPath('brief.author', 'EP Editorial Team')->assertJsonPath('brief.support', $brief['support'])
+            ->assertJsonPath('brief.prompt', $prompt)->assertJsonPath('status', 'draft');
+        $this->assertNull($draft->fresh()->published_at);
+        $this->postJson(self::GENERATE, ['brief' => [...$brief, 'support' => [['not a keyword']]], 'visual_format' => 'featured'])
+            ->assertUnprocessable()->assertJsonValidationErrors('brief.support.0');
+        Http::assertSentCount(1);
+    }
+
     public function test_disabled_ai_keeps_the_draft_and_spends_no_tokens(): void
     {
         $this->connect();
