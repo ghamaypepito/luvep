@@ -35,7 +35,7 @@ class PropertyController extends Controller
             'suburb' => ['nullable', Rule::in(['Hobsonville', 'Glenfield', 'Kelston', 'Hillsborough', 'Sunnynook'])],
             'rental_mode' => ['required', Rule::in(Property::RENTAL_MODES)],
             // Per-room fields
-            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'ensuite'])],
+            'room_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'couple', 'ensuite'])],
             'has_wardrobe' => 'boolean',
             'bed_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['single', 'double'])],
             'bathroom_type' => [$isPerRoom ? 'required' : 'nullable', Rule::in(['shared', 'private'])],
