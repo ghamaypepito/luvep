@@ -13,6 +13,36 @@ function sameValue(left, right) {
     return (blank(left) && blank(right)) || JSON.stringify(left) === JSON.stringify(right);
 }
 
+function changedFields(values, baseline) {
+    const changed = {};
+    for (const [key, value] of Object.entries(values)) {
+        if (key === 'vif_answers') {
+            const answers = Object.fromEntries(Object.entries(value || {}).filter(([answer, next]) => !sameValue(next, baseline.vif_answers?.[answer])));
+            if (Object.keys(answers).length) changed.vif_answers = answers;
+        } else if (!sameValue(value, baseline[key])) {
+            changed[key] = value;
+        }
+    }
+    return changed;
+}
+
+function refreshDraft(type, draft, baseline, fresh) {
+    const changed = changedFields(draft, baseline);
+    const merged = { ...fresh, ...changed, vif_answers: { ...fresh.vif_answers, ...changed.vif_answers } };
+    const next = { ...fresh, vif_answers: { ...fresh.vif_answers } };
+    // Keep only local edits still visible under the fresh context; untouched answers come from the server.
+    for (const section of vifSupplementSections(type, merged)) {
+        for (const field of section.fields) {
+            if (field.storage === 'root') {
+                if (Object.hasOwn(changed, field.key)) next[field.key] = changed[field.key];
+            } else if (Object.hasOwn(changed.vif_answers || {}, field.key)) {
+                next.vif_answers[field.key] = changed.vif_answers[field.key];
+            }
+        }
+    }
+    return next;
+}
+
 export function vifSupplementSections(type, values = {}) {
     return (catalog[type] || []).filter(section => {
         if (section.familyChildOnly && (values.applying_as !== 'Dependent child' || !/residen/i.test(values.visa_type || ''))) return false;
@@ -70,27 +100,30 @@ export default function VifSupplementFields({ type, values = {}, onChange, error
 export function VifSupplementEditor({ type, values, saveUrl, csrfHeaders, onSaved }) {
     const [draft, setDraft] = useState(values || {});
     const baseline = useRef(values || {});
+    const target = useRef({ key: `${type}:${saveUrl}` });
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
-    useEffect(() => { baseline.current = values || {}; setDraft(values || {}); }, [values]);
+    useEffect(() => {
+        const fresh = values || {};
+        const previousBaseline = baseline.current;
+        const sameTarget = target.current.key === `${type}:${saveUrl}`;
+        if (!sameTarget) target.current = { key: `${type}:${saveUrl}` };
+        baseline.current = fresh;
+        setDraft(previous => sameTarget ? refreshDraft(type, previous, previousBaseline, fresh) : fresh);
+        if (!sameTarget) { setSaving(false); setErrors({}); setMessage(''); }
+    }, [values, type, saveUrl]);
     if (!catalog[type] || !values) return null;
     const save = async () => {
         if (saving) return;
-        const fields = {};
-        for (const [key, value] of Object.entries(draft)) {
-            if (key === 'vif_answers') {
-                const changed = Object.fromEntries(Object.entries(value || {}).filter(([answer, next]) => !sameValue(next, baseline.current.vif_answers?.[answer])));
-                if (Object.keys(changed).length) fields.vif_answers = changed;
-            } else if (!sameValue(value, baseline.current[key])) {
-                fields[key] = value;
-            }
-        }
+        const fields = changedFields(draft, baseline.current);
         if (!Object.keys(fields).length) return;
+        const savingTarget = target.current;
         setSaving(true); setErrors({}); setMessage('');
         try {
             const response = await fetch(saveUrl, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeaders }, body: JSON.stringify({ fields }) });
             const fresh = await response.json().catch(() => null);
+            if (target.current !== savingTarget) return;
             if (!response.ok) {
                 setErrors(Object.fromEntries(Object.entries(fresh?.errors || {}).map(([key, value]) => [key.replace(/^fields\./, ''), Array.isArray(value) ? value[0] : value])));
                 throw new Error('Could not save additional answers. Your edits are still here.');
@@ -99,8 +132,9 @@ export function VifSupplementEditor({ type, values, saveUrl, csrfHeaders, onSave
             baseline.current = fresh.vif_values || draft;
             setDraft(baseline.current);
             onSaved(fresh); setMessage('Additional answers saved.');
-        } catch (error) { setMessage(error.message || 'Could not save additional answers.'); }
-        finally { setSaving(false); }
+        } catch (error) {
+            if (target.current === savingTarget) setMessage(error.message || 'Could not save additional answers.');
+        } finally { if (target.current === savingTarget) setSaving(false); }
     };
     return <section className="space-y-4"><h2 className="text-base font-bold">Additional visa information</h2>
         <fieldset disabled={saving}><VifSupplementFields type={type} values={draft} onChange={(key, value) => setDraft(previous => ({ ...previous, [key]: value }))} errors={errors} /></fieldset>

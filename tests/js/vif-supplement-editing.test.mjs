@@ -11,7 +11,7 @@ import Fields,{VifSupplementEditor} from './resources/js/components/visa/VifSupp
 window.IS_REACT_ACT_ENVIRONMENT=true;window.act=act;
 const root=createRoot(document.getElementById('root'));
 function App({type,initial}){const[values,setValues]=useState(initial);window.values=values;return <Fields type={type} values={values} onChange={(key,value)=>setValues(old=>({...old,[key]:value}))}/>;}
-window.editor=(type,values)=>act(()=>root.render(<VifSupplementEditor type={type} values={values} saveUrl="/synthetic-vif" csrfHeaders={{}} onSaved={fresh=>{window.savedCount=(window.savedCount||0)+1;window.fresh=fresh}}/>));
+window.editor=(type,values,saveUrl='/synthetic-vif')=>act(()=>root.render(<VifSupplementEditor type={type} values={values} saveUrl={saveUrl} csrfHeaders={{}} onSaved={fresh=>{window.savedCount=(window.savedCount||0)+1;window.fresh=fresh}}/>));
 window.fields=(type,initial)=>act(()=>root.render(<App type={type} initial={initial}/>));
 window.unmount=()=>act(()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', alias: { '@': resolve('resources/js') } });
 
@@ -134,4 +134,73 @@ test('explicit empty or null canonical values suppress legacy aliases before any
             assert.equal(input(dom.window, 'Institution').value, 'Keep institution');
         } finally { await close(dom); }
     }
+});
+
+test('an unrelated staff section refresh keeps unsaved additional answers and adopts fresh siblings', async () => {
+    const initial = { has_nz_contacts: 'No', vif_answers: { middle_name: 'Original' } };
+    const dom = await mount('visitor', initial);
+    try {
+        const w = dom.window; const requests = [];
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Unsaved middle');
+        const fresh = { has_nz_contacts: 'Yes', vif_answers: { middle_name: 'Original' } };
+        await w.editor('visitor', fresh);
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').value, 'Unsaved middle');
+        assert.equal(input(w, 'Do you have any contacts in New Zealand?').value, 'Yes');
+        w.fetch = async (_url, options) => {
+            requests.push(JSON.parse(options.body));
+            return { ok: true, json: async () => ({ sections: [], vif_values: { ...fresh, vif_answers: { middle_name: 'Unsaved middle' } } }) };
+        };
+        await save(w);
+        assert.deepEqual(requests, [{ fields: { vif_answers: { middle_name: 'Unsaved middle' } } }]);
+        await save(w);
+        assert.equal(requests.length, 1, 'Own successful save establishes the canonical baseline');
+    } finally { await close(dom); }
+});
+
+test('fresh family context drops all newly hidden child-only edits without submitting them', async () => {
+    const dom = await mount('family', { applying_as: 'Dependent child', visa_type: 'Residence class visa', vif_answers: { middle_name: 'Original', supporting_parent_nz_status: 'Original parent' } });
+    try {
+        const w = dom.window; let requests = 0;
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Local middle');
+        await fill(w, input(w, 'Parent’s New Zealand citizenship or residence status'), 'Local parent');
+        const fresh = { applying_as: 'Partner', visa_type: 'Visitor visa', vif_answers: { middle_name: 'Original' } };
+        await w.editor('family', fresh);
+        assert.equal(w.document.querySelectorAll('label').length, 0);
+        assert.ok(![...w.document.querySelectorAll('label')].some(el => el.textContent.includes('Parent’s New Zealand citizenship')));
+        w.fetch = async () => { requests++; return { ok: true, json: async () => ({ sections: [], vif_values: fresh }) }; };
+        await save(w);
+        assert.equal(requests, 0);
+    } finally { await close(dom); }
+});
+
+test('a section refresh retains a locally edited repeatable list without resubmitting fresh sibling answers', async () => {
+    const initial = { qualifications: [{ qualification: 'Original course', school: 'Original school' }], vif_answers: { middle_name: 'Original' } };
+    const dom = await mount('student', initial);
+    try {
+        const w = dom.window; let payload;
+        await fill(w, input(w, 'Qualification or programme'), 'Local course');
+        await w.editor('student', { ...initial, vif_answers: { middle_name: 'Fresh server middle' } });
+        assert.equal(input(w, 'Qualification or programme').value, 'Local course');
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').value, 'Fresh server middle');
+        w.fetch = async (_url, options) => { payload = JSON.parse(options.body); return { ok: true, json: async () => ({ sections: [] }) }; };
+        await save(w);
+        assert.deepEqual(payload, { fields: { qualifications: [{ qualification: 'Local course', school: 'Original school' }] } });
+    } finally { await close(dom); }
+});
+
+test('switching intake resets drafts and ignores a previous intake save response', async () => {
+    const dom = await mount('visitor', { vif_answers: { middle_name: 'Original' } });
+    try {
+        const w = dom.window; let resolveSave;
+        w.fetch = () => new Promise(resolve => { resolveSave = resolve; });
+        await fill(w, input(w, 'Middle name(s) as shown in your passport'), 'Old intake edit');
+        await save(w);
+        await w.editor('visitor', { vif_answers: { middle_name: 'Other intake' } }, '/other-intake-vif');
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').value, 'Other intake');
+        assert.equal([...w.document.querySelectorAll('button')].find(el => el.textContent === 'Save additional answers')?.disabled, false);
+        await w.editor('visitor', { vif_answers: { middle_name: 'Reopened intake' } });
+        await w.act(async () => { resolveSave({ ok: true, json: async () => ({ sections: [], vif_values: { vif_answers: { middle_name: 'Old intake edit' } } }) }); });
+        assert.equal(input(w, 'Middle name(s) as shown in your passport').value, 'Reopened intake');
+        assert.equal(w.savedCount || 0, 0);
+    } finally { await close(dom); }
 });
