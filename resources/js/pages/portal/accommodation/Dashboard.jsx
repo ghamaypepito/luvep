@@ -3,13 +3,13 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArrowUpRight } from 'lucide-react';
 import { InsightsHeader, PortfolioSummary, OccupancyPanel, ViewingCalendar, InventoryTable, dateLabel } from '../../../components/accommodation/Insights';
 
-export default function AccommodationDashboard({ propertyStats = {}, applicationStats = {}, recentProperties = [], recentApplications = [], inventoryStats = null, inventoryError = null, insights = null }) {
+export default function AccommodationDashboard({ propertyStats = {}, applicationStats = {}, recentProperties = [], recentApplications = [], inventoryStats = null, inventoryError = null, insights = null, viewingTotal = null }) {
     const [roomFilter, setRoomFilter] = useState('all');
     return <div className="accommodation-insights">
         <Head title="Accommodation Dashboard"/>
         <InsightsHeader asOf={insights?.as_of}/>
         {inventoryError && <p role="alert" className="ai-error">{inventoryError}</p>}
-        <PortfolioSummary stats={inventoryStats} onFilter={setRoomFilter}/>
+        <PortfolioSummary stats={inventoryStats} dashboardCounts={{ leads: applicationStats.total, viewings: viewingTotal }} onFilter={setRoomFilter}/>
         <div className="ai-main-grid"><OccupancyPanel stats={inventoryStats}/><ViewingCalendar key={insights?.calendar.month} insights={insights} onMonthChange={month => router.get('/portal/accommodation/dashboard', {month}, {preserveScroll:true})}/></div>
         <InventoryTable stats={inventoryStats} filter={roomFilter} onFilter={setRoomFilter}/>
         <div className="ai-bottom-grid"><section className="ai-panel">

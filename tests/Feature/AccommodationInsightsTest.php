@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\EoiSubmission;
 use App\Models\LeadTask;
+use App\Models\PreTenancyForm;
 use App\Models\Property;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,6 +56,8 @@ class AccommodationInsightsTest extends TestCase
         $props = $this->get('/portal/accommodation/dashboard?month=2026-11')->assertOk()->inertiaProps();
         $this->assertSame('2026-11', $props['insights']['calendar']['month']);
         $this->assertSame(['2026-11-01', '2026-11-30'], array_column($props['insights']['calendar']['bookings'], 'date'));
+        $this->assertSame(5, $props['viewingTotal'], 'All statuses and dates from the Viewings section count.');
+        $this->assertCount(5, $this->get('/portal/accommodation/viewings')->assertOk()->inertiaProps()['viewings']);
         $this->assertSame('Synthetic viewing property', $props['insights']['calendar']['bookings'][0]['property']);
         $this->assertArrayNotHasKey('email', $props['insights']['calendar']['bookings'][0]);
         $this->getJson('/portal/accommodation/dashboard?month=invalid')->assertUnprocessable();
@@ -63,6 +67,8 @@ class AccommodationInsightsTest extends TestCase
     {
         $empty = $this->get('/portal/accommodation/dashboard')->assertOk()->inertiaProps();
         $this->assertSame(0, $empty['inventoryStats']['properties']);
+        $this->assertSame(0, $empty['applicationStats']['total']);
+        $this->assertSame(0, $empty['viewingTotal']);
         $this->assertSame([], $empty['insights']['calendar']['bookings']);
         $this->assertSame(0, array_sum(array_column($empty['insights']['daily_tasks'], 'completed')));
         Property::create(['name' => 'Unverified property', 'status' => 'unavailable', 'is_active' => true, 'total_rooms' => 4]);
@@ -72,5 +78,27 @@ class AccommodationInsightsTest extends TestCase
         $this->assertSame(1, $report['inventoryStats']['unverified_properties']);
         $this->assertNull($report['inventoryStats']['rows'][0]['occupied']);
         $this->actingAs(User::factory()->create(['role' => 'lead']))->get('/portal/accommodation/dashboard')->assertForbidden();
+    }
+
+    public function test_leads_count_website_registrations_including_submissions_that_progressed(): void
+    {
+        $registration = [
+            'full_legal_name' => 'Synthetic Applicant', 'preferred_name' => 'Applicant',
+            'id_number' => 'test', 'email' => 'applicant@example.test', 'mobile' => '000',
+            'visa_status' => 'Work Visa', 'nationality' => 'Test', 'age' => 30,
+            'room_type_interest' => 'single', 'tenancy_start_date' => '2026-11-18',
+            'stay_duration' => '1 month', 'occupants' => '1', 'occupant_ages' => '30',
+            'employment_status' => 'Employed', 'current_address' => 'Test address',
+            'current_address_duration' => '1 year', 'living_situation' => 'Renting',
+            'reason_for_moving' => 'Test', 'drinks_alcohol' => 'No', 'work_hours' => 'Day',
+            'flatmate_description' => 'Test', 'preferred_viewing_time' => 'Any',
+        ];
+        EoiSubmission::create([...$registration, 'form_type' => 'cold']);
+        EoiSubmission::create([...$registration, 'form_type' => 'hot', 'status' => 'agreement_signed']);
+        PreTenancyForm::create(['full_legal_name' => 'Pre-tenancy only', 'email' => 'other@example.test', 'submitted_at' => now(), 'data' => []]);
+
+        $props = $this->get('/portal/accommodation/dashboard')->assertOk()->inertiaProps();
+        $this->assertSame(2, $props['applicationStats']['total']);
+        $this->assertSame(1, $props['applicationStats']['new']);
     }
 }
