@@ -288,6 +288,8 @@ class EducationController extends Controller
      */
     public function students(?callable $scope = null)
     {
+        [$component, $portal] = $this->studentsComponent();
+        $educationView = $portal === 'education';
         try {
             // Students are leads explicitly flipped via "Convert to Student"
             // on the lead detail page. The flag is the source of truth — no
@@ -323,11 +325,18 @@ class EducationController extends Controller
                 // immigration cases — the report reuses this exact scope so the
                 // two surfaces always count the same rows.
                 ->inStudentsRegister()
+                ->when($educationView, fn ($query) => $query->where(fn ($visible) => $visible
+                    ->whereNull('english_students_archived_at')->orWhere('is_student', true)
+                    ->orWhere('is_immigration_case', true)->orWhere('immigration_stage', '!=', '')
+                    ->orWhereIn('education_stage', Lead::EDUCATION_STAGES_IMMIGRATION)
+                    ->orWhere(fn ($nonEnglish) => $nonEnglish
+                        ->where(fn ($stage) => $stage->whereNull('stage')->orWhere('stage', '!=', 'English Pro'))
+                        ->where(fn ($stage) => $stage->whereNull('english_stage')->orWhere('english_stage', '')))))
                 ->when($scope, $scope)
                 ->orderByDesc('student_converted_at')
                 ->limit(200)
                 ->get()
-                ->map(function ($l) {
+                ->map(function ($l) use ($educationView) {
                     $plan = $l->studyPlans->first();
                     // Checklist progress (submitted vs visible items) — same
                     // metric the Immigration Cases + Leads Docs column uses.
@@ -387,6 +396,7 @@ class EducationController extends Controller
                         'portal_invitation_status' => $l->portal_invitation_status ?: 'none',
                         'education_stage' => $l->education_stage,
                         'english_stage' => $l->english_stage,
+                        ...($educationView ? ['english_archived' => $l->english_students_archived_at !== null] : []),
                         'immigration_stage' => $l->immigration_stage,
                         // Named people handling the English / Immigration stage.
                         'english_assignee' => $l->english_assignee,
@@ -445,10 +455,10 @@ class EducationController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']);
 
-            [$component, $portal] = $this->studentsComponent();
-
             return inertia($component, [
                 'portal' => $portal,
+                'canManageEnglishArchive' => $educationView && EnglishStudentArchiveController::canManage(request()),
+                'initialStudentView' => $educationView && request()->query('tab') === 'english' ? 'english' : 'education',
                 // Recruiting agents and sub-agents view their own referrals'
                 // progress; every write on this screen belongs to education /
                 // sales, and none of those endpoints exist under their prefix.
@@ -460,8 +470,6 @@ class EducationController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::error('Education students list failed', ['error' => $e->getMessage()]);
-
-            [$component, $portal] = $this->studentsComponent();
 
             return inertia($component, [
                 'portal' => $portal,

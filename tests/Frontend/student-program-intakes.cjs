@@ -11,14 +11,18 @@ const React = require('react');
 const { act } = React;
 const { createRoot } = require('react-dom/client');
 const posts = [];
-const output = buildSync({ stdin: { contents: `export { default as Students } from './resources/js/pages/portal/education/Students.jsx'; export { default as Modal } from './resources/js/pages/portal/education/AddEditStudentModal.jsx'; export { default as Dates } from './resources/js/components/education/ProgramIntakeDates.jsx';`,
+const patches = [];
+const output = buildSync({ stdin: { contents: `export { default as Students } from './resources/js/pages/portal/education/Students.jsx'; export { default as Modal } from './resources/js/pages/portal/education/AddEditStudentModal.jsx'; export { default as Dates } from './resources/js/components/education/ProgramIntakeDates.jsx'; export { default as Archive } from './resources/js/pages/portal/education/EnglishStudentArchive.jsx';`,
     resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
     alias: { '@': path.resolve('resources/js') }, external: ['react', 'react-dom', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
 const loaded = new Module(path.resolve('student-program-intakes.cjs'), module);
 loaded.filename = path.resolve('student-program-intakes.cjs'); loaded.paths = module.paths;
-loaded.require = name => name === '@inertiajs/react' ? { Head: () => null, Link: 'a', router: { post: (url, data, options) => posts.push({ url, data, options }) } } : module.require(name);
+loaded.require = name => name === '@inertiajs/react' ? { Head: () => null, Link: 'a', router: {
+    post: (url, data, options) => posts.push({ url, data, options }),
+    patch: (url, data) => patches.push({ url, data }),
+} } : module.require(name);
 loaded._compile(output, loaded.filename);
-const { Students, Modal, Dates } = loaded.exports;
+const { Students, Modal, Dates, Archive } = loaded.exports;
 const root = createRoot(document.getElementById('root'));
 const A = 'English for Academic Purposes', B = 'Master of Education', C = 'Third program';
 const student = { id: 22, first_name: 'Synthetic', last_name: 'Student', email: 'synthetic@example.test', phone: '+64000000000',
@@ -100,6 +104,33 @@ const addProgram = async title => {
         assert.match(document.querySelector('tbody').textContent, /Synthetic Student/);
         assert.match(document.body.textContent, /Pipeline · 1 student/);
     }
+    const tabs = label => [...document.querySelectorAll('button')].find(node => node.textContent.trim().startsWith(label));
+    const menuAction = label => [...document.querySelectorAll('[role="menu"] button')].find(node => node.textContent.trim() === label);
+    const archiveProps = { canManageEnglishArchive: true, initialStudentView: 'english' };
+    const dual = { ...searchedStudent, is_student: true, is_immigration_case: true };
+    await act(async () => root.render(React.createElement(Students, { key: 'archive-test', ...archiveProps, students: [dual] })));
+    assert.ok(document.querySelector('a[href="/portal/education/students/english-archive"]'));
+    window.confirm = () => false;
+    await click(document.querySelector('button[title="More actions"]'));
+    await click(menuAction('Archive'));
+    assert.equal(patches.length, 0);
+    window.confirm = () => true;
+    await click(document.querySelector('button[title="More actions"]'));
+    await click(menuAction('Archive'));
+    assert.deepEqual(patches[0], { url: '/portal/education/students/22/english-archive', data: { archived: true } });
+    await act(async () => root.render(React.createElement(Students, { key: 'archive-test', ...archiveProps, students: [{ ...dual, english_archived: true }] })));
+    assert.doesNotMatch(document.querySelector('tbody').textContent, /Synthetic Student/);
+    for (const tab of ['Education', 'Immigration']) {
+        await click(tabs(tab));
+        assert.match(document.querySelector('tbody').textContent, /Synthetic Student/);
+        await click(document.querySelector('button[title="More actions"]'));
+        assert.equal(menuAction('Archive'), undefined);
+        await click(document.querySelector('button[title="More actions"]'));
+    }
+    await act(async () => root.render(React.createElement(Archive, { students: { data: [{ id: 22, name: 'Synthetic Student' }] } })));
+    await click(tabs('Restore'));
+    assert.deepEqual(patches[1], { url: '/portal/education/students/22/english-archive', data: { archived: false } });
     await act(async () => root.unmount());
     console.log('Student per-program intakes actual-modal tests passed: independent dates, legacy preservation/clear, retry/reopen, program identity after removal, new drafts, read display and actual-start isolation');
+    console.log('English student archive UI passed: guarded archive action, shared student visibility and restore.');
 })().catch(async error => { console.error(error); await act(async () => root.unmount()); process.exitCode = 1; });
