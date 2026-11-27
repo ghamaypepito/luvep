@@ -13,7 +13,7 @@ class AccommodationViewingAttendee extends Model
 
     public const STATUSES = [self::CONFIRMED, 'Completed', self::CANCELLED];
 
-    protected $fillable = ['name', 'email', 'mobile', 'status'];
+    protected $fillable = ['name', 'email', 'mobile', 'status', 'attendance_response', 'attendance_responded_at'];
 
     public function slot(): BelongsTo
     {
@@ -22,6 +22,6 @@ class AccommodationViewingAttendee extends Model
 
     public function contactDetails(): array
     {
-        return $this->only(['id', 'name', 'email', 'mobile', 'status']);
+        return $this->only(['id', 'name', 'email', 'mobile', 'status', 'attendance_response']);
     }
 }

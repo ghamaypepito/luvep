@@ -367,6 +367,7 @@ function EventDrawer({ event, currentUser, onClose, onChanged, onEdit }) {
                                     <Detail label="Email" value={attendee.email} />
                                     <Detail label="Mobile" value={attendee.mobile} />
                                     <Detail label="Status" value={attendee.status} />
+                                    <Detail label="Attendance" value={attendee.attendance_response} />
                                 </li>
                             ))}
                         </ul>

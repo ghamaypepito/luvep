@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import RichTextEditor from "@/components/templates/RichTextEditor";
 import EmailBuilder from "@/components/templates/EmailBuilder";
+import ExaltTemplateDraft from "@/components/email/ExaltTemplateDraft";
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
@@ -21,6 +22,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const [leads, setLeads] = useState([]);      // [{id,name,email}]
     const [emails, setEmails] = useState(partnerRecipient ? [partnerRecipient.email.toLowerCase()] : []);     // [string]
     const [subject, setSubject] = useState("");
+    const [exaltTemplate, setExaltTemplate] = useState(null);
     const [body, setBody] = useState("");
     const [designJson, setDesignJson] = useState(null);
     const [attachments, setAttachments] = useState([]); // File[]
@@ -70,7 +72,8 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const applyTemplate = (id) => {
         const template = templates.find((item) => String(item.id) === id);
         if (!template) return;
-        if ((subject.trim() || body.trim()) && !window.confirm("Replace the draft subject and body with this template?")) return;
+        if ((exaltTemplate || subject.trim() || body.trim()) && !window.confirm("Replace the current draft with this template?")) return;
+        setExaltTemplate(template.exalt ? template : null);
         setSubject(template.email_subject || "");
         setBody(template.email_body);
         setDesignJson(template.design_json);
@@ -79,10 +82,19 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const resetForm = () => {
         setLeads([]); setEmails(partnerRecipient ? [partnerRecipient.email.toLowerCase()] : []); setSubject(""); setBody(""); setDesignJson(null);
         setAttachments([]); setQuery(""); setSuggestions([]);
+        setExaltTemplate(null);
         setSendErrors({});
     };
 
-    const canSend = (leads.length > 0 || emails.length > 0) && (subject.trim() || body.trim()) && !sending;
+    const canSend = !exaltTemplate && (leads.length > 0 || emails.length > 0) && (subject.trim() || body.trim()) && !sending;
+    const clearExaltTemplate = () => {
+        setExaltTemplate(null);
+        setSubject("");
+        setBody("");
+        setDesignJson(null);
+    };
+    const exaltRecipients = [...new Set([...emails, ...leads.map((lead) => lead.email)].filter(Boolean).map((email) => email.toLowerCase()))];
+    const exaltRecipient = exaltRecipients.length === 1 ? exaltRecipients[0] : null;
 
     const send = () => {
         if (!canSend) return;
@@ -149,9 +161,9 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                     <div className="flex flex-col h-full">
                         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
                             <h1 className="text-sm font-bold text-gray-900 flex items-center gap-2"><PenSquare size={16} /> Compose email</h1>
-                            <button type="button" onClick={send} disabled={!canSend} className="inline-flex items-center gap-2 px-4 py-2 bg-[#436235] text-white text-sm font-bold rounded-xl hover:bg-[#375029] disabled:opacity-40">
+                            {!exaltTemplate && <button type="button" onClick={send} disabled={!canSend} className="inline-flex items-center gap-2 px-4 py-2 bg-[#436235] text-white text-sm font-bold rounded-xl hover:bg-[#375029] disabled:opacity-40">
                                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send
-                            </button>
+                            </button>}
                         </div>
 
                         <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
@@ -197,6 +209,9 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                 </label>
                             )}
 
+                            {exaltTemplate ? <ExaltTemplateDraft key={`${exaltTemplate.id}:${exaltRecipient}`}
+                                template={exaltTemplate} email={exaltRecipient} attachments={attachments}
+                                basePath={basePath} onSent={resetForm} onClear={clearExaltTemplate} /> : <>
                             {/* Subject */}
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Subject</span>
@@ -221,7 +236,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                     <RichTextEditor value={body} onChange={setBody} />
                                 )}
                                 <span className="block text-[11px] text-gray-400 mt-1">Use <code>{"{{first_name}}"}</code>-style variables — they fill in for lead recipients (blank for typed addresses).</span>
-                            </div>
+                            </div></>}
 
                         </div>
 

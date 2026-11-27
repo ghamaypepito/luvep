@@ -241,6 +241,13 @@ Route::get('/accommodation/book-viewing/{property}', [$viewingBooking, 'show'])
     ->middleware('signed')->name('accommodation.viewing-booking');
 Route::post('/accommodation/book-viewing/{property}', [$viewingBooking, 'book'])
     ->middleware(['signed', 'throttle:8,1']);
+
+$exaltEmail = \App\Http\Controllers\Portal\Accommodation\ExaltEmailController::class;
+Route::middleware(['signed', 'throttle:20,1'])->group(function () use ($exaltEmail) {
+    Route::get('/accommodation/viewing-attendance/{attendee}/{response}', [$exaltEmail, 'attendance'])->name('accommodation.email.attendance');
+    Route::post('/accommodation/viewing-attendance/{attendee}/{response}', [$exaltEmail, 'recordAttendance']);
+    Route::get('/accommodation/move-in-invoice/{invoice}', [$exaltEmail, 'invoice'])->whereNumber('invoice')->name('accommodation.email.invoice');
+});
 // Expression of Interest — must be declared BEFORE /accommodation/{id} so the
 // literal path isn't captured as an {id}.
 Route::get('/accommodation/expression-of-interest-cold', [PublicAccommodationController::class, 'eoiForm'])->name('accommodation.eoi');
@@ -2356,6 +2363,10 @@ Route::middleware(['auth'])->group(function () {
             // Property viewing bookings from the public /accommodation page —
             // table + calendar, with per-booking status management.
             Route::get('/viewings', [AccommodationController::class, 'viewings'])->name('viewings');
+            $exaltEmail = \App\Http\Controllers\Portal\Accommodation\ExaltEmailController::class;
+            Route::get('/compose/exalt-template/options', [$exaltEmail, 'options'])->name('compose.exalt-template.options');
+            Route::post('/compose/exalt-template/preview', [$exaltEmail, 'preview'])->name('compose.exalt-template.preview');
+            Route::post('/compose/exalt-template/send', [$exaltEmail, 'send'])->name('compose.exalt-template.send');
             $viewingBooking = \App\Http\Controllers\Portal\Accommodation\ViewingBookingController::class;
             Route::post('/viewings/slots', [$viewingBooking, 'saveSlot'])->name('viewings.slots.save');
             Route::patch('/viewings/attendees/{attendee}/status', [$viewingBooking, 'updateAttendee'])->name('viewings.attendees.status');
