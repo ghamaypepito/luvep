@@ -3,6 +3,7 @@ import { Head, router } from "@inertiajs/react";
 import { Calendar, Clock, Home, MapPin, X, Loader2, Send } from "lucide-react";
 import PortalPageHeader from "@/components/portal/PortalPageHeader";
 import ViewingsCalendar from "@/components/accommodation/ViewingsCalendar";
+import ViewingBookingSchedule from "@/components/accommodation/ViewingBookingSchedule";
 
 const STATUS_CHIP = {
     Pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -12,7 +13,7 @@ const STATUS_CHIP = {
 };
 const fmt = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
-export default function AccommodationViewings({ viewings = [], statuses = [] }) {
+export default function AccommodationViewings({ viewings = [], statuses = [], sharedSchedule = null }) {
     const [selectedKey, setSelectedKey] = useState(null);
     const [savingId, setSavingId] = useState(null);
     const [resendingId, setResendingId] = useState(null);
@@ -51,13 +52,15 @@ export default function AccommodationViewings({ viewings = [], statuses = [] }) 
             <PortalPageHeader
                 eyebrow="Bookings"
                 title="Property Viewings"
-                description="Viewing requests from the public accommodation page — schedule and status."
+                description="Share booking links and manage property viewings."
             />
+
+            {sharedSchedule && <ViewingBookingSchedule schedule={sharedSchedule} />}
 
             {/* Summary */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                    { label: "Total viewings", value: viewings.length, cls: "text-gray-900" },
+                    { label: "Viewing requests", value: viewings.length, cls: "text-gray-900" },
                     { label: "Upcoming", value: upcoming, cls: "text-[#1F5A8B]" },
                     { label: "Pending", value: pending, cls: "text-amber-600" },
                     { label: "Confirmed", value: confirmed, cls: "text-emerald-600" },

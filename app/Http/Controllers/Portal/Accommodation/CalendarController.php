@@ -9,6 +9,7 @@ use App\Models\CalendarEvent;
 use App\Models\EoiSubmission;
 use App\Models\Property;
 use App\Models\Tenant;
+use App\Services\Accommodation\ViewingSchedule;
 use App\Services\CalendarEventAggregator;
 use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
@@ -18,8 +19,10 @@ use Illuminate\Validation\ValidationException;
 
 class CalendarController extends Controller
 {
-    public function index()
+    public function index(Request $request, ViewingSchedule $schedule)
     {
+        $shared = ViewingSchedule::staffCanManage($request->user()) ? $schedule->upcomingCount() : 0;
+
         return inertia('portal/accommodation/Calendar', [
             'eventTypes' => [
                 ['key' => 'viewing', 'label' => 'Viewings', 'color' => '#7C3AED', 'enabled' => true],
@@ -33,14 +36,14 @@ class CalendarController extends Controller
             'viewingStatuses' => OnboardingPipeline::allStatuses(),
             'kpis' => [
                 // Clients currently scheduled to view (booked, not yet completed).
-                'upcoming_viewings' => EoiSubmission::where('status', 'viewing_booked')->count(),
+                'upcoming_viewings' => EoiSubmission::where('status', 'viewing_booked')->count() + $shared,
                 // Active tenants whose contract ends within the "ending soon" window.
                 'ending_soon' => Tenant::active()->endingSoon()->count(),
             ],
         ]);
     }
 
-    public function events(Request $request, CalendarEventAggregator $aggregator)
+    public function events(Request $request, CalendarEventAggregator $aggregator, ViewingSchedule $schedule)
     {
         $data = $request->validate([
             'start' => ['required', 'date'],
@@ -74,6 +77,14 @@ class CalendarController extends Controller
         } else {
             $key = 'accommodation_calendar:'.$this->cacheVersion().':'.md5(json_encode([$data['start'], $data['end'], $filters]));
             $events = Cache::remember($key, 60, fn () => $aggregator->getEvents($start, $end, $filters));
+        }
+
+        if (ViewingSchedule::staffCanManage($request->user())
+            && in_array('viewing', $filters['event_types'] ?? CalendarEventAggregator::DEFAULT_TYPES, true)) {
+            $events = array_merge($events, $schedule->calendarEvents(
+                $start->toDateString(), $end->toDateString(), $filters['property_ids'] ?? null,
+            ));
+            usort($events, fn ($a, $b) => strcmp($a['starts_at'], $b['starts_at']));
         }
 
         return response()->json($events);
