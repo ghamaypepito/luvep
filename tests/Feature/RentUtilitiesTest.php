@@ -18,7 +18,7 @@ class RentUtilitiesTest extends TestCase
 
     private function staff(): User
     {
-        return User::factory()->create(['role' => 'accommodation']);
+        return User::factory()->create(['role' => 'accommodation', 'module_permissions' => ['accommodation_finance']]);
     }
 
     private function property(array $o = []): Property
@@ -82,6 +82,15 @@ class RentUtilitiesTest extends TestCase
         $this->actingAs($this->staff())->get('/portal/accommodation/rent-utilities')
             ->assertInertia(fn (AssertInertia $page) => $page
                 ->where('groups.0.property_address', 'Mt Roskill Student House'));
+    }
+
+    public function test_rent_roll_uses_the_properties_default_order(): void
+    {
+        $this->tenant($this->property(['code' => '10', 'address' => 'A Street']));
+        $this->tenant($this->property(['code' => '2', 'address' => 'Z Street']));
+        $this->actingAs($this->staff())->get('/portal/accommodation/rent-utilities')->assertInertia(fn (AssertInertia $page) => $page
+            ->where('groups.0.property_address', 'Z Street')
+            ->where('groups.1.property_address', 'A Street'));
     }
 
     public function test_index_status_prompts_when_rent_and_utilities_unset(): void

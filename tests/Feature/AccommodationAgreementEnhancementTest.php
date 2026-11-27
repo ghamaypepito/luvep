@@ -28,7 +28,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         Storage::fake('local');
         Mail::fake();
         $this->withoutVite();
-        $staff = User::factory()->create(['role' => 'accommodation']);
+        $staff = User::factory()->create(['role' => 'accommodation', 'module_permissions' => ['accommodation_finance']]);
         $alane = User::factory()->create(['role' => 'accommodation', 'name' => 'Alane', 'email' => AgreementTerms::SIGNATORY_EMAIL, 'signature_path' => 'signatures/alane.png']);
         $image = imagecreatetruecolor(500, 80);
         imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));

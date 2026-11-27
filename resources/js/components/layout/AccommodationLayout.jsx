@@ -1,4 +1,5 @@
 import DashboardLayout from "./DashboardLayout";
+import { usePage } from "@inertiajs/react";
 import { Clock,
     LayoutDashboard, Home, Users, Workflow, Receipt, Wallet,
     CalendarDays, CalendarCheck, ClipboardList, Flame, MessageSquare, MessageSquareWarning, BarChart3, User, Bell, Ticket,
@@ -12,7 +13,10 @@ const ACCOMMODATION_NAV = [
     { name: "Onboarding", href: "/portal/accommodation/onboarding", icon: <Workflow size={20} /> },
     { name: "Viewings", href: "/portal/accommodation/viewings", icon: <CalendarCheck size={20} /> },
     { name: "Calendar", href: "/portal/accommodation/calendar", icon: <CalendarDays size={20} /> },
-    { name: "Rent & Utilities", href: "/portal/accommodation/rent-utilities", icon: <Receipt size={20} /> },
+    { name: "Finance", icon: <Receipt size={20} />, children: [
+        { name: "Rent & Utilities", href: "/portal/accommodation/rent-utilities", icon: <Receipt size={16} /> },
+        { name: "Weekly Property Summary", href: "/portal/accommodation/finance/weekly-property-summary", icon: <BarChart3 size={16} /> },
+    ] },
     { name: "Invoices & Receipts", href: "/portal/accommodation/purchase-invoices", icon: <FileText size={20} /> },
     { name: "PM Payment Schedule", href: "/portal/accommodation/payment-schedule", icon: <Wallet size={20} /> },
     { name: "Task Tracker", href: "/portal/accommodation/tasks", icon: <ClipboardList size={20} /> },
@@ -39,8 +43,10 @@ const ACCOMMODATION_NAV = [
 ];
 
 export default function AccommodationLayout({ children }) {
+    const { auth } = usePage().props;
+    const canSeeFinance = auth?.modules?.includes("accommodation_finance") || auth?.user?.role === "super_admin";
     return (
-        <DashboardLayout brand="EP." subtitle="Accommodation Portal" accent="bg-[#194E47]" nav={ACCOMMODATION_NAV}>
+        <DashboardLayout brand="EP." subtitle="Accommodation Portal" accent="bg-[#194E47]" nav={ACCOMMODATION_NAV.filter(item => item.name !== "Finance" || canSeeFinance)}>
             {children}
         </DashboardLayout>
     );

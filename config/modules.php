@@ -26,6 +26,10 @@ return [
     |
     */
     'restricted' => [
+        'accommodation_finance' => [
+            'label' => 'Accommodation Finance',
+            'description' => 'View and update Accommodation Rent & Utilities and Weekly Property Summary. Requires Accommodation portal access.',
+        ],
         'case_name_correction' => [
             'label' => 'Name Correction — Immigration',
             'description' => 'Allow an individually authorized Immigration manager to correct applicant and dependant names. No case archiving, role changes or other Admin access.',

@@ -198,6 +198,10 @@ function Cell({ value, due, onCommit }) {
 }
 
 function GroupRows({ group, weeks, paid, fin, setCell, setRentUtil, rowTotals, colSpan }) {
+    const received = weeks.map(week => group.tenants.reduce((sum, tenant) => (
+        sum + Math.round(Number(paid[tenant.id]?.[week.start] || 0) * 100)
+    ), 0));
+
     return (
         <>
             <tr className="bg-[#1F5A8B]/5">
@@ -232,6 +236,13 @@ function GroupRows({ group, weeks, paid, fin, setCell, setRentUtil, rowTotals, c
                     </tr>
                 );
             })}
+            <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
+                <th scope="row" colSpan={4} className="px-3 py-2 text-left">Property Total · received</th>
+                {weeks.map((week, index) => <td key={week.start} className="px-2 py-2 text-right">{money(received[index] / 100)}</td>)}
+                <td aria-label="Weekly amounts due not captured here" />
+                <td className="px-3 py-2 text-right">{money(received.reduce((sum, amount) => sum + amount, 0) / 100)}</td>
+                <td colSpan={2} />
+            </tr>
         </>
     );
 }

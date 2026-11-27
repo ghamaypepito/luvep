@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal\Accommodation;
 
 use App\Http\Controllers\Controller;
+use App\Models\Property;
 use App\Models\RentPayment;
 use App\Models\Tenant;
 use App\Support\RentRoll;
@@ -24,6 +25,7 @@ class RentUtilitiesController extends Controller
         $weekStarts = array_column($columns, 'start');
         $firstWeek = $weekStarts[0];
         $lastWeek = $weekStarts[count($weekStarts) - 1];
+        $propertyOrder = Property::inPortfolioOrder()->pluck('id')->flip();
 
         $tenants = Tenant::active()
             ->with([
@@ -74,7 +76,7 @@ class RentUtilitiesController extends Controller
                     'tenants' => $rows,
                 ];
             })
-            ->sortBy('property_address')
+            ->sortBy(fn ($group) => $propertyOrder->get($group['property_id'], PHP_INT_MAX))
             ->values();
 
         return inertia('portal/accommodation/RentUtilities', [
