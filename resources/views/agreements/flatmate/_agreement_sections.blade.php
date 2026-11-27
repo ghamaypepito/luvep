@@ -1,6 +1,6 @@
 <div @class(['appendix' => $pageBreakBeforeTerms])>@include('agreements.flatmate._terms')</div>
 <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-@if(in_array($agreementType, ['whole_property', 'standard_flatmate'], true) && !empty($data['welcome_packages']['packages']))
+@if(!empty($data['welcome_packages']['packages']))
     <div class="appendix">
         <h2 class="section">Exalt Welcome Packages</h2>
         @foreach($data['welcome_packages']['packages'] as $package)

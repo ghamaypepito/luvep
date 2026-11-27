@@ -306,11 +306,13 @@ class AccommodationAgreementController extends Controller
 
     private function withWelcomePackagesAndInvoice(array $data, string $type, ?array $source): array
     {
+        unset($data['welcome_packages']);
+        $packages = $source['data']['welcome_packages'] ?? null;
+        if (! empty($packages['packages'])) {
+            $data['welcome_packages'] = $packages;
+        }
+
         if ($source && in_array($type, ['whole_property', 'standard_flatmate'], true)) {
-            $packages = $source['data']['welcome_packages'] ?? null;
-            if (! empty($packages['packages'])) {
-                $data['welcome_packages'] = $packages;
-            }
             $data['move_in_invoice'] = app(AgreementTerms::class)->moveInInvoice($data);
             if ($type === 'standard_flatmate') {
                 $data['agreement_layout'] = 'terms_first';

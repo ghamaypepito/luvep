@@ -140,7 +140,25 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $whole = $this->generate($source, $data, 'whole_property');
         $this->get(route('agreement.sign.document', $whole->signing_token))->assertOk()
             ->assertSee('occupation of the entire Property')->assertDontSee('occupy the designated room or rooms');
-        $this->assertArrayNotHasKey('welcome_packages', $this->generate($source, $data, 'transient_flatmate')->data);
+
+        $shortTermPreview = $this->postJson('/portal/accommodation/forms/agreements/preview', [
+            'source' => 'general', 'source_id' => $source->id,
+            'agreement_type' => 'transient_flatmate', 'data' => $data,
+        ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
+        $this->assertStringContainsString('Exalt Welcome Packages', $shortTermPreview);
+
+        $shortTerm = $this->generate($source, $data, 'transient_flatmate');
+        $this->assertSame($snapshot, $shortTerm->data['welcome_packages']);
+        $this->get(route('agreement.sign.document', $shortTerm->signing_token))->assertOk()
+            ->assertSee('Grocery Package')->assertSee('600.00 NZD');
+        $this->post('/agreement/'.$shortTerm->signing_token.'/sign', [
+            'signer_name' => 'Synthetic Tenant', 'signature_data' => $shortTerm->data['admin_signature'],
+            'terms_accepted' => true,
+        ])->assertRedirect('/agreement/'.$shortTerm->signing_token.'/signed');
+        $signedBytes = Storage::disk('local')->get($shortTerm->fresh()->signed_pdf_path);
+        $signedText = (new Parser)->parseContent($signedBytes)->getText();
+        $this->assertStringContainsString('EXALT WELCOME PACKAGES', $signedText);
+        $this->assertStringContainsString('600.00 NZD', $signedText);
     }
 
     public function test_welcome_package_selection_is_optional_and_must_be_valid_for_overseas_arrivals(): void
