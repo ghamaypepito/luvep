@@ -47,12 +47,12 @@ class ExaltEmailController extends Controller
             $attachments[] = ['path' => $path, 'name' => $file->getClientOriginalName()];
         }
 
-        // The Accommodation Compose history rollout adds its own source and metadata.
-        $tracking = defined(MessageLog::class.'::SOURCE_ACCOMMODATION_COMPOSE')
-            ? ['accommodation' => ['recipient_name' => $message['recipient_name']]]
-            : [];
         $log = $communications->sendComposedEmail(
-            $message['email'], $message['subject'], $message['body'], $attachments, true, ...$tracking,
+            $message['email'], $message['subject'], $message['body'], $attachments, rawHtml: true,
+            accommodation: [
+                'recipient_name' => $message['recipient_name'],
+                'reply_to_email' => 'exaltinfo@luvep.com',
+            ],
         );
         if ($log->status === MessageLog::STATUS_FAILED) {
             throw ValidationException::withMessages(['email' => 'The email could not be queued. Please review Compose and try again.']);

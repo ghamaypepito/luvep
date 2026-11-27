@@ -86,6 +86,8 @@ class PropertyController extends Controller
             'property_manager_name' => 'nullable|string|max:255',
             'property_manager_phone' => 'nullable|string|max:50',
             'property_manager_email' => 'nullable|email|max:255',
+            'property_owner_name' => 'nullable|string|max:255',
+            'property_owner_email' => 'nullable|email|max:255',
             'pm_payment_schedule' => ['nullable', Rule::in(Property::PAYMENT_SCHEDULES)],
             'power_due_date' => 'nullable|date',
             'water_due_date' => 'nullable|date',

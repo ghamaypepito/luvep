@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\TemplatedMessage;
 use App\Models\AccommodationAgreement;
 use App\Models\AccommodationViewingSlot;
+use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\PreTenancyForm;
 use App\Models\Property;
@@ -141,6 +142,12 @@ class ExaltEmailTemplatesTest extends TestCase
         $this->assertStringContainsString('&lt;b&gt;Alex&lt;/b&gt;', $preview);
         $this->assertStringNotContainsString('[First Name]', $preview);
         $this->post(self::COMPOSE.'/exalt-template/send', $draft)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('message_logs', [
+            'source' => MessageLog::SOURCE_ACCOMMODATION_COMPOSE,
+            'recipient_address' => self::EMAIL,
+            'subject' => 'We’ve received your registration for Sample House',
+        ]);
+        Mail::assertQueued(TemplatedMessage::class, fn (TemplatedMessage $mail) => $mail->replyToEmail === 'exaltinfo@luvep.com');
         $property = Property::create(['name' => 'Sample House', 'address' => '97 Sample Avenue']);
         $tenant = Tenant::create([
             'property_id' => $property->id, 'first_name' => 'Sample', 'family_name' => 'Client',
