@@ -9,6 +9,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Schedule::call(fn () => \App\Support\WeeklyRentCharge::capturePortfolio())
+    ->hourly()->name('accommodation-weekly-rent-charges')->withoutOverlapping();
+
 // Warm the NZ migration news cache hourly so visitors never trigger the
 // HTTP fetch on the critical render path. Cache key + TTL are managed by
 // the service itself.

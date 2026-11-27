@@ -17,15 +17,18 @@ const inertia = {
     Link: ({ children, ...props }) => React.createElement('a', props, children),
     router: { patch: (...args) => writes.push(args) },
 };
-const file = path.resolve('resources/js/pages/portal/accommodation/WeeklyPropertySummary.jsx');
-const compiled = buildSync({
-    entryPoints: [file], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
-    external: ['react', 'react/jsx-runtime', '@inertiajs/react'],
-}).outputFiles[0].text;
-const page = new Module(file, module);
-page.paths = module.paths;
-page.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
-page._compile(compiled, file);
+function loadPage(name) {
+    const file = path.resolve(`resources/js/pages/portal/accommodation/${name}.jsx`);
+    const compiled = buildSync({
+        entryPoints: [file], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
+        external: ['react', 'react/jsx-runtime', '@inertiajs/react', 'sonner', 'lucide-react'],
+    }).outputFiles[0].text;
+    const page = new Module(file, module);
+    page.paths = module.paths;
+    page.require = name => name === '@inertiajs/react' ? inertia : module.require(name);
+    page._compile(compiled, file);
+    return page.exports.default;
+}
 const root = createRoot(document.getElementById('root'));
 
 async function change(field, value) {
@@ -42,7 +45,8 @@ async function change(field, value) {
         { id: 2, name: 'First property', revenue_nzd: 1250.15, cost_nzd: 900.10, version: 3 },
         { id: 3, name: 'Second property', revenue_nzd: 1000, cost_nzd: 1100, version: 1 },
     ];
-    const render = category => React.act(async () => root.render(React.createElement(page.exports.default, { rows, week, category })));
+    const Summary = loadPage('WeeklyPropertySummary');
+    const render = category => React.act(async () => root.render(React.createElement(Summary, { rows, week, category })));
     await render('rent');
     assert.deepEqual([...document.querySelectorAll('thead th')].map(node => node.textContent), ['Property', 'Revenue', 'Cost', 'Profit']);
     assert.match(document.querySelector('tfoot').textContent, /2,250\.15.*2,000\.10.*250\.05/);
@@ -60,7 +64,27 @@ async function change(field, value) {
     await render('utilities');
     assert.equal(document.querySelector('[aria-label="Cost for First property"]').value, '900.1');
     assert.ok(document.querySelector('a[href="?week=2026-11-16&category=utilities"],a[href$="?week=2026-11-16&category=utilities"]'));
+
+    const RentUtilities = loadPage('RentUtilities');
+    const weeks = [{ start: '2026-11-16', label: '16 Nov' }, { start: '2026-11-23', label: '23 Nov' }];
+    const tenants = [380, 420, 260, 150].map((due, index) => ({
+        id: index + 1,
+        display_name: `Tenant ${index + 1}`,
+        weekly_rent_nzd: due + 25,
+        can_edit_rates: true,
+        can_edit_payments: true,
+        weekly: {
+            '2026-11-16': { due: null, received: 20 },
+            '2026-11-23': { due, received: [380, 400, 280, 150][index], captured: true },
+        },
+    }));
+    const groups = [{ property_id: 1, property_address: '10A Chivalry Road', tenants }];
+    await React.act(async () => root.render(React.createElement(RentUtilities, { groups, weeks, window: { start: '2026-11-16', weeks: 2 } })));
+    const total = document.querySelector('th[scope="row"]').parentElement;
+    assert.match(total.textContent, /Due \$1,210\.00Received \$1,210\.00/);
+    assert.match(total.textContent, /Due —Received \$80\.00/);
+    assert.match(document.querySelector('tbody').textContent, /Due unavailable.*Paid in full.*Underpaid — short \$20\.00.*Overpaid — credit \$20\.00/);
     await React.act(async () => root.unmount());
     dom.window.close();
-    console.log('Weekly Property Summary UI passed: tabs, week navigation, cent-accurate totals, revision-aware save and conflict feedback.');
+    console.log('Finance UI passed: weekly summary tabs and totals, conflict feedback, historical payment display and rent roll property totals.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

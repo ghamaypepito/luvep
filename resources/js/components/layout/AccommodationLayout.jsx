@@ -1,5 +1,5 @@
 import DashboardLayout from "./DashboardLayout";
-import { usePage } from "@inertiajs/react";
+import { Link, usePage } from "@inertiajs/react";
 import { Clock,
     LayoutDashboard, Home, Users, Workflow, Receipt, Wallet,
     CalendarDays, CalendarCheck, ClipboardList, Flame, MessageSquare, MessageSquareWarning, BarChart3, User, Bell, Ticket,
@@ -42,11 +42,21 @@ const ACCOMMODATION_NAV = [
         { name: "My Tickets", href: "/portal/tickets", icon: <Ticket size={20} /> },
 ];
 
+const financePages = ACCOMMODATION_NAV.find(item => item.name === "Finance").children;
+
 export default function AccommodationLayout({ children }) {
-    const { auth } = usePage().props;
-    const canSeeFinance = auth?.modules?.includes("accommodation_finance") || auth?.user?.role === "super_admin";
+    const { props: { auth }, url } = usePage();
+    const canSeeFinance = auth?.modules?.includes("accommodation_finance");
+    const path = url.split("?")[0];
+    const inFinance = canSeeFinance && financePages.some(page => page.href === path);
     return (
         <DashboardLayout brand="EP." subtitle="Accommodation Portal" accent="bg-[#194E47]" nav={ACCOMMODATION_NAV.filter(item => item.name !== "Finance" || canSeeFinance)}>
+            {inFinance && <nav aria-label="Accommodation Finance" className="mb-4 flex flex-wrap gap-4 border-b border-gray-200">
+                {financePages.map(page => <Link key={page.href} href={page.href} aria-current={page.href === path ? "page" : undefined}
+                    className={`border-b-2 px-2 py-2 text-sm font-semibold ${page.href === path ? "border-emerald-800 text-emerald-900" : "border-transparent text-gray-600 hover:text-emerald-900"}`}>
+                    {page.name}
+                </Link>)}
+            </nav>}
             {children}
         </DashboardLayout>
     );

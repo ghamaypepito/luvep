@@ -7,6 +7,7 @@ use App\Models\RentPayment;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\RentRoll;
+use App\Support\WeeklyRentCharge;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as AssertInertia;
@@ -18,7 +19,8 @@ class RentUtilitiesTest extends TestCase
 
     private function staff(): User
     {
-        return User::factory()->create(['role' => 'accommodation', 'module_permissions' => ['accommodation_finance']]);
+        return User::where('email', 'janille@janilles.me')->first()
+            ?? User::factory()->create(['role' => 'accommodation', 'email' => 'janille@janilles.me']);
     }
 
     private function property(array $o = []): Property
@@ -38,8 +40,9 @@ class RentUtilitiesTest extends TestCase
         ], $o));
     }
 
-    public function test_index_groups_active_tenants_with_flat_totals_and_status(): void
+    public function test_index_preserves_old_payments_without_inventing_a_due(): void
     {
+        $this->travelTo(Carbon::parse('2026-11-23', 'Pacific/Auckland'));
         $p = $this->property(['address' => '21 Vazey Way', 'code' => '1']);
         $t = $this->tenant($p, ['first_name' => 'Michaella', 'family_name' => 'Lee']);
 
@@ -62,10 +65,8 @@ class RentUtilitiesTest extends TestCase
                 ->where('groups.0.property_address', '21 Vazey Way')
                 ->has('groups.0.tenants', 1)
                 ->where('groups.0.tenants.0.display_name', 'Michaella Lee')
-                ->where('groups.0.tenants.0.total_due', fn ($v) => $v == 7020.0)
-                ->where('groups.0.tenants.0.total_paid', fn ($v) => $v == 1170.0)
-                ->where('groups.0.tenants.0.balance', fn ($v) => $v == -5850.0)
-                ->where('groups.0.tenants.0.status', 'Underpaid — short $5,850.00')
+                ->where('groups.0.tenants.0.weekly.2026-05-25.due', null)
+                ->where('groups.0.tenants.0.weekly.2026-05-25.received', fn ($v) => $v == 390)
             );
     }
 
@@ -93,14 +94,14 @@ class RentUtilitiesTest extends TestCase
             ->where('groups.1.property_address', 'A Street'));
     }
 
-    public function test_index_status_prompts_when_rent_and_utilities_unset(): void
+    public function test_index_can_show_an_unset_current_weekly_rate(): void
     {
         $p = $this->property();
         $this->tenant($p, ['weekly_rent_nzd' => 0, 'weekly_utilities_nzd' => 0]);
 
         $this->actingAs($this->staff())->get('/portal/accommodation/rent-utilities')
             ->assertInertia(fn (AssertInertia $page) => $page
-                ->where('groups.0.tenants.0.status', 'Set weekly rent & utilities'));
+                ->where('groups.0.tenants.0.weekly.'.WeeklyRentCharge::currentWeek().'.due', fn ($v) => $v == 0));
     }
 
     public function test_save_rent_utilities_updates_tenant(): void
@@ -145,6 +146,7 @@ class RentUtilitiesTest extends TestCase
 
     public function test_totals_only_count_payments_inside_window(): void
     {
+        $this->travelTo(Carbon::parse('2026-11-23', 'Pacific/Auckland'));
         $p = $this->property();
         $t = $this->tenant($p, ['weekly_rent_nzd' => 150, 'weekly_utilities_nzd' => 0]);
         $start = RentRoll::snapToMonday(Carbon::parse('2026-05-25'));
@@ -154,8 +156,32 @@ class RentUtilitiesTest extends TestCase
         $this->actingAs($this->staff())
             ->get('/portal/accommodation/rent-utilities?start='.$start->toDateString().'&weeks=4')
             ->assertInertia(fn (AssertInertia $page) => $page
-                ->where('groups.0.tenants.0.total_paid', fn ($v) => $v == 150.0)
-                ->where('groups.0.tenants.0.total_due', fn ($v) => $v == 600.0));
+                ->has('groups.0.tenants.0.weekly', 1)
+                ->where('groups.0.tenants.0.weekly.2026-05-25.received', fn ($v) => $v == 150.0));
+    }
+
+    public function test_new_rates_apply_next_week_and_previous_due_stays_with_its_property(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-23 08:00', 'Pacific/Auckland'));
+        $oldProperty = $this->property(['code' => '1']);
+        $newProperty = $this->property(['code' => '2']);
+        $tenant = $this->tenant($oldProperty);
+        $this->actingAs($this->staff())
+            ->patch("/portal/accommodation/rent-utilities/tenants/{$tenant->id}/payment", [
+                'week_start' => '2026-11-23', 'amount' => 380,
+            ])->assertSessionHasNoErrors();
+
+        $tenant->update(['weekly_rent_nzd' => 400, 'property_id' => $newProperty->id]);
+        $this->travelTo(Carbon::parse('2026-11-30 08:00', 'Pacific/Auckland'));
+        WeeklyRentCharge::capturePortfolio();
+        WeeklyRentCharge::capturePortfolio();
+
+        $groups = $this->get('/portal/accommodation/rent-utilities?start=2026-11-23&weeks=2')->assertOk()->inertiaProps()['groups'];
+        $this->assertSame($oldProperty->id, $groups[0]['property_id']);
+        $this->assertEquals(['due' => 390, 'received' => 380, 'captured' => true], $groups[0]['tenants'][0]['weekly']['2026-11-23']);
+        $this->assertSame($newProperty->id, $groups[1]['property_id']);
+        $this->assertEquals(['due' => 440, 'received' => null, 'captured' => true], $groups[1]['tenants'][0]['weekly']['2026-11-30']);
+        $this->assertDatabaseCount(WeeklyRentCharge::TABLE, 2);
     }
 
     public function test_weeks_param_is_clamped(): void

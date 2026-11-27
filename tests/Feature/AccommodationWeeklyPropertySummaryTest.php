@@ -23,7 +23,7 @@ class AccommodationWeeklyPropertySummaryTest extends TestCase
     public function test_summary_saves_rent_and_utilities_separately_by_nz_week_and_protects_stale_updates(): void
     {
         $property = Property::create(['name' => 'Test House', 'code' => '2', 'is_active' => true]);
-        $this->actingAs(User::factory()->create(['role' => 'accommodation', 'module_permissions' => ['accommodation_finance']]));
+        $this->actingAs(User::factory()->create(['role' => 'accommodation', 'email' => 'janille@janilles.me']));
         $payload = ['week' => '2026-11-27', 'category' => 'rent', 'revenue_nzd' => '1250.15', 'cost_nzd' => '900.10', 'version' => 0];
         $this->from(self::PATH)->patch(self::PATH.'/'.$property->id, $payload)->assertRedirect()->assertSessionHasNoErrors();
         $this->patch(self::PATH.'/'.$property->id, [...$payload, 'category' => 'utilities', 'revenue_nzd' => '200', 'cost_nzd' => '150'])->assertSessionHasNoErrors();
@@ -45,13 +45,14 @@ class AccommodationWeeklyPropertySummaryTest extends TestCase
         $this->assertModelExists($property);
     }
 
-    public function test_finance_routes_check_the_grant_as_well_as_portal_access(): void
+    public function test_finance_routes_are_restricted_to_the_confirmed_accounts(): void
     {
         $property = Property::create(['name' => 'Restricted House', 'is_active' => true]);
         $tenant = Tenant::create(['property_id' => $property->id, 'first_name' => 'Test', 'family_name' => 'Tenant']);
         foreach ([
             ['role' => 'accommodation'],
             ['role' => 'admin'],
+            ['role' => 'super_admin'],
             ['role' => 'finance', 'module_permissions' => ['accommodation_finance']],
         ] as $attributes) {
             $this->actingAs(User::factory()->create($attributes));
@@ -61,8 +62,10 @@ class AccommodationWeeklyPropertySummaryTest extends TestCase
             $this->patch('/portal/accommodation/rent-utilities/tenants/'.$tenant->id.'/payment', [])->assertForbidden();
             $this->patch('/portal/accommodation/rent-utilities/tenants/'.$tenant->id.'/rent', [])->assertForbidden();
         }
-        $this->actingAs(User::factory()->create(['role' => 'finance', 'module_permissions' => ['accommodation_finance'], 'portal_access' => ['accommodation']]));
-        $this->get(self::PATH)->assertOk();
-        $this->get('/portal/accommodation/rent-utilities')->assertOk();
+        foreach (config('modules.accommodation_finance_accounts') as $email) {
+            $this->actingAs(User::factory()->create(['role' => 'finance', 'email' => $email]));
+            $this->get(self::PATH)->assertOk();
+            $this->get('/portal/accommodation/rent-utilities')->assertOk();
+        }
     }
 }

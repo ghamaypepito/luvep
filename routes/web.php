@@ -2342,6 +2342,15 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
         });
 
+        Route::middleware('module:accommodation_finance')->prefix('accommodation')->name('portal.accommodation.')->group(function () {
+            Route::get('/rent-utilities', [RentUtilitiesController::class, 'index'])->name('rent-utilities');
+            Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
+            Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
+            $summary = \App\Http\Controllers\Portal\Accommodation\WeeklyPropertySummaryController::class;
+            Route::get('/finance/weekly-property-summary', [$summary, 'index'])->name('finance.weekly-property-summary');
+            Route::patch('/finance/weekly-property-summary/{property}', [$summary, 'update'])->name('finance.weekly-property-summary.update');
+        });
+
         Route::middleware('portal:accommodation')->prefix('accommodation')->name('portal.accommodation.')->group(function () {
             Route::get('/dashboard', [AccommodationController::class, 'dashboard'])->name('dashboard');
             Route::get('/tasks', [AccommodationController::class, 'tasks'])->name('tasks');
@@ -2437,14 +2446,6 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/calendar/events', [CalendarController::class, 'storeCustomEvent'])->name('calendar.events.store');
             Route::patch('/calendar/events/{event}', [CalendarController::class, 'updateCustomEvent'])->name('calendar.events.update');
             Route::delete('/calendar/events/{event}', [CalendarController::class, 'destroyCustomEvent'])->name('calendar.events.destroy');
-            Route::middleware('module:accommodation_finance')->group(function () {
-                Route::get('/rent-utilities', [RentUtilitiesController::class, 'index'])->name('rent-utilities');
-                Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
-                Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
-                $summary = \App\Http\Controllers\Portal\Accommodation\WeeklyPropertySummaryController::class;
-                Route::get('/finance/weekly-property-summary', [$summary, 'index'])->name('finance.weekly-property-summary');
-                Route::patch('/finance/weekly-property-summary/{property}', [$summary, 'update'])->name('finance.weekly-property-summary.update');
-            });
             Route::get('/payment-schedule', [PaymentScheduleController::class, 'index'])->name('payment-schedule');
             Route::get('/purchase-invoices', [PurchaseInvoiceController::class, 'index'])->name('purchase-invoices');
             Route::post('/tenants/{tenant}/purchase-invoices', [PurchaseInvoiceController::class, 'store'])->name('purchase-invoices.store');
