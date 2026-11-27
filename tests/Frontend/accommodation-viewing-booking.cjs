@@ -6,6 +6,7 @@ const { JSDOM } = require('jsdom');
 
 const dom = new JSDOM('<div id="root"></div>', { url: 'https://luvep.test' });
 for (const key of ['window', 'document', 'HTMLElement', 'Event']) global[key] = dom.window[key];
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
 global.IS_REACT_ACT_ENVIRONMENT = true;
 Object.defineProperty(window, 'innerWidth', { value: 500 });
 
