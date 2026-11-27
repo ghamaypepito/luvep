@@ -44,6 +44,7 @@ jobs:
           node tests/Frontend/accommodation-weekly-property-summary.cjs
           node tests/Frontend/accommodation-insights.cjs
           node tests/Frontend/brief-references.cjs
+          node tests/Frontend/accommodation-rental-invoices.cjs
           node tests/Frontend/compose-studio.cjs
           node tests/Frontend/compose-video.cjs
           node tests/Frontend/marketing-workflow-save.cjs

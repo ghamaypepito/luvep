@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { FileText } from 'lucide-react';
 
@@ -83,17 +83,24 @@ function InvoiceForm({ tenant, maxUploadMb, onClose }) {
 
 export default function PurchaseInvoices({ tenant, property, invoices, max_upload_mb }) {
     const [open, setOpen] = useState(false);
+    const canOverdue = usePage().props.auth?.modules?.includes('accommodation_finance');
+    const tenantQuery = tenant ? `?tenant=${tenant.id}` : '';
     return <div className="mx-auto max-w-6xl space-y-5">
         <Head title="Invoices & Receipts" />
         <header className="flex flex-wrap items-end justify-between gap-4">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">Invoices &amp; Receipts</h1>
-                <p className="mt-1 text-sm text-gray-600">{[tenant?.name, property?.name].filter(Boolean).join(' · ') || 'Accommodation purchase invoice history'}</p>
+                <p className="mt-1 text-sm text-gray-600">{[tenant?.name, property?.name].filter(Boolean).join(' · ') || 'Accommodation invoice history'}</p>
                 {(tenant || property) && <Link href={base} className={textLink}>View all invoices</Link>}
             </div>
             {tenant?.can_create && !open && <button type="button" className={primary} onClick={() => setOpen(true)}>Add invoice</button>}
             {!tenant && <Link href="/portal/accommodation/tenants" className={primary}>Choose a tenant to add an invoice</Link>}
         </header>
+        <nav aria-label="Invoice types" className="flex flex-wrap gap-4 rounded-xl border bg-white p-4">
+            <span className="text-sm font-semibold text-gray-700" aria-current="page">Purchase invoices</span>
+            <Link href={`/portal/accommodation/rental-invoices/move-in${tenantQuery}`} className={textLink}>Move-In Invoice</Link>
+            {canOverdue && <Link href={`/portal/accommodation/rental-invoices/overdue${tenantQuery}`} className={textLink}>Overdue Payment Invoice</Link>}
+        </nav>
         {open && tenant?.can_create && <InvoiceForm key={tenant.id} tenant={tenant} maxUploadMb={max_upload_mb} onClose={() => setOpen(false)} />}
         <section aria-label="Invoice history" className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
             {invoices.data.length === 0 && <p className="p-6 text-sm text-gray-500">No purchase invoices recorded.</p>}

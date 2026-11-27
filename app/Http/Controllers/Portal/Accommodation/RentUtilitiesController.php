@@ -78,6 +78,9 @@ class RentUtilitiesController extends Controller
                     'received' => $payment ? (float) $payment->amount_nzd : null,
                     'captured' => $charge !== null,
                 ];
+                if ($payment?->received_on) {
+                    $rows[$key][$tenant->id]['weekly'][$week]['received_on'] = $payment->received_on->toDateString();
+                }
             }
         }
 
@@ -106,12 +109,13 @@ class RentUtilitiesController extends Controller
         $data = $request->validate([
             'week_start' => ['required', 'date'],
             'amount' => ['nullable', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
+            'received_on' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'before_or_equal:'.Carbon::today('Pacific/Auckland')->toDateString()],
         ]);
 
         $weekStart = RentRoll::snapToMonday(Carbon::parse($data['week_start'], 'Pacific/Auckland'));
         $amount = $data['amount'] ?? null;
 
-        DB::transaction(function () use ($tenant, $weekStart, $amount) {
+        DB::transaction(function () use ($tenant, $weekStart, $amount, $data) {
             $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
             if ($weekStart->toDateString() === WeeklyRentCharge::currentWeek()) {
                 WeeklyRentCharge::captureCurrent($current);
@@ -121,7 +125,7 @@ class RentUtilitiesController extends Controller
             } else {
                 RentPayment::updateOrCreate(
                     ['tenant_id' => $tenant->id, 'week_start' => $weekStart],
-                    ['amount_nzd' => $amount],
+                    ['amount_nzd' => $amount, ...array_intersect_key($data, ['received_on' => true])],
                 );
             }
         });

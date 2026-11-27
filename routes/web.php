@@ -2351,6 +2351,14 @@ Route::middleware(['auth'])->group(function () {
             Route::patch('/finance/weekly-property-summary/{property}', [$summary, 'update'])->name('finance.weekly-property-summary.update');
         });
 
+        Route::prefix('accommodation/rental-invoices')->name('portal.accommodation.rental-invoices.')->group(function () {
+            $rentalInvoice = \App\Http\Controllers\Portal\Accommodation\RentalInvoiceController::class;
+            Route::get('/{kind}', [$rentalInvoice, 'index'])->name('index');
+            Route::post('/{kind}/tenants/{tenant}/preview', [$rentalInvoice, 'preview'])->name('preview');
+            Route::post('/{kind}/tenants/{tenant}', [$rentalInvoice, 'store'])->name('store');
+            Route::get('/{kind}/{invoice}/pdf', [$rentalInvoice, 'download'])->name('download');
+        });
+
         Route::middleware('portal:accommodation')->prefix('accommodation')->name('portal.accommodation.')->group(function () {
             Route::get('/dashboard', [AccommodationController::class, 'dashboard'])->name('dashboard');
             Route::get('/tasks', [AccommodationController::class, 'tasks'])->name('tasks');
