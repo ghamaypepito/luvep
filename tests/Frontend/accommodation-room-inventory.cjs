@@ -20,7 +20,6 @@ function load(file) {
 }
 const Dashboard = load('resources/js/pages/portal/accommodation/Dashboard.jsx');
 const Verify = load('resources/js/components/accommodation/RoomVerification.jsx');
-const Properties = load('resources/js/pages/portal/accommodation/Properties.jsx');
 const capacities = [5,6,4,4,4,4,4,3,1,5,3], households = [5,4,3,2,1,3,4,1,1,7,4];
 const rows = capacities.map((total, index) => ({ id:index+1, name:`Synthetic Property ${index+1}`, total, households:households[index],
     occupied:total-(index===1?1:index===3?2:0), vacant:index===1?1:index===3?2:0, available_to_let:index===1?1:index===3?2:0,
@@ -67,6 +66,7 @@ const change = (label, value) => act(async () => {
     assert.match(document.querySelector('[role="alert"]').textContent,/Record changed/);
     assert.equal(document.querySelector('[aria-label="Total Rooms"]').value,'6','Failed save retains entered capacity');
     assert.equal(document.querySelector('[aria-label="Total Occupied Rooms"]').value,'4','Failed save retains entered counts');
+    const Properties = load('resources/js/pages/portal/accommodation/Properties.jsx');
     await render(Properties, { properties: { data: [
         { id: 1, name: 'Verified property', total_rooms: 6, room_summary: { total: 6, verified_total: 4, occupied: 3, vacant: 1, state: 'verified' } },
         { id: 2, name: 'Unverified property', total_rooms: 6, room_summary: { total: 6, verified_total: null, occupied: null, state: 'unverified' } },
