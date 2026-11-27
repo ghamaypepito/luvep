@@ -29,6 +29,8 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
     const [formErrors, setFormErrors] = useState([]);
     const currentKey = JSON.stringify({ agreement_type: agreementType, source: selected?.source, source_id: selected?.id, data: fields });
     const computed = previewKey === currentKey ? calculated : null;
+    const longTerm = agreementType === "standard_flatmate";
+    const includesUtilities = longTerm && fields?.tenancy?.utility_option === "1";
 
     const copyLink = (a) => {
         if (!a.signing_url) return;
@@ -273,24 +275,28 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <Mini label="Move-out date (automatic)" type="date" readOnly value={computed?.tenancy?.move_out_date ?? ""} />
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
-                                    <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
-                                    {fields.tenancy?.utility_option ? (
-                                        <Mini label="Utility amount / week" type="number" step="0.01" prefix="NZ$" value={fields.tenancy?.utility_amount} onChange={(v) => setF(["tenancy", "utility_amount"], v)} />
+                                    <Mini label="Utility option" options={longTerm ? LONG_TERM_UTILITY_OPTIONS : UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
+                                    {(longTerm ? includesUtilities : fields.tenancy?.utility_option) ? (
+                                        <Mini label={longTerm ? "Utilities per person / week" : "Utility amount / week"} type="number" step="0.01" prefix="NZ$" value={fields.tenancy?.utility_amount} onChange={(v) => setF(["tenancy", "utility_amount"], v)} />
                                     ) : null}
                                 </div>
                             </div>
 
                             <div>
                                 <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Move-in costs (NZ$)</p>
-                                <p className="mb-2 text-xs text-gray-500">Full weeks run Monday–Sunday. Midweek days are charged separately at the quoted weekly rent divided by 7. Coverage stops at the tenancy end. For short stays, enter the agreed inclusive weekly amount. Separately billed utilities are not added. End date is start plus duration minus one day; month-end dates are clamped before subtracting one day.</p>
+                                <p className="mb-2 text-xs text-gray-500">Full weeks run Monday–Sunday. Midweek days are pro-rated and coverage stops at the tenancy end. {includesUtilities ? "Bond and deposit each use one week of rent plus utilities for the occupants on this agreement." : "Separately billed utilities are excluded from move-in costs."} For short stays, enter the agreed inclusive weekly amount.</p>
                                 <div className="grid grid-cols-2 gap-2">
                                     <Mini label="Advance weeks" type="number" step="1" value={fields.costs?.advance_weeks} onChange={(v) => setF(["costs", "advance_weeks"], v)} />
-                                    <Mini label="Bond" type="number" step="0.01" prefix="NZ$" value={fields.costs?.bond} onChange={(v) => setF(["costs", "bond"], v)} />
-                                    <Mini label="Deposit" type="number" step="0.01" prefix="NZ$" value={fields.costs?.deposit} onChange={(v) => setF(["costs", "deposit"], v)} />
+                                    <Mini label="Bond" type="number" step="0.01" prefix="NZ$" readOnly={includesUtilities} value={includesUtilities ? computed?.costs?.bond ?? "" : fields.costs?.bond} onChange={(v) => setF(["costs", "bond"], v)} />
+                                    <Mini label="Deposit" type="number" step="0.01" prefix="NZ$" readOnly={includesUtilities} value={includesUtilities ? computed?.costs?.deposit ?? "" : fields.costs?.deposit} onChange={(v) => setF(["costs", "deposit"], v)} />
                                     <Mini label="Rent in advance (automatic)" type="number" readOnly value={computed?.costs?.rent_advance ?? ""} />
                                     <Mini label="Pro-rated days (automatic)" type="number" readOnly value={computed?.costs?.prorated_days ?? ""} />
                                     <Mini label="Pro-rated rent (automatic)" type="number" readOnly value={computed?.costs?.prorated_rent ?? ""} />
                                     <Mini label="Total move-in (automatic)" type="number" readOnly value={computed?.costs?.total_move_in ?? ""} />
+                                    {computed?.move_in_invoice && <>
+                                        <Mini label="Welcome Packages subtotal" type="number" readOnly value={computed.move_in_invoice.package_subtotal} />
+                                        <Mini label="Total amount payable" type="number" readOnly value={computed.move_in_invoice.total} />
+                                    </>}
                                     <Mini label="Advance from (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_from ?? ""} />
                                     <Mini label="Advance to (automatic)" type="date" readOnly value={computed?.costs?.rent_advance_to ?? ""} />
                                 </div>
@@ -353,6 +359,9 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <a href={`/portal/accommodation/forms/agreements/${a.id}/download`} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                                         <Download size={13} /> {a.signed ? "Signed PDF" : "PDF"}
                                     </a>
+                                    {a.has_move_in_invoice && <a href={`/portal/accommodation/forms/agreements/${a.id}/move-in-invoice`} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        <Download size={13} /> Move-in invoice
+                                    </a>}
                                 </div>
                             </div>
                         ))}
@@ -400,6 +409,7 @@ function Mini({ label, value, onChange, full = false, type = "text", options = n
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UTILITY_OPTIONS = [{ value: "1", label: "1 — Exalt manages utilities" }, { value: "2", label: "2 — Tenant arranges directly" }];
+const LONG_TERM_UTILITY_OPTIONS = [{ value: "1", label: "1 — Rent + Utilities (weekly)" }, { value: "2", label: "2 — Rent only (utilities paid separately)" }];
 
 function StatusBadge({ status }) {
     const map = {

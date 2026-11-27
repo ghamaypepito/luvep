@@ -1,5 +1,9 @@
 <h2 class="section">Terms &amp; Conditions</h2>
+@php($designatedRooms = $agreementType === 'standard_flatmate' && ($data['agreement_occupancy'] ?? null) === 'designated_rooms')
 
+@if($designatedRooms)
+    @include('agreements.flatmate._long_term_room_occupancy')
+@else
 <h3 class="tc-head">1. AGREEMENT</h3>
 <p class="clause"><span class="n">1.1</span> This Agreement governs the Tenant’s occupation of the entire Property identified in the Agreement.</p>
 <p class="clause"><span class="n">1.2</span> The Tenant receives exclusive occupation of the Property, subject to Exalt’s and the owner’s lawful rights of access.</p>
@@ -12,6 +16,7 @@
 <p class="clause"><span class="n">2.3</span> The Tenant must not assign, sublet, transfer, licence, or otherwise give another person exclusive possession of the Property without the required written approval and where permitted by law.</p>
 <p class="clause"><span class="n">2.4</span> The Tenant must not use the Property for unlawful, hazardous, commercial, or unauthorised purposes.</p>
 <p class="clause"><span class="n">2.5</span> The Tenant is responsible for the conduct of their household members, occupants, and guests to the extent permitted by law.</p>
+@endif
 
 <h3 class="tc-head">3. IDENTIFICATION AND CONTACT INFORMATION</h3>
 <p class="clause"><span class="n">3.1</span> The Tenant must provide accurate identification and contact information.</p>
@@ -125,7 +130,11 @@
 <p class="clause"><span class="n">16.3</span> Inspections may assess the Property’s condition, cleanliness, maintenance, safety, fixtures, appliances, and compliance with the Agreement.</p>
 
 <h3 class="tc-head">17. CLEANING AND MAINTENANCE</h3>
-<p class="clause"><span class="n">17.1</span> The Tenant is responsible for maintaining the entire Property in a reasonably clean and hygienic condition.</p>
+@if($designatedRooms)
+    <p class="clause"><span class="n">17.1</span> The Tenant must maintain their room and shared areas in a clean, sanitary, and reasonably tidy condition.</p>
+@else
+    <p class="clause"><span class="n">17.1</span> The Tenant is responsible for maintaining the entire Property in a reasonably clean and hygienic condition.</p>
+@endif
 <p class="clause"><span class="n">17.2</span> This includes, where applicable:</p>
 <ul class="bullets">
     <li>bedrooms;</li>
@@ -142,7 +151,11 @@
 <p class="clause"><span class="n">17.4</span> Additional cleaning or restoration caused by the Tenant may be recoverable where permitted by law.</p>
 
 <h3 class="tc-head">18. END OF FIXED TERM / VACATING</h3>
-<p class="clause"><span class="n">18.1</span> At the end of the Agreement, the Tenant must vacate the entire Property by the agreed date and time unless a lawful continuation or written extension applies.</p>
+@if($designatedRooms)
+    <p class="clause"><span class="n">18.1</span> At the end of the Agreement, the Tenant must vacate the Property by the agreed date and time unless a written extension or continuation has been agreed.</p>
+@else
+    <p class="clause"><span class="n">18.1</span> At the end of the Agreement, the Tenant must vacate the entire Property by the agreed date and time unless a lawful continuation or written extension applies.</p>
+@endif
 <p class="clause"><span class="n">18.2</span> The Tenant must:</p>
 <ul class="bullets">
     <li>remove all belongings;</li>

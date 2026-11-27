@@ -24,7 +24,7 @@ class AgreementTerms
         return $matches->count() === 1 && $matches->first()->hasSignature() ? $matches->first() : null;
     }
 
-    public function calculate(array $data, bool $issuing = false): array
+    public function calculate(array $data, bool $issuing = false, bool $standardUtilityBilling = false): array
     {
         $data = Arr::only($data, ['property_id', 'notes', 'subtenants', 'tenancy', 'costs', 'bank']);
         if (is_array($data['tenancy'] ?? null)) {
@@ -38,6 +38,7 @@ class AgreementTerms
         }
         $required = $issuing ? 'required' : 'nullable';
         $money = ['nullable', 'numeric', 'min:0', 'max:9999999.99', 'regex:/^\d+(?:\.\d{1,2})?$/'];
+        $includesUtilities = $standardUtilityBilling && (string) ($data['tenancy']['utility_option'] ?? '') === '1';
         Validator::make(['data' => $data], [
             'data.property_id' => [$required, 'integer', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
             'data.notes' => 'nullable|string|max:3000',
@@ -59,7 +60,7 @@ class AgreementTerms
             'data.tenancy.duration' => [$required, 'integer', 'min:1', 'max:120'],
             'data.tenancy.duration_unit' => [$required, 'in:days,weeks,months'],
             'data.tenancy.weekly_rent' => [$required, ...array_slice($money, 1)],
-            'data.tenancy.utility_amount' => $money,
+            'data.tenancy.utility_amount' => $includesUtilities && $issuing ? ['required', ...array_slice($money, 1)] : $money,
             'data.tenancy.utility_option' => 'nullable|in:1,2',
             'data.tenancy.move_in_time' => 'nullable|date_format:H:i',
             'data.tenancy.move_out_time' => 'nullable|date_format:H:i',
@@ -72,8 +73,8 @@ class AgreementTerms
             'data.bank.reference' => 'nullable|string|max:200',
             'data.bank.account_name' => 'nullable|string|max:200',
             'data.costs' => 'nullable|array',
-            'data.costs.bond' => $money,
-            'data.costs.deposit' => $money,
+            'data.costs.bond' => $includesUtilities ? ['exclude'] : $money,
+            'data.costs.deposit' => $includesUtilities ? ['exclude'] : $money,
             'data.costs.advance_weeks' => [$required, 'integer', 'min:1', 'max:52'],
         ])->validate();
         $data['subtenants'] = array_map(fn ($person) => Arr::only($person, ['first_name', 'last_name', 'email', 'mobile', 'passport_id', 'expiry_date', 'dob', 'current_address', 'visa_type', 'relationship']), $data['subtenants'] ?? []);
@@ -98,8 +99,17 @@ class AgreementTerms
         }
         $c['rent_advance_from'] = $c['rent_advance_to'] = '';
         $c['prorated_days'] = 0;
-        // Use the quoted weekly rent. Separately billed utilities are not silently added.
         $weekly = $this->cents($t['weekly_rent'] ?? 0);
+        if ($standardUtilityBilling) {
+            $utilityCents = $includesUtilities ? $this->cents($t['utility_amount'] ?? 0) * count($data['subtenants']) : 0;
+            $weekly += $utilityCents;
+            $t['weekly_utility_total'] = $this->money($utilityCents);
+            $t['weekly_payable'] = $this->money($weekly);
+            $data['move_in_includes_utilities'] = $includesUtilities;
+            if ($includesUtilities) {
+                $c['bond'] = $c['deposit'] = $this->money($weekly);
+            }
+        }
         if (! empty($t['move_in_date'])) {
             $move = CarbonImmutable::parse($t['move_in_date'], 'Pacific/Auckland');
             // First complete Monday-Sunday period; any preceding partial week is separate.
@@ -136,6 +146,34 @@ class AgreementTerms
         }
 
         return $data;
+    }
+
+    /** Build the invoice from the already calculated terms and selected package snapshot. */
+    public function moveInInvoice(array $data): array
+    {
+        $costs = $data['costs'];
+        $utilitySuffix = !empty($data['move_in_includes_utilities']) ? ' (rent + utilities)' : '';
+        $lines = [
+            ['description' => 'Bond'.$utilitySuffix, 'amount' => $costs['bond'] ?? '0.00'],
+            ['description' => 'Deposit'.$utilitySuffix, 'amount' => $costs['deposit'] ?? '0.00'],
+            ['description' => 'Advance rent'.$utilitySuffix, 'amount' => $costs['rent_advance']],
+        ];
+        if ($this->cents($costs['prorated_rent']) > 0) {
+            $lines[] = ['description' => 'Pro-rated rent'.$utilitySuffix, 'amount' => $costs['prorated_rent']];
+        }
+        $packageTotal = 0;
+        foreach ($data['welcome_packages']['packages'] ?? [] as $package) {
+            $price = $this->cents($package['price']);
+            $lines[] = ['description' => $package['name'], 'amount' => $this->money($price)];
+            $packageTotal += $price;
+        }
+
+        return [
+            'lines' => $lines,
+            'move_in_subtotal' => $costs['total_move_in'],
+            'package_subtotal' => $this->money($packageTotal),
+            'total' => $this->money($this->cents($costs['total_move_in']) + $packageTotal),
+        ];
     }
 
     private function cents(mixed $value): int

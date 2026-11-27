@@ -29,6 +29,9 @@
     };
 
     $isTransient = $agreementType === 'transient_flatmate';
+    $standardBilling = array_key_exists('move_in_includes_utilities', $data);
+    $includesUtilities = $data['move_in_includes_utilities'] ?? false;
+    $termsFirst = $agreementType === 'standard_flatmate' && ($data['agreement_layout'] ?? null) === 'terms_first';
     $title = $titles[$agreementType] ?? 'Flat/House Sharing Agreement';
 
     $t = $data['tenancy'] ?? [];
@@ -42,7 +45,10 @@
 @endphp
 
 @section('body')
-    <div class="doc-title">{{ $title }}</div>
+    @if($termsFirst)
+        @include('agreements.flatmate._agreement_sections', ['pageBreakBeforeTerms' => false])
+    @endif
+    <div @class(['doc-title', 'appendix' => $termsFirst])>{{ $title }}</div>
     <p class="prop-line">PROPERTY ADDRESS: <span class="val">{!! $f($data['property_address'] ?? '', '[Full property address]') !!}</span></p>
     @if($isTransient)
         <p class="note-line">Exalt Terms and Conditions and the most recent House Rules are attached as appendices.</p>
@@ -116,7 +122,7 @@
     <h3 class="blk">Move-in Cost</h3>
     <table class="grid">
         <tr><th style="width:50%">Item</th><th>Period</th><th class="amt">Amount</th></tr>
-        @if($isTransient)
+        @if($isTransient || $includesUtilities)
             <tr><td>Bond (rent + utilities)</td><td>1 week</td><td class="amt">NZ${!! $m($c['bond'] ?? '') !!}</td></tr>
             <tr><td>Deposit (rent + utilities)</td><td>1 week</td><td class="amt">NZ${!! $m($c['deposit'] ?? '') !!}</td></tr>
             <tr><td>Rent + Utilities in Advance</td><td>@if(($data['workflow_version'] ?? null) === 2) {!! $d($c['rent_advance_from'] ?? '') !!} to {!! $d($c['rent_advance_to'] ?? '') !!} @else {!! $f($t['term'] ?? '', '[confirmed stay]') !!} @endif</td><td class="amt">NZ${!! $m($c['rent_advance'] ?? '') !!}</td></tr>
@@ -128,6 +134,10 @@
             <tr><td>Pro-rated Rent</td><td>{!! $f($c['prorated_days'] ?? '', '[number of days]') !!}</td><td class="amt">NZ${!! $m($c['prorated_rent'] ?? '') !!}</td></tr>
         @endif
         <tr class="total"><td colspan="2">Total Move-in Cost</td><td class="amt">NZ${!! $m($c['total_move_in'] ?? '') !!}</td></tr>
+        @if(!empty($data['welcome_packages']['packages']) && isset($data['move_in_invoice']))
+            <tr><td colspan="2">Welcome Packages (service included)</td><td class="amt">NZ${!! $m($data['move_in_invoice']['package_subtotal']) !!}</td></tr>
+            <tr class="total"><td colspan="2">Total amount payable</td><td class="amt">NZ${!! $m($data['move_in_invoice']['total']) !!}</td></tr>
+        @endif
     </table>
 
     @if($isTransient)
@@ -138,10 +148,19 @@
         @endif
     @else
         <p>The rent in advance covers the period from {!! $d($c['rent_advance_from'] ?? '', '[Monday, date]') !!} to {!! $d($c['rent_advance_to'] ?? '', '[Sunday, date]') !!}. Where the Tenant's move-in date falls partway through Exalt's standard rental week, a pro-rated rent amount will apply for the applicable number of days. Please note that Exalt's standard rental week runs from Monday to Sunday, and rent is payable in advance in accordance with the payment schedule stated in the Agreement.</p>
-        <p>The bond and deposit are calculated based on the agreed weekly rent and are refundable subject to the terms and conditions of the Agreement, completion of the final inspection, and settlement of any outstanding amounts or damages.</p>
+        @unless($includesUtilities)
+            <p>The bond and deposit are calculated based on the agreed weekly rent and are refundable subject to the terms and conditions of the Agreement, completion of the final inspection, and settlement of any outstanding amounts or damages.</p>
+        @endunless
 
         {{-- Utilities selection — only the long-term / whole-property forms carry this. --}}
         <h2 class="section">Utilities and Bill Payment</h2>
+        @if($standardBilling)
+            @if($includesUtilities)
+                <p><strong>Rent + Utilities (weekly).</strong> Power, water, internet and gas (where applicable) are charged at NZ${!! $m($t['utility_amount']) !!} per person per week for the occupants named in this Agreement. The bond and deposit each use one week of the combined rent and utilities amount and remain refundable subject to the terms of the Agreement.</p>
+            @else
+                <p><strong>Rent only.</strong> The Tenant pays utility costs separately. They are excluded from the move-in charges and weekly rent shown in this Agreement.</p>
+            @endif
+        @else
         <p>Utilities are not included in the rent. The Tenant must select one of the following utility arrangements:</p>
         <p><strong>Option 1 — Exalt Manages Utilities.</strong> The Tenant authorises Exalt Property Management to manage the applicable utility bills for the Property. Once Exalt receives a payable utility bill, Exalt will provide the relevant bill or payment amount to the Tenant, who must pay the full amount by the applicable due date.</p>
         <p><strong>Option 2 — Tenant Arranges Utilities Directly.</strong> The Tenant is responsible for arranging and maintaining their own utility accounts with the relevant providers and paying the applicable costs directly by their due dates.</p>
@@ -149,26 +168,29 @@
             <span class="tick">{{ ($t['utility_option'] ?? '') == '1' ? '☑' : '☐' }}</span> Option 1 — Exalt Manages Utilities<br>
             <span class="tick">{{ ($t['utility_option'] ?? '') == '2' ? '☑' : '☐' }}</span> Option 2 — Tenant Arranges Utilities Directly
         </p>
+        @endif
     @endif
 
     <h3 class="blk">Weekly Rent{{ $isTransient ? ' + Utilities' : '' }} Payable</h3>
     @php
         $utilOption = $t['utility_option'] ?? '';
         $utilAmount = $t['utility_amount'] ?? '';
-        $hasUtility = ! $isTransient && $utilAmount !== '' && $utilAmount !== null;
-        $weeklyTotal = (float) ($t['weekly_rent'] ?? 0) + ($hasUtility ? (float) $utilAmount : 0);
+        $hasUtility = $standardBilling ? $includesUtilities : (! $isTransient && $utilAmount !== '' && $utilAmount !== null);
+        $weeklyTotal = $standardBilling ? $t['weekly_payable'] : ((float) ($t['weekly_rent'] ?? 0) + ($hasUtility ? (float) $utilAmount : 0));
     @endphp
     <table class="grid">
         <tr><th style="width:60%">Item</th><th class="amt">Amount</th></tr>
         <tr><td>Weekly Rent — payable in advance every {!! $f($t['rent_day'] ?? 'Friday', 'Friday') !!}</td><td class="amt">NZ${!! $m($t['weekly_rent'] ?? '') !!}</td></tr>
-        @unless($isTransient)
+        @if($includesUtilities)
+            <tr><td>Weekly utilities for all occupants</td><td class="amt">NZ${!! $m($t['weekly_utility_total']) !!}</td></tr>
+        @elseif(!$isTransient && !$standardBilling)
             <tr><td>Option 1 — Exalt Manages Utilities</td><td class="amt">{{ ($utilOption == '1' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
             <tr><td>Option 2 — Tenant Arranges Utilities Directly</td><td class="amt">{{ ($utilOption == '2' && $hasUtility) ? 'NZ$'.$m($utilAmount) : 'N/A' }}</td></tr>
-        @endunless
+        @endif
         <tr class="total"><td>Total Weekly {{ $isTransient ? 'Expenses' : ($hasUtility ? 'Rent + Utilities' : 'Rent') }}</td><td class="amt">NZ${!! $m($weeklyTotal) !!}</td></tr>
     </table>
     <p class="callout">Weekly rent is due every {{ $t['rent_day'] ?? 'Friday' }}. The payment made each {{ $t['rent_day'] ?? 'Friday' }} is for the upcoming rental week.
-        @unless($isTransient) Under Option 1, applicable utility costs are payable separately from the weekly rent and an administration fee applies. Under Option 2, the Tenant pays the utility providers directly.@endunless
+        @if(!$isTransient && !$standardBilling) Under Option 1, applicable utility costs are payable separately from the weekly rent and an administration fee applies. Under Option 2, the Tenant pays the utility providers directly.@endif
     </p>
 
     {{-- ---------- Bank ---------- --}}
@@ -232,22 +254,9 @@
         </div>
     @endif
 
-    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
-    <div class="appendix">@include('agreements.flatmate._terms')</div>
-    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
-    @if(!empty($data['welcome_packages']['packages']))
-        <div class="appendix">
-            <h2 class="section">Exalt Welcome Packages</h2>
-            @foreach($data['welcome_packages']['packages'] as $package)
-                <h3 class="tc-head">{{ $package['name'] }} | ${{ number_format($package['price'], 2) }} NZD</h3>
-                @foreach($package['inclusions'] as $inclusion)
-                    <p class="clause" style="text-align: left">{{ $inclusion }}</p>
-                @endforeach
-            @endforeach
-            <p class="clause">{{ $data['welcome_packages']['service_note'] }}</p>
-            <p class="clause"><strong>Total package cost (service included): ${{ number_format($data['welcome_packages']['total'], 2) }} NZD</strong></p>
-        </div>
-    @endif
+    @unless($termsFirst)
+        @include('agreements.flatmate._agreement_sections', ['pageBreakBeforeTerms' => true])
+    @endunless
     {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
     <div class="appendix">@include('agreements.flatmate._declaration', [
         'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,

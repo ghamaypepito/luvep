@@ -47,6 +47,7 @@ class AccommodationAgreementController extends Controller
             'signing_url' => $a->signingUrl(),
             'signed' => $a->status === AccommodationAgreement::STATUS_SIGNED,
             'can_resend_copy' => $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
+            'has_move_in_invoice' => isset($a->data['move_in_invoice']),
             'created_at' => optional($a->created_at)->toIso8601String(),
             'created_by' => optional($a->creator)->name,
         ]);
@@ -91,10 +92,10 @@ class AccommodationAgreementController extends Controller
             'source_id' => 'nullable|required_with:source|integer',
         ]);
 
-        $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
         $ctx = isset($v['source']) ? $this->builder->resolve($v['source'], (int) $v['source_id']) : null;
         abort_if(isset($v['source']) && $ctx === null, 404);
-        $data = $this->withWelcomePackages($data, $ctx);
+        $data = app(AgreementTerms::class)->calculate($v['data'] ?? [], standardUtilityBilling: $ctx !== null && $v['agreement_type'] === 'standard_flatmate');
+        $data = $this->withWelcomePackagesAndInvoice($data, $v['agreement_type'], $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
@@ -128,8 +129,8 @@ class AccommodationAgreementController extends Controller
         $ctx = $this->builder->resolve($v['source'], (int) $v['source_id']);
         abort_if($ctx === null, 404);
 
-        $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
-        $data = $this->withWelcomePackages($data, $ctx);
+        $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true, standardUtilityBilling: $v['agreement_type'] === 'standard_flatmate');
+        $data = $this->withWelcomePackagesAndInvoice($data, $v['agreement_type'], $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
@@ -293,12 +294,30 @@ class AccommodationAgreementController extends Controller
         return back()->with('success', 'Agreement deleted.');
     }
 
-    private function withWelcomePackages(array $data, ?array $source): array
+    public function moveInInvoice(AccommodationAgreement $agreement)
+    {
+        \App\Models\TenantDocument::authorizeStaff(request()->user());
+        $invoice = $agreement->data['move_in_invoice'] ?? null;
+        abort_unless($invoice, 404);
+
+        return Pdf::loadView('invoices.exalt-move-in', compact('agreement', 'invoice'))
+            ->setPaper('a4')->download("exalt-move-in-{$agreement->id}.pdf");
+    }
+
+    private function withWelcomePackagesAndInvoice(array $data, string $type, ?array $source): array
     {
         unset($data['welcome_packages']);
         $packages = $source['data']['welcome_packages'] ?? null;
         if (! empty($packages['packages'])) {
             $data['welcome_packages'] = $packages;
+        }
+
+        if ($source && in_array($type, ['whole_property', 'standard_flatmate'], true)) {
+            $data['move_in_invoice'] = app(AgreementTerms::class)->moveInInvoice($data);
+            if ($type === 'standard_flatmate') {
+                $data['agreement_layout'] = 'terms_first';
+                $data['agreement_occupancy'] = 'designated_rooms';
+            }
         }
 
         return $data;

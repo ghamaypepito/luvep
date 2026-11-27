@@ -10,6 +10,7 @@ use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Accommodation\AgreementTerms;
+use App\Services\Accommodation\WelcomePackages;
 use App\Services\PdfGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -45,7 +46,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $data = [
             'property_id' => $property->id, 'notes' => "Special <script>text</script>\nSecond line",
             'subtenants' => [['first_name' => 'Synthetic', 'last_name' => 'Tenant', 'email' => 'tenant@example.test']],
-            'tenancy' => ['commence_date' => '2026-11-18', 'move_in_date' => '2026-11-18', 'duration' => 1, 'duration_unit' => 'months', 'weekly_rent' => '700', 'utility_option' => '1', 'utility_amount' => '70'],
+            'tenancy' => ['commence_date' => '2026-11-18', 'move_in_date' => '2026-11-18', 'duration' => 1, 'duration_unit' => 'months', 'weekly_rent' => '700', 'utility_option' => '2', 'utility_amount' => '70'],
             'costs' => ['bond' => '700', 'deposit' => '700', 'advance_weeks' => 1, 'total_move_in' => '1.00'],
         ];
         $this->actingAs($staff);
@@ -116,20 +117,30 @@ class AccommodationAgreementEnhancementTest extends TestCase
             'agreement_type' => 'standard_flatmate', 'data' => $data,
         ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
         $this->assertLessThan(strpos($preview, 'Exalt Welcome Packages'), strpos($preview, '>House Rules<'));
+        $this->assertLessThan(strpos($preview, '>House Rules<'), strpos($preview, '>Terms &amp; Conditions<'));
+        $this->assertLessThan(strpos($preview, '>Flat/House Sharing Agreement<'), strpos($preview, 'Exalt Welcome Packages'));
         $this->assertStringContainsString('eggs (2 dozen)', $preview);
+        $this->assertStringContainsString('occupy the designated room or rooms', $preview);
+        $this->assertStringNotContainsString('occupation of the entire Property', $preview);
         $this->assertStringNotContainsString('Injected', $preview);
 
         $agreement = $this->generate($source, $data);
         $this->assertSame($snapshot, $agreement->data['welcome_packages']);
         $pdfText = (new Parser)->parseContent(Storage::disk('local')->get($agreement->pdf_path))->getText();
         $this->assertStringContainsString('EXALT WELCOME PACKAGES', $pdfText);
+        $this->assertLessThan(strpos($pdfText, 'FLAT/HOUSE SHARING AGREEMENT'), strpos($pdfText, 'EXALT WELCOME PACKAGES'));
         $this->assertStringContainsString('600.00 NZD', $pdfText);
         $this->assertMatchesRegularExpression('/kitchen knife,\s+chopping board/', $pdfText);
         $source->update(['data' => []]);
-        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()->assertSee('600.00 NZD');
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
+            ->assertSee('600.00 NZD')->assertSee('occupy the designated room or rooms');
         $this->assertArrayNotHasKey('welcome_packages', $this->generate($source, $data)->data);
 
         $source->update(['data' => ['welcome_packages' => $snapshot]]);
+        $whole = $this->generate($source, $data, 'whole_property');
+        $this->get(route('agreement.sign.document', $whole->signing_token))->assertOk()
+            ->assertSee('occupation of the entire Property')->assertDontSee('occupy the designated room or rooms');
+
         $shortTermPreview = $this->postJson('/portal/accommodation/forms/agreements/preview', [
             'source' => 'general', 'source_id' => $source->id,
             'agreement_type' => 'transient_flatmate', 'data' => $data,
@@ -190,6 +201,79 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame(350, $agreement->data['welcome_packages']['total']);
         $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
             ->assertSee('Grocery Package')->assertSee('Bedding Essentials Package')->assertDontSee('Kitchenware Package');
+    }
+
+    public function test_standard_flatmate_weekly_utilities_are_included_once_and_follow_the_selected_billing_option(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $data['tenancy'] = array_replace($data['tenancy'], ['weekly_rent' => '365', 'utility_amount' => '40', 'utility_option' => '1']);
+        $data['subtenants'][] = ['first_name' => 'Other', 'last_name' => 'Occupant'];
+        $source->update(['data' => ['welcome_packages' => WelcomePackages::snapshot(['grocery'])]]);
+        $agreement = $this->generate($source, $data);
+        $this->assertSame('80.00', $agreement->data['tenancy']['weekly_utility_total']);
+        $this->assertSame('445.00', $agreement->data['costs']['bond']);
+        $this->assertSame('445.00', $agreement->data['costs']['deposit']);
+        $this->assertSame('445.00', $agreement->data['costs']['rent_advance']);
+        $this->assertSame('317.86', $agreement->data['costs']['prorated_rent']);
+        $this->assertSame('1802.86', $agreement->data['move_in_invoice']['total']);
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
+            ->assertSee('Rent + Utilities (weekly)')->assertSee('Weekly utilities for all occupants')->assertSee('1,802.86');
+
+        $data['tenancy']['utility_option'] = '2';
+        $data['costs']['bond'] = $data['costs']['deposit'] = '365';
+        $separate = $this->generate($source, $data);
+        $this->assertSame('365.00', $separate->data['tenancy']['weekly_payable']);
+        $this->assertSame('365.00', $separate->data['costs']['rent_advance']);
+        $this->assertSame('260.71', $separate->data['costs']['prorated_rent']);
+        $this->assertSame('1505.71', $separate->data['move_in_invoice']['total']);
+
+        $this->fakeSignedPdf();
+        $this->sign($agreement)->assertRedirect();
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
+            'signer_name' => 'Other Occupant', 'signer_index' => 1, 'signature_data' => self::PNG, 'terms_accepted' => true,
+        ])->assertRedirect();
+        $tenant = Tenant::findOrFail($agreement->fresh()->tenant_id);
+        $this->assertSame('365.00', $tenant->weekly_rent_nzd);
+        $this->assertSame('80.00', $tenant->weekly_utilities_nzd);
+    }
+
+    public function test_move_in_invoice_calculates_all_requested_totals_and_uses_the_issued_snapshot(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        $data['tenancy'] = array_replace($data['tenancy'], [
+            'commence_date' => '2026-11-23', 'move_in_date' => '2026-11-23', 'weekly_rent' => '365',
+        ]);
+        $data['costs'] = array_replace($data['costs'], ['bond' => '365', 'deposit' => '365']);
+        $data['move_in_invoice'] = ['total' => '0.01'];
+        $path = '/portal/accommodation/forms/agreements';
+        foreach ([
+            [['kitchenware', 'grocery', 'bedding'], '600.00', '1695.00'],
+            [['kitchenware', 'grocery'], '400.00', '1495.00'],
+            [[], '0.00', '1095.00'],
+        ] as [$selection, $packageTotal, $total]) {
+            $source->update(['data' => ['welcome_packages' => WelcomePackages::snapshot($selection)]]);
+            $preview = $this->postJson("$path/preview", [
+                'source' => 'general', 'source_id' => $source->id,
+                'agreement_type' => 'standard_flatmate', 'data' => $data,
+            ])->assertOk()
+                ->assertJsonPath('data.costs.total_move_in', '1095.00')
+                ->assertJsonPath('data.move_in_invoice.package_subtotal', $packageTotal)
+                ->assertJsonPath('data.move_in_invoice.total', $total);
+
+            $agreement = $this->generate($source, $data);
+            $source->update(['data' => []]);
+            $this->assertSame($preview->json('data.move_in_invoice'), $agreement->data['move_in_invoice']);
+            $download = $this->get("$path/{$agreement->id}/move-in-invoice")->assertOk()
+                ->assertDownload("exalt-move-in-{$agreement->id}.pdf");
+            $text = (new Parser)->parseContent($download->getContent())->getText();
+            $this->assertStringContainsString(number_format((float) $total, 2), $text);
+            $this->assertStringContainsString('Advance rent', $text);
+            $this->assertSame(in_array('bedding', $selection, true), str_contains($text, 'Bedding Essentials Package'));
+            $this->assertSame(in_array('grocery', $selection, true), str_contains($text, 'Grocery Package'));
+            $this->assertSame(in_array('kitchenware', $selection, true), str_contains($text, 'Kitchenware Package'));
+        }
+        $this->actingAs(User::factory()->create(['role' => 'sales']))
+            ->get("$path/{$agreement->id}/move-in-invoice")->assertForbidden();
     }
 
     public function test_preview_generate_and_signed_copy_share_canonical_terms(): void
