@@ -6,28 +6,37 @@ use App\Models\Lead;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\User;
+use App\Services\Accommodation\ComposeContacts;
 use App\Services\CommunicationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Compose module — write a one-off email and send it to picked leads and/or any
  * typed addresses, with a left-hand history of Compose-sent emails to preview.
  * Reuses the template body editor (WYSIWYG + Unlayer builder). Sent through
- * CommunicationService::sendComposedEmail (logged with source='compose').
+ * CommunicationService::sendComposedEmail.
  */
 class ComposeController extends Controller
 {
     public function index(Request $request)
     {
         $ctx = $this->context($request);
+        $accommodation = $this->isAccommodation($request);
+        $sentSearch = $accommodation ? trim($request->validate(['sent_search' => 'nullable|string|max:150'])['sent_search'] ?? '') : '';
+        $history = $accommodation ? $this->accommodationHistory($sentSearch) : null;
 
         return inertia($ctx['component'], [
             'partnerRecipient' => ($partner = $this->partnerRecipient($request)) ? ['id' => $partner->id, 'name' => $partner->name, 'email' => $partner->email] : null,
             'basePath' => $ctx['basePath'],
-            'sent' => $this->sentList($request),
+            'sent' => $history ? $history->items() : $this->sentList($request),
+            ...($history ? [
+                'sentSearch' => $sentSearch,
+                'sentPages' => ['previous' => $history->previousPageUrl(), 'next' => $history->nextPageUrl()],
+            ] : []),
             'templates' => MessageTemplate::active()->availableTo($request->user())
                 ->whereJsonContains('channels', 'email')
                 ->whereNotNull('email_body')->where('email_body', '!=', '')
@@ -46,11 +55,15 @@ class ComposeController extends Controller
 
     public function send(Request $request, CommunicationService $comms)
     {
-        $this->context($request);
+        $accommodation = $this->isAccommodation($request);
 
         $data = $request->validate([
-            'lead_ids' => ['nullable', 'array', 'max:50'],
+            'lead_ids' => [$accommodation ? 'prohibited' : 'nullable', 'array', 'max:50'],
             'lead_ids.*' => ['integer', 'exists:leads,id'],
+            'contact_keys' => [$accommodation ? 'nullable' : 'prohibited', 'array', 'max:50'],
+            'contact_keys.*' => ['string', 'distinct', 'regex:/^(tenant|manager|owner):[1-9][0-9]{0,17}$/D'],
+            'contact_addresses' => [$accommodation ? 'nullable' : 'prohibited', 'array', 'max:50'],
+            'contact_addresses.*' => ['required', 'email', 'max:255'],
             'emails' => ['nullable', 'array', 'max:50'],
             'emails.*' => ['email'],
             'subject' => ['nullable', 'string', 'max:255'],
@@ -61,7 +74,15 @@ class ComposeController extends Controller
 
         $leadIds = $data['lead_ids'] ?? [];
         $emails = array_values(array_unique(array_map('strtolower', $data['emails'] ?? [])));
-        if (empty($leadIds) && empty($emails)) {
+        $keys = $data['contact_keys'] ?? [];
+        $contacts = $accommodation ? app(ComposeContacts::class)->resolve($keys) : collect();
+        $confirmedAddresses = $data['contact_addresses'] ?? [];
+        if ($contacts->count() !== count($keys) || $contacts->contains(
+            fn ($contact) => $contact['email'] !== strtolower(trim((string) ($confirmedAddresses[$contact['id']] ?? '')))
+        )) {
+            throw ValidationException::withMessages(['contact_keys' => 'A selected contact has changed. Search for it again before sending.']);
+        }
+        if (empty($leadIds) && empty($emails) && $contacts->isEmpty()) {
             return back()->withErrors(['error' => 'Add at least one recipient.']);
         }
 
@@ -81,6 +102,10 @@ class ComposeController extends Controller
         $attachments = [];
         foreach ($request->file('attachments', []) as $file) {
             $path = $file->store('compose-attachments', 'local');
+            if ($accommodation && ! $path) {
+                Storage::disk('local')->delete(array_column($attachments, 'path'));
+                throw ValidationException::withMessages(['attachments' => 'Could not store the attachments. Please try again.']);
+            }
             $attachments[] = ['path' => $path, 'name' => $file->getClientOriginalName()];
         }
 
@@ -104,6 +129,15 @@ class ComposeController extends Controller
 
         // Typed addresses — no lead context, so strip any {{variables}}.
         $strip = fn ($t) => preg_replace('/\{\{.*?\}\}/s', '', (string) $t);
+        if ($accommodation) {
+            $recipients = $contacts->pluck('name', 'email')->union(array_fill_keys($emails, null));
+            foreach ($recipients as $email => $name) {
+                $comms->sendComposedEmail($email, $strip($subject), $strip($body), $attachments, $rawHtml,
+                    accommodation: ['recipient_name' => $name]);
+            }
+
+            return back()->with('success', 'Email queued for '.$recipients->count().' recipient'.($recipients->count() === 1 ? '' : 's').'.');
+        }
         foreach ($emails as $email) {
             $comms->sendComposedEmail($email, $strip($subject), $strip($body), $attachments, $rawHtml, null, partnerId: $partner?->id);
             $count++;
@@ -134,7 +168,9 @@ class ComposeController extends Controller
     /** Typeahead for the recipient picker — leads with an email, by name/email/id. */
     public function searchLeads(Request $request)
     {
-        $this->context($request);
+        if ($this->isAccommodation($request)) {
+            return response()->json(['leads' => []]);
+        }
 
         $q = trim((string) $request->query('q', ''));
         if (strlen($q) < 2) {
@@ -158,6 +194,61 @@ class ComposeController extends Controller
             ]);
 
         return response()->json(['leads' => $leads]);
+    }
+
+    public function searchAccommodationContacts(Request $request, ComposeContacts $contacts)
+    {
+        $data = $request->validate([
+            'type' => ['required', \Illuminate\Validation\Rule::in(ComposeContacts::TYPES)],
+            'q' => 'nullable|string|max:150',
+        ]);
+
+        return response()->json(['contacts' => $contacts->search($data['type'], trim($data['q'] ?? ''))]);
+    }
+
+    public function downloadAccommodationAttachment(int $message, int $index)
+    {
+        $log = $this->accommodationLogs()->findOrFail($message);
+        $attachment = $log->compose_details['attachments'][$index] ?? null;
+        $path = $attachment['path'] ?? null;
+        abort_unless(is_string($path) && str_starts_with($path, 'compose-attachments/') && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->download($path, $attachment['name']);
+    }
+
+    private function accommodationLogs(): Builder
+    {
+        return MessageLog::query()->where('channel', MessageLog::CHANNEL_EMAIL)
+            ->where('source', MessageLog::SOURCE_ACCOMMODATION_COMPOSE);
+    }
+
+    private function accommodationHistory(string $search)
+    {
+        $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search)).'%';
+        $logs = $this->accommodationLogs();
+        $recipientName = $logs->getQuery()->getGrammar()->wrap('compose_details->recipient_name');
+
+        return $logs
+            ->when($search !== '', fn ($query) => $query->where(fn ($matches) => $matches
+                ->whereRaw("LOWER(subject) LIKE ? ESCAPE '!'", [$pattern])
+                ->orWhereRaw("LOWER(recipient_address) LIKE ? ESCAPE '!'", [$pattern])
+                ->orWhereRaw("LOWER({$recipientName}) LIKE ? ESCAPE '!'", [$pattern])))
+            ->latest()->orderByDesc('id')->paginate(25, pageName: 'sent_page')
+            ->appends($search === '' ? [] : ['sent_search' => $search])
+            ->through(function (MessageLog $message) {
+                $details = $message->compose_details ?? [];
+
+                return [
+                    'id' => $message->id, 'to' => $message->recipient_address, 'to_name' => $details['recipient_name'] ?? null,
+                    'subject' => $message->subject, 'body' => $message->body, 'status' => $message->status,
+                    'sender' => $details['sender'] ?? null, 'from_name' => $details['from_name'] ?? null, 'from_email' => $details['from_email'] ?? null,
+                    'created_at' => $message->created_at?->toIso8601String(), 'sent_at' => $message->sent_at?->toIso8601String(),
+                    'attachments' => collect($details['attachments'] ?? [])->map(fn ($attachment, $index) => [
+                        'name' => $attachment['name'],
+                        'url' => route('portal.accommodation.compose.sent.attachment', [$message->id, $index], false),
+                    ])->values(),
+                ];
+            });
     }
 
     private function recipientLeads(Request $request): Builder
@@ -235,5 +326,10 @@ class ComposeController extends Controller
         }
 
         return ['basePath' => '/admin/email/compose', 'component' => 'admin/email/Compose'];
+    }
+
+    private function isAccommodation(Request $request): bool
+    {
+        return $this->context($request)['basePath'] === '/portal/accommodation/compose';
     }
 }

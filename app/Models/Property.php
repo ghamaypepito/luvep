@@ -49,6 +49,7 @@ class Property extends Model
         'mercury_account_number', 'mercury_account_holder', 'property_icp',
         'house_code', 'internet_passcode', 'bond_total_nzd', 'advance_total_nzd',
         'property_manager_name', 'property_manager_phone', 'property_manager_email',
+        'property_owner_name', 'property_owner_email',
         'pm_payment_schedule', 'power_due_date', 'water_due_date', 'internet_due_date',
         'last_gas_purchase', 'uses_bottled_gas', 'is_active', 'notes',
     ];
@@ -63,6 +64,7 @@ class Property extends Model
         'mercury_account_number', 'mercury_account_holder', 'property_icp',
         'house_code', 'internet_passcode', 'bond_total_nzd', 'advance_total_nzd',
         'property_manager_name', 'property_manager_phone', 'property_manager_email',
+        'property_owner_name', 'property_owner_email',
         'pm_payment_schedule', 'power_due_date', 'water_due_date', 'internet_due_date',
         'last_gas_purchase', 'uses_bottled_gas', 'is_active', 'notes',
     ];
@@ -95,6 +97,7 @@ class Property extends Model
         'mercury_account_number', 'mercury_account_holder', 'property_icp',
         'house_code', 'internet_passcode', 'bond_total_nzd', 'advance_total_nzd',
         'property_manager_name', 'property_manager_phone', 'property_manager_email',
+        'property_owner_name', 'property_owner_email',
         'pm_payment_schedule', 'power_due_date', 'water_due_date', 'internet_due_date',
         'last_gas_purchase', 'uses_bottled_gas', 'is_active', 'notes',
         'rooms_occupied', 'occupancy_status', 'room_register',

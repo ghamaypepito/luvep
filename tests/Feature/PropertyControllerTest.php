@@ -118,13 +118,19 @@ class PropertyControllerTest extends TestCase
             ->post("/portal/accommodation/properties/{$property->id}", $this->payload([
                 '_method' => 'PUT',
                 'name' => 'Renamed House',
+                'property_owner_name' => 'Sample Owner',
+                'property_owner_email' => 'owner@example.test',
                 'images' => [UploadedFile::fake()->create('c.jpg', 100, 'image/jpeg')],
             ]))
             ->assertRedirect("/portal/accommodation/properties/{$property->id}");
 
         $this->assertDatabaseHas('accommodation_properties', [
             'id' => $property->id, 'name' => 'Renamed House',
+            'property_owner_name' => 'Sample Owner', 'property_owner_email' => 'owner@example.test',
         ]);
+        $this->get("/portal/accommodation/properties/{$property->id}/edit")->assertOk()->assertInertia(
+            fn (Assert $page) => $page->where('property.property_owner_email', 'owner@example.test')
+        );
         $this->assertCount(1, $property->fresh()->images);
     }
 

@@ -1284,13 +1284,18 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware("portal:{$deptRole}")
             ->prefix("portal/{$deptRole}")
             ->name("portal.{$deptRole}.")
-            ->group(function () {
+            ->group(function () use ($deptRole) {
                 // Compose — one-off email to picked leads and/or typed addresses.
                 $compose = \App\Http\Controllers\ComposeController::class;
                 Route::get('/compose', [$compose, 'index'])->name('compose');
                 Route::post('/compose/send', [$compose, 'send'])->name('compose.send');
                 Route::post('/compose/upload-image', [$compose, 'uploadImage'])->name('compose.upload-image');
                 Route::get('/compose/leads', [$compose, 'searchLeads'])->name('compose.leads');
+                if ($deptRole === 'accommodation') {
+                    Route::get('/compose/contacts', [$compose, 'searchAccommodationContacts'])->name('compose.contacts');
+                    Route::get('/compose/sent/{message}/attachments/{index}', [$compose, 'downloadAccommodationAttachment'])
+                        ->whereNumber(['message', 'index'])->name('compose.sent.attachment');
+                }
 
                 $c = \App\Http\Controllers\MessageTemplateController::class;
                 Route::get('/email-templates', [$c, 'index'])->name('email-templates');

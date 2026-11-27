@@ -96,6 +96,8 @@ export default function PropertyForm({ property = null, options = {}, next_code 
         property_manager_name: property?.property_manager_name ?? "",
         property_manager_phone: property?.property_manager_phone ?? "",
         property_manager_email: property?.property_manager_email ?? "",
+        property_owner_name: property?.property_owner_name ?? "",
+        property_owner_email: property?.property_owner_email ?? "",
         pm_payment_schedule: property?.pm_payment_schedule ?? "",
         // Financial
         bond_total_nzd: property?.bond_total_nzd ?? "",
@@ -615,6 +617,13 @@ export default function PropertyForm({ property = null, options = {}, next_code 
                             </select>
                             {err("pm_payment_schedule")}
                         </div>
+                    </div>
+                </Section>
+
+                <Section title="Property owner" internal>
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        {f("property_owner_name", "Owner name")}
+                        {f("property_owner_email", "Owner email", { type: "email" })}
                     </div>
                 </Section>
 
