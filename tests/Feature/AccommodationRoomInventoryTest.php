@@ -201,7 +201,47 @@ class AccommodationRoomInventoryTest extends TestCase
                 throw new \RuntimeException('Synthetic audit failure');
             }
         });
-        $this->post('/portal/accommodation/properties/'.$property->id.'/room-occupancy', $this->payload($property, 4, 1))->assertStatus(500);
+        $payload = $this->payload($property, 4, 2);
+        unset($payload['unavailable']);
+        $this->post('/portal/accommodation/properties/'.$property->id.'/room-occupancy', [...$payload, 'total_rooms' => 6])->assertStatus(500);
+        $this->assertSame(5, $property->fresh()->total_rooms);
+        $this->assertSame(0, PropertyRoomVerification::count());
+    }
+
+    public function test_verification_can_set_capacity_and_preserve_rooms_outside_occupied_and_vacant_totals(): void
+    {
+        $property = $this->property(5, ['total_rooms' => null]);
+        $tenant = $this->tenant($property);
+        $payload = $this->payload($property, 4, 1);
+        unset($payload['unavailable']);
+        $url = '/portal/accommodation/properties/'.$property->id.'/room-occupancy';
+
+        $this->postJson($url, [...$payload, 'total_rooms' => 3])->assertUnprocessable()->assertJsonValidationErrors('occupied');
+        $this->assertNull($property->fresh()->total_rooms);
+        $this->assertSame(0, PropertyRoomVerification::count());
+        $this->post($url, [...$payload, 'total_rooms' => 6])->assertRedirect()->assertSessionHasNoErrors();
+
+        $summary = RoomInventory::summarize($property->fresh());
+        $this->assertSame('verified', $summary['state']);
+        $this->assertSame([6, 4, 1, 1], [$summary['total'], $summary['occupied'], $summary['vacant'], $summary['unavailable']]);
+        $stats = $this->get('/portal/accommodation/dashboard')->assertOk()->inertiaProps()['inventoryStats'];
+        $this->assertSame([6, 4, 1], [$stats['rooms'], $stats['occupied'], $stats['vacant']]);
+        $this->assertSame('active', $tenant->fresh()->current_status);
+        $this->postJson($url, [...$payload, 'total_rooms' => 7])->assertUnprocessable()->assertJsonValidationErrors('version');
+        $this->assertSame(6, $property->fresh()->total_rooms);
+        $this->assertSame(6, PropertyRoomVerification::sole()->total_rooms);
+    }
+
+    public function test_manual_verification_does_not_override_a_tracked_property(): void
+    {
+        $property = $this->property(1);
+        $property->forceFill(['room_register' => [['id' => (string) Str::uuid(), 'name' => 'Room 1', 'hold' => true]]])->save();
+        $payload = $this->payload($property, 1, 1);
+        unset($payload['unavailable']);
+        $this->postJson('/portal/accommodation/properties/'.$property->id.'/room-occupancy', [...$payload, 'total_rooms' => 2])
+            ->assertUnprocessable()->assertJsonValidationErrors('version');
+        $this->assertSame(1, $property->fresh()->total_rooms);
+        $this->assertSame(1, RoomInventory::summarize($property->fresh())['unavailable']);
         $this->assertSame(0, PropertyRoomVerification::count());
     }
 
