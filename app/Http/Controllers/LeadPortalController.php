@@ -1048,6 +1048,7 @@ class LeadPortalController extends Controller
         }
 
         $payload = app(LeadTrackingController::class)->buildTrackerPayload($lead, $lead->tracking_code);
+        $payload['lead']['full_name'] = $lead->fullName();
         $payload['embedded'] = true;
         $payload['sidebarTabs'] = true;
         $payload['initialTab'] = $tab;
@@ -1175,6 +1176,7 @@ class LeadPortalController extends Controller
     {
         return [
             'lead_id' => $lead->lead_id,
+            'full_name' => $lead->fullName(),
             'first_name' => $lead->first_name,
             'last_name' => $lead->last_name,
             'email' => $lead->email,

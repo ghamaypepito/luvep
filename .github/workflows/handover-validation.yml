@@ -53,6 +53,7 @@ jobs:
           node tests/Frontend/assigned-task-focus.cjs
           node tests/Frontend/assigned-case-helper.cjs
           node tests/Frontend/client-pathway-menu.cjs
+          node tests/Frontend/client-full-name.cjs
           node tests/Frontend/user-view.cjs
           node tests/Frontend/proposal-approval-confirmation.cjs
           node tests/Frontend/agreement-custom-description.cjs

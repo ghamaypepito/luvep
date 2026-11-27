@@ -1852,6 +1852,7 @@ class CaseProfileController extends Controller
             // Applicant's uploaded Face image — same profile picture the
             // cases list and the client's tracker show.
             'avatar_url' => $lead->faceImageUrl(),
+            'full_name' => $lead->fullName(),
             'first_name' => $lead->first_name,
             'middle_name' => $lead->middle_name,
             'last_name' => $lead->last_name,
@@ -1918,7 +1919,7 @@ class CaseProfileController extends Controller
     {
         // Fallback name for unauthenticated client uploads (via /track/{code}),
         // which carry no uploader user — attribute them to the client themselves.
-        $clientName = trim("{$lead->first_name} {$lead->last_name}") ?: ($lead->lead_id ?: 'Client');
+        $clientName = $lead->fullName() ?: ($lead->lead_id ?: 'Client');
 
         return LeadDocument::where('lead_id', $lead->id)
             ->whereNull('dependent_id') // dependants' docs live under the Family tab

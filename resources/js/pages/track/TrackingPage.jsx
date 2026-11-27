@@ -557,7 +557,7 @@ function useUrlParam(name, fallback) {
  * Right = current journey status badge + "Step X of N".
  */
 function IdentityHeader({ lead, visa, timeline = [], avatar = null, code = '', faceKey = 'face_image' }) {
-    const fullName = [lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || 'Application';
+    const fullName = lead?.full_name || [lead?.first_name, lead?.last_name].filter(Boolean).join(' ') || 'Application';
     // Which department is handling the case — surfaced beside the visa type.
     const department = lead?.is_immigration_case ? 'Immigration'
         : lead?.is_student ? 'Education'

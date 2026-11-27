@@ -287,11 +287,14 @@ class UploadChecklistTest extends TestCase
     {
         // The client application stays within the authenticated portal chrome.
         $this->seedStudentVisa();
-        $lead = $this->makeImmigrationLead();
+        $lead = $this->makeImmigrationLead(['middle_name' => 'Koru']);
 
         $this->viewApplication($lead)
             ->assertOk()
-            ->assertInertia(fn ($page) => $page->component('portal/lead/Tracker')->where('embedded', true));
+            ->assertInertia(fn ($page) => $page->component('portal/lead/Tracker')->where('embedded', true)
+                ->where('lead.full_name', 'Aroha Koru Tane'));
+        $this->get('/portal/lead/profile')->assertInertia(fn ($page) => $page->where('lead.full_name', 'Aroha Koru Tane'));
+        $this->get('/portal/lead/dashboard')->assertInertia(fn ($page) => $page->where('lead.full_name', 'Aroha Koru Tane'));
     }
 
     public function test_11_track_page_payload_carries_data_for_every_tab(): void

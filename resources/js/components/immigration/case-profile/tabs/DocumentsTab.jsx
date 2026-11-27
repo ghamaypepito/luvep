@@ -674,7 +674,7 @@ export default function DocumentsTab({
             {filesOpen && (
                 <CaseFilesModal
                     leadId={lead.id}
-                    leadName={lead.name || [lead.first_name, lead.last_name].filter(Boolean).join(' ')}
+                    leadName={lead.full_name || lead.name}
                     onClose={() => setFilesOpen(false)}
                 />
             )}

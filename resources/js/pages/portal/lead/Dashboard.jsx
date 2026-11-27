@@ -252,7 +252,7 @@ export default function LeadDashboard({
             <SectionHeader title="My details" eyebrow="On file" href="/portal/lead/profile" cta="Edit profile" />
             <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-100">
-                    <DetailRow icon={<User size={14} />} label="Full name" value={`${lead.first_name} ${lead.last_name}`.trim()} />
+                    <DetailRow icon={<User size={14} />} label="Full name" value={lead.full_name} />
                     <DetailRow icon={<Mail size={14} />} label="Email" value={lead.email || "—"} />
                     <DetailRow icon={<Phone size={14} />} label="Phone" value={lead.phone || "—"} />
                     <DetailRow icon={<MapPin size={14} />} label="Country" value={lead.residence_country || "—"} />
