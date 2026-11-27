@@ -96,6 +96,35 @@ class AccommodationRoomInventoryTest extends TestCase
         $this->assertNull($stats['rows'][0]['occupied']);
     }
 
+    public function test_properties_room_count_uses_verified_occupancy_figures(): void
+    {
+        $property = $this->property(6);
+        $tenant = $this->tenant($property);
+        $summary = fn () => $this->get('/portal/accommodation/properties')->assertOk()
+            ->inertiaProps()['properties']['data'][0]['room_summary'];
+
+        $before = $summary();
+        $this->assertSame(6, $before['total']);
+        $this->assertNull($before['verified_total']);
+
+        $payload = $this->payload($property, 3, 1);
+        unset($payload['unavailable']);
+        $this->post('/portal/accommodation/properties/'.$property->id.'/room-occupancy', [...$payload, 'total_rooms' => 4])
+            ->assertRedirect()->assertSessionHasNoErrors();
+
+        $after = $summary();
+        $this->assertSame('verified', $after['state']);
+        $this->assertSame(4, $after['verified_total']);
+        $this->assertSame(3, $after['occupied']);
+        $this->assertSame(1, $after['vacant']);
+
+        $tenant->update(['current_status' => 'vacated']);
+        $stale = $summary();
+        $this->assertSame('needs_review', $stale['state']);
+        $this->assertNull($stale['verified_total']);
+        $this->assertNull($stale['occupied']);
+    }
+
     public function test_whole_property_bedrooms_are_not_advertised_as_individual_available_rooms(): void
     {
         $whole = $this->property(5, ['rental_mode' => 'whole_property']);

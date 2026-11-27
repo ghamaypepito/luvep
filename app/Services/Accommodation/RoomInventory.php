@@ -101,6 +101,7 @@ class RoomInventory
 
         return [
             'total' => $property->total_rooms > 0 ? (int) $property->total_rooms : null,
+            'verified_total' => $verified ? ($tracked ? $rooms->count() : $verification->total_rooms) : null,
             'households' => $residents->count(), 'unlabelled_households' => $tracked ? $unassigned : $residents->filter(fn ($tenant) => blank($tenant->unit))->count(),
             'occupied' => $occupied,
             'vacant' => $vacant,

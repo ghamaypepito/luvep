@@ -176,7 +176,9 @@ export default function Properties({ properties = {}, filters = {}, options = {}
                                         </Link>
                                     </td>
                                     <td className="px-5 py-4 text-gray-700">
-                                        {p.room_summary?.total ? `${p.room_summary.occupied ?? '?'}/${p.room_summary.total}` : "Not set"}
+                                        {p.room_summary?.verified_total != null
+                                            ? `${p.room_summary.occupied}/${p.room_summary.verified_total}`
+                                            : "—"}
                                     </td>
                                     <td className="px-5 py-4">
                                         {p.room_summary ? (

@@ -12,6 +12,7 @@ const posts = []; const empty = () => null;
 const inertia = { Head: empty, Link: ({ children, ...props }) => React.createElement('a', props, children), router: { post: (...args) => posts.push(args) } };
 function load(file) {
     const output = buildSync({ entryPoints: [file], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
+        alias: { '@': path.resolve('resources/js') },
         external: ['react', 'react/jsx-runtime', '@inertiajs/react', 'lucide-react'] }).outputFiles[0].text;
     const loaded = new Module(path.resolve('room-inventory-test.cjs'), module); loaded.filename = path.resolve('room-inventory-test.cjs'); loaded.paths = module.paths;
     loaded.require = name => name === '@inertiajs/react' ? inertia : name === 'lucide-react' ? new Proxy({}, { get: () => empty }) : module.require(name);
@@ -19,6 +20,7 @@ function load(file) {
 }
 const Dashboard = load('resources/js/pages/portal/accommodation/Dashboard.jsx');
 const Verify = load('resources/js/components/accommodation/RoomVerification.jsx');
+const Properties = load('resources/js/pages/portal/accommodation/Properties.jsx');
 const capacities = [5,6,4,4,4,4,4,3,1,5,3], households = [5,4,3,2,1,3,4,1,1,7,4];
 const rows = capacities.map((total, index) => ({ id:index+1, name:`Synthetic Property ${index+1}`, total, households:households[index],
     occupied:total-(index===1?1:index===3?2:0), vacant:index===1?1:index===3?2:0, available_to_let:index===1?1:index===3?2:0,
@@ -65,6 +67,16 @@ const change = (label, value) => act(async () => {
     assert.match(document.querySelector('[role="alert"]').textContent,/Record changed/);
     assert.equal(document.querySelector('[aria-label="Total Rooms"]').value,'6','Failed save retains entered capacity');
     assert.equal(document.querySelector('[aria-label="Total Occupied Rooms"]').value,'4','Failed save retains entered counts');
+    await render(Properties, { properties: { data: [
+        { id: 1, name: 'Verified property', total_rooms: 6, room_summary: { total: 6, verified_total: 4, occupied: 3, vacant: 1, state: 'verified' } },
+        { id: 2, name: 'Unverified property', total_rooms: 6, room_summary: { total: 6, verified_total: null, occupied: null, state: 'unverified' } },
+        { id: 3, name: 'Vacant property', room_summary: { verified_total: 4, occupied: 0, vacant: 4, state: 'verified' } },
+    ] } });
+    const roomsColumn = [...document.querySelectorAll('thead th')].findIndex(cell => cell.textContent.toLowerCase() === 'rooms');
+    assert.ok(roomsColumn >= 0);
+    const propertyRows = [...document.querySelectorAll('tbody tr')];
+    assert.deepEqual(propertyRows.map(row => row.cells[roomsColumn].textContent), ['3/4', '—', '0/4']);
+    assert.match(propertyRows[1].textContent, /Needs room check/);
     await act(async()=>root.unmount());dom.window.close();
     console.log('Accommodation room inventory actual React checks passed: separate totals, vacancy navigation, unknown/error states, role visibility, versioned confirmation and failed-save retention.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
