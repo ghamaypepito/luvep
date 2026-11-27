@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AccommodationRentalInvoiceTest extends TestCase
@@ -29,13 +30,23 @@ class AccommodationRentalInvoiceTest extends TestCase
         config(['modules.accommodation_finance_accounts' => ['exalt-finance@example.test']]);
     }
 
-    public function test_move_in_prefills_agreed_costs_and_packages_and_saves_the_edited_pdf_once(): void
+    public static function moveInAgreementTypes(): array
+    {
+        return [
+            'standard flatmate' => ['standard_flatmate'],
+            'short-term flatmate' => ['transient_flatmate'],
+            'whole property' => ['whole_property'],
+        ];
+    }
+
+    #[DataProvider('moveInAgreementTypes')]
+    public function test_move_in_prefills_agreed_costs_and_packages_and_saves_the_edited_pdf_once(string $agreementType): void
     {
         $this->travelTo(Carbon::parse('2026-11-27 10:00', 'Pacific/Auckland'));
         $tenant = $this->tenant();
         $agreement = AccommodationAgreement::create([
             'tenant_id' => $tenant->id, 'property_id' => $tenant->property_id,
-            'agreement_type' => 'standard_flatmate', 'client_name' => 'Sample Client',
+            'agreement_type' => $agreementType, 'client_name' => 'Sample Client',
             'property_address' => '10 Sample Road', 'status' => 'signed',
             'data' => [
                 'costs' => ['bond' => '365.00', 'deposit' => '365.00', 'rent_advance' => '365.00'],
