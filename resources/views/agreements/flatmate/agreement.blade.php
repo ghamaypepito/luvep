@@ -68,7 +68,7 @@
         <tr><td class="label">Name</td><td>EXALT PROPERTY MANAGEMENT LTD</td></tr>
         <tr><td class="label">Address of service</td><td>21 Vazey Way, Hobsonville, Auckland 0618</td></tr>
         <tr><td class="label">Contact person</td><td>Exalt Property Admin — Alane Beryl Lozada</td></tr>
-        <tr><td class="label">Email</td><td>{{ $revised ? 'exaltinfo@epathways.co.nz' : 'exaltinfo@luvep.com' }}</td></tr>
+        <tr><td class="label">Email</td><td>exaltinfo@luvep.com</td></tr>
         <tr><td class="label">Mobile No</td><td>+64 21 227 8999 [Exalt Admin]</td></tr>
         <tr><td class="label">Other contacts (WhatsApp)</td><td>+64 27 777 5586 [Admin]</td></tr>
     </table>

@@ -111,6 +111,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 '>Sub-Tenant 1 Details</div>', '>Accommodation Information Declaration</h2>', '>Signatures</h2>', 'alt="Exalt Property Admin signature"'];
             $this->assertSameSectionOrder($preview->json('html'), $headings);
             $this->assertStringNotContainsString('<td>Signature:</td>', $preview->json('html'));
+            $this->assertStringContainsString('<td>exaltinfo@luvep.com</td>', $preview->json('html'));
+            $this->assertStringNotContainsString('exaltinfo@epathways.co.nz', $preview->json('html'));
             $this->assertStringContainsString(match ($type) {
                 'standard_flatmate' => 'Standard Long-Term Payment Structure',
                 'transient_flatmate' => 'ABSENCE DURING THE AGREED STAY',
