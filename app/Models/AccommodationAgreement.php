@@ -19,6 +19,8 @@ class AccommodationAgreement extends Model
 
     public const LAYOUT_TERMS_FIRST = 'terms_first';
 
+    public const LAYOUT_EXALT_2026_11 = 'exalt_2026_11';
+
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_SENT = 'sent';       // emailed a signing link

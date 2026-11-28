@@ -67,7 +67,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 $this->assertStringContainsString('Notes / Special Conditions', $html);
                 $this->assertStringContainsString(AgreementTerms::SIGNATORY, $html);
                 $this->assertSameSectionOrder($html, ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Sub-Tenant 1 Details</div>',
-                    '>Signatures</h2>', '>Accommodation Information Declaration</h2>']);
+                    '>Accommodation Information Declaration</h2>', '>Signatures</h2>', 'alt="Exalt Property Admin signature"']);
                 preg_match('/Declared at(.*?)Before me/s', $html, $declaration);
                 $this->assertStringNotContainsString('<img', $declaration[1]);
                 Storage::disk('local')->put($path, '%PDF-synthetic-signed');
@@ -105,17 +105,24 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 ->assertJsonPath('data.costs.rent_advance_to', '2026-11-29')
                 ->assertJsonPath('data.costs.prorated_days', 5)->assertJsonPath('data.costs.prorated_rent', '500.00')
                 ->assertJsonPath('data.costs.total_move_in', '2600.00')->assertJsonPath('data.tenancy.end_date', '2026-12-17');
-            $preview->assertJsonPath('data.layout_version', AccommodationAgreement::LAYOUT_TERMS_FIRST);
+            $preview->assertJsonPath('data.layout_version', AccommodationAgreement::LAYOUT_EXALT_2026_11);
             $this->assertStringNotContainsString('<script>text</script>', $preview->json('html'));
             $headings = ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Main Tenant [Exalt Property] Details</h3>',
-                '>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Accommodation Information Declaration</h2>'];
+                '>Sub-Tenant 1 Details</div>', '>Accommodation Information Declaration</h2>', '>Signatures</h2>', 'alt="Exalt Property Admin signature"'];
             $this->assertSameSectionOrder($preview->json('html'), $headings);
+            $this->assertStringNotContainsString('<td>Signature:</td>', $preview->json('html'));
+            $this->assertStringContainsString(match ($type) {
+                'standard_flatmate' => 'Standard Long-Term Payment Structure',
+                'transient_flatmate' => 'ABSENCE DURING THE AGREED STAY',
+                'whole_property' => 'Whole Property Tenancy Agreement',
+            }, $preview->json('html'));
             $agreement = $this->generate($source, $data + ['layout_version' => 'legacy'], $type);
-            $this->assertSame(AccommodationAgreement::LAYOUT_TERMS_FIRST, $agreement->data['layout_version']);
+            $this->assertSame(AccommodationAgreement::LAYOUT_EXALT_2026_11, $agreement->data['layout_version']);
             $document = $this->get('/agreement/'.$agreement->signing_token.'/document')->assertOk();
             $this->assertSameSectionOrder($document->getContent(), $headings);
             $this->assertSame($preview->json('data.costs'), $agreement->data['costs']);
             $this->assertSame($alane->id, $agreement->data['admin_user_id']);
+            $this->assertSame(now('Pacific/Auckland')->toDateString(), $agreement->data['admin_signed_on']);
             $this->assertSame(AgreementTerms::SIGNATORY, $agreement->data['admin_name']);
             $this->assertNotSame($staff->id, $agreement->data['admin_user_id']);
             $this->assertStringStartsWith('%PDF-', Storage::disk('local')->get($agreement->pdf_path));
@@ -296,7 +303,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         ]);
         $legacyHeadings = ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>',
             '>Accommodation Information Declaration</h2>'];
-        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00')->assertSeeInOrder($legacyHeadings, false);
+        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00')->assertSeeInOrder($legacyHeadings, false)
+            ->assertSee('<td>Signature:</td>', false)->assertDontSee('Standard Long-Term Payment Structure', false);
         $this->mock(PdfGenerator::class, function ($mock) {
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
                 $this->assertSameSectionOrder($html, ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>']);

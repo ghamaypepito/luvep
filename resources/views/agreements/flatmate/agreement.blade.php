@@ -1,4 +1,4 @@
-@extends('agreements.flatmate.layout', ['doc_title' => $titles[$agreementType] ?? 'Flat/House Sharing Agreement'])
+@extends('agreements.flatmate.layout', ['doc_title' => $title, 'revised' => $revised])
 
 @php
     // Light placeholder helper: show the value, or a greyed hint when empty.
@@ -29,8 +29,17 @@
     };
 
     $isTransient = $agreementType === 'transient_flatmate';
-    $termsFirst = ($data['layout_version'] ?? null) === \App\Models\AccommodationAgreement::LAYOUT_TERMS_FIRST;
-    $title = $titles[$agreementType] ?? 'Flat/House Sharing Agreement';
+    $layoutVersion = $data['layout_version'] ?? null;
+    $revised = $layoutVersion === \App\Models\AccommodationAgreement::LAYOUT_EXALT_2026_11;
+    $termsFirst = $revised || $layoutVersion === \App\Models\AccommodationAgreement::LAYOUT_TERMS_FIRST;
+    $title = $revised && $agreementType === 'whole_property'
+        ? 'Whole Property Tenancy Agreement'
+        : ($titles[$agreementType] ?? 'Flat/House Sharing Agreement');
+    $termsView = $revised ? match ($agreementType) {
+        'standard_flatmate' => 'agreements.flatmate._terms_standard',
+        'transient_flatmate' => 'agreements.flatmate._terms_transient',
+        default => 'agreements.flatmate._terms',
+    } : 'agreements.flatmate._terms';
 
     $t = $data['tenancy'] ?? [];
     $c = $data['costs'] ?? [];
@@ -44,8 +53,8 @@
 
 @section('body')
     @if($termsFirst)
-        @include('agreements.flatmate._terms')
-        <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+        @include($termsView)
+        <div class="appendix">@include('agreements.flatmate._house_rules', ['showGeneralHeading' => ! ($revised && $isTransient)])</div>
     @endif
     <div class="doc-title{{ $termsFirst ? ' appendix' : '' }}">{{ $title }}</div>
     <p class="prop-line">PROPERTY ADDRESS: <span class="val">{!! $f($data['property_address'] ?? '', '[Full property address]') !!}</span></p>
@@ -59,7 +68,7 @@
         <tr><td class="label">Name</td><td>EXALT PROPERTY MANAGEMENT LTD</td></tr>
         <tr><td class="label">Address of service</td><td>21 Vazey Way, Hobsonville, Auckland 0618</td></tr>
         <tr><td class="label">Contact person</td><td>Exalt Property Admin — Alane Beryl Lozada</td></tr>
-        <tr><td class="label">Email</td><td>exaltinfo@luvep.com</td></tr>
+        <tr><td class="label">Email</td><td>{{ $revised ? 'exaltinfo@epathways.co.nz' : 'exaltinfo@luvep.com' }}</td></tr>
         <tr><td class="label">Mobile No</td><td>+64 21 227 8999 [Exalt Admin]</td></tr>
         <tr><td class="label">Other contacts (WhatsApp)</td><td>+64 27 777 5586 [Admin]</td></tr>
     </table>
@@ -105,14 +114,19 @@
         @endif
     </table>
 
-    @if($isTransient)
+    @if($isTransient || ($revised && $agreementType === 'standard_flatmate'))
         <p class="clause"><span class="n">2.</span> Tick one:</p>
         <p>
             <span class="tick">{{ empty($t['room_shared']) ? '☑' : '☐' }}</span> The room allocated to the tenant is <strong>not shared</strong> with other tenants.<br>
             <span class="tick">{{ !empty($t['room_shared']) ? '☑' : '☐' }}</span> The room allocated to the tenant <strong>is shared</strong> with other tenants, with a maximum of {!! $f($t['room_shared_max'] ?? '', '[number]') !!} other tenant(s).
         </p>
-        <p>The tenant's confirmed accommodation period is {!! $f($t['term'] ?? '', '[number of days / weeks / months]') !!}.</p>
-        <p>The agreed accommodation arrangement includes the Tenant's accommodation, rent, and the utilities specified below for the confirmed accommodation period.</p>
+        @if($isTransient)
+            <p>The tenant's confirmed accommodation period is {!! $f($t['term'] ?? '', '[number of days / weeks / months]') !!}.</p>
+            <p>The agreed accommodation arrangement includes the Tenant's accommodation, rent, and the utilities specified below for the confirmed accommodation period.</p>
+        @else
+            <p>The Tenant’s agreed accommodation period is {!! $f($t['term'] ?? '', '[number of months]') !!}.</p>
+            <p>The agreed accommodation arrangement includes the Tenant’s accommodation and the rent and utilities applicable under the selected payment option for the agreed accommodation period.</p>
+        @endif
         <p><strong>Included Utilities:</strong> Power, water, internet, and gas (where applicable).</p>
     @else
         <p>The Tenant's agreed accommodation period is {!! $f($t['term'] ?? '', '[number of months]') !!}.</p>
@@ -184,9 +198,13 @@
         <tr><td class="label">Account name</td><td>Exalt Property Management Limited</td></tr>
         <tr><td class="label">Account No</td><td>01-0288-0332767-00</td></tr>
         <tr><td class="label">Particular</td><td>{!! $f($bank['particular'] ?? '', '[Tenant name]') !!}</td></tr>
-        <tr><td class="label">Code</td><td>RENTUTIL / RENT</td></tr>
+        <tr><td class="label">Code</td><td>{{ $revised && $isTransient ? 'RENTUTIL' : 'RENTUTIL / RENT' }}</td></tr>
         <tr><td class="label">Reference</td><td>{!! $f($bank['reference'] ?? '', '[Property name]') !!}</td></tr>
     </table>
+
+    @if($revised && $isTransient)
+        <p>The total move-in cost must be paid in full and received by Exalt Property Management at least 24 hours before the agreed move-in date, unless otherwise agreed in writing by Exalt. The accommodation and move-in arrangements will only be confirmed once the required payment has been received and cleared.</p>
+    @endif
 
     @if(!empty($data['notes']))
         <h2 class="section">Notes / Special Conditions</h2>
@@ -195,8 +213,16 @@
 
     {{-- ---------- Signatures (sub-tenants + Exalt Property Management) ---------- --}}
     @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
-    <h2 class="section">Signatures</h2>
-    <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
+    @if($revised)
+        <div class="appendix">@include('agreements.flatmate._declaration', ['signature' => null, 'signedMeta' => null])</div>
+    @endif
+    <h2 class="section{{ $revised ? ' appendix' : '' }}">Signatures</h2>
+    @if($revised)
+        <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully.</p>
+        <p>Exalt and the Tenant(s) sign below to confirm that they understand and agree to the Terms &amp; Conditions, House Rules, and this agreement.</p>
+    @else
+        <p>Do not sign this agreement unless you understand and agree with everything in it. Please check the terms and conditions carefully. Exalt and Tenant sign here to show that they agree to all the terms and conditions in the tenancy agreement.</p>
+    @endif
     @if(($data['workflow_version'] ?? null) === 2)
         <table class="sign">
             @foreach($subtenants as $index => $person)
@@ -206,7 +232,12 @@
                         <img src="{{ $tenantSignature['image'] }}" alt="Tenant signature" style="max-height:48px; display:block;">
                     @endif
                     <div class="sign-line"></div>
-                    <div class="sign-cap">{{ trim(($person['first_name'] ?? '').' '.($person['last_name'] ?? '')) }} · {{ $tenantSignature['at'] ?? 'Awaiting signature' }}</div>
+                    @if($revised)
+                        <div class="sign-cap">Sub-Tenant {{ $index + 1 }} · {{ trim(($person['first_name'] ?? '').' '.($person['last_name'] ?? '')) }}</div>
+                        <div class="sign-cap">Date · {{ $tenantSignature['at'] ?? 'Awaiting signature' }}</div>
+                    @else
+                        <div class="sign-cap">{{ trim(($person['first_name'] ?? '').' '.($person['last_name'] ?? '')) }} · {{ $tenantSignature['at'] ?? 'Awaiting signature' }}</div>
+                    @endif
                     @if($tenantSignature)<div class="sign-cap">Signed as {{ $tenantSignature['name'] }} · IP {{ $tenantSignature['ip'] }}</div>@endif
                 </td></tr>
             @endforeach
@@ -230,6 +261,10 @@
     </table>
     @endif
 
+    @if($revised)
+        @include('agreements.flatmate._exalt_signature')
+    @endif
+
     @if($signedMeta)
         <div class="callout" style="margin-top:14px;">
             <strong>Electronically signed.</strong>
@@ -243,27 +278,12 @@
         <div class="appendix">@include('agreements.flatmate._terms')</div>
         <div class="appendix">@include('agreements.flatmate._house_rules')</div>
     @endunless
-    {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
-    <div class="appendix">@include('agreements.flatmate._declaration', [
-        'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,
-        'signedMeta' => ($data['workflow_version'] ?? null) === 2 ? null : $signedMeta,
-    ])</div>
-
-    {{-- ---------- Exalt Property Admin signatory (at the very end, after the Declaration) ---------- --}}
-    <table class="sign">
-        <tr>
-            <td>
-                @if($adminSignature)
-                    <img src="{{ $adminSignature }}" alt="Exalt Property Admin signature" style="max-height:48px; display:block; margin-bottom:2px;">
-                @endif
-                <div class="sign-line"></div>
-                <div class="sign-cap">Exalt Property Admin</div>
-                @if(($data['workflow_version'] ?? null) === 2)
-                    <div class="sign-cap">{{ $adminName }}</div>
-                @endif
-                <div class="decl-cap">[signatory of admin]</div>
-            </td>
-            <td></td>
-        </tr>
-    </table>
+    @unless($revised)
+        {{-- Preserve the previously issued layout and signature treatment. --}}
+        <div class="appendix">@include('agreements.flatmate._declaration', [
+            'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,
+            'signedMeta' => ($data['workflow_version'] ?? null) === 2 ? null : $signedMeta,
+        ])</div>
+        @include('agreements.flatmate._exalt_signature')
+    @endunless
 @endsection

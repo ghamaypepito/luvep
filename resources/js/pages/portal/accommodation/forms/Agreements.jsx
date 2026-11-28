@@ -272,6 +272,10 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <Mini label="Move-in time" type="time" value={fields.tenancy?.move_in_time} onChange={(v) => setF(["tenancy", "move_in_time"], v)} />
                                     <Mini label="Move-out date (automatic)" type="date" readOnly value={computed?.tenancy?.move_out_date ?? ""} />
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
+                                    {agreementType !== "whole_property" && <>
+                                        <Mini label="Room occupancy" options={ROOM_OCCUPANCY} value={fields.tenancy?.room_shared == null ? "" : Number(fields.tenancy.room_shared).toString()} onChange={(value) => setF(["tenancy", "room_shared"], value)} />
+                                        {String(fields.tenancy?.room_shared) === "1" && <Mini label="Maximum other occupants" type="number" step="1" value={fields.tenancy?.room_shared_max} onChange={(value) => setF(["tenancy", "room_shared_max"], value)} />}
+                                    </>}
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
                                     <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
                                     {fields.tenancy?.utility_option ? (
@@ -399,6 +403,8 @@ function Mini({ label, value, onChange, full = false, type = "text", options = n
         </label>
     );
 }
+
+const ROOM_OCCUPANCY = [{ value: "0", label: "Room is not shared" }, { value: "1", label: "Room is shared" }];
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UTILITY_OPTIONS = [{ value: "1", label: "1 — Exalt manages utilities" }, { value: "2", label: "2 — Tenant arranges directly" }];

@@ -92,7 +92,7 @@ class AccommodationAgreementController extends Controller
         ]);
 
         $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
-        $data['layout_version'] = AccommodationAgreement::LAYOUT_TERMS_FIRST;
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
@@ -128,7 +128,7 @@ class AccommodationAgreementController extends Controller
 
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
         // Preserve the issued layout when the signing flow re-renders this agreement.
-        $data['layout_version'] = AccommodationAgreement::LAYOUT_TERMS_FIRST;
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
@@ -148,6 +148,7 @@ class AccommodationAgreementController extends Controller
             $data['admin_signature'] = $adminSignature;
             $data['admin_name'] = $adminName;
             $data['admin_user_id'] = $signatory->id;
+            $data['admin_signed_on'] = now('Pacific/Auckland')->toDateString();
             $data['recipient_email'] = $ctx['email'];
 
             $pdf = Pdf::loadView('agreements.flatmate.agreement', [
