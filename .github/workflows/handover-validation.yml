@@ -46,6 +46,7 @@ jobs:
           node tests/Frontend/accommodation-insights.cjs
           node tests/Frontend/accommodation-shared-dtr.cjs
           node tests/Frontend/accommodation-gas-delivery.cjs
+          node tests/Frontend/accommodation-pre-tenancy-citizenship.cjs
           node tests/Frontend/brief-references.cjs
           node tests/Frontend/compose-studio.cjs
           node tests/Frontend/compose-video.cjs

@@ -6,10 +6,10 @@ const PRIMARY = "#1F5A8B";
 
 const emptyOccupant = () => ({ full_name: "", id_number: "", dob: "", age: "", relationship: "", email: "", mobile: "", visa_type: "" });
 
-function Field({ label, hint, required, error, children }) {
+function Field({ label, htmlFor, hint, required, error, children }) {
     return (
         <div className="space-y-1.5">
-            <label className="block text-sm font-semibold text-gray-800">
+            <label htmlFor={htmlFor} className="block text-sm font-semibold text-gray-800">
                 {label} {required && <span className="text-rose-500">*</span>}
             </label>
             {hint && <p className="text-xs italic text-gray-500">{hint}</p>}
@@ -64,8 +64,8 @@ function RadioGroup({ options, value, onChange, name, error }) {
     );
 }
 
-export default function PreTenancyForm({ token, completed = false, prefill = {}, options = {}, general = false }) {
-    const { data, setData, post, processing, errors } = useForm({
+export default function PreTenancyForm({ token, completed = false, prefill = {}, options = {}, general = false, citizenshipOption }) {
+    const { data, setData, post, processing, errors, clearErrors } = useForm({
         full_legal_name: prefill.full_legal_name || "",
         id_number: prefill.id_number || "",
         age: prefill.age || "",
@@ -149,6 +149,16 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
         );
     }
 
+    const isCitizen = Boolean(citizenshipOption && data.visa_type === citizenshipOption);
+    const applicantOptions = [...new Set([citizenshipOption, ...(options.visa_types || [])].filter(Boolean))];
+    const setApplicantVisaType = (value) => {
+        if (citizenshipOption && value === citizenshipOption) {
+            setData((previous) => ({ ...previous, visa_type: value, visa: null }));
+            clearErrors("visa");
+        } else {
+            setData("visa_type", value);
+        }
+    };
     const occupantError = (i, key) => errors[`occupants.${i}.${key}`];
 
     return (
@@ -195,13 +205,13 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
                     <Field label="Current Address" required error={errors.current_address}>
                         <input className={inputClass} value={data.current_address} onChange={(e) => setData("current_address", e.target.value)} />
                     </Field>
-                    <Field label="Visa Type" error={errors.visa_type}>
-                        <select className={inputClass} value={data.visa_type} onChange={(e) => setData("visa_type", e.target.value)}>
-                            <option value="">Select a visa type…</option>
-                            {(options.visa_types || []).map((v) => (
+                    <Field label="Citizenship or Visa Type" htmlFor="applicant-visa-type" error={errors.visa_type}>
+                        <select id="applicant-visa-type" className={inputClass} value={data.visa_type} onChange={(e) => setApplicantVisaType(e.target.value)}>
+                            <option value="">Select citizenship or visa type…</option>
+                            {applicantOptions.map((v) => (
                                 <option key={v} value={v}>{v}</option>
                             ))}
-                            {data.visa_type && !(options.visa_types || []).includes(data.visa_type) && (
+                            {data.visa_type && !applicantOptions.includes(data.visa_type) && (
                                 <option value={data.visa_type}>{data.visa_type}</option>
                             )}
                         </select>
@@ -276,9 +286,9 @@ export default function PreTenancyForm({ token, completed = false, prefill = {},
                     <Field label="Upload Valid ID (Passport or Driver's Licence)" required error={errors.valid_id}>
                         <FileInput id="valid_id" value={data.valid_id} onChange={(f) => setData("valid_id", f)} error={errors.valid_id} />
                     </Field>
-                    <Field label="Upload Visa" required error={errors.visa}>
+                    {!isCitizen && <Field label="Upload Visa" required error={errors.visa}>
                         <FileInput id="visa" value={data.visa} onChange={(f) => setData("visa", f)} error={errors.visa} />
-                    </Field>
+                    </Field>}
                 </SectionCard>
 
                 {/* Section 7 — Bank Details */}

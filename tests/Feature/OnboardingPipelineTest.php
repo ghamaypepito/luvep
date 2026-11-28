@@ -3,11 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\EoiSubmission;
+use App\Models\PreTenancyForm;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as AssertInertia;
 use Tests\TestCase;
 
@@ -259,6 +263,88 @@ class OnboardingPipelineTest extends TestCase
         $s = $this->submission();
         DB::table('accommodation_eoi_submissions')->where('id', $s->id)->update(['updated_at' => now()->subDays(5)]);
         $this->assertEquals(5, $s->fresh()->days_at_current_stage);
+    }
+
+    public function test_pre_tenancy_citizens_can_submit_both_form_types_with_only_valid_id(): void
+    {
+        $this->withoutVite();
+        Storage::fake('local');
+        Notification::fake();
+        $submission = $this->submission(['status' => 'pre_tenancy_form_sent']);
+        $general = '/apply/pre-tenancy';
+        $onboarding = '/pre-tenancy/'.$submission->ensurePublicToken();
+        $citizen = 'New Zealand citizen';
+        $payload = $this->preTenancyPayload($citizen);
+
+        foreach ([$general, $onboarding] as $url) {
+            $this->get($url)->assertOk()->assertInertia(fn (AssertInertia $page) => $page
+                ->component('accommodation/PreTenancyForm')->where('citizenshipOption', $citizen));
+            $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('valid_id')
+                ->assertJsonMissingValidationErrors('visa');
+        }
+
+        $this->from($general)->post($general, [
+            ...$payload, 'valid_id' => UploadedFile::fake()->create('id.pdf', 5, 'application/pdf'),
+        ])->assertRedirect($general)->assertSessionHas('success')->assertSessionHasNoErrors();
+        $this->from($onboarding)->post($onboarding, [
+            ...$payload, 'valid_id' => UploadedFile::fake()->create('id.pdf', 5, 'application/pdf'),
+            'visa' => UploadedFile::fake()->create('previously-selected.pdf', 5, 'application/pdf'),
+        ])->assertRedirect($onboarding)->assertSessionHas('success')->assertSessionHasNoErrors();
+
+        $form = PreTenancyForm::sole();
+        $submission->refresh();
+        $this->assertSame('pre_tenancy_form_completed', $submission->status);
+        $this->assertTrue($submission->preTenancyFormCompleted());
+        foreach ([$form->data, $submission->pre_tenancy_form_data] as $saved) {
+            $this->assertSame($citizen, $saved['main']['visa_type']);
+            $this->assertSame(['valid_id'], array_keys($saved['documents']));
+            Storage::disk('local')->assertExists($saved['documents']['valid_id']['path']);
+        }
+        $this->assertCount(2, Storage::disk('local')->allFiles());
+
+        $this->actingAs($this->user());
+        foreach (["/portal/accommodation/forms/pre-tenancy/{$form->id}", "/portal/accommodation/applications/{$submission->id}/pre-tenancy"] as $base) {
+            $this->get("$base/valid_id/download")->assertDownload('id.pdf');
+            $this->get("$base/visa/download")->assertNotFound();
+        }
+    }
+
+    public function test_pre_tenancy_visa_holders_still_need_and_can_save_both_documents(): void
+    {
+        Storage::fake('local');
+        Notification::fake();
+        $submission = $this->submission(['status' => 'pre_tenancy_form_sent']);
+        $general = '/apply/pre-tenancy';
+        $onboarding = '/pre-tenancy/'.$submission->ensurePublicToken();
+        $payload = $this->preTenancyPayload('Permanent Resident Visa');
+
+        foreach ([$general, $onboarding] as $url) {
+            $this->postJson($url, [
+                ...$payload, 'valid_id' => UploadedFile::fake()->create('id.pdf', 5, 'application/pdf'),
+            ])->assertUnprocessable()->assertJsonValidationErrors('visa');
+            $this->from($url)->post($url, [
+                ...$payload, 'valid_id' => UploadedFile::fake()->create('id.pdf', 5, 'application/pdf'),
+                'visa' => UploadedFile::fake()->create('visa.pdf', 5, 'application/pdf'),
+            ])->assertRedirect($url)->assertSessionHas('success')->assertSessionHasNoErrors();
+        }
+
+        foreach ([PreTenancyForm::sole()->data, $submission->fresh()->pre_tenancy_form_data] as $saved) {
+            $this->assertSame('Permanent Resident Visa', $saved['main']['visa_type']);
+            $this->assertSame('visa.pdf', $saved['documents']['visa']['name']);
+            Storage::disk('local')->assertExists([$saved['documents']['valid_id']['path'], $saved['documents']['visa']['path']]);
+        }
+    }
+
+    private function preTenancyPayload(string $visaType): array
+    {
+        return [
+            'full_legal_name' => 'Test Applicant', 'id_number' => 'ID123', 'age' => '28', 'email' => 'applicant@example.test',
+            'mobile' => '0211234567', 'current_address' => '1 Test St', 'visa_type' => $visaType,
+            'has_additional_occupants' => 'no', 'account_name' => 'Test Applicant', 'account_number' => '00-0000-0000000-00',
+            'property_address' => '2 Test St', 'move_in_date' => '2026-12-01', 'length_of_stay' => '6 months',
+            'room_type' => 'One Single room with shared toilet and bathroom', 'rent_funding' => 'Employment / Work Income',
+            'referee_name' => 'Test Referee', 'referee_phone' => '0212345678', 'referee_email' => 'referee@example.test',
+        ];
     }
 
     /** Public form payload (EOI fields + booleans + consent). */
