@@ -122,6 +122,8 @@ class ViewingSchedule
                 'name' => $data['name'],
                 'mobile' => $data['mobile'],
                 'status' => Attendee::CONFIRMED,
+                'attendance_response' => null,
+                'attendance_responded_at' => null,
             ]);
 
             return [$slot, $attendee];

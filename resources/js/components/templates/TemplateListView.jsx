@@ -16,7 +16,7 @@ const titleCase = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
  * it. Grouping is driven client-side off each template's folder_id — the
  * server just persists folder_id via the folders/move endpoints.
  */
-export default function TemplateListView({ templates = [], folders = [], departmentOptions = [], basePath = "/admin/message-templates", scopeLabel = "" }) {
+export default function TemplateListView({ templates = [], folders = [], departmentOptions = [], basePath = "/admin/message-templates", scopeLabel = "", fixedDepartment = null }) {
     const isAdmin = basePath.startsWith("/admin");
     // Department tabs + move-to-department show wherever department options are
     // available — which is now every portal, not just admin (the template
@@ -92,7 +92,7 @@ export default function TemplateListView({ templates = [], folders = [], departm
 
     // The department the current tab represents ('' = Shared). New folders and
     // templates created from within a tab are filed under it.
-    const tabDept = deptTab === "__all" ? "" : deptTab;
+    const tabDept = fixedDepartment ?? (deptTab === "__all" ? "" : deptTab);
 
     // Dialog openers. New folders inherit the active department tab.
     const createFolder = (preselectIds = null) => setDialog({ type: "create", name: "", preselectIds: preselectIds ? [...preselectIds] : [], department: tabDept });

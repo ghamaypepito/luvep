@@ -7,6 +7,7 @@ use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Accommodation\ComposeContacts;
+use App\Services\Accommodation\ExaltEmailTemplates;
 use App\Services\CommunicationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -37,20 +38,34 @@ class ComposeController extends Controller
                 'sentSearch' => $sentSearch,
                 'sentPages' => ['previous' => $history->previousPageUrl(), 'next' => $history->nextPageUrl()],
             ] : []),
-            'templates' => MessageTemplate::active()->availableTo($request->user())
-                ->whereJsonContains('channels', 'email')
-                ->whereNotNull('email_body')->where('email_body', '!=', '')
-                ->orderBy('name')
-                ->get(['id', 'name', 'department', 'email_subject', 'email_body', 'design_json'])
-                ->map(function (MessageTemplate $template) {
-                    if (! preg_match('/<[a-z][\s\S]*>/i', $template->email_body)) {
-                        // Markdown percent-encodes the merge fields used as link destinations.
-                        $template->email_body = preg_replace('/%7B%7B([a-z0-9_.]+)%7D%7D/i', '{{$1}}', Str::markdown($template->email_body));
-                    }
-
-                    return $template;
-                }),
+            'templates' => $this->composeTemplates($request),
         ]);
+    }
+
+    private function composeTemplates(Request $request)
+    {
+        $accommodation = $request->routeIs('portal.accommodation.compose');
+        $templates = MessageTemplate::active()->availableTo($request->user())
+            ->when($accommodation, fn ($query) => $query->forDepartment('accommodation'))
+            ->when(! $accommodation, fn ($query) => $query->where(fn ($other) => $other
+                ->where('department', '!=', 'accommodation')->orWhereNull('department')
+                ->orWhereNull('key')->orWhereNotIn('key', ExaltEmailTemplates::KEYS)))
+            ->whereJsonContains('channels', 'email')
+            ->whereNotNull('email_body')->where('email_body', '!=', '')
+            ->orderBy('name')
+            ->get(['id', 'key', 'name', 'department', 'email_subject', 'email_body', 'design_json']);
+
+        return ($accommodation ? ExaltEmailTemplates::sort($templates) : $templates)->map(function (MessageTemplate $template) use ($accommodation) {
+            if (! preg_match('/<[a-z][\s\S]*>/i', $template->email_body)) {
+                // Markdown percent-encodes the merge fields used as link destinations.
+                $template->email_body = preg_replace('/%7B%7B([a-z0-9_.]+)%7D%7D/i', '{{$1}}', Str::markdown($template->email_body));
+            }
+            if ($accommodation && in_array($template->key, ExaltEmailTemplates::KEYS, true)) {
+                $template->exalt = app(ExaltEmailTemplates::class)->metadata($template);
+            }
+
+            return $template->makeHidden('key');
+        });
     }
 
     public function send(Request $request, CommunicationService $comms)

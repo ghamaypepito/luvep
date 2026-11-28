@@ -307,13 +307,14 @@ class CommunicationService
             return $log;
         }
 
-        $enqueue = function () use ($recipients, $subject, $body, $attachments, $log, $cc, $bcc, $rawHtml, $fromEmail, $fromName): void {
+        $replyToEmail = $accommodation['reply_to_email'] ?? null;
+        $enqueue = function () use ($recipients, $subject, $body, $attachments, $log, $cc, $bcc, $rawHtml, $fromEmail, $fromName, $replyToEmail): void {
             // Cc/Bcc ride along via TemplatedMessage's envelope, same as the
             // templated client path — so a staff notice honours the template's
             // configured Cc/Bcc, not just the resolved role address.
             try {
                 Mail::to($recipients)->queue(
-                    new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, $fromEmail, $fromName, $cc, $bcc, null, $rawHtml)
+                    new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, $fromEmail, $fromName, $cc, $bcc, null, $rawHtml, $replyToEmail)
                 );
             } catch (\Throwable $e) {
                 Log::error('Composed email failed', ['address' => implode(', ', $recipients), 'error' => $e->getMessage()]);

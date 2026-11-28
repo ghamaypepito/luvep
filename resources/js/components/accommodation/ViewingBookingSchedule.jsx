@@ -84,6 +84,9 @@ function AttendeeList({ slot }) {
                         <div className="min-w-0">
                             <p className="font-semibold">{person.name}</p>
                             <p className="break-all text-slate-600">{person.email} · {person.mobile}</p>
+                            {person.attendance_response && <p className="text-slate-700">
+                                Attendance {person.attendance_response}
+                            </p>}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {person.status === "Cancelled" ? <span className="text-slate-600">Cancelled</span> : (
