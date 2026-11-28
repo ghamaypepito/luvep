@@ -19,6 +19,8 @@ class MessageLog extends Model
 
     public const CHANNEL_SMS = 'sms';
 
+    public const SOURCE_ACCOMMODATION_COMPOSE = 'accommodation-mail';
+
     protected $fillable = [
         'template_key',
         'source',
@@ -35,11 +37,13 @@ class MessageLog extends Model
         'sent_at',
         'failed_at',
         'triggered_by_user_id',
+        'compose_details',
     ];
 
     protected $casts = [
         'sent_at' => 'datetime',
         'failed_at' => 'datetime',
+        'compose_details' => 'array',
     ];
 
     public function lead(): BelongsTo
