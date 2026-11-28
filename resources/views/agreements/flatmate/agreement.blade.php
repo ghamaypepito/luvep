@@ -29,6 +29,7 @@
     };
 
     $isTransient = $agreementType === 'transient_flatmate';
+    $termsFirst = ($data['layout_version'] ?? null) === \App\Models\AccommodationAgreement::LAYOUT_TERMS_FIRST;
     $title = $titles[$agreementType] ?? 'Flat/House Sharing Agreement';
 
     $t = $data['tenancy'] ?? [];
@@ -42,7 +43,11 @@
 @endphp
 
 @section('body')
-    <div class="doc-title">{{ $title }}</div>
+    @if($termsFirst)
+        @include('agreements.flatmate._terms')
+        <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    @endif
+    <div class="doc-title{{ $termsFirst ? ' appendix' : '' }}">{{ $title }}</div>
     <p class="prop-line">PROPERTY ADDRESS: <span class="val">{!! $f($data['property_address'] ?? '', '[Full property address]') !!}</span></p>
     @if($isTransient)
         <p class="note-line">Exalt Terms and Conditions and the most recent House Rules are attached as appendices.</p>
@@ -62,6 +67,7 @@
     {{-- ---------- Sub-tenants ---------- --}}
     @for($i = 0; $i < $slots; $i++)
         @php $s = $subtenants[$i] ?? []; @endphp
+        @if($termsFirst)<div class="avoid-break">@endif
         <div class="subt-head avoid-break">Sub-Tenant {{ $i + 1 }} Details</div>
         <table class="kv avoid-break">
             <tr>
@@ -81,6 +87,7 @@
                 <tr><td class="label">Relationship to Sub-Tenant 1</td><td colspan="3">{!! $f($s['relationship'] ?? '') !!}</td></tr>
             @endif
         </table>
+        @if($termsFirst)</div>@endif
     @endfor
 
     {{-- ---------- Move-in details ---------- --}}
@@ -232,9 +239,10 @@
         </div>
     @endif
 
-    {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
-    <div class="appendix">@include('agreements.flatmate._terms')</div>
-    <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    @unless($termsFirst)
+        <div class="appendix">@include('agreements.flatmate._terms')</div>
+        <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    @endunless
     {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
     <div class="appendix">@include('agreements.flatmate._declaration', [
         'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,

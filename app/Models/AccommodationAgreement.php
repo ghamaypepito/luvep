@@ -17,6 +17,8 @@ class AccommodationAgreement extends Model
         'standard_flatmate' => 'Standard Flatmate — Long-Term',
     ];
 
+    public const LAYOUT_TERMS_FIRST = 'terms_first';
+
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_SENT = 'sent';       // emailed a signing link

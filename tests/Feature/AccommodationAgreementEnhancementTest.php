@@ -66,6 +66,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
                 $this->assertStringContainsString('Notes / Special Conditions', $html);
                 $this->assertStringContainsString(AgreementTerms::SIGNATORY, $html);
+                $this->assertSameSectionOrder($html, ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Sub-Tenant 1 Details</div>',
+                    '>Signatures</h2>', '>Accommodation Information Declaration</h2>']);
                 preg_match('/Declared at(.*?)Before me/s', $html, $declaration);
                 $this->assertStringNotContainsString('<img', $declaration[1]);
                 Storage::disk('local')->put($path, '%PDF-synthetic-signed');
@@ -73,6 +75,18 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 return $path;
             });
         });
+    }
+
+    private function assertSameSectionOrder(string $html, array $headings): void
+    {
+        $previous = -1;
+        foreach ($headings as $heading) {
+            $position = strpos($html, $heading);
+            $this->assertNotFalse($position, $heading);
+            $this->assertGreaterThan($previous, $position, $heading);
+            $this->assertSame(1, substr_count($html, $heading), $heading);
+            $previous = $position;
+        }
     }
 
     private function sign(AccommodationAgreement $agreement)
@@ -91,8 +105,15 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 ->assertJsonPath('data.costs.rent_advance_to', '2026-11-29')
                 ->assertJsonPath('data.costs.prorated_days', 5)->assertJsonPath('data.costs.prorated_rent', '500.00')
                 ->assertJsonPath('data.costs.total_move_in', '2600.00')->assertJsonPath('data.tenancy.end_date', '2026-12-17');
+            $preview->assertJsonPath('data.layout_version', AccommodationAgreement::LAYOUT_TERMS_FIRST);
             $this->assertStringNotContainsString('<script>text</script>', $preview->json('html'));
-            $agreement = $this->generate($source, $data, $type);
+            $headings = ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Main Tenant [Exalt Property] Details</h3>',
+                '>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Accommodation Information Declaration</h2>'];
+            $this->assertSameSectionOrder($preview->json('html'), $headings);
+            $agreement = $this->generate($source, $data + ['layout_version' => 'legacy'], $type);
+            $this->assertSame(AccommodationAgreement::LAYOUT_TERMS_FIRST, $agreement->data['layout_version']);
+            $document = $this->get('/agreement/'.$agreement->signing_token.'/document')->assertOk();
+            $this->assertSameSectionOrder($document->getContent(), $headings);
             $this->assertSame($preview->json('data.costs'), $agreement->data['costs']);
             $this->assertSame($alane->id, $agreement->data['admin_user_id']);
             $this->assertSame(AgreementTerms::SIGNATORY, $agreement->data['admin_name']);
@@ -273,9 +294,12 @@ class AccommodationAgreementEnhancementTest extends TestCase
             'agreement_type' => 'standard_flatmate', 'pre_tenancy_form_id' => $source->id,
             'client_name' => 'Legacy', 'data' => $data, 'signing_token' => 'legacy-token', 'status' => 'sent',
         ]);
-        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00');
+        $legacyHeadings = ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>',
+            '>Accommodation Information Declaration</h2>'];
+        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00')->assertSeeInOrder($legacyHeadings, false);
         $this->mock(PdfGenerator::class, function ($mock) {
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
+                $this->assertSameSectionOrder($html, ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>']);
                 Storage::disk('local')->put($path, '%PDF-legacy');
 
                 return $path;

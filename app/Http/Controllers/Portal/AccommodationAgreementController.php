@@ -92,6 +92,7 @@ class AccommodationAgreementController extends Controller
         ]);
 
         $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_TERMS_FIRST;
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
@@ -126,6 +127,8 @@ class AccommodationAgreementController extends Controller
         abort_if($ctx === null, 404);
 
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
+        // Preserve the issued layout when the signing flow re-renders this agreement.
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_TERMS_FIRST;
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
