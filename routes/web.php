@@ -1722,7 +1722,7 @@ Route::middleware(['auth'])->group(function () {
             // Installment payment plan (pay-later) — set terms + mark a payment paid.
             Route::post('/cases/{lead}/installment-plan', [$cp, 'setInstallmentPlan']);
             Route::post('/cases/{lead}/installments/{installment}/pay', [$cp, 'payInstallment']);
-            // Multi-visa — start the client's next visa application from an approved case.
+            // Multi-visa — start the client's next visa application after a decision.
             Route::post('/cases/{lead}/next-visa', [$cp, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [$cp, 'generateInzForm'])->where('code', 'INZ[0-9]+');
             Route::post('/cases/{lead}/inz-forms/{code}/assign', [$cp, 'assignInzForm'])->where('code', 'INZ[0-9]+');
