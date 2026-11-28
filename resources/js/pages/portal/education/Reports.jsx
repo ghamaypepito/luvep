@@ -154,8 +154,6 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                 </span>
             </div>
 
-            {!customOpen && <WeeklyReport report={weeklyReport} saveUrl="/portal/education/reports/note" />}
-
             {customOpen && (
                 <form noValidate onSubmit={applyCustom} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 flex flex-wrap items-end gap-3">
                     <label className="text-[12px] font-bold uppercase tracking-wider text-gray-500">From
@@ -173,15 +171,17 @@ function EducationReportContent({ range = {}, pipeline = [], summary = {}, summa
                 <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-800">{error}{hasTrustedData && <p className="font-semibold mt-1">Previously loaded figures remain below and are stale. Their dates and filters are unchanged until a successful refresh.</p>}</div>
             )}
             {hasTrustedData && (
+                <Section n="01" title="Education">
+                    <DepartmentBreakdown departments={departments} range={range} activeKey={departmentKey} setActive={setActiveDepartment}
+                        contacts={personalReport?.contacts} noteActivity={summary.note_activity} />
+                </Section>
+            )}
+
+            {!customOpen && <WeeklyReport report={weeklyReport} saveUrl="/portal/education/reports/note" />}
+
+            {hasTrustedData && (
                 <>
                     <EducationPersonalReport data={personalReport} />
-                    {/* Section 01 — Education (the students register, broken down by
-                        department: Education / English / Immigration, each under its
-                        own real status set) */}
-                    <Section n="01" title="Education">
-                        <DepartmentBreakdown departments={departments} range={range} activeKey={departmentKey} setActive={setActiveDepartment}
-                            contacts={personalReport?.contacts} noteActivity={summary.note_activity} />
-                    </Section>
 
                     {/* Section 02 — ePortal Programs */}
                     <Section n="02" title="ePortal Programs">
