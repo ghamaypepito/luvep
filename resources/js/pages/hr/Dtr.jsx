@@ -1,5 +1,6 @@
 import DtrHistory from "@/components/hr/DtrHistory";
 import AssignedCreativeWork from "@/components/creative/AssignedCreativeWork";
+import SharedDtrTasks from "../portal/accommodation/SharedDtrTasks";
 import { hrPath } from "@/lib/hrPath";
 import { Head, Link, useForm, usePage, router } from "@inertiajs/react";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, useEffect } from "react";
@@ -420,7 +421,7 @@ export const Editor = forwardRef(function Editor({ entry, locked, reportChanges 
         </div>{sidebar?.(form.data, form.isDirty, form.processing)}</div>
     );
 });
-export default function Dtr({ entries, weeks, today, date_filter, creativeRequests = [] }) {
+export default function Dtr({ entries, weeks, today, date_filter, creativeRequests = [], sharedAccommodationDtr = null }) {
     const { hr } = usePage().props;
     const editor = useRef(null);
     useEffect(() => {
@@ -440,6 +441,7 @@ export default function Dtr({ entries, weeks, today, date_filter, creativeReques
                 <p>Your attendance, work and review history in one place.</p>
             </div>
             <AssignedCreativeWork requests={creativeRequests} preview={!!hr.preview} onAddToRecord={!hr.preview && entry?.can_edit && ["draft", "returned"].includes(entry.hr_status) ? request => editor.current?.addCreativeRequest(request) : undefined} />
+            {sharedAccommodationDtr && <SharedDtrTasks board={sharedAccommodationDtr} />}
             <section className="hr-panel">
                 <div className="hr-section-bar">
                     <h2>Daily record</h2>

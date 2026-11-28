@@ -118,6 +118,9 @@ class DtrController extends Controller
             'minLeaveDate' => now($setting?->timezone ?: config('app.timezone', 'UTC'))->addDays(7)->toDateString(),
             'account' => ['name' => $user->name, 'email' => $user->email],
             'today' => $today,
+            'sharedAccommodationDtr' => $page === 'portal/accommodation/Dtr'
+                ? app(AccommodationDtrTaskController::class)->panel(request())
+                : null,
             'creativeRequests' => \App\Models\CreativeRequest::assignedFor($user),
             // Per-feature access drives the DTR admin toolbar links. Admins +
             // super admins always have all three; other staff only what they've
