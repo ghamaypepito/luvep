@@ -146,11 +146,11 @@ class User extends Authenticatable
         }
 
         if ($this->isSuperAdmin()) {
-            return array_values($valid);
+            return $this->canSeeModule('accommodation_finance') ? [...$valid, 'accommodation_finance'] : array_values($valid);
         }
 
         $perms = array_values(array_intersect((array) ($this->module_permissions ?? []), $valid));
-        $out = $perms;
+        $out = $this->canSeeModule('accommodation_finance') ? [...$perms, 'accommodation_finance'] : $perms;
 
         foreach ($restricted as $key => $def) {
             $children = array_keys($def['features'] ?? []);
@@ -180,6 +180,10 @@ class User extends Authenticatable
      */
     public function canSeeModule(string $key): bool
     {
+        if ($key === 'accommodation_finance') {
+            return $this->is_active && in_array(strtolower(trim((string) $this->email)), config('modules.accommodation_finance_accounts', []), true);
+        }
+
         if ($this->isSuperAdmin()) {
             return true;
         }

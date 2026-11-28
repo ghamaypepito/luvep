@@ -124,7 +124,7 @@ class PropertyController extends Controller
             ->when($sort === 'latest', fn ($q) => $q->latest())
             // Default: numeric-aware sort by code, nulls last.
             ->when(! in_array($sort, ['address', 'latest'], true), fn ($q) => $q
-                ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED), code'))
+                ->inPortfolioOrder())
             ->paginate(15)
             ->withQueryString();
         $summaries = \App\Services\Accommodation\RoomInventory::forProperties($properties->getCollection())->keyBy('id');
@@ -295,6 +295,9 @@ class PropertyController extends Controller
         } catch (QueryException $e) {
             if ($property->hasPurchaseInvoiceHistory()) {
                 return redirect()->back()->with('error', Property::PURCHASE_INVOICE_DELETE_ERROR);
+            }
+            if ($property->hasWeeklyFinanceHistory()) {
+                return redirect()->back()->with('error', Property::WEEKLY_FINANCE_DELETE_ERROR);
             }
             throw $e;
         }

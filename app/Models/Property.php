@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Traits\LogsActivity;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -15,7 +17,14 @@ class Property extends Model
 
     public const PURCHASE_INVOICE_DELETE_ERROR = 'This property has purchase invoice history. Archive it to preserve those records.';
 
+    public const WEEKLY_FINANCE_DELETE_ERROR = 'This property has weekly finance history. Archive it to preserve those records.';
+
     protected $table = 'accommodation_properties';
+
+    public function scopeInPortfolioOrder(Builder $query): Builder
+    {
+        return $query->orderByRaw('code IS NULL, CAST(code AS UNSIGNED), code')->orderBy('id');
+    }
 
     /** Property-type options (whole-dwelling classification, internal). */
     public const PROPERTY_TYPES = ['House', 'Apartment', 'Townhouse', 'Studio', 'Room'];
@@ -123,6 +132,9 @@ class Property extends Model
             if ($property->hasPurchaseInvoiceHistory()) {
                 throw new \DomainException(self::PURCHASE_INVOICE_DELETE_ERROR);
             }
+            if ($property->hasWeeklyFinanceHistory()) {
+                throw new \DomainException(self::WEEKLY_FINANCE_DELETE_ERROR);
+            }
 
             // Only historical (vacated / soft-deleted) tenant rows remain at
             // this point. Hard-remove them so the restrict FK doesn't block the
@@ -157,6 +169,12 @@ class Property extends Model
     public function images(): HasMany
     {
         return $this->hasMany(PropertyImage::class)->orderBy('sort_order');
+    }
+
+    public function hasWeeklyFinanceHistory(): bool
+    {
+        return Schema::hasTable('accommodation_weekly_property_finances')
+            && DB::table('accommodation_weekly_property_finances')->where('property_id', $this->id)->exists();
     }
 
     public function tenants(): HasMany

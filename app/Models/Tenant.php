@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Traits\LogsActivity;
+use App\Support\WeeklyRentCharge;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class Tenant extends Model
 {
@@ -52,6 +54,16 @@ class Tenant extends Model
     ];
 
     protected $appends = ['display_name', 'weekly_total_due', 'days_to_end', 'contract_status', 'move_in_version'];
+
+    protected static function booted(): void
+    {
+        static::updating(function (Tenant $tenant) {
+            if ($tenant->isDirty(['weekly_rent_nzd', 'weekly_utilities_nzd', 'property_id', 'current_status'])
+                && Schema::hasTable(WeeklyRentCharge::TABLE)) {
+                WeeklyRentCharge::captureCurrent($tenant);
+            }
+        });
+    }
 
     // ---- Relationships ----------------------------------------------------
 

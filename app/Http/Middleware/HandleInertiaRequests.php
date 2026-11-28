@@ -61,8 +61,11 @@ class HandleInertiaRequests extends Middleware
                 'ai_enabled' => (bool) config('ai.enabled') && (bool) \App\Models\Setting::get('ai_enabled', true),
                 // Restricted modules (config/modules.php) this user may see, so
                 // the sidebar can hide gated items. Grandfathered modules aren't
-                // listed here and stay visible by role. Super admins get all.
-                'modules' => $request->user()?->grantedModules() ?? [],
+                // listed here and stay visible by role.
+                'modules' => array_values(array_filter(
+                    $request->user()?->grantedModules() ?? [],
+                    fn (string $module) => $module !== 'accommodation_finance' || ! $request->attributes->has('user_view_actor'),
+                )),
                 // Only super admins reach Module Management.
                 'can_manage_modules' => $request->user()?->isSuperAdmin() ?? false,
                 // Department portals this user can switch between (their role +
