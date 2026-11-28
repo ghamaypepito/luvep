@@ -12,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
  */
 class AgreementSigningLink extends Mailable
 {
-    use Queueable, SerializesModels;
+    use Queueable, SerializesModels, TracksAccommodationAgreementEmail;
 
     public function __construct(
         public string $clientName,

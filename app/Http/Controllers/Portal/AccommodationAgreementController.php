@@ -3,17 +3,16 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
-use App\Mail\AgreementSigningLink;
 use App\Models\AccommodationAgreement;
 use App\Models\EoiSubmission;
 use App\Services\Accommodation\AgreementBuilder;
+use App\Services\Accommodation\AgreementEmail;
 use App\Services\Accommodation\AgreementTerms;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -182,19 +181,7 @@ class AccommodationAgreementController extends Controller
             ]);
 
             // Email the client the signing link.
-            $emailed = false;
-            if (! empty($ctx['email'])) {
-                try {
-                    Mail::to($ctx['email'])->queue(new AgreementSigningLink(
-                        $agreement->client_name ?: 'there',
-                        $agreement->typeLabel(),
-                        $agreement->signingUrl(),
-                    ));
-                    $emailed = true;
-                } catch (\Throwable $e) {
-                    Log::error('Agreement signing email failed', ['agreement' => $agreement->id, 'error' => $e->getMessage()]);
-                }
-            }
+            $emailed = app(AgreementEmail::class)->signingLink($agreement, $ctx['email']);
 
             // Advance the onboarding record to "Agreement sent" when applicable.
             if ($ctx['eoi_submission_id']) {
@@ -226,11 +213,14 @@ class AccommodationAgreementController extends Controller
         \App\Models\TenantDocument::authorizeStaff(request()->user());
         if ($agreement->status === AccommodationAgreement::STATUS_SIGNED && ($agreement->data['workflow_version'] ?? null) === 2) {
             abort_unless($agreement->signed_pdf_path && Storage::disk('local')->exists($agreement->signed_pdf_path), 404);
-            Mail::to($agreement->data['recipient_email'])->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
 
-            return back()->with('success', 'Signed agreement copy queued for the original client recipient.');
+            return app(AgreementEmail::class)->completedCopy($agreement)
+                ? back()->with('success', 'Signed agreement copy queued for the original client recipient.')
+                : back()->with('error', 'Could not queue the completed PDF to the client.');
         }
-        $email = $agreement->eoiSubmission?->email
+        abort_if($agreement->status === AccommodationAgreement::STATUS_SIGNED, 409);
+        $email = data_get($agreement->data, 'recipient_email')
+            ?? $agreement->eoiSubmission?->email
             ?? $agreement->preTenancyForm?->email;
 
         if (! $agreement->signing_token) {
@@ -240,9 +230,9 @@ class AccommodationAgreementController extends Controller
             return back()->with('error', 'No client email on file — copy the signing link to send it manually.');
         }
 
-        Mail::to($email)->queue(new AgreementSigningLink($agreement->client_name ?: 'there', $agreement->typeLabel(), $agreement->signingUrl()));
-
-        return back()->with('success', 'Signing link re-sent to '.$email.'.');
+        return app(AgreementEmail::class)->signingLink($agreement, $email)
+            ? back()->with('success', 'Signing link queued to '.$email.'.')
+            : back()->with('error', 'Could not queue the signing link.');
     }
 
     public function download(Request $request, AccommodationAgreement $agreement)

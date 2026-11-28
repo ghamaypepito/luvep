@@ -110,6 +110,8 @@ return [
     |
     */
 
+    'accommodation_signed_copy_to' => env('ACCOMMODATION_SIGNED_COPY_TO'),
+
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', 'Example'),

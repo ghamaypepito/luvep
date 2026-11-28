@@ -157,6 +157,75 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->get('/agreement/not-a-real-token/signed-pdf')->assertNotFound();
     }
 
+    public function test_completed_pdf_is_queued_separately_to_client_and_exalt_and_history_tracks_transport(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        config(['mail.accommodation_signed_copy_to' => 'exalt-test@example.test']);
+        $this->fakeSignedPdf();
+        $data['subtenants'][] = ['first_name' => 'Second', 'last_name' => 'Tenant'];
+        $agreement = $this->generate($source, $data);
+        $link = Mail::queued(\App\Mail\AgreementSigningLink::class)->sole();
+        $mailer = (new \Illuminate\Mail\MailManager(app()))->mailer('array');
+        $link->send($mailer);
+        $this->assertNotNull($agreement->emails()->where('kind', 'signing_link')->sole()->sent_at);
+        $this->get('/agreement/'.$agreement->signing_token.'/sign')->assertOk();
+        $this->sign($agreement)->assertRedirect();
+        Mail::assertNotQueued(AccommodationSignedCopy::class);
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
+            'signer_name' => 'Second Tenant', 'signer_index' => 1, 'signature_data' => self::PNG, 'terms_accepted' => true,
+        ])->assertRedirect();
+        $this->assertSame('signed', $agreement->fresh()->status);
+        Mail::assertQueued(AccommodationSignedCopy::class, 2);
+        $client = Mail::queued(AccommodationSignedCopy::class, fn ($mail) => $mail->hasTo('source@example.test') && ! $mail->forExalt)->sole();
+        $exalt = Mail::queued(AccommodationSignedCopy::class, fn ($mail) => $mail->hasTo('exalt-test@example.test') && $mail->forExalt)->sole();
+        $this->assertSame($client->pdfPath, $exalt->pdfPath);
+        $this->assertDatabaseHas('accommodation_agreement_emails', ['id' => $client->agreementEmailId, 'status' => 'queued', 'sent_at' => null]);
+        $this->assertNotNull($client->send($mailer));
+        $this->assertNull($client->send($mailer));
+        $exalt->failed(new \RuntimeException('Synthetic mail failure'));
+        $this->get('/portal/accommodation/forms/agreements/'.$agreement->id.'/history')->assertInertia(fn (Assert $page) => $page
+            ->has('emails', 3)->where('emails.0.status', 'sent')->where('emails.1.kind', 'client_copy')
+            ->where('emails.1.status', 'sent')->where('emails.2.status', 'failed')
+            ->where('agreement.viewed', fn ($at) => filled($at))->where('agreement.signed', fn ($at) => filled($at)));
+        $this->post('/portal/accommodation/forms/agreements/'.$agreement->id.'/email-exalt')->assertSessionHas('success');
+        Mail::assertQueued(AccommodationSignedCopy::class, 3);
+    }
+
+    public function test_only_approved_signatory_can_append_legacy_countersignature_without_changing_original(): void
+    {
+        [$staff, $alane, $property, $source] = $this->setupAgreement();
+        $original = \Barryvdh\DomPDF\Facade\Pdf::loadHTML('<p>Original client-signed terms</p>')->setPaper('a4')->output();
+        Storage::disk('local')->put('signed/original.pdf', $original);
+        $agreement = AccommodationAgreement::create([
+            'agreement_type' => 'standard_flatmate', 'client_name' => 'Synthetic Tenant', 'property_address' => 'Test property',
+            'pre_tenancy_form_id' => $source->id, 'property_id' => $property->id, 'status' => 'signed',
+            'signing_token' => 'legacy-countersign-token', 'signed_at' => now(), 'signed_pdf_path' => 'signed/original.pdf', 'data' => ['costs' => ['total_move_in' => '42.00']],
+        ]);
+        $base = '/portal/accommodation/forms/agreements/'.$agreement->id;
+        $valid = ['original_hash' => hash('sha256', $original), 'confirmed' => true];
+        $this->actingAs($staff)->get($base.'/history')->assertInertia(fn (Assert $page) => $page
+            ->where('reviewHash', null)->where('needsExaltSignature', true));
+        $this->post($base.'/countersign', $valid)->assertForbidden();
+        $this->actingAs($alane)->get($base.'/history')->assertInertia(fn (Assert $page) => $page->where('reviewHash', $valid['original_hash']));
+        $this->post($base.'/countersign', ['original_hash' => str_repeat('0', 64), 'confirmed' => true])->assertInvalid('original_hash');
+        $this->post($base.'/countersign', ['confirmed' => false] + $valid)->assertInvalid('confirmed');
+        $this->post($base.'/countersign', $valid)->assertSessionHas('success');
+        $agreement->refresh();
+        $this->assertSame('signed/original.pdf', $agreement->signed_pdf_path);
+        $this->assertSame('42.00', $agreement->data['costs']['total_move_in']);
+        $this->assertSame($alane->id, $agreement->data['exalt_countersignature']['user_id']);
+        $this->assertSame($original, Storage::disk('local')->get($agreement->signed_pdf_path));
+        $copy = Storage::disk('local')->get($agreement->data['exalt_countersignature']['path']);
+        $pdf = new \setasign\Fpdi\Fpdi;
+        $this->assertSame(2, $pdf->setSourceFile(\setasign\Fpdi\PdfParser\StreamReader::createByString($copy)));
+        $this->assertSame($original, $this->get('/agreement/legacy-countersign-token/signed-pdf')->streamedContent());
+        $this->get($base.'/countersigned-pdf')->assertDownload();
+        $this->post($base.'/countersign', $valid)->assertInvalid('original_hash');
+        $this->actingAs(User::factory()->create(['role' => 'education', 'portal_access' => ['accommodation']]))
+            ->get($base.'/countersigned-pdf')->assertForbidden();
+        Mail::assertNothingQueued();
+    }
+
     public function test_same_source_reuses_its_tenant_without_overwriting_identity_or_status(): void
     {
         [, , , $source, $data] = $this->setupAgreement();

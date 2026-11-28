@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AccommodationAgreement;
 use App\Models\EoiSubmission;
+use App\Services\Accommodation\AgreementEmail;
 use App\Services\OnboardingTransitionService;
 use App\Services\PdfGenerator;
 use App\Support\OnboardingPipeline;
@@ -76,11 +77,10 @@ class AccommodationAgreementSigningController extends Controller
             if ($agreement->status !== AccommodationAgreement::STATUS_SIGNED) {
                 return redirect()->route('agreement.sign.show', $token);
             }
-            try {
-                \Illuminate\Support\Facades\Mail::to($agreement->data['recipient_email'])
-                    ->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
-            } catch (\Throwable $e) {
-                Log::error('Signed accommodation copy could not be queued', ['agreement' => $agreement->id, 'error' => $e->getMessage()]);
+            $email = app(AgreementEmail::class);
+            $email->completedCopy($agreement);
+            if (($agreement->data['layout_version'] ?? null) === AccommodationAgreement::LAYOUT_EXALT_2026_11) {
+                $email->completedCopy($agreement, exalt: true);
             }
             $this->notifyStaff($agreement);
 
