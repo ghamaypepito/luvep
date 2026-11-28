@@ -2430,6 +2430,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/forms/agreements/{agreement}/download', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'download'])->name('forms.agreements.download');
             Route::post('/forms/agreements/{agreement}/resend', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'resend'])->name('forms.agreements.resend');
             Route::delete('/forms/agreements/{agreement}', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'destroy'])->name('forms.agreements.destroy');
+            Route::patch('/forms/agreements/{agreement}/archive', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'archive'])->name('forms.agreements.archive');
+            Route::patch('/forms/agreements/{agreement}/restore', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'restore'])->name('forms.agreements.restore');
 
             // Work (Tenants + Onboarding + Calendar are real above; Task Tracker
             // uses the shared Task Board; the rest are scaffolded placeholders).
