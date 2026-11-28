@@ -1,11 +1,10 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import AccommodationLayout from '../../../components/layout/AccommodationLayout';
 
 const root = '/portal/accommodation/move-out';
 
 export default function MoveOutStart({ tenants }) {
     const form = useForm({ tenant_id: '' });
-    return <AccommodationLayout>
+    return <>
         <Head title="Start move-out record" />
         <main className="mx-auto max-w-2xl space-y-4 p-6">
             <Link className="text-[#1C5685]" href={root}>Back to Move-Out Pipeline</Link>
@@ -24,5 +23,5 @@ export default function MoveOutStart({ tenants }) {
                 </> : <p className="text-gray-600">There are no current tenancies with an end date available to add.</p>}
             </form>
         </main>
-    </AccommodationLayout>;
+    </>;
 }

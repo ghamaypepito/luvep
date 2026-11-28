@@ -1,6 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
-import AccommodationLayout from '../../../components/layout/AccommodationLayout';
 
 const root = '/portal/accommodation/move-out';
 const field = 'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm';
@@ -29,7 +28,7 @@ export default function MoveOutIndex({ records, filters, stages, owners, automat
     };
     const recordLink = (row) => <Link className={button} href={root + '/' + row.id} aria-label={'View move-out record for ' + row.tenant}>View</Link>;
 
-    return <AccommodationLayout>
+    return <>
         <Head title="Move-Out Pipeline" />
         <div className="mx-auto max-w-screen-2xl space-y-5 p-4 sm:p-6">
             <header className="flex flex-wrap items-center justify-between gap-3">
@@ -107,5 +106,5 @@ export default function MoveOutIndex({ records, filters, stages, owners, automat
                 {records.next_page_url && <Link href={records.next_page_url}>Next</Link>}
             </nav>}
         </div>
-    </AccommodationLayout>;
+    </>;
 }

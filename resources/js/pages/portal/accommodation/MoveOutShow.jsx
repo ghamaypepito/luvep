@@ -1,6 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import AccommodationLayout from '../../../components/layout/AccommodationLayout';
 
 const portal = '/portal/accommodation';
 const root = portal + '/move-out';
@@ -150,7 +149,7 @@ export default function MoveOutShow({ record, stages, events, owners, agreements
     const checkInDue = today >= record.checkInOn && today <= record.ends;
     const reminderDue = today >= record.reminderOn && today <= record.moveOut;
 
-    return <AccommodationLayout>
+    return <>
         <Head title={'Move-Out · ' + record.tenant} />
         <main className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
             <Link className="text-[#1C5685]" href={root}>Back to Move-Out Pipeline</Link>
@@ -215,5 +214,5 @@ export default function MoveOutShow({ record, stages, events, owners, agreements
                 <History events={events} />
             </section>
         </main>
-    </AccommodationLayout>;
+    </>;
 }
