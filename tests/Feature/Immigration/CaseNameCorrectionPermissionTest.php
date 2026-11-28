@@ -12,6 +12,28 @@ class CaseNameCorrectionPermissionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_saved_middle_name_reaches_the_case_header_payload_without_expanding_name_access(): void
+    {
+        $this->withoutVite();
+        $manager = User::factory()->create(['role' => 'immigration_manager', 'module_permissions' => ['case_name_correction']]);
+        $case = Lead::create(['first_name' => 'Synthetic', 'last_name' => 'Applicant', 'email' => 'synthetic@example.test', 'is_immigration_case' => true]);
+        $this->actingAs($manager)->post('/portal/immigration/cases/'.$case->id.'/personal', [
+            'first_name' => $case->first_name, 'last_name' => $case->last_name,
+            'middle_name' => 'Saved middle', 'email' => $case->email,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $reader = User::factory()->create(['role' => 'immigration']);
+        $this->actingAs($reader)->get('/portal/immigration/cases/'.$case->id.'/profile')->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('lead.first_name', 'Synthetic')->where('lead.middle_name', 'Saved middle')
+                ->where('lead.last_name', 'Applicant')->where('canCorrectCaseNames', false));
+        $this->assertSame('Saved middle', $case->fresh()->middle_name);
+        $this->assertSame('Synthetic', $case->first_name);
+        $this->assertSame('Applicant', $case->last_name);
+        $this->assertFalse($reader->isAdmin());
+        $this->assertSame([], $reader->grantedModules());
+    }
+
     public function test_individually_granted_manager_can_correct_a_name_without_admin_or_archive_access(): void
     {
         $this->withoutVite();
