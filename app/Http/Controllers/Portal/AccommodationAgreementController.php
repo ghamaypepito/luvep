@@ -59,6 +59,7 @@ class AccommodationAgreementController extends Controller
             'clients' => $this->builder->clients(),
             'agreements' => $agreements,
             'types' => AccommodationAgreement::TYPES,
+            'maxSubtenants' => AgreementTerms::MAX_SUBTENANTS,
             'properties' => $properties,
             'signatoryReady' => app(AgreementTerms::class)->signatory() !== null,
             // Immigration visa catalogue — drives the per-sub-tenant Visa Type dropdown.

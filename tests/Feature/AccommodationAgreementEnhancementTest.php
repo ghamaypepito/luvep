@@ -112,6 +112,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
             $this->assertSameSectionOrder($preview->json('html'), $headings);
             $this->assertStringNotContainsString('<td>Signature:</td>', $preview->json('html'));
             $this->assertStringContainsString('<td>exaltinfo@luvep.com</td>', $preview->json('html'));
+            $this->assertStringNotContainsString('Sub-Tenant 2', $preview->json('html'));
             $this->assertStringNotContainsString('exaltinfo@epathways.co.nz', $preview->json('html'));
             $this->assertStringContainsString(match ($type) {
                 'standard_flatmate' => 'Standard Long-Term Payment Structure',
@@ -417,7 +418,14 @@ class AccommodationAgreementEnhancementTest extends TestCase
     public function test_each_listed_tenant_must_sign_before_completion(): void
     {
         [, , , $source, $data] = $this->setupAgreement();
-        $data['subtenants'][] = ['first_name' => 'Second', 'last_name' => 'Tenant'];
+        $invalid = $data;
+        $invalid['subtenants'][] = ['first_name' => ''];
+        $this->post('/portal/accommodation/forms/agreements/generate', [
+            'source' => 'general', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $invalid,
+        ])->assertSessionHasErrors('data.subtenants.1.first_name');
+        foreach (['Second', 'Third', 'Fourth', 'Fifth'] as $firstName) {
+            $data['subtenants'][] = ['first_name' => $firstName, 'last_name' => 'Tenant'];
+        }
         $data['tenant_signatures'] = [1 => ['name' => 'Forged evidence']];
         $agreement = $this->generate($source, $data);
         $this->assertSame([], $agreement->data['tenant_signatures']);
@@ -427,12 +435,22 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame(0, Tenant::count());
         Mail::assertNotQueued(AccommodationSignedCopy::class);
         $this->sign($agreement)->assertStatus(409);
-        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
-            'signer_name' => 'Second Tenant', 'signer_index' => 1,
-            'signature_data' => self::PNG, 'terms_accepted' => true,
-        ])->assertRedirect('/agreement/'.$agreement->signing_token.'/signed');
+        $url = '/agreement/'.$agreement->signing_token;
+        $document = $this->get($url.'/document')->assertOk()->assertDontSee('Sub-Tenant 6');
+        $this->assertSame(5, preg_match_all('/class="sign-cap">Sub-Tenant \d+ ·/', $document->getContent()));
+        $this->assertSame(4, substr_count($document->getContent(), 'Awaiting signature'));
+        foreach ([1 => 'Second', 2 => 'Third', 3 => 'Fourth', 4 => 'Fifth'] as $index => $firstName) {
+            $document->assertSee('Sub-Tenant '.($index + 1).' Details');
+            $this->post($url.'/sign', [
+                'signer_name' => $firstName.' Tenant', 'signer_index' => $index,
+                'signature_data' => self::PNG, 'terms_accepted' => true,
+            ])->assertRedirect($url.($index === 4 ? '/signed' : '/sign'));
+            if ($index < 4) {
+                Mail::assertNotQueued(AccommodationSignedCopy::class);
+            }
+        }
         $this->assertSame('signed', $agreement->fresh()->status);
-        $this->assertCount(2, $agreement->fresh()->data['tenant_signatures']);
+        $this->assertCount(5, $agreement->fresh()->data['tenant_signatures']);
         $this->assertSame(1, Tenant::count());
         Mail::assertQueued(AccommodationSignedCopy::class, 1);
     }

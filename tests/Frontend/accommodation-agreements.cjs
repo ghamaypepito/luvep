@@ -26,7 +26,7 @@ const Page=loaded.exports.default,root=createRoot(document.getElementById('root'
 const props={clients:[{source:'general',id:42,name:'Synthetic Tenant'}],properties:[{id:7,label:'Synthetic House'}],types:{standard_flatmate:'Standard',transient_flatmate:'Transient'},signatoryReady:true};
 const button=text=>[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===text);
 const click=async node=>{assert.ok(node);await act(async()=>node.dispatchEvent(new MouseEvent('click',{bubbles:true})));};
-const field=text=>[...document.querySelectorAll('label')].find(x=>x.textContent.trim().startsWith(text))?.querySelector('input,textarea,select');
+const field=(text,parent=document)=>[...parent.querySelectorAll('label')].find(x=>x.textContent.trim().startsWith(text))?.querySelector('input,textarea,select');
 const input=async(node,value)=>{assert.ok(node);await act(async()=>{const proto=node.tagName==='SELECT'?dom.window.HTMLSelectElement.prototype:node.tagName==='TEXTAREA'?dom.window.HTMLTextAreaElement.prototype:dom.window.HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(node,value);node.dispatchEvent(new Event(node.tagName==='SELECT'?'change':'input',{bubbles:true}));});};
 const settle=async()=>{await act(async()=>new Promise(resolve=>setTimeout(resolve,600)));};
 (async()=>{
@@ -37,6 +37,19 @@ const settle=async()=>{await act(async()=>new Promise(resolve=>setTimeout(resolv
   assert.equal(field('Total move-in (automatic)').value,'2600.00');
   assert.equal(field('Total move-in (automatic)').readOnly,true);
   assert.equal(field('End date (automatic)').readOnly,true);
+  const tenant = number => document.querySelector(`[role="group"][aria-label="Sub-Tenant ${number}"]`);
+  const remove = number => document.querySelector(`button[aria-label="Remove Sub-Tenant ${number}"]`);
+  assert.ok(tenant(1));
+  assert.equal(tenant(2), null);
+  for (let number = 2; number <= 5; number++) await click(button('Add sub-tenant'));
+  assert.equal(remove(1), null, 'The main applicant stays in Sub-Tenant 1');
+  await input(field('First name',tenant(3)), 'Remaining');
+  await settle();
+  assert.equal(button('Generate & send').disabled,true,'Empty added rows cannot be issued');
+  await click(remove(2));
+  assert.equal(field('First name',tenant(2)).value,'Remaining');
+  await click(remove(4)); await click(remove(3)); await click(remove(2));
+  assert.equal(tenant(2),null,'Extra rows can be removed back to the main applicant only');
   const notes='Special instructions\nSecond line';
   await input(field('Notes / Special Conditions'),notes);
   assert.equal(button('Generate & send').disabled,true,'Editing disables send until matching preview completes');
@@ -45,6 +58,7 @@ const settle=async()=>{await act(async()=>new Promise(resolve=>setTimeout(resolv
   assert.equal(posts.length,1);assert.equal(posts[0][1].data.notes,notes);
   assert.equal(posts[0][1].data.property_id,7);assert.equal(posts[0][1].data.tenancy.duration,'1');
   assert.equal(posts[0][1].data.costs.advance_weeks,1);
+  assert.deepEqual(posts[0][1].data.subtenants,[{first_name:'Synthetic',last_name:'Tenant'}]);
   await act(async()=>posts[0][2].onFinish());
   rejectPreview=true;await input(field('Bond'),'bad');await settle();
   assert.match(document.querySelector('[role="alert"]').textContent,/Invalid amount/);
