@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
-use App\Mail\AgreementSigningLink;
 use App\Models\AccommodationAgreement;
 use App\Models\ActivityLog;
 use App\Models\EoiSubmission;
 use App\Models\TenantDocument;
 use App\Services\Accommodation\AgreementBuilder;
+use App\Services\Accommodation\AgreementEmail;
 use App\Services\Accommodation\AgreementTerms;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
@@ -16,7 +16,6 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -69,6 +68,7 @@ class AccommodationAgreementController extends Controller
             'archivedAgreements' => $archived->sortByDesc('archived_at')->values(),
             'canManageAgreements' => $canManage,
             'types' => AccommodationAgreement::TYPES,
+            'maxSubtenants' => AgreementTerms::MAX_SUBTENANTS,
             'properties' => $properties,
             'signatoryReady' => app(AgreementTerms::class)->signatory() !== null,
             // Immigration visa catalogue — drives the per-sub-tenant Visa Type dropdown.
@@ -106,6 +106,7 @@ class AccommodationAgreementController extends Controller
         $ctx = isset($v['source']) ? $this->builder->resolve($v['source'], (int) $v['source_id']) : null;
         abort_if(isset($v['source']) && $ctx === null, 404);
         $data = $this->withWelcomePackages($data, $ctx);
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
@@ -141,6 +142,8 @@ class AccommodationAgreementController extends Controller
 
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
         $data = $this->withWelcomePackages($data, $ctx);
+        // Preserve the issued layout when the signing flow re-renders this agreement.
+        $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
@@ -160,6 +163,7 @@ class AccommodationAgreementController extends Controller
             $data['admin_signature'] = $adminSignature;
             $data['admin_name'] = $adminName;
             $data['admin_user_id'] = $signatory->id;
+            $data['admin_signed_on'] = now('Pacific/Auckland')->toDateString();
             $data['recipient_email'] = $ctx['email'];
 
             $pdf = Pdf::loadView('agreements.flatmate.agreement', [
@@ -193,19 +197,7 @@ class AccommodationAgreementController extends Controller
             ]);
 
             // Email the client the signing link.
-            $emailed = false;
-            if (! empty($ctx['email'])) {
-                try {
-                    Mail::to($ctx['email'])->queue(new AgreementSigningLink(
-                        $agreement->client_name ?: 'there',
-                        $agreement->typeLabel(),
-                        $agreement->signingUrl(),
-                    ));
-                    $emailed = true;
-                } catch (\Throwable $e) {
-                    Log::error('Agreement signing email failed', ['agreement' => $agreement->id, 'error' => $e->getMessage()]);
-                }
-            }
+            $emailed = app(AgreementEmail::class)->signingLink($agreement, $ctx['email']);
 
             // Advance the onboarding record to "Agreement sent" when applicable.
             if ($ctx['eoi_submission_id']) {
@@ -237,11 +229,14 @@ class AccommodationAgreementController extends Controller
         \App\Models\TenantDocument::authorizeStaff(request()->user());
         if ($agreement->status === AccommodationAgreement::STATUS_SIGNED && ($agreement->data['workflow_version'] ?? null) === 2) {
             abort_unless($agreement->signed_pdf_path && Storage::disk('local')->exists($agreement->signed_pdf_path), 404);
-            Mail::to($agreement->data['recipient_email'])->queue(new \App\Mail\AccommodationSignedCopy($agreement->client_name, $agreement->signed_pdf_path));
 
-            return back()->with('success', 'Signed agreement copy queued for the original client recipient.');
+            return app(AgreementEmail::class)->completedCopy($agreement)
+                ? back()->with('success', 'Signed agreement copy queued for the original client recipient.')
+                : back()->with('error', 'Could not queue the completed PDF to the client.');
         }
-        $email = $agreement->eoiSubmission?->email
+        abort_if($agreement->status === AccommodationAgreement::STATUS_SIGNED, 409);
+        $email = data_get($agreement->data, 'recipient_email')
+            ?? $agreement->eoiSubmission?->email
             ?? $agreement->preTenancyForm?->email;
 
         if (! $agreement->signing_token) {
@@ -251,9 +246,9 @@ class AccommodationAgreementController extends Controller
             return back()->with('error', 'No client email on file — copy the signing link to send it manually.');
         }
 
-        Mail::to($email)->queue(new AgreementSigningLink($agreement->client_name ?: 'there', $agreement->typeLabel(), $agreement->signingUrl()));
-
-        return back()->with('success', 'Signing link re-sent to '.$email.'.');
+        return app(AgreementEmail::class)->signingLink($agreement, $email)
+            ? back()->with('success', 'Signing link queued to '.$email.'.')
+            : back()->with('error', 'Could not queue the signing link.');
     }
 
     public function download(Request $request, AccommodationAgreement $agreement)

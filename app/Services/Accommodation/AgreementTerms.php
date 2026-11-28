@@ -16,6 +16,8 @@ class AgreementTerms
 
     public const SIGNATORY_EMAIL = 'alane@ferdzservices.com';
 
+    public const MAX_SUBTENANTS = 10;
+
     public function signatory(): ?User
     {
         $matches = User::where('email', self::SIGNATORY_EMAIL)->where('is_active', true)
@@ -41,7 +43,7 @@ class AgreementTerms
         Validator::make(['data' => $data], [
             'data.property_id' => [$required, 'integer', Rule::exists('accommodation_properties', 'id')->where('is_active', true)],
             'data.notes' => 'nullable|string|max:3000',
-            'data.subtenants' => [$required, 'array', 'list', 'min:1', 'max:10'],
+            'data.subtenants' => [$required, 'array', 'list', 'min:1', 'max:'.self::MAX_SUBTENANTS],
             'data.subtenants.*' => 'required|array',
             'data.subtenants.*.first_name' => [$required, 'string', 'max:100'],
             'data.subtenants.*.last_name' => 'nullable|string|max:100',

@@ -69,6 +69,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
                 $this->assertStringContainsString('Notes / Special Conditions', $html);
                 $this->assertStringContainsString(AgreementTerms::SIGNATORY, $html);
+                $this->assertSameSectionOrder($html, ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Sub-Tenant 1 Details</div>',
+                    '>Accommodation Information Declaration</h2>', '>Signatures</h2>', 'alt="Exalt Property Admin signature"']);
                 preg_match('/Declared at(.*?)Before me/s', $html, $declaration);
                 $this->assertStringNotContainsString('<img', $declaration[1]);
                 Storage::disk('local')->put($path, '%PDF-synthetic-signed');
@@ -76,6 +78,18 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 return $path;
             });
         });
+    }
+
+    private function assertSameSectionOrder(string $html, array $headings): void
+    {
+        $previous = -1;
+        foreach ($headings as $heading) {
+            $position = strpos($html, $heading);
+            $this->assertNotFalse($position, $heading);
+            $this->assertGreaterThan($previous, $position, $heading);
+            $this->assertSame(1, substr_count($html, $heading), $heading);
+            $previous = $position;
+        }
     }
 
     private function sign(AccommodationAgreement $agreement)
@@ -116,7 +130,9 @@ class AccommodationAgreementEnhancementTest extends TestCase
             'source' => 'general', 'source_id' => $source->id,
             'agreement_type' => 'standard_flatmate', 'data' => $data,
         ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
-        $this->assertLessThan(strpos($preview, 'Exalt Welcome Packages'), strpos($preview, '>House Rules<'));
+        $this->assertSameSectionOrder($preview, [
+            '>House Rules</h2>', '>Main Tenant [Exalt Property] Details</h3>', '>Exalt Welcome Packages</h2>', '>Signatures</h2>',
+        ]);
         $this->assertStringContainsString('eggs (2 dozen)', $preview);
         $this->assertStringNotContainsString('Injected', $preview);
 
@@ -149,6 +165,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $signedText = (new Parser)->parseContent($signedBytes)->getText();
         $this->assertStringContainsString('EXALT WELCOME PACKAGES', $signedText);
         $this->assertStringContainsString('600.00 NZD', $signedText);
+        $this->assertGreaterThan(strpos($signedText, 'EXALT WELCOME PACKAGES'), strpos($signedText, 'SIGNATURES'));
     }
 
     public function test_welcome_package_selection_is_optional_and_must_be_valid_for_overseas_arrivals(): void
@@ -202,10 +219,27 @@ class AccommodationAgreementEnhancementTest extends TestCase
                 ->assertJsonPath('data.costs.rent_advance_to', '2026-11-29')
                 ->assertJsonPath('data.costs.prorated_days', 5)->assertJsonPath('data.costs.prorated_rent', '500.00')
                 ->assertJsonPath('data.costs.total_move_in', '2600.00')->assertJsonPath('data.tenancy.end_date', '2026-12-17');
+            $preview->assertJsonPath('data.layout_version', AccommodationAgreement::LAYOUT_EXALT_2026_11);
             $this->assertStringNotContainsString('<script>text</script>', $preview->json('html'));
-            $agreement = $this->generate($source, $data, $type);
+            $headings = ['>Terms &amp; Conditions</h2>', '>House Rules</h2>', '>Main Tenant [Exalt Property] Details</h3>',
+                '>Sub-Tenant 1 Details</div>', '>Accommodation Information Declaration</h2>', '>Signatures</h2>', 'alt="Exalt Property Admin signature"'];
+            $this->assertSameSectionOrder($preview->json('html'), $headings);
+            $this->assertStringNotContainsString('<td>Signature:</td>', $preview->json('html'));
+            $this->assertStringContainsString('<td>exaltinfo@luvep.com</td>', $preview->json('html'));
+            $this->assertStringNotContainsString('Sub-Tenant 2', $preview->json('html'));
+            $this->assertStringNotContainsString('exaltinfo@epathways.co.nz', $preview->json('html'));
+            $this->assertStringContainsString(match ($type) {
+                'standard_flatmate' => 'Standard Long-Term Payment Structure',
+                'transient_flatmate' => 'ABSENCE DURING THE AGREED STAY',
+                'whole_property' => 'Whole Property Tenancy Agreement',
+            }, $preview->json('html'));
+            $agreement = $this->generate($source, $data + ['layout_version' => 'legacy'], $type);
+            $this->assertSame(AccommodationAgreement::LAYOUT_EXALT_2026_11, $agreement->data['layout_version']);
+            $document = $this->get('/agreement/'.$agreement->signing_token.'/document')->assertOk();
+            $this->assertSameSectionOrder($document->getContent(), $headings);
             $this->assertSame($preview->json('data.costs'), $agreement->data['costs']);
             $this->assertSame($alane->id, $agreement->data['admin_user_id']);
+            $this->assertSame(now('Pacific/Auckland')->toDateString(), $agreement->data['admin_signed_on']);
             $this->assertSame(AgreementTerms::SIGNATORY, $agreement->data['admin_name']);
             $this->assertNotSame($staff->id, $agreement->data['admin_user_id']);
             $this->assertStringStartsWith('%PDF-', Storage::disk('local')->get($agreement->pdf_path));
@@ -238,6 +272,75 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->delete('/portal/accommodation/properties/'.$property->id)->assertSessionHas('error');
         $this->get('/agreement/'.$agreement->signing_token.'/signed-pdf')->assertDownload();
         $this->get('/agreement/not-a-real-token/signed-pdf')->assertNotFound();
+    }
+
+    public function test_completed_pdf_is_queued_separately_to_client_and_exalt_and_history_tracks_transport(): void
+    {
+        [, , , $source, $data] = $this->setupAgreement();
+        config(['mail.accommodation_signed_copy_to' => 'exalt-test@example.test']);
+        $this->fakeSignedPdf();
+        $data['subtenants'][] = ['first_name' => 'Second', 'last_name' => 'Tenant'];
+        $agreement = $this->generate($source, $data);
+        $link = Mail::queued(\App\Mail\AgreementSigningLink::class)->sole();
+        $mailer = (new \Illuminate\Mail\MailManager(app()))->mailer('array');
+        $link->send($mailer);
+        $this->assertNotNull($agreement->emails()->where('kind', 'signing_link')->sole()->sent_at);
+        $this->get('/agreement/'.$agreement->signing_token.'/sign')->assertOk();
+        $this->sign($agreement)->assertRedirect();
+        Mail::assertNotQueued(AccommodationSignedCopy::class);
+        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
+            'signer_name' => 'Second Tenant', 'signer_index' => 1, 'signature_data' => self::PNG, 'terms_accepted' => true,
+        ])->assertRedirect();
+        $this->assertSame('signed', $agreement->fresh()->status);
+        Mail::assertQueued(AccommodationSignedCopy::class, 2);
+        $client = Mail::queued(AccommodationSignedCopy::class, fn ($mail) => $mail->hasTo('source@example.test') && ! $mail->forExalt)->sole();
+        $exalt = Mail::queued(AccommodationSignedCopy::class, fn ($mail) => $mail->hasTo('exalt-test@example.test') && $mail->forExalt)->sole();
+        $this->assertSame($client->pdfPath, $exalt->pdfPath);
+        $this->assertDatabaseHas('accommodation_agreement_emails', ['id' => $client->agreementEmailId, 'status' => 'queued', 'sent_at' => null]);
+        $this->assertNotNull($client->send($mailer));
+        $this->assertNull($client->send($mailer));
+        $exalt->failed(new \RuntimeException('Synthetic mail failure'));
+        $this->get('/portal/accommodation/forms/agreements/'.$agreement->id.'/history')->assertInertia(fn (Assert $page) => $page
+            ->has('emails', 3)->where('emails.0.status', 'sent')->where('emails.1.kind', 'client_copy')
+            ->where('emails.1.status', 'sent')->where('emails.2.status', 'failed')
+            ->where('agreement.viewed', fn ($at) => filled($at))->where('agreement.signed', fn ($at) => filled($at)));
+        $this->post('/portal/accommodation/forms/agreements/'.$agreement->id.'/email-exalt')->assertSessionHas('success');
+        Mail::assertQueued(AccommodationSignedCopy::class, 3);
+    }
+
+    public function test_only_approved_signatory_can_append_legacy_countersignature_without_changing_original(): void
+    {
+        [$staff, $alane, $property, $source] = $this->setupAgreement();
+        $original = \Barryvdh\DomPDF\Facade\Pdf::loadHTML('<p>Original client-signed terms</p>')->setPaper('a4')->output();
+        Storage::disk('local')->put('signed/original.pdf', $original);
+        $agreement = AccommodationAgreement::create([
+            'agreement_type' => 'standard_flatmate', 'client_name' => 'Synthetic Tenant', 'property_address' => 'Test property',
+            'pre_tenancy_form_id' => $source->id, 'property_id' => $property->id, 'status' => 'signed',
+            'signing_token' => 'legacy-countersign-token', 'signed_at' => now(), 'signed_pdf_path' => 'signed/original.pdf', 'data' => ['costs' => ['total_move_in' => '42.00']],
+        ]);
+        $base = '/portal/accommodation/forms/agreements/'.$agreement->id;
+        $valid = ['original_hash' => hash('sha256', $original), 'confirmed' => true];
+        $this->actingAs($staff)->get($base.'/history')->assertInertia(fn (Assert $page) => $page
+            ->where('reviewHash', null)->where('needsExaltSignature', true));
+        $this->post($base.'/countersign', $valid)->assertForbidden();
+        $this->actingAs($alane)->get($base.'/history')->assertInertia(fn (Assert $page) => $page->where('reviewHash', $valid['original_hash']));
+        $this->post($base.'/countersign', ['original_hash' => str_repeat('0', 64), 'confirmed' => true])->assertInvalid('original_hash');
+        $this->post($base.'/countersign', ['confirmed' => false] + $valid)->assertInvalid('confirmed');
+        $this->post($base.'/countersign', $valid)->assertSessionHas('success');
+        $agreement->refresh();
+        $this->assertSame('signed/original.pdf', $agreement->signed_pdf_path);
+        $this->assertSame('42.00', $agreement->data['costs']['total_move_in']);
+        $this->assertSame($alane->id, $agreement->data['exalt_countersignature']['user_id']);
+        $this->assertSame($original, Storage::disk('local')->get($agreement->signed_pdf_path));
+        $copy = Storage::disk('local')->get($agreement->data['exalt_countersignature']['path']);
+        $pdf = new \setasign\Fpdi\Fpdi;
+        $this->assertSame(2, $pdf->setSourceFile(\setasign\Fpdi\PdfParser\StreamReader::createByString($copy)));
+        $this->assertSame($original, $this->get('/agreement/legacy-countersign-token/signed-pdf')->streamedContent());
+        $this->get($base.'/countersigned-pdf')->assertDownload();
+        $this->post($base.'/countersign', $valid)->assertInvalid('original_hash');
+        $this->actingAs(User::factory()->create(['role' => 'education', 'portal_access' => ['accommodation']]))
+            ->get($base.'/countersigned-pdf')->assertForbidden();
+        Mail::assertNothingQueued();
     }
 
     public function test_same_source_reuses_its_tenant_without_overwriting_identity_or_status(): void
@@ -384,9 +487,13 @@ class AccommodationAgreementEnhancementTest extends TestCase
             'agreement_type' => 'standard_flatmate', 'pre_tenancy_form_id' => $source->id,
             'client_name' => 'Legacy', 'data' => $data, 'signing_token' => 'legacy-token', 'status' => 'sent',
         ]);
-        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00');
+        $legacyHeadings = ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>',
+            '>Accommodation Information Declaration</h2>'];
+        $this->get('/agreement/legacy-token/document')->assertOk()->assertSee('1.00')->assertSeeInOrder($legacyHeadings, false)
+            ->assertSee('<td>Signature:</td>', false)->assertDontSee('Standard Long-Term Payment Structure', false);
         $this->mock(PdfGenerator::class, function ($mock) {
             $mock->shouldReceive('renderToFile')->andReturnUsing(function ($html, $path) {
+                $this->assertSameSectionOrder($html, ['>Sub-Tenant 1 Details</div>', '>Signatures</h2>', '>Terms &amp; Conditions</h2>', '>House Rules</h2>']);
                 Storage::disk('local')->put($path, '%PDF-legacy');
 
                 return $path;
@@ -425,7 +532,14 @@ class AccommodationAgreementEnhancementTest extends TestCase
     public function test_each_listed_tenant_must_sign_before_completion(): void
     {
         [, , , $source, $data] = $this->setupAgreement();
-        $data['subtenants'][] = ['first_name' => 'Second', 'last_name' => 'Tenant'];
+        $invalid = $data;
+        $invalid['subtenants'][] = ['first_name' => ''];
+        $this->post('/portal/accommodation/forms/agreements/generate', [
+            'source' => 'general', 'source_id' => $source->id, 'agreement_type' => 'standard_flatmate', 'data' => $invalid,
+        ])->assertSessionHasErrors('data.subtenants.1.first_name');
+        foreach (['Second', 'Third', 'Fourth', 'Fifth'] as $firstName) {
+            $data['subtenants'][] = ['first_name' => $firstName, 'last_name' => 'Tenant'];
+        }
         $data['tenant_signatures'] = [1 => ['name' => 'Forged evidence']];
         $agreement = $this->generate($source, $data);
         $this->assertSame([], $agreement->data['tenant_signatures']);
@@ -435,12 +549,22 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $this->assertSame(0, Tenant::count());
         Mail::assertNotQueued(AccommodationSignedCopy::class);
         $this->sign($agreement)->assertStatus(409);
-        $this->post('/agreement/'.$agreement->signing_token.'/sign', [
-            'signer_name' => 'Second Tenant', 'signer_index' => 1,
-            'signature_data' => self::PNG, 'terms_accepted' => true,
-        ])->assertRedirect('/agreement/'.$agreement->signing_token.'/signed');
+        $url = '/agreement/'.$agreement->signing_token;
+        $document = $this->get($url.'/document')->assertOk()->assertDontSee('Sub-Tenant 6');
+        $this->assertSame(5, preg_match_all('/class="sign-cap">Sub-Tenant \d+ ·/', $document->getContent()));
+        $this->assertSame(4, substr_count($document->getContent(), 'Awaiting signature'));
+        foreach ([1 => 'Second', 2 => 'Third', 3 => 'Fourth', 4 => 'Fifth'] as $index => $firstName) {
+            $document->assertSee('Sub-Tenant '.($index + 1).' Details');
+            $this->post($url.'/sign', [
+                'signer_name' => $firstName.' Tenant', 'signer_index' => $index,
+                'signature_data' => self::PNG, 'terms_accepted' => true,
+            ])->assertRedirect($url.($index === 4 ? '/signed' : '/sign'));
+            if ($index < 4) {
+                Mail::assertNotQueued(AccommodationSignedCopy::class);
+            }
+        }
         $this->assertSame('signed', $agreement->fresh()->status);
-        $this->assertCount(2, $agreement->fresh()->data['tenant_signatures']);
+        $this->assertCount(5, $agreement->fresh()->data['tenant_signatures']);
         $this->assertSame(1, Tenant::count());
         Mail::assertQueued(AccommodationSignedCopy::class, 1);
     }

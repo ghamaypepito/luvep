@@ -2488,6 +2488,13 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/forms/agreements/preview', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'preview'])->name('forms.agreements.preview');
             Route::post('/forms/agreements/generate', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'generate'])->name('forms.agreements.generate');
             Route::get('/forms/agreements/{agreement}/download', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'download'])->name('forms.agreements.download');
+            Route::controller(\App\Http\Controllers\Portal\Accommodation\AgreementHistoryController::class)
+                ->prefix('/forms/agreements/{agreement}')->name('forms.agreements.')->group(function () {
+                    Route::get('/history', 'show')->name('history');
+                    Route::post('/countersign', 'countersign')->name('countersign');
+                    Route::get('/countersigned-pdf', 'download')->name('countersigned-pdf');
+                    Route::post('/email-exalt', 'emailExalt')->name('email-exalt');
+                });
             Route::post('/forms/agreements/{agreement}/resend', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'resend'])->name('forms.agreements.resend');
             Route::delete('/forms/agreements/{agreement}', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'destroy'])->name('forms.agreements.destroy');
             Route::patch('/forms/agreements/{agreement}/archive', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'archive'])->name('forms.agreements.archive');

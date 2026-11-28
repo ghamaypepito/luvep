@@ -8,7 +8,7 @@ import PdfPreviewModal from "@/components/ui/PdfPreviewModal";
 // auto-filled editable fields and a live preview then use the full width.
 // Generating renders the chosen Exalt agreement to a stored PDF (and links it to
 // the onboarding record when the client has one).
-export default function Agreements({ clients = [], agreements = [], archivedAgreements = [], canManageAgreements = false, types = {}, properties = [], visaTypes = [], signatoryReady = false }) {
+export default function Agreements({ clients = [], agreements = [], archivedAgreements = [], canManageAgreements = false, types = {}, properties = [], visaTypes = [], signatoryReady = false, maxSubtenants = 10 }) {
     const typeKeys = Object.keys(types);
     const [search, setSearch] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -31,6 +31,7 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
     const [formErrors, setFormErrors] = useState([]);
     const currentKey = JSON.stringify({ agreement_type: agreementType, source: selected?.source, source_id: selected?.id, data: fields });
     const computed = previewKey === currentKey ? calculated : null;
+    const hasUnnamedSubtenant = fields?.subtenants.some((tenant) => !tenant.first_name?.trim()) ?? false;
 
     const copyLink = (a) => {
         if (!a.signing_url) return;
@@ -122,7 +123,7 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
     };
 
     const generate = () => {
-        if (!selected || !fields || !computed || !signatoryReady) return;
+        if (!selected || !fields || !computed || !signatoryReady || hasUnnamedSubtenant) return;
         setGenerating(true);
         router.post("/portal/accommodation/forms/agreements/generate", {
             agreement_type: agreementType,
@@ -139,8 +140,12 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
     // ---- field editing helpers ----
     const setF = (path, val) => setFields((f) => setDeep(f, path, val));
     const setSub = (i, key, val) => setFields((f) => ({ ...f, subtenants: f.subtenants.map((s, idx) => (idx === i ? { ...s, [key]: val } : s)) }));
-    const addSub = () => setFields((f) => ({ ...f, subtenants: [...(f.subtenants || []), emptySub()] }));
-    const removeSub = (i) => setFields((f) => ({ ...f, subtenants: f.subtenants.filter((_, idx) => idx !== i) }));
+    const addSub = () => setFields((f) => f.subtenants.length < maxSubtenants
+        ? { ...f, subtenants: [...f.subtenants, emptySub()] }
+        : f);
+    const removeSub = (i) => setFields((f) => i > 0
+        ? { ...f, subtenants: f.subtenants.filter((_, idx) => idx !== i) }
+        : f);
 
     return (
         <div className="space-y-5">
@@ -216,7 +221,7 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
                             <button onClick={refreshPreview} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50">
                                 <RefreshCw size={13} className={previewLoading ? "animate-spin" : ""} /> Preview
                             </button>
-                            <button onClick={generate} disabled={generating || !computed || !signatoryReady || previewLoading} title="Generate the PDF and email the client a signing link" className="inline-flex items-center gap-1.5 rounded-full bg-[#1F5A8B] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#184A73] disabled:opacity-60">
+                            <button onClick={generate} disabled={generating || !computed || !signatoryReady || previewLoading || hasUnnamedSubtenant} title="Generate the PDF and email the client a signing link" className="inline-flex items-center gap-1.5 rounded-full bg-[#1F5A8B] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#184A73] disabled:opacity-60">
                                 {generating ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Generate &amp; send
                             </button>
                         </div>
@@ -249,14 +254,22 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
                             <div>
                                 <div className="mb-2 flex items-center justify-between">
                                     <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Sub-tenants</p>
-                                    <button onClick={addSub} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1F5A8B] hover:underline"><Plus size={12} /> Add</button>
+                                    <button type="button" onClick={addSub} disabled={fields.subtenants.length >= maxSubtenants}
+                                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1F5A8B] hover:underline disabled:text-gray-500 disabled:no-underline">
+                                        <Plus size={12} /> Add sub-tenant
+                                    </button>
                                 </div>
-                                {(fields.subtenants || []).map((s, i) => (
-                                    <div key={i} className="mb-3 rounded-xl border border-gray-100 p-3">
+                                {hasUnnamedSubtenant && <p className="mb-2 text-xs text-gray-600">Enter a first name for each sub-tenant, or remove any extra rows before sending.</p>}
+                                {fields.subtenants.length >= maxSubtenants && <p className="mb-2 text-xs text-gray-500">Maximum {maxSubtenants} sub-tenants per agreement.</p>}
+                                {fields.subtenants.map((s, i) => (
+                                    <div key={i} role="group" aria-label={`Sub-Tenant ${i + 1}`} className="mb-3 rounded-xl border border-gray-100 p-3">
                                         <div className="mb-2 flex items-center justify-between">
                                             <span className="text-xs font-semibold text-gray-500">Sub-Tenant {i + 1}</span>
-                                            {fields.subtenants.length > 1 && (
-                                                <button onClick={() => removeSub(i)} className="text-rose-500 hover:text-rose-600"><Trash2 size={13} /></button>
+                                            {i > 0 && (
+                                                <button type="button" onClick={() => removeSub(i)} aria-label={`Remove Sub-Tenant ${i + 1}`}
+                                                    className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:underline">
+                                                    <Trash2 size={13} /> Remove
+                                                </button>
                                             )}
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
@@ -287,6 +300,10 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
                                     <Mini label="Move-in time" type="time" value={fields.tenancy?.move_in_time} onChange={(v) => setF(["tenancy", "move_in_time"], v)} />
                                     <Mini label="Move-out date (automatic)" type="date" readOnly value={computed?.tenancy?.move_out_date ?? ""} />
                                     <Mini label="Move-out time" type="time" value={fields.tenancy?.move_out_time} onChange={(v) => setF(["tenancy", "move_out_time"], v)} />
+                                    {agreementType !== "whole_property" && <>
+                                        <Mini label="Room occupancy" options={ROOM_OCCUPANCY} value={fields.tenancy?.room_shared == null ? "" : Number(fields.tenancy.room_shared).toString()} onChange={(value) => setF(["tenancy", "room_shared"], value)} />
+                                        {String(fields.tenancy?.room_shared) === "1" && <Mini label="Maximum other occupants" type="number" step="1" value={fields.tenancy?.room_shared_max} onChange={(value) => setF(["tenancy", "room_shared_max"], value)} />}
+                                    </>}
                                     <Mini label="Rent day" options={WEEKDAYS} value={fields.tenancy?.rent_day} onChange={(v) => setF(["tenancy", "rent_day"], v)} />
                                     <Mini label="Utility option" options={UTILITY_OPTIONS} value={fields.tenancy?.utility_option} onChange={(v) => setF(["tenancy", "utility_option"], v)} />
                                     {fields.tenancy?.utility_option ? (
@@ -356,6 +373,7 @@ export default function Agreements({ clients = [], agreements = [], archivedAgre
                                     <StatusBadge status={a.status} />
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5">
+                                    <a href={`/portal/accommodation/forms/agreements/${a.id}/history`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700">History</a>
                                     {a.tenant_id && <a href={`/portal/accommodation/tenants/${a.tenant_id}`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Open tenant</a>}
                                     {a.can_link_tenant && !a.tenant_id && <a href={`/portal/accommodation/forms/agreements/${a.id}/tenant-link`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Link tenant</a>}
                                     {a.can_resend_copy && <button onClick={() => resend(a)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700">Resend signed copy</button>}
@@ -428,6 +446,8 @@ function Mini({ label, value, onChange, full = false, type = "text", options = n
         </label>
     );
 }
+
+const ROOM_OCCUPANCY = [{ value: "0", label: "Room is not shared" }, { value: "1", label: "Room is shared" }];
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UTILITY_OPTIONS = [{ value: "1", label: "1 — Exalt manages utilities" }, { value: "2", label: "2 — Tenant arranges directly" }];

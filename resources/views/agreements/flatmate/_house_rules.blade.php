@@ -3,7 +3,9 @@
 <h3 class="tc-head">Purpose</h3>
 <p>These rules are established to protect the property, maintain a comfortable and safe living environment, and promote respect and cooperation among all occupants.</p>
 
-<h3 class="tc-head">General House Rules</h3>
+@if($showGeneralHeading ?? true)
+    <h3 class="tc-head">General House Rules</h3>
+@endif
 
 <h3 class="tc-head">1. GENERAL CONDUCT</h3>
 <p class="clause"><span class="n">1.1</span> All occupants must behave respectfully and responsibly.</p>

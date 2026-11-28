@@ -157,4 +157,6 @@
 <p class="clause"><span class="n">18.4</span> Any continuation, renewal, extension, or holding over will be dealt with in accordance with the Agreement and applicable law.</p>
 <p class="clause"><span class="n">18.5</span> Any outstanding rent, utilities, damage, cleaning, or other lawful amounts must be settled in accordance with the Agreement.</p>
 
-<table class="sig-inline"><tr><td>Signature:</td><td class="ln"></td></tr><tr><td>Name:</td><td class="ln"></td></tr><tr><td>Date:</td><td class="ln"></td></tr></table>
+@if(empty($revised))
+    <table class="sig-inline"><tr><td>Signature:</td><td class="ln"></td></tr><tr><td>Name:</td><td class="ln"></td></tr><tr><td>Date:</td><td class="ln"></td></tr></table>
+@endif

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A generated Exalt flat/house-sharing agreement. Built from a pre-tenancy
@@ -16,6 +17,10 @@ class AccommodationAgreement extends Model
         'transient_flatmate' => 'Transient Flatmate — Short-Term',
         'standard_flatmate' => 'Standard Flatmate — Long-Term',
     ];
+
+    public const LAYOUT_TERMS_FIRST = 'terms_first';
+
+    public const LAYOUT_EXALT_2026_11 = 'exalt_2026_11';
 
     public const STATUS_DRAFT = 'draft';
 
@@ -45,6 +50,11 @@ class AccommodationAgreement extends Model
     public function signingUrl(): ?string
     {
         return $this->signing_token ? url("/agreement/{$this->signing_token}/sign") : null;
+    }
+
+    public function emails(): HasMany
+    {
+        return $this->hasMany(AccommodationAgreementEmail::class);
     }
 
     public function preTenancyForm()

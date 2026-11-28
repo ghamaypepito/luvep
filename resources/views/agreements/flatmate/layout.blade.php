@@ -20,6 +20,7 @@
     .brandbar { border-bottom: 2px solid #1F5A8B; padding-bottom: 6px; margin-bottom: 14px; }
     .brandbar .co { color: #1F5A8B; font-weight: 700; font-size: 11pt; }
     .brandbar .rev { color: #6b7280; font-size: 8.5pt; float: right; }
+    .brandbar .logo { width: 92px; vertical-align: middle; margin-right: 9px; }
 
     .doc-title { color: #1F5A8B; font-size: 17pt; font-weight: 700; margin: 2px 0 2px 0; text-transform: uppercase; letter-spacing: .3px; }
     .prop-line { font-size: 10.5pt; font-weight: 700; margin: 4px 0 12px 0; }
@@ -77,6 +78,9 @@
 </head>
 <body>
     <div class="brandbar">
+        @if(!empty($revised))
+            <img class="logo" alt="Exalt" src="data:image/jpeg;base64,{{ base64_encode(file_get_contents(resource_path('assets/accomodation/exaltlogo.jpg'))) }}">
+        @endif
         <span class="co">Exalt Property Management Ltd</span>
         <span class="rev">Flat/House Sharing Agreement (CV1.2026)</span>
     </div>
