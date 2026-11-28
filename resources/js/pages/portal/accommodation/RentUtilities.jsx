@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Head, router } from "@inertiajs/react";
+import { Head, Link, router } from "@inertiajs/react";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -62,7 +62,7 @@ export default function RentUtilities({ groups = [], weeks = [], window: win = {
         router.get("/portal/accommodation/rent-utilities", { start: win.start, weeks: win.weeks, ...params }, { preserveScroll: true });
     };
 
-    const setCell = (tenantId, weekStart, raw) => {
+    const setCell = (tenantId, weekStart, raw, receivedOn) => {
         const parsed = raw === "" ? null : Number(raw);
         const value = parsed == null || Number.isNaN(parsed) || parsed === 0 ? null : parsed;
         const prev = (paid[tenantId] || {})[weekStart] ?? null;
@@ -76,7 +76,7 @@ export default function RentUtilities({ groups = [], weeks = [], window: win = {
 
         router.patch(
             `/portal/accommodation/rent-utilities/tenants/${tenantId}/payment`,
-            { week_start: weekStart, amount: value },
+            { week_start: weekStart, amount: value, ...(receivedOn === undefined ? {} : { received_on: receivedOn || null }) },
             {
                 preserveScroll: true,
                 preserveState: true,
@@ -138,6 +138,8 @@ export default function RentUtilities({ groups = [], weeks = [], window: win = {
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Rent & Utilities</h1>
                     <p className="text-sm text-gray-500">Amounts in NZD. Payments without a weekly charge record use the tenant’s current property and show Due unavailable for past weeks.</p>
+                    <p className="text-sm text-gray-500">Enter the date received in the rental week the payment covers. Friday and weekend payments in advance go in the following Monday’s column.</p>
+                    <Link href="/portal/accommodation/rental-invoices/overdue" className="text-sm font-semibold text-[#1F5A8B]">Overdue Payment Invoices</Link>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={() => navigate({ start: shiftDate(win.start, -7) })} className="rounded-full border border-gray-200 p-2 text-gray-600 hover:bg-gray-50"><ChevronLeft size={16} /></button>
@@ -241,6 +243,7 @@ function GroupRows({ group, weeks, paid, fin, setCell, setRentUtil, rowTotals, c
                     <tr key={t.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                         <td className="sticky left-0 z-10 bg-white px-3 py-1.5 whitespace-nowrap">
                             <div className="font-medium text-gray-800">{t.display_name}</div>
+                            {t.can_edit_rates && <Link href={`/portal/accommodation/rental-invoices/overdue?tenant=${t.id}`} className="text-xs font-semibold text-[#1F5A8B]">Overdue invoice</Link>}
                             {(group.property_code || group.property_address) && (
                                 <div className="text-[11px] text-gray-400">{group.property_code ? `#${group.property_code} · ` : ""}{group.property_address}</div>
                             )}
@@ -261,6 +264,10 @@ function GroupRows({ group, weeks, paid, fin, setCell, setRentUtil, rowTotals, c
                                     <div className="flex items-center gap-1 text-xs">Received {t.can_edit_payments
                                         ? <Cell value={received ?? null} due={due} onCommit={raw => setCell(t.id, start, raw)} />
                                         : (received == null ? "—" : money(received))}</div>
+                                    {received > 0 && (t.can_edit_payments ? <label className="block text-xs">Date received
+                                        <input type="date" value={record.received_on || ""} onChange={event => setCell(t.id, start, received, event.target.value)}
+                                            className="block rounded-md border border-gray-200 px-1 py-0.5" />
+                                    </label> : record.received_on && <div className="text-xs">Received on {record.received_on}</div>)}
                                     <div className={`text-xs ${comparison.tone}`}>{comparison.text}</div>
                                 </> : canEnterPastPayment ? (
                                     <div className="flex items-center gap-1 text-xs">Received <Cell onCommit={raw => setCell(t.id, start, raw)} /></div>

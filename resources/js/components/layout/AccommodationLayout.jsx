@@ -17,7 +17,11 @@ const ACCOMMODATION_NAV = [
         { name: "Rent & Utilities", href: "/portal/accommodation/rent-utilities", icon: <Receipt size={16} /> },
         { name: "Weekly Property Summary", href: "/portal/accommodation/finance/weekly-property-summary", icon: <BarChart3 size={16} /> },
     ] },
-    { name: "Invoices & Receipts", href: "/portal/accommodation/purchase-invoices", icon: <FileText size={20} /> },
+    { name: "Invoices & Receipts", icon: <FileText size={20} />, children: [
+        { name: "Purchase invoices", href: "/portal/accommodation/purchase-invoices", icon: <FileText size={16} /> },
+        { name: "Move-In Invoice", href: "/portal/accommodation/rental-invoices/move-in", icon: <FileText size={16} /> },
+        { name: "Overdue Payment Invoice", href: "/portal/accommodation/rental-invoices/overdue", icon: <FileText size={16} />, finance: true },
+    ] },
     { name: "PM Payment Schedule", href: "/portal/accommodation/payment-schedule", icon: <Wallet size={20} /> },
     { name: "Task Tracker", href: "/portal/accommodation/tasks", icon: <ClipboardList size={20} /> },
     { name: "Gas Delivery Tracker", href: "/portal/accommodation/gas-delivery", icon: <Flame size={20} /> },
@@ -49,8 +53,13 @@ export default function AccommodationLayout({ children }) {
     const canSeeFinance = auth?.modules?.includes("accommodation_finance");
     const path = url.split("?")[0];
     const inFinance = canSeeFinance && financePages.some(page => page.href === path);
+    const canSeePurchase = ["accommodation", "admin", "super_admin"].includes(auth?.user?.role);
+    const nav = ACCOMMODATION_NAV.filter(item => item.name !== "Finance" || canSeeFinance)
+        .map(item => item.name === "Invoices & Receipts"
+            ? { ...item, children: item.children.filter(page => page.finance ? canSeeFinance : canSeePurchase) } : item)
+        .filter(item => !item.children || item.children.length);
     return (
-        <DashboardLayout brand="EP." subtitle="Accommodation Portal" accent="bg-[#194E47]" nav={ACCOMMODATION_NAV.filter(item => item.name !== "Finance" || canSeeFinance)}>
+        <DashboardLayout brand="EP." subtitle="Accommodation Portal" accent="bg-[#194E47]" nav={nav}>
             {inFinance && <nav aria-label="Accommodation Finance" className="mb-4 flex flex-wrap gap-4 border-b border-gray-200">
                 {financePages.map(page => <Link key={page.href} href={page.href} aria-current={page.href === path ? "page" : undefined}
                     className={`border-b-2 px-2 py-2 text-sm font-semibold ${page.href === path ? "border-emerald-800 text-emerald-900" : "border-transparent text-gray-600 hover:text-emerald-900"}`}>
