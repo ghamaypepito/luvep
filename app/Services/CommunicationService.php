@@ -298,6 +298,7 @@ class CommunicationService
                 'from_email' => $fromEmail,
                 'from_name' => $fromName,
                 'sender' => auth()->user()?->name,
+              ...(! empty($accommodation['onboarding']) ? ['onboarding' => $accommodation['onboarding']] : []),
             ]]),
         ]);
 

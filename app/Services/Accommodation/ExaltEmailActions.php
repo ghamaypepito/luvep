@@ -64,7 +64,7 @@ class ExaltEmailActions
         return collect();
     }
 
-    public function resolve(string $action, string $email, ?int $id, bool $preview): array
+    public function resolve(string $action, string $email, ?int $id, bool $preview, ?int $onboardingId = null): array
     {
         if ($action === '') {
             return [[], []];
@@ -76,7 +76,9 @@ class ExaltEmailActions
         }
 
         $buttons = match ($action) {
-            'viewing' => ['Book a Room / Property Viewing' => $preview ? '#' : URL::signedRoute('accommodation.viewing-booking', $id)],
+            'viewing' => ['Book a Room / Property Viewing' => $preview ? '#' : ($onboardingId
+                ? URL::temporarySignedRoute('accommodation.viewing-booking', now()->addDays(30), ['property' => $id, 'applicant' => $onboardingId])
+                : URL::signedRoute('accommodation.viewing-booking', $id))],
             'attendance' => [
                 'Confirm Attendance' => $preview ? '#' : $this->attendanceLink($id, $email, 'confirmed'),
                 'Decline Attendance' => $preview ? '#' : $this->attendanceLink($id, $email, 'declined'),

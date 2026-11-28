@@ -2,18 +2,186 @@
 
 namespace Tests\Feature;
 
+use App\Listeners\MarkMessageLogSent;
+use App\Mail\TemplatedMessage;
+use App\Models\AccommodationAgreement;
+use App\Models\AccommodationViewingSlot;
 use App\Models\EoiSubmission;
+use App\Models\MessageLog;
+use App\Models\MessageTemplate;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as AssertInertia;
+use Symfony\Component\Mailer\Envelope;
+use Symfony\Component\Mime\Address;
+use Symfony\Component\Mime\Email;
 use Tests\TestCase;
 
 class OnboardingPipelineTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_listing_registration_review_and_assignment_keep_the_full_applicant_history(): void
+    {
+        $property = $this->property();
+        $this->withoutVite()->get('/accommodation/expression-of-interest-hot?listing='.$property->id)
+            ->assertInertia(fn (AssertInertia $page) => $page->where('listingId', $property->id));
+        $this->post('/accommodation/expression-of-interest-hot', $this->fullPublic([
+            'property_id' => $property->id, 'property_interested' => 'Stale listing label',
+        ]))->assertSessionHasNoErrors();
+        $source = EoiSubmission::sole();
+        $this->assertSame($property->id, $source->property_id);
+        $this->assertSame($property->address, $source->property_interested);
+        $alaine = User::factory()->create(['role' => 'accommodation', 'name' => 'Alaine', 'email' => config('accommodation_onboarding.owners.Alaine')]);
+        $janille = User::factory()->create(['role' => 'accommodation', 'name' => 'Janille', 'email' => config('accommodation_onboarding.owners.Janille')]);
+        $other = $this->user();
+        $path = "/portal/accommodation/applications/{$source->id}";
+
+        $this->actingAs($alaine)->patch($path.'/registration-review', ['decision' => 'reviewed'])->assertSessionHasNoErrors();
+        $this->patch($path.'/registration-review', ['decision' => 'not_approved'])->assertSessionHasNoErrors();
+        $this->post($path.'/assign', ['user_id' => $other->id])->assertSessionHasErrors('user_id');
+        $this->post($path.'/assign', ['user_id' => $alaine->id])->assertSessionHasNoErrors();
+        $this->post($path.'/assign', ['user_id' => $janille->id])->assertSessionHasNoErrors();
+        $this->actingAs($janille)->get('/portal/accommodation/onboarding?stage=registration&assigned_to=me&search=0211234567')
+            ->assertInertia(fn (AssertInertia $page) => $page->has('options.stages', 10)
+                ->where('options.stages.0.label', 'Registration / Leads')->where('options.stages.9.label', 'Welcome Email Sent')
+                ->where('options.team.0.name', 'Alaine')->where('options.team.1.name', 'Janille')
+                ->has('submissions.data', 1)->where('submissions.data.0.stage_label', 'Registration / Leads'));
+        $this->get($path)->assertInertia(fn (AssertInertia $page) => $page
+            ->where('submission.status', 'declined')
+            ->where('history.0.assignment.old', 'Alaine')->where('history.0.assignment.new', 'Janille')
+            ->etc());
+        $this->patch($path.'/registration-review', ['decision' => 'approved'])->assertSessionHasNoErrors();
+        $this->assertSame('shortlisted', $source->fresh()->status);
+        $this->assertNotNull($source->fresh()->registration_reviewed_at);
+    }
+
+    public function test_applicant_viewing_moves_only_after_invitation_and_matching_booked_slot(): void
+    {
+        $this->withoutVite();
+        Mail::fake();
+        $this->travelTo(now('Pacific/Auckland')->setDate(2026, 11, 27)->setTime(10, 0));
+        $property = $this->property();
+        $source = $this->submission(['status' => 'shortlisted', 'property_id' => $property->id]);
+        $slot = AccommodationViewingSlot::create([
+            'property_id' => $property->id, 'property_address' => $property->address,
+            'viewing_date' => '2026-11-30', 'start_time' => '11:00', 'capacity' => 2,
+        ]);
+        $base = '/portal/accommodation/compose';
+        $this->actingAs($this->user())->get($base.'?onboarding='.$source->id)
+            ->assertInertia(fn (AssertInertia $page) => $page->where('onboardingDraft.action_id', $property->id));
+        $this->post($base.'/exalt-template/send', $this->mailPayload($source, '02', $property->id))
+            ->assertSessionHasNoErrors();
+        $this->assertSame('shortlisted', $source->fresh()->status);
+        $this->deliverMail();
+        $this->assertSame('viewing_email_sent', $source->fresh()->status);
+        $mail = Mail::queued(TemplatedMessage::class)->first();
+        preg_match('/href="([^"]+)"/', $mail->markdownBody, $matches);
+        $link = html_entity_decode($matches[1]);
+        $booking = ['slot_id' => $slot->id, 'name' => $source->full_legal_name, 'email' => $source->email, 'mobile' => $source->mobile];
+        $this->postJson($link, [...$booking, 'email' => 'other@example.test'])->assertUnprocessable();
+        $this->post($link, $booking)->assertSessionHasNoErrors();
+        $this->post($link, $booking)->assertSessionHasNoErrors();
+        $source->refresh();
+        $this->assertSame('viewing_booked', $source->status);
+        $this->assertSame($slot->attendees()->sole()->id, $source->viewing_attendee_id);
+        $this->getJson('/portal/accommodation/calendar/events?start=2026-11-30&end=2026-11-30')
+            ->assertJsonCount(1)->assertJsonPath('0.source_type', 'group_viewing');
+        $this->patchJson("/portal/accommodation/applications/{$source->id}/status", ['status' => 'viewing_completed'])
+            ->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->travelTo(now('Pacific/Auckland')->setDate(2026, 11, 30)->setTime(12, 0));
+        $this->patch("/portal/accommodation/applications/{$source->id}/status", ['status' => 'viewing_completed'])->assertSessionHasNoErrors();
+        $this->post($base.'/exalt-template/send', $this->mailPayload($source, '04', $source->id))->assertSessionHasNoErrors();
+        $this->deliverMail();
+        $this->assertSame('pre_tenancy_form_sent', $source->fresh()->status);
+    }
+
+    public function test_full_invoice_payment_then_delivered_welcome_are_required_for_final_stage(): void
+    {
+        $this->withoutVite();
+        Mail::fake();
+        Storage::fake('local');
+        $property = $this->property();
+        $tenant = Tenant::create([
+            'property_id' => $property->id, 'first_name' => 'Jane', 'family_name' => 'Doe',
+            'contract_type' => 'fixed_term', 'current_status' => 'active', 'email' => 'jane@example.com',
+        ]);
+        $source = $this->submission([
+            'status' => 'invoice_sent', 'converted_to_tenant_id' => $tenant->id, 'property_id' => $property->id,
+            'invoice_amount_nzd' => 1095,
+        ]);
+        $this->patchStatus($source, ['status' => 'payment_confirmed', 'verified_move_in_amount_nzd' => 1094.99])->assertSessionHasErrors('verified_move_in_amount_nzd');
+        $this->assertSame('invoice_sent', $source->fresh()->status);
+        $this->patchStatus($source, ['status' => 'payment_confirmed', 'verified_move_in_amount_nzd' => 1095])->assertSessionHasNoErrors();
+        $this->assertSame('1095.00', $source->fresh()->verified_move_in_amount_nzd);
+        $this->post('/portal/accommodation/compose/exalt-template/send', [
+            ...$this->mailPayload($source, '08', $tenant->id),
+            'attachments' => [UploadedFile::fake()->create('condition-report.pdf', 1, 'application/pdf')],
+        ])->assertSessionHasNoErrors();
+        $this->get('/portal/accommodation/onboarding?stage=welcome_sent')->assertInertia(fn (AssertInertia $page) => $page->has('submissions.data', 0));
+        $this->deliverMail();
+        $this->assertNotNull($source->fresh()->welcome_email_sent_at);
+        $this->get('/portal/accommodation/onboarding?stage=welcome_sent')
+            ->assertInertia(fn (AssertInertia $page) => $page->has('submissions.data', 1)
+                ->where('submissions.data.0.stage_label', 'Welcome Email Sent'));
+    }
+
+    public function test_issued_invoice_delivery_advances_the_matching_signed_application(): void
+    {
+        if (! Schema::hasTable('accommodation_rental_invoices')) {
+            $this->markTestSkipped('Run alongside the issued rental-invoice migration.');
+        }
+        Mail::fake();
+        Storage::fake('local');
+        $property = $this->property();
+        $tenant = Tenant::create([
+            'property_id' => $property->id, 'first_name' => 'Jane', 'family_name' => 'Doe',
+            'contract_type' => 'fixed_term', 'current_status' => 'pending_payment', 'email' => 'jane@example.com',
+        ]);
+        $source = $this->submission(['status' => 'agreement_signed', 'converted_to_tenant_id' => $tenant->id, 'property_id' => $property->id]);
+        $agreement = AccommodationAgreement::create([
+            'status' => 'signed', 'agreement_type' => 'standard_flatmate', 'eoi_submission_id' => $source->id, 'data' => [],
+        ]);
+        $invoice = DB::table('accommodation_rental_invoices')->insertGetId([
+            'tenant_id' => $tenant->id, 'kind' => 'move-in', 'reference' => 'EXALT-MI-TEST', 'pdf_path' => 'test-invoice.pdf',
+            'submission_key' => (string) \Illuminate\Support\Str::uuid(), 'submission_hash' => str_repeat('a', 64),
+            'details' => json_encode(['agreement_id' => $agreement->id, 'property' => $property->address, 'due_date' => '2026-12-02', 'total_cents' => 109500]),
+        ]);
+        Storage::disk('local')->put('test-invoice.pdf', '%PDF-sample');
+        $this->actingAs($this->user())->post('/portal/accommodation/compose/exalt-template/send', $this->mailPayload($source, '07', $invoice))
+            ->assertSessionHasNoErrors();
+        $this->assertSame('agreement_signed', $source->fresh()->status);
+        $this->deliverMail();
+        $this->assertSame('invoice_sent', $source->fresh()->status);
+        $this->assertSame('1095.00', $source->fresh()->invoice_amount_nzd);
+        $this->assertEquals($invoice, $source->fresh()->move_in_invoice_id);
+    }
+
+    private function mailPayload(EoiSubmission $source, string $templateNumber, int $recordId): array
+    {
+        $template = MessageTemplate::where('key', 'exalt_client_'.$templateNumber)->sole();
+        $metadata = app(\App\Services\Accommodation\ExaltEmailTemplates::class)->metadata($template);
+
+        return ['template_id' => $template->id, 'action_id' => $recordId, 'email' => $source->email,
+            'onboarding_id' => $source->id, 'fields' => array_fill_keys(array_column($metadata['fields'], 'key'), 'Sample')];
+    }
+
+    private function deliverMail(): void
+    {
+        $log = MessageLog::latest('id')->firstOrFail();
+        $email = (new Email)->from('sender@example.test')->to($log->recipient_address)->text('Synthetic test');
+        $email->getHeaders()->addTextHeader('X-Log-Id', (string) $log->id);
+        $sent = new \Symfony\Component\Mailer\SentMessage($email, new Envelope(new Address('sender@example.test'), [new Address($log->recipient_address)]));
+        (new MarkMessageLogSent)->handle(new MessageSent(new \Illuminate\Mail\SentMessage($sent)));
+    }
 
     private function user(): User
     {
@@ -132,10 +300,11 @@ class OnboardingPipelineTest extends TestCase
         $this->assertNotNull($fresh->post_viewing_followup_at); // auto-stamped on entry
     }
 
-    public function test_invoice_sent_requires_amount(): void // 8
+    public function test_invoice_stage_cannot_be_manually_marked_sent(): void
     {
         $s = $this->submission(['status' => 'agreement_signed']);
-        $this->patchStatus($s, ['status' => 'invoice_sent'])->assertSessionHasErrors(['invoice_amount_nzd']);
+        $this->patchStatus($s, ['status' => 'invoice_sent', 'invoice_amount_nzd' => 100])->assertSessionHasErrors(['status']);
+        $this->assertSame('agreement_signed', $s->fresh()->status);
     }
 
     // ---- Convert to tenant ------------------------------------------------
@@ -177,7 +346,7 @@ class OnboardingPipelineTest extends TestCase
     public function test_assign_to_user(): void // 13
     {
         $s = $this->submission();
-        $assignee = $this->user();
+        $assignee = User::factory()->create(['role' => 'accommodation', 'email' => config('accommodation_onboarding.owners.Janille')]);
         $this->actingAs($this->user())
             ->post("/portal/accommodation/applications/{$s->id}/assign", ['user_id' => $assignee->id])
             ->assertRedirect();
@@ -231,7 +400,7 @@ class OnboardingPipelineTest extends TestCase
         $this->submission(['status' => 'moved_in']);
         $this->submission(['status' => 'declined']);
 
-        $this->actingAs($this->user())->get('/portal/accommodation/onboarding')
+        $this->actingAs($this->user())->get('/portal/accommodation/onboarding?active_pipeline=1')
             ->assertInertia(fn (AssertInertia $p) => $p->has('submissions.data', 1)); // only the active one
     }
 

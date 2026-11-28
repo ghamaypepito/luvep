@@ -2415,6 +2415,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/applications', [EoiSubmissionController::class, 'index'])->name('applications.index');
             Route::get('/applications/{submission}', [EoiSubmissionController::class, 'show'])->name('applications.show');
             Route::patch('/applications/{submission}/status', [EoiSubmissionController::class, 'updateStatus'])->name('applications.update-status');
+            Route::patch('/applications/{submission}/registration-review', [EoiSubmissionController::class, 'reviewRegistration'])->name('applications.registration-review');
             Route::post('/applications/{submission}/assign', [EoiSubmissionController::class, 'assignTo'])->name('applications.assign');
             Route::post('/applications/{submission}/link-property', [EoiSubmissionController::class, 'linkToProperty'])->name('applications.link-property');
             Route::post('/applications/{submission}/note', [EoiSubmissionController::class, 'addInternalNote'])->name('applications.note');

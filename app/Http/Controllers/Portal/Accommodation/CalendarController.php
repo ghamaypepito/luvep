@@ -36,7 +36,7 @@ class CalendarController extends Controller
             'viewingStatuses' => OnboardingPipeline::allStatuses(),
             'kpis' => [
                 // Clients currently scheduled to view (booked, not yet completed).
-                'upcoming_viewings' => EoiSubmission::where('status', 'viewing_booked')->count() + $shared,
+                'upcoming_viewings' => EoiSubmission::where('status', 'viewing_booked')->whereNull('viewing_attendee_id')->count() + $shared,
                 // Active tenants whose contract ends within the "ending soon" window.
                 'ending_soon' => Tenant::active()->endingSoon()->count(),
             ],

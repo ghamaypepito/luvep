@@ -23,7 +23,7 @@ class UpdateStatusRequest extends FormRequest
             'viewing_scheduled_at' => [Rule::requiredIf($target === 'viewing_booked'), 'nullable', 'date'],
             'viewing_outcome' => ['nullable', 'string', 'max:5000'],
             'pre_tenancy_form_data' => ['nullable', 'array'],
-            'invoice_amount_nzd' => [Rule::requiredIf($target === 'invoice_sent'), 'nullable', 'numeric', 'min:0'],
+            'verified_move_in_amount_nzd' => [Rule::requiredIf($target === 'payment_confirmed'), 'nullable', 'numeric', 'min:0.01', 'max:9999999999', 'decimal:0,2'],
             'move_in_date' => [Rule::requiredIf($target === 'moved_in'), 'nullable', 'date'],
             'declined_reason' => [Rule::requiredIf($target === 'declined'), 'nullable', 'string', 'max:2000'],
             'not_proceeding_reason' => [Rule::requiredIf($target === 'not_proceeding'), 'nullable', 'string', 'max:2000'],

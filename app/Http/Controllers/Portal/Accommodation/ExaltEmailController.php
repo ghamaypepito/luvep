@@ -9,6 +9,7 @@ use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Services\Accommodation\ExaltEmailActions;
 use App\Services\Accommodation\ExaltEmailTemplates;
+use App\Services\Accommodation\OnboardingEmailMilestones;
 use App\Services\Accommodation\ViewingSchedule;
 use App\Services\CommunicationService;
 use Illuminate\Http\Request;
@@ -52,6 +53,7 @@ class ExaltEmailController extends Controller
             accommodation: [
                 'recipient_name' => $message['recipient_name'],
                 'reply_to_email' => 'exaltinfo@luvep.com',
+                'onboarding' => $message['onboarding'],
             ],
         );
         if ($log->status === MessageLog::STATUS_FAILED) {
@@ -95,6 +97,7 @@ class ExaltEmailController extends Controller
             'template_id' => 'required|integer',
             'email' => 'required|email|max:191',
             'action_id' => 'nullable|integer',
+            'onboarding_id' => 'nullable|integer',
             'fields' => 'nullable|array|max:36',
             'fields.*' => 'nullable|string|max:3000',
             'attachments' => 'nullable|array|max:10',
@@ -107,12 +110,16 @@ class ExaltEmailController extends Controller
         }
 
         $email = mb_strtolower($data['email']);
-        [$recordFields, $buttons] = $actions->resolve($action, $email, isset($data['action_id']) ? (int) $data['action_id'] : null, $preview);
+        $record = isset($data['action_id']) ? (int) $data['action_id'] : null;
+        $onboardingId = isset($data['onboarding_id']) ? (int) $data['onboarding_id'] : null;
+        $milestone = $onboardingId ? app(OnboardingEmailMilestones::class)->prepare($onboardingId, $template->key, $email, $record) : null;
+        [$recordFields, $buttons] = $actions->resolve($action, $email, $record, $preview, $onboardingId);
 
         return [
             ...$templates->render($template, $data['fields'] ?? [], $recordFields, $buttons),
             'email' => $email,
             'recipient_name' => $data['fields']['First Name'] ?? null,
+            'onboarding' => $milestone,
         ];
     }
 

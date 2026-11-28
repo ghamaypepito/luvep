@@ -205,7 +205,8 @@ function AgreementPanel({ agreement, onPreview }) {
     );
 }
 
-export default function ApplicationDetails({ submission, options = {}, allowedTransitions = [], agreement = null }) {
+export default function ApplicationDetails({ submission, options = {}, allowedTransitions = [], agreement = null,
+    stageLabel, history = [], onboardingComposeUrl = null }) {
     const [modal, setModal] = useState(null);          // 'assign' | 'link' | 'note' | 'convert'
     const [transitionTo, setTransitionTo] = useState(null);
     const [emailTarget, setEmailTarget] = useState(null);  // stage with a static email preview
@@ -216,6 +217,26 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
     const currentIdx = stages.indexOf(submission.status);
     const isTerminal = (options.terminals ?? []).includes(submission.status);
     const canConvert = submission.status === "payment_confirmed" || (submission.status === "moved_in" && !submission.converted_to_tenant_id);
+    const registration = ["new", "reviewed", "declined"].includes(submission.status);
+    const transitions = allowedTransitions.filter((target) =>
+        !((registration && ["reviewed", "shortlisted", "declined"].includes(target)) ||
+        (onboardingComposeUrl && ["viewing_email_sent", "post_viewing_followup", "pre_tenancy_form_sent"].includes(target))));
+    const composeLabel = {
+        shortlisted: "Approve and send viewing link",
+        viewing_email_sent: "Send viewing booking link",
+        viewing_completed: "Send proposal and Pre-Tenancy Form",
+        post_viewing_followup: "Send proposal and Pre-Tenancy Form",
+        pre_tenancy_form_sent: "Send proposal again",
+        agreement_signed: "Email issued move-in invoice",
+        invoice_sent: "Send move-in invoice again",
+        payment_confirmed: "Compose welcome email",
+        moved_in: "Compose welcome email",
+    }[submission.status];
+    const registrationReview = useForm({ decision: "" });
+    const review = (decision) => {
+        registrationReview.transform(() => ({ decision }));
+        registrationReview.patch(`/portal/accommodation/applications/${submission.id}/registration-review`, { preserveScroll: true });
+    };
 
     // When each stage was reached (for the read-only stage preview).
     const stageDates = {
@@ -268,6 +289,7 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
 
     const timeline = [
         ["Submitted", submission.created_at],
+        ["Registration reviewed", submission.registration_reviewed_at],
         ["Viewing booking email sent", submission.viewing_email_sent_at],
         ["Viewing scheduled", submission.viewing_scheduled_at],
         ["Viewing completed", submission.viewing_completed_at],
@@ -279,6 +301,7 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
         ["Invoice sent", submission.invoice_sent_at],
         ["Payment confirmed", submission.payment_confirmed_at],
         ["Moved in", submission.move_in_date],
+        ["Welcome Email Sent", submission.welcome_email_sent_at],
     ].filter(([, v]) => v);
 
     const visa = submission.visa_status === "Other" && submission.visa_status_other ? `Other — ${submission.visa_status_other}` : displayValue(submission.visa_status);
@@ -298,7 +321,7 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
                     <h1 className="text-2xl font-bold text-gray-900">Onboarding — {submission.full_legal_name}</h1>
                     <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
                         {tempBadge(submission.lead_temperature || submission.form_type) && <span>{tempBadge(submission.lead_temperature || submission.form_type)}</span>}
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[submission.status]}`}>{statusLabel(submission.status)}</span>
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[submission.status]}`}>{stageLabel || statusLabel(submission.status)}</span>
                         <span className={daysStyle(submission.days_at_current_stage)}>{submission.days_at_current_stage ?? 0}d at stage</span>
                     </p>
                 </div>
@@ -344,27 +367,41 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
                     })}
                 </div>
                 {isTerminal && (
-                    <p className="mt-3 text-sm font-semibold text-rose-600">This application is {statusLabel(submission.status)}.</p>
+                    <p className="mt-3 text-sm font-semibold text-rose-600">{submission.status === "declined" ? "Not Approved" : "Not Proceeding"}</p>
                 )}
             </div>
 
             {/* Action buttons (allowed transitions) + quick stage dropdown */}
             <div className="flex flex-wrap items-center gap-2">
-                {allowedTransitions.length > 0 && (
+                {registration && <div className="flex flex-wrap items-center gap-2">
+                    {submission.status === "new" && <button type="button" disabled={registrationReview.processing} onClick={() => review("reviewed")}
+                        className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm">Mark Reviewed</button>}
+                    {submission.status !== "new" && <span className="text-sm font-medium text-gray-600">Reviewed</span>}
+                    <button type="button" disabled={registrationReview.processing} onClick={() => review("approved")}
+                        className="rounded-full bg-[#1F5A8B] px-4 py-2 text-sm font-semibold text-white">Approve</button>
+                    {submission.status !== "declined" && <button type="button" disabled={registrationReview.processing}
+                        onClick={() => review("not_approved")} className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">Not Approved</button>}
+                    {registrationReview.errors.decision && <p role="alert" className="text-xs text-rose-700">{registrationReview.errors.decision}</p>}
+                </div>}
+                {onboardingComposeUrl && <Link href={onboardingComposeUrl}
+                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700">
+                    <Mail size={14} /> {composeLabel}
+                </Link>}
+                {transitions.length > 0 && (
                     <select
                         value=""
                         onChange={(e) => { if (e.target.value) go(e.target.value); }}
                         className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1F5A8B]"
                     >
                         <option value="">Move to stage…</option>
-                        {allowedTransitions.map((t) => (
+                        {transitions.map((t) => (
                             <option key={t} value={t} disabled={preTenancyPending(t)}>
                                 {t === "moved_in" ? "Convert to Tenant" : statusLabel(t)}{preTenancyPending(t) ? " (awaiting tenant)" : ""}
                             </option>
                         ))}
                     </select>
                 )}
-                {allowedTransitions.map((t) => {
+                {transitions.map((t) => {
                     const danger = t === "declined" || t === "not_proceeding";
                     const locked = preTenancyPending(t);
                     const label = t === "moved_in" ? "Convert to Tenant" : `→ ${statusLabel(t)}`;
@@ -388,11 +425,6 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
                 })}
                 {canConvert && !allowedTransitions.includes("moved_in") && (
                     <button onClick={() => setModal("convert")} className="rounded-full bg-[#1F5A8B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#184A73]">Convert to Tenant</button>
-                )}
-                {(submission.status === "moved_in" || submission.status === "payment_confirmed") && (
-                    <button onClick={() => setEmailTarget("moved_in")} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        <Mail size={14} /> Move-in welcome email
-                    </button>
                 )}
             </div>
 
@@ -438,6 +470,18 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
                                 ))}
                             </ol>
                         )}
+                    </Panel>
+                </div>
+
+                <div className="md:col-span-2">
+                    <Panel title="Assignment and stage activity" icon={<History size={16} className="text-[#1F5A8B]" />}>
+                        {history.length === 0 ? <p className="text-sm text-gray-400">No changes recorded yet.</p> : <ul className="space-y-2">
+                            {history.map((event) => <li key={event.id} className="text-sm text-gray-700">
+                                <strong>{event.actor || "Portal"}</strong> · {fmtDateTime(event.at)}
+                                {event.assignment && <p>Assigned from {event.assignment.old} to {event.assignment.new}</p>}
+                                {event.stage && <p>{statusLabel(event.stage.old)} → {statusLabel(event.stage.new)}</p>}
+                            </li>)}
+                        </ul>}
                     </Panel>
                 </div>
 
@@ -572,7 +616,9 @@ function AssignModal({ submission, team, onClose }) {
         <Shell title="Assign application" onClose={onClose}>
             <form onSubmit={submit} className="space-y-4">
                 <select className={FIELD} value={data.user_id} onChange={(e) => setData("user_id", e.target.value)}>
-                    <option value="">Select a team member</option>
+                    <option value="">Unassigned</option>
+                    {submission.assigned_to && !team.some((user) => user.id === submission.assigned_to.id)
+                        && <option value={submission.assigned_to.id} disabled>{submission.assigned_to.name}</option>}
                     {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
                 {errors.user_id && <p className="text-xs text-rose-600">{errors.user_id}</p>}

@@ -239,8 +239,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $url = '/portal/accommodation/applications/'.$source->id;
         $this->post($url.'/convert', $payload)->assertSessionHas('error');
         $this->assertSame('pending_payment', Tenant::find($tenantId)->current_status);
-        $this->patch($url.'/status', ['status' => 'invoice_sent', 'invoice_amount_nzd' => 1500])->assertSessionHasNoErrors();
-        $this->patch($url.'/status', ['status' => 'payment_confirmed'])->assertSessionHasNoErrors();
+        app(\App\Services\OnboardingTransitionService::class)->transition($source->fresh(), 'invoice_sent', ['invoice_amount_nzd' => 1500]);
+        $this->patch($url.'/status', ['status' => 'payment_confirmed', 'verified_move_in_amount_nzd' => 1500])->assertSessionHasNoErrors();
         $roomId = (string) \Illuminate\Support\Str::uuid();
         $property->forceFill(['total_rooms' => 1, 'room_register' => [['id' => $roomId, 'name' => 'Room A', 'hold' => false]]])->save();
         $payload['assigned_room_ids'] = [$roomId];

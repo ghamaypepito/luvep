@@ -37,7 +37,8 @@ class ViewingBookingController extends Controller
             'mobile' => ['required', 'string', 'max:40', 'regex:/^\+?(?=(?:\D*\d){6})[0-9 ().-]+$/D'],
         ]);
 
-        $slot = $schedule->book($property, $data);
+        $applicant = $request->query('applicant');
+        $slot = $schedule->book($property, $data, is_string($applicant) && ctype_digit($applicant) ? (int) $applicant : null);
 
         return redirect()->to($request->fullUrl(), 303)->with('viewing_confirmation', [
             'property_id' => $property->id,

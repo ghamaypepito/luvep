@@ -5,8 +5,10 @@ namespace App\Services\Accommodation;
 use App\Mail\AccommodationViewingBooked;
 use App\Models\AccommodationViewingAttendee as Attendee;
 use App\Models\AccommodationViewingSlot as Slot;
+use App\Models\EoiSubmission;
 use App\Models\Property;
 use App\Models\User;
+use App\Services\OnboardingTransitionService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -100,17 +102,27 @@ class ViewingSchedule
         }, 3);
     }
 
-    public function book(Property $property, array $data): Slot
+    public function book(Property $property, array $data, ?int $applicantId = null): Slot
     {
-        [$slot, $attendee] = DB::transaction(function () use ($property, $data) {
-            $slot = Slot::where('property_id', $property->id)->lockForUpdate()->find($data['slot_id']);
+        [$slot, $attendee] = DB::transaction(function () use ($property, $data, $applicantId) {
             $email = mb_strtolower(trim($data['email']));
+            $source = $applicantId ? EoiSubmission::lockForUpdate()->findOrFail($applicantId) : null;
+            if ($source && ((int) $source->property_id !== $property->id || mb_strtolower(trim($source->email)) !== $email
+                || ! in_array($source->status, ['viewing_email_sent', 'viewing_booked'], true))) {
+                throw ValidationException::withMessages(['slot_id' => 'Use your invitation and the email address on your application.']);
+            }
+            $slot = Slot::where('property_id', $property->id)->lockForUpdate()->find($data['slot_id']);
             if (! $slot) {
                 throw ValidationException::withMessages(['slot_id' => 'This viewing time is no longer available.']);
             }
 
             $reserved = $slot->attendees()->where('status', '!=', Attendee::CANCELLED)->lockForUpdate()->get();
-            if ($reserved->contains('email', $email)) {
+            $prior = $reserved->firstWhere('email', $email);
+            if ($source?->status === 'viewing_booked' && (! $prior || (int) $source->viewing_attendee_id !== $prior->id)) {
+                throw ValidationException::withMessages(['slot_id' => 'This application already has a viewing. Contact Exalt to change it.']);
+            }
+            if ($prior) {
+                $this->recordApplicantBooking($source, $slot, $prior);
                 return [$slot, null];
             }
             if ($slot->blocked || ! $slot->startsAt()->isFuture() || $reserved->count() >= $slot->capacity
@@ -125,6 +137,7 @@ class ViewingSchedule
                 'attendance_response' => null,
                 'attendance_responded_at' => null,
             ]);
+            $this->recordApplicantBooking($source, $slot, $attendee);
 
             return [$slot, $attendee];
         }, 3);
@@ -134,6 +147,20 @@ class ViewingSchedule
         }
 
         return $slot;
+    }
+
+    private function recordApplicantBooking(?EoiSubmission $source, Slot $slot, Attendee $attendee): void
+    {
+        if ($source?->status === 'viewing_email_sent') {
+            $linked = EoiSubmission::where('viewing_attendee_id', $attendee->id)->whereKeyNot($source->id)->exists();
+            if ($linked) {
+                throw ValidationException::withMessages(['slot_id' => 'This booking is linked to another application. Contact Exalt for help.']);
+            }
+            app(OnboardingTransitionService::class)->transition($source, 'viewing_booked', [
+                'viewing_scheduled_at' => $slot->startsAt()->utc(),
+                'viewing_attendee_id' => $attendee->id,
+            ]);
+        }
     }
 
     public function changeStatus(Attendee $attendee, string $status): void
