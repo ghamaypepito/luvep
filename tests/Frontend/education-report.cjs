@@ -50,6 +50,7 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
             ...props.departments.education.stages,
             { stage: 'No stage set', count: 3, clients: [] },
         ] } },
+        weeklyReport: { from: '2026-11-02', to: '2026-11-04', note: '' },
         personalReport: { notes: {}, contacts: {
             'Contact Attempted': [{ id: 14, name: 'My contact', date: '2026-11-01T00:00:00Z' }],
             Contacted: [],
@@ -71,6 +72,15 @@ const props = { range: { preset: 'this_month', from: '2026-11-01', to: '2026-11-
         'Visa Lodged', 'Visa Outcome (Approved / Declined)', 'Arrived in NZ', 'Started Course',
     ]);
     assert.equal(cards.children.length, 16, 'The presentation grid stays at four rows of four cards');
+    const periodFilters = document.querySelector('[aria-label="Report period"]');
+    const accomplishments = document.querySelector('[aria-label="My Education accomplishments"]');
+    const weeklyNotes = [...document.querySelectorAll('h2')].find(heading => heading.textContent === 'Weekly notes');
+    assert.ok(accomplishments && weeklyNotes, 'Both supporting sections remain available');
+    assert.ok(periodFilters.compareDocumentPosition(cards) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(cards.compareDocumentPosition(weeklyNotes) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+        'Show the main Education cards before Weekly notes');
+    assert.ok(cards.compareDocumentPosition(accomplishments) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+        'Show the main Education cards before My Education accomplishments');
     const additionalStages = document.querySelector('details[aria-label="Other Education stages"]');
     assert.ok(additionalStages, 'Supplemental stages remain available outside the sixteen-card grid');
     await click(additionalStages.querySelector('summary'));

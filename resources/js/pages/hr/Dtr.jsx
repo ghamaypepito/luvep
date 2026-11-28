@@ -421,6 +421,43 @@ export const Editor = forwardRef(function Editor({ entry, locked, reportChanges 
         </div>{sidebar?.(form.data, form.isDirty, form.processing)}</div>
     );
 });
+function AttendanceTimeline({ entry }) {
+    const formatTime = (instant, timezone) =>
+        new Intl.DateTimeFormat("en", {
+            timeZone: timezone,
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+            ...(instant.slice(0, 10) !== entry.work_date && { month: "short", day: "numeric" }),
+        }).format(new Date(instant));
+
+    return (
+        <section aria-labelledby="attendance-timeline">
+            <h3 id="attendance-timeline">Work and break timeline</h3>
+            {entry.timeline.length > 0 ? (
+                <div className="hr-table-wrap">
+                    <table aria-labelledby="attendance-timeline">
+                        <thead>
+                            <tr><th scope="col">Activity</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Time zone</th></tr>
+                        </thead>
+                        <tbody>
+                            {entry.timeline.map(({ kind, started_at, ended_at, timezone }) => (
+                                <tr key={`${kind}:${started_at}`}>
+                                    <th scope="row">{kind === "break" ? "Break" : "Work"}</th>
+                                    <td><time dateTime={started_at}>{formatTime(started_at, timezone)}</time></td>
+                                    <td>{ended_at ? <time dateTime={ended_at}>{formatTime(ended_at, timezone)}</time> : "In progress"}</td>
+                                    <td>{timezone}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : <p>{entry.time_source === "live" ? "No clock intervals recorded for this day." : "This record has no individual work or break times."}</p>}
+        </section>
+    );
+}
+
 export default function Dtr({ entries, weeks, today, date_filter, creativeRequests = [], sharedAccommodationDtr = null }) {
     const { hr } = usePage().props;
     const editor = useRef(null);
@@ -481,6 +518,7 @@ export default function Dtr({ entries, weeks, today, date_filter, creativeReques
                             </a>
                         </div>
                         <p className="hr-notice">Report date: <strong>{entry.work_date}</strong>. Work-report edits are logged for your direct head. Clock changes use the reviewed correction process.</p>
+                        {entry.timeline && <AttendanceTimeline entry={entry} />}
                         <Editor
                             ref={editor}
                             key={`${entry.id}:${entry.hr_version}`}

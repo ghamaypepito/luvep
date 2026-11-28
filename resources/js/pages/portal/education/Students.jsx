@@ -9,7 +9,7 @@ import {
     CreditCard, FileText, ExternalLink, Languages, ClipboardList,
     Save, Edit2, ArrowUpDown, ArrowUp, ArrowDown,
     ChevronDown, Check, TrendingUp, Globe,
-    UserPlus, Pencil, Trash2, Copy, MoreHorizontal, Paperclip, KeyRound, Flag, Briefcase,
+    UserPlus, Pencil, Trash2, Copy, MoreHorizontal, Paperclip, KeyRound, Flag, Briefcase, Archive,
 } from "lucide-react";
 import { AvatarPhoto } from "@/components/ui/Avatar";
 import AddEditStudentModal from "./AddEditStudentModal";
@@ -480,7 +480,8 @@ function studentMatchesSearch(student, query) {
     return values.join(" ").toLowerCase().includes(query);
 }
 
-export default function EducationStudents({ students = [], schoolOptions = [], programOptions = [], agentOptions = [], readOnly = false }) {
+export default function EducationStudents({ students = [], schoolOptions = [], programOptions = [], agentOptions = [], readOnly = false,
+    canManageEnglishArchive = false, initialStudentView = "education" }) {
     // Add / edit student modal — null = closed, {} = new, object = edit.
     const [editingStudent, setEditingStudent] = useState(null);
     const [studentModalOpen, setStudentModalOpen] = useState(false);
@@ -518,8 +519,25 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
     // Education guarantees a lead only appears under one tab even when
     // multiple flags are set, so "moving" a lead to another department
     // hides it from its old tab automatically.
-    const [view, setView] = useState("education");
+    const [view, setView] = useState(initialStudentView);
     const [stageFilter, setStageFilter] = useState("All");
+
+    const archiveEnglishStudent = (student) => {
+        if (!window.confirm(`Archive "${student.name}" from the English queue? You can restore them from Archived English students.`)) return;
+        router.patch(`/portal/education/students/${student.id}/english-archive`, { archived: true }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSelectedIds(previous => {
+                    const next = new Set(previous);
+                    next.delete(student.id);
+                    return next;
+                });
+                setExpandedId(previous => previous === student.id ? null : previous);
+                toast.success("Student archived from the English queue.");
+            },
+            onError: () => toast.error("Could not archive the English student."),
+        });
+    };
 
     // Which department tabs this lead belongs to. A lead can be under MORE THAN
     // ONE at once — e.g. a student the Immigration team has also taken on stays
@@ -538,7 +556,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
             || IMMIGRATION_EDUCATION_STAGES.has(s.education_stage);
         const inEnglish = !! s.english_stage || s.stage === "English Pro";
         if (inImmigration) set.add("immigration");
-        if (inEnglish) set.add("english");
+        if (inEnglish && !s.english_archived) set.add("english");
         if (s.is_student || (! inImmigration && ! inEnglish)) set.add("education");
         return set;
     };
@@ -578,6 +596,7 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
         const q = search.trim().toLowerCase();
         const rows = students.filter((s) => {
             if (q) {
+                if (view === "english" && s.english_archived) return false;
                 // A search spans ALL three department tabs — a name that lives
                 // under English or Immigration still surfaces here.
                 return studentMatchesSearch(s, q);
@@ -759,6 +778,12 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                             <ArrowUpDown size={12} />
                             Sort: {sortDir === "asc" ? "Oldest" : "Newest"}
                         </button>
+                        {view === "english" && canManageEnglishArchive && (
+                            <Link href="/portal/education/students/english-archive"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50">
+                                <Archive size={12} /> Archived English students
+                            </Link>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1076,6 +1101,12 @@ export default function EducationStudents({ students = [], schoolOptions = [], p
                                                             label: 'Edit student',
                                                             icon: Pencil,
                                                             onClick: () => openEditStudent(s),
+                                                        },
+                                                        !readOnly && view === "english" && canManageEnglishArchive && !s.english_archived && departmentsOf(s).has("english") && {
+                                                            key: 'archive-english',
+                                                            label: 'Archive',
+                                                            icon: Archive,
+                                                            onClick: () => archiveEnglishStudent(s),
                                                         },
                                                         readOnly ? null : {
                                                             key: 'delete',

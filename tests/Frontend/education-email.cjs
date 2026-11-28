@@ -22,6 +22,7 @@ const inertia = { Head: () => null, router: {
 
 function load(entryPoint) {
     const output = buildSync({
+        alias: { "@": path.resolve("resources/js") },
         entryPoints: [entryPoint], bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic",
         external: ["react", "react/jsx-runtime", "@inertiajs/react", "sonner", "@/components/templates/*"],
     }).outputFiles[0].text;

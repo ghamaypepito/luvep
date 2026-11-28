@@ -1859,6 +1859,9 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/booking', [\App\Http\Controllers\BookingController::class, 'index'])->name('booking');
             Route::get('/students', [EducationController::class, 'students'])->name('students');
             Route::get('/students/intake-monitoring', [EducationController::class, 'intakeMonitoring'])->name('students.intake-monitoring');
+            Route::get('/students/english-archive', [\App\Http\Controllers\Portal\EnglishStudentArchiveController::class, 'index'])->name('students.english-archive');
+            Route::patch('/students/{lead}/english-archive', [\App\Http\Controllers\Portal\EnglishStudentArchiveController::class, 'update'])
+                ->whereNumber('lead')->name('students.english-archive.update');
             Route::post('/students/{id}/dashboard-field', [EducationController::class, 'updateStudentField'])->name('students.dashboard-field');
             // Add / edit / soft-delete student rows from the Students page.
             Route::post('/students', [EducationController::class, 'storeStudent'])->name('students.store');
