@@ -6,6 +6,7 @@ use App\Models\Lead;
 use App\Models\MessageTemplate;
 use App\Models\TemplateFolder;
 use App\Models\User;
+use App\Services\Accommodation\ExaltEmailTemplates;
 use App\Services\CommunicationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,23 +49,25 @@ class MessageTemplateController extends Controller
     {
         $ctx = $this->context($request);
 
-        // Templates are a shared library — every portal (admin + each
-        // department) sees the full set and may use/edit any of them.
-        // Folders (also shared) let staff group them; grouping happens
-        // client-side off each template's folder_id.
+        $accommodation = $ctx['department'] === 'accommodation';
+        $templates = MessageTemplate::query()->when($accommodation, fn ($q) => $q->forDepartment('accommodation'))
+            ->orderBy('name')->get();
+
         return inertia($ctx['listComponent'], [
-            'templates' => MessageTemplate::query()->orderBy('name')->get()->map(fn (MessageTemplate $t) => [
+            'templates' => ($accommodation ? ExaltEmailTemplates::sort($templates) : $templates)->map(fn (MessageTemplate $t) => [
                 'id' => $t->id, 'key' => $t->key, 'name' => $t->name,
                 'department' => $t->department, 'channels' => $t->channels ?? [],
                 'is_active' => $t->is_active, 'folder_id' => $t->folder_id,
                 'updated_at' => optional($t->updated_at)?->toIso8601String(),
             ]),
-            'folders' => TemplateFolder::orderBy('name')->get(['id', 'name', 'department']),
+            'folders' => TemplateFolder::when($accommodation, fn ($q) => $q->where('department', 'accommodation'))
+                ->orderBy('name')->get(['id', 'name', 'department']),
             'basePath' => $ctx['basePath'],
             'scopeLabel' => $ctx['scopeLabel'],
             // Drives the department tab strip + the "Move to department" picker
             // ('' = shared, then one entry per portal department).
-            'departmentOptions' => $ctx['departmentOptions'],
+            'departmentOptions' => $ctx['departmentOptions'] ?? [],
+            'fixedDepartment' => $accommodation ? 'accommodation' : null,
         ]);
     }
 
@@ -84,7 +87,7 @@ class MessageTemplateController extends Controller
             'basePath' => $ctx['basePath'],
             'departmentOptions' => $ctx['departmentOptions'],
             'brandingOptions' => $this->brandingOptions(),
-            'fixedDepartment' => $defaultDepartment ?? $ctx['department'],
+            'fixedDepartment' => $ctx['department'] === 'accommodation' ? 'accommodation' : ($defaultDepartment ?? $ctx['department']),
             'defaultChannel' => $request->query('channel'),
             // Carried through the New-template form so a template created from
             // inside a folder is saved into that folder.
@@ -274,6 +277,7 @@ class MessageTemplateController extends Controller
             'ids' => ['required', 'array'],
             'ids.*' => ['integer', 'exists:message_templates,id'],
         ]);
+        $this->authorizeTemplateIds($request, $data['ids']);
 
         $count = MessageTemplate::whereIn('id', $data['ids'])->count();
         MessageTemplate::whereIn('id', $data['ids'])->delete();
@@ -298,7 +302,8 @@ class MessageTemplateController extends Controller
             'template_ids.*' => ['integer', 'exists:message_templates,id'],
         ]);
 
-        $department = (string) ($data['department'] ?? '');
+        $this->authorizeTemplateIds($request, $data['template_ids'] ?? []);
+        $department = $request->routeIs('portal.accommodation.*') ? 'accommodation' : (string) ($data['department'] ?? '');
 
         $folder = TemplateFolder::create([
             'name' => $data['name'],
@@ -329,7 +334,7 @@ class MessageTemplateController extends Controller
     public function updateFolder(Request $request, $id)
     {
         $this->context($request);
-        $folder = TemplateFolder::findOrFail($id);
+        $folder = $this->findFolder($request, $id);
 
         $folder->update($request->validate([
             'name' => ['required', 'string', 'max:120'],
@@ -346,6 +351,7 @@ class MessageTemplateController extends Controller
     public function moveFolderDepartment(Request $request, $id)
     {
         $this->context($request);
+        abort_if($request->routeIs('portal.accommodation.*'), 403);
         $folder = TemplateFolder::findOrFail($id);
 
         $data = $request->validate([
@@ -384,6 +390,7 @@ class MessageTemplateController extends Controller
     public function duplicateFolder(Request $request, $id)
     {
         $this->context($request);
+        abort_if($request->routeIs('portal.accommodation.*'), 403);
         $source = TemplateFolder::with('templates')->findOrFail($id);
 
         $data = $request->validate([
@@ -472,7 +479,7 @@ class MessageTemplateController extends Controller
     public function destroyFolder(Request $request, $id)
     {
         $this->context($request);
-        TemplateFolder::findOrFail($id)->delete();
+        $this->findFolder($request, $id)->delete();
 
         return back()->with('success', 'Folder deleted. Its templates moved to the root.');
     }
@@ -490,6 +497,7 @@ class MessageTemplateController extends Controller
             'ids.*' => ['integer', 'exists:message_templates,id'],
             'folder_id' => ['nullable', 'integer', 'exists:template_folders,id'],
         ]);
+        $this->authorizeTemplateIds($request, $data['ids']);
 
         // Moving to the root just ungroups — department is untouched.
         if (empty($data['folder_id'])) {
@@ -500,7 +508,7 @@ class MessageTemplateController extends Controller
 
         // Moving into a folder: members inherit the folder's department so the
         // folder stays single-department. Key clashes are left out.
-        $folder = TemplateFolder::findOrFail($data['folder_id']);
+        $folder = $this->findFolder($request, $data['folder_id']);
         [, $skippedIds] = $this->applyDepartmentToTemplates(MessageTemplate::whereIn('id', $data['ids'])->get(), $folder->department);
         $movableIds = array_diff($data['ids'], $skippedIds);
         if (! empty($movableIds)) {
@@ -524,6 +532,7 @@ class MessageTemplateController extends Controller
     public function moveDepartment(Request $request)
     {
         $this->context($request);
+        abort_if($request->routeIs('portal.accommodation.*'), 403);
 
         $data = $request->validate([
             'ids' => ['required', 'array'],
@@ -627,7 +636,7 @@ class MessageTemplateController extends Controller
             'editorComponent' => "portal/{$department}/EmailTemplateEditor",
             // Department picker is now available in every portal, not just the
             // admin area — staff can scope a template to shared or any team.
-            'departmentOptions' => $this->departmentOptions(),
+            'departmentOptions' => $department === 'accommodation' ? null : $this->departmentOptions(),
             'scopeLabel' => ucfirst($department),
         ];
     }
@@ -638,6 +647,10 @@ class MessageTemplateController extends Controller
      */
     private function resolveStoreDepartment(Request $request, ?string $actingDepartment): string
     {
+        if ($actingDepartment === 'accommodation') {
+            return 'accommodation';
+        }
+
         $request->validate([
             'department' => ['nullable', Rule::in(array_merge([''], MessageTemplate::DEPARTMENTS))],
         ]);
@@ -652,14 +665,22 @@ class MessageTemplateController extends Controller
         return (string) ($actingDepartment ?: '');
     }
 
-    /**
-     * Templates are a shared library across all portals — any staff member
-     * (admin or department) may view, edit, and delete any template. Kept as a
-     * hook so the call sites stay unchanged if per-department rules return.
-     */
     private function authorizeTemplate(?string $actingDepartment, MessageTemplate $template): void
     {
-        // no-op — fully shared
+        abort_if($actingDepartment === 'accommodation' && $template->department !== 'accommodation', 404);
+    }
+
+    private function findFolder(Request $request, int $id): TemplateFolder
+    {
+        return TemplateFolder::when($request->routeIs('portal.accommodation.*'), fn ($query) => $query->where('department', 'accommodation'))
+            ->findOrFail($id);
+    }
+
+    private function authorizeTemplateIds(Request $request, array $ids): void
+    {
+        if ($request->routeIs('portal.accommodation.*')) {
+            abort_unless(MessageTemplate::forDepartment('accommodation')->whereIn('id', $ids)->count() === count(array_unique($ids)), 404);
+        }
     }
 
     /**

@@ -3,79 +3,99 @@
 namespace App\Http\Controllers\Portal\Accommodation;
 
 use App\Http\Controllers\Controller;
+use App\Models\Property;
 use App\Models\RentPayment;
 use App\Models\Tenant;
 use App\Support\RentRoll;
+use App\Support\WeeklyRentCharge;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class RentUtilitiesController extends Controller
 {
     public function index(Request $request)
     {
-        $weeksCount = max(1, min(30, (int) $request->integer('weeks', 18)));
+        $weeksCount = max(1, min(30, (int) $request->integer('weeks', 3)));
 
-        $start = $request->filled('start')
-            ? Carbon::parse($request->query('start'))
-            : Carbon::today();
+        $filter = $request->validate(['start' => ['nullable', 'date_format:Y-m-d']]);
+        $start = isset($filter['start'])
+            ? Carbon::parse($filter['start'], 'Pacific/Auckland')
+            : Carbon::today('Pacific/Auckland')->subWeeks($weeksCount - 1);
         $start = RentRoll::snapToMonday($start);
 
         $columns = RentRoll::weekColumns($start, $weeksCount);
         $weekStarts = array_column($columns, 'start');
         $firstWeek = $weekStarts[0];
-        $lastWeek = $weekStarts[count($weekStarts) - 1];
+        $end = $start->copy()->addWeeks($weeksCount)->toDateString();
+        $inWindow = fn ($q) => $q->where('week_start', '>=', $firstWeek)->where('week_start', '<', $end);
+        $currentWeek = WeeklyRentCharge::currentWeek();
+        $properties = Property::inPortfolioOrder()->get(['id', 'code', 'address', 'name'])->keyBy('id');
+        $propertyOrder = $properties->keys()->flip();
+        $charges = $inWindow(DB::table(WeeklyRentCharge::TABLE))->get()->groupBy('tenant_id');
+        $tenants = Tenant::withTrashed()->where(fn ($q) => $q
+            ->where(fn ($active) => $active->active()->whereNull('deleted_at'))
+            ->orWhereHas('rentPayments', $inWindow)->orWhereIn('id', $charges->keys()))
+            ->with(['rentPayments' => $inWindow])->get();
 
-        $tenants = Tenant::active()
-            ->with([
-                'property',
-                'rentPayments' => fn ($q) => $q->whereBetween('week_start', [$firstWeek, $lastWeek]),
-            ])
-            ->get();
+        $rows = [];
+        foreach ($tenants as $tenant) {
+            $active = ! $tenant->trashed() && in_array($tenant->current_status, Tenant::ACTIVE_STATUSES, true);
+            $weekly = $charges->get($tenant->id, collect())->keyBy('week_start');
+            $payments = $tenant->rentPayments->keyBy(fn ($payment) => $payment->week_start->toDateString());
+            $startDate = $tenant->residency_started_on ?? $tenant->contract_start;
+            $firstTenancyWeek = $startDate ? RentRoll::snapToMonday($startDate)->toDateString() : null;
+            $currentGroup = $tenant->property_id ?? 'unknown';
+            if ($active && (! $firstTenancyWeek || $firstTenancyWeek < $end)) {
+                $rows[$currentGroup][$tenant->id] = [
+                    'id' => $tenant->id, 'display_name' => $tenant->display_name,
+                    'weekly_rent_nzd' => (float) $tenant->weekly_rent_nzd,
+                    'weekly_utilities_nzd' => (float) $tenant->weekly_utilities_nzd,
+                    'can_edit_rates' => true, 'can_edit_payments' => true,
+                    'first_tenancy_week' => $firstTenancyWeek,
+                    'weekly' => [],
+                ];
+            }
+            foreach ($weekStarts as $week) {
+                $charge = $weekly->get($week);
+                $payment = $payments->get($week);
+                $preview = $active && $week >= $currentWeek && (! $firstTenancyWeek || $firstTenancyWeek <= $week);
+                if (! $charge && ! $payment && ! $preview) {
+                    continue;
+                }
+                $propertyId = $charge ? $charge->property_id : $tenant->property_id;
+                $key = $propertyId ?? 'unknown';
+                $rows[$key][$tenant->id] ??= [
+                    'id' => $tenant->id, 'display_name' => $tenant->display_name,
+                    'weekly_rent_nzd' => (float) $tenant->weekly_rent_nzd,
+                    'weekly_utilities_nzd' => (float) $tenant->weekly_utilities_nzd,
+                    'can_edit_rates' => false,
+                    'can_edit_payments' => ! $tenant->trashed(),
+                    'weekly' => [],
+                ];
+                $rows[$key][$tenant->id]['weekly'][$week] = [
+                    'due' => $charge ? (float) $charge->due_nzd : ($preview ? (float) $tenant->weekly_total_due : null),
+                    'received' => $payment ? (float) $payment->amount_nzd : null,
+                    'captured' => $charge !== null,
+                ];
+                if ($payment?->received_on) {
+                    $rows[$key][$tenant->id]['weekly'][$week]['received_on'] = $payment->received_on->toDateString();
+                }
+            }
+        }
 
-        $groups = $tenants
-            ->groupBy('property_id')
-            ->map(function ($group) use ($weekStarts, $weeksCount) {
-                $property = $group->first()->property;
-
-                $rows = $group->sortBy('display_name')->values()->map(function (Tenant $t) use ($weekStarts, $weeksCount) {
-                    $payments = [];
-                    foreach ($t->rentPayments as $p) {
-                        $payments[$p->week_start->toDateString()] = (float) $p->amount_nzd;
-                    }
-
-                    $weeklyDue = (float) $t->weekly_total_due;
-                    $totalDue = round($weeklyDue * $weeksCount, 2);
-
-                    $totalPaid = 0.0;
-                    foreach ($weekStarts as $ws) {
-                        $totalPaid += $payments[$ws] ?? 0.0;
-                    }
-                    $totalPaid = round($totalPaid, 2);
-
-                    return [
-                        'id' => $t->id,
-                        'display_name' => $t->display_name,
-                        'weekly_rent_nzd' => (float) $t->weekly_rent_nzd,
-                        'weekly_utilities_nzd' => (float) $t->weekly_utilities_nzd,
-                        'weekly_total_due' => $weeklyDue,
-                        'payments' => $payments,
-                        'total_due' => $totalDue,
-                        'total_paid' => $totalPaid,
-                        'balance' => round($totalPaid - $totalDue, 2),
-                        'status' => RentRoll::status($totalDue, $totalPaid),
-                    ];
-                });
+        $groups = collect($rows)
+            ->sortBy(fn ($group, $id) => $propertyOrder->get($id, PHP_INT_MAX))
+            ->map(function ($group, $id) use ($properties) {
+                $property = $properties->get($id);
 
                 return [
-                    'property_id' => $property?->id,
+                    'property_id' => $id,
                     'property_code' => $property?->code,
-                    // Fall back to the listing name when no street address is set.
-                    'property_address' => $property ? ($property->address ?: $property->name) : '—',
-                    'tenants' => $rows,
+                    'property_address' => $property ? ($property->address ?: $property->name) : 'Historical payments without a verified property',
+                    'tenants' => collect($group)->sortBy('display_name')->values(),
                 ];
-            })
-            ->sortBy('property_address')
-            ->values();
+            })->values();
 
         return inertia('portal/accommodation/RentUtilities', [
             'groups' => $groups,
@@ -88,20 +108,27 @@ class RentUtilitiesController extends Controller
     {
         $data = $request->validate([
             'week_start' => ['required', 'date'],
-            'amount' => ['nullable', 'numeric', 'min:0'],
+            'amount' => ['nullable', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
+            'received_on' => ['sometimes', 'nullable', 'date_format:Y-m-d', 'before_or_equal:'.Carbon::today('Pacific/Auckland')->toDateString()],
         ]);
 
-        $weekStart = RentRoll::snapToMonday(Carbon::parse($data['week_start']));
+        $weekStart = RentRoll::snapToMonday(Carbon::parse($data['week_start'], 'Pacific/Auckland'));
         $amount = $data['amount'] ?? null;
 
-        if ($amount === null || (float) $amount === 0.0) {
-            RentPayment::where('tenant_id', $tenant->id)->where('week_start', $weekStart)->delete();
-        } else {
-            RentPayment::updateOrCreate(
-                ['tenant_id' => $tenant->id, 'week_start' => $weekStart],
-                ['amount_nzd' => $amount],
-            );
-        }
+        DB::transaction(function () use ($tenant, $weekStart, $amount, $data) {
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            if ($weekStart->toDateString() === WeeklyRentCharge::currentWeek()) {
+                WeeklyRentCharge::captureCurrent($current);
+            }
+            if ($amount === null || (float) $amount === 0.0) {
+                RentPayment::where('tenant_id', $tenant->id)->where('week_start', $weekStart)->delete();
+            } else {
+                RentPayment::updateOrCreate(
+                    ['tenant_id' => $tenant->id, 'week_start' => $weekStart],
+                    ['amount_nzd' => $amount, ...array_intersect_key($data, ['received_on' => true])],
+                );
+            }
+        });
 
         return redirect()->back();
     }
@@ -110,14 +137,14 @@ class RentUtilitiesController extends Controller
     public function saveRentUtilities(Request $request, Tenant $tenant)
     {
         $data = $request->validate([
-            'weekly_rent_nzd' => ['nullable', 'numeric', 'min:0'],
-            'weekly_utilities_nzd' => ['nullable', 'numeric', 'min:0'],
+            'weekly_rent_nzd' => ['nullable', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
+            'weekly_utilities_nzd' => ['nullable', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
         ]);
 
-        $tenant->update([
+        DB::transaction(fn () => Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail()->update([
             'weekly_rent_nzd' => $data['weekly_rent_nzd'] ?? 0,
             'weekly_utilities_nzd' => $data['weekly_utilities_nzd'] ?? 0,
-        ]);
+        ]));
 
         return redirect()->back();
     }

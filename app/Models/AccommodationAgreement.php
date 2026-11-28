@@ -38,6 +38,7 @@ class AccommodationAgreement extends Model
         'sent_at' => 'datetime',
         'viewed_at' => 'datetime',
         'signed_at' => 'datetime',
+        'archived_at' => 'datetime',
     ];
 
     /** Public signing URL (bearer token), once a link has been generated. */
@@ -64,5 +65,16 @@ class AccommodationAgreement extends Model
     public function typeLabel(): string
     {
         return self::TYPES[$this->agreement_type] ?? $this->agreement_type;
+    }
+
+    public function canDeleteFromGeneratedList(): bool
+    {
+        return $this->archived_at === null
+            && in_array($this->status, [self::STATUS_DRAFT, self::STATUS_SENT, self::STATUS_VIEWED, 'generated'], true)
+            && $this->tenant_id === null
+            && $this->signed_at === null
+            && empty($this->signed_pdf_path)
+            && empty($this->signature_data)
+            && empty($this->data['tenant_signatures']);
     }
 }

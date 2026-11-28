@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccommodationViewingSlot;
 use App\Models\Booking;
 use App\Models\EoiSubmission;
 use App\Models\Property;
+use App\Services\Accommodation\ViewingSchedule;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -16,14 +19,23 @@ class AccommodationController extends Controller
     /** Manageable statuses for a property viewing. */
     private const VIEWING_STATUSES = ['Pending', 'Confirmed', 'Completed', 'Cancelled'];
 
+    private function viewingBookings(): Builder
+    {
+        return Booking::where('service_type', 'like', '%Accommodation Viewing%');
+    }
+
     /**
      * Property-viewing bookings submitted from the public /accommodation page
      * (service_type = "Accommodation Viewing"). Table + calendar surface.
      */
-    public function viewings()
+    public function viewings(Request $request, ViewingSchedule $schedule)
     {
+        $date = $request->validate(['schedule_date' => 'nullable|date_format:Y-m-d'])['schedule_date']
+            ?? now(AccommodationViewingSlot::TIMEZONE)->toDateString();
+        $sharedSchedule = ViewingSchedule::staffCanManage($request->user()) ? $schedule->staffDay($date) : null;
+
         try {
-            $rows = Booking::where('service_type', 'like', '%Accommodation Viewing%')
+            $rows = $this->viewingBookings()
                 ->with('property:id,name,suburb,location')
                 ->orderByDesc('appointment_date')->limit(300)->get()
                 ->map(fn (Booking $b) => [
@@ -43,11 +55,14 @@ class AccommodationController extends Controller
             return inertia('portal/accommodation/Viewings', [
                 'viewings' => $rows,
                 'statuses' => self::VIEWING_STATUSES,
+                'sharedSchedule' => $sharedSchedule,
             ]);
         } catch (\Throwable $e) {
             Log::error('Accommodation viewings page failed', ['error' => $e->getMessage()]);
 
-            return inertia('portal/accommodation/Viewings', ['viewings' => [], 'statuses' => self::VIEWING_STATUSES]);
+            return inertia('portal/accommodation/Viewings', [
+                'viewings' => [], 'statuses' => self::VIEWING_STATUSES, 'sharedSchedule' => $sharedSchedule,
+            ]);
         }
     }
 
@@ -109,6 +124,7 @@ class AccommodationController extends Controller
                     'hot' => EoiSubmission::where('form_type', 'hot')->count(),
                     'cold' => EoiSubmission::where('form_type', 'cold')->count(),
                 ],
+                'viewingTotal' => $this->viewingBookings()->count() + AccommodationViewingSlot::whereHas('attendees')->count(),
                 'recentProperties' => Property::with('images')->latest()->take(5)->get(),
                 'recentApplications' => EoiSubmission::latest()->take(5)->get(),
             ]);

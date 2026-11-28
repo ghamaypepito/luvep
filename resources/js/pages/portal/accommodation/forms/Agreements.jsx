@@ -8,7 +8,7 @@ import PdfPreviewModal from "@/components/ui/PdfPreviewModal";
 // auto-filled editable fields and a live preview then use the full width.
 // Generating renders the chosen Exalt agreement to a stored PDF (and links it to
 // the onboarding record when the client has one).
-export default function Agreements({ clients = [], agreements = [], types = {}, properties = [], visaTypes = [], signatoryReady = false }) {
+export default function Agreements({ clients = [], agreements = [], archivedAgreements = [], canManageAgreements = false, types = {}, properties = [], visaTypes = [], signatoryReady = false }) {
     const typeKeys = Object.keys(types);
     const [search, setSearch] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -21,13 +21,15 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
     const [generating, setGenerating] = useState(false);
     const [copiedId, setCopiedId] = useState(null);
     const [docPreview, setDocPreview] = useState(null); // { url, title, downloadUrl }
+    const [showArchived, setShowArchived] = useState(false);
+    const [changingAgreement, setChangingAgreement] = useState(false);
     const previewTimer = useRef(null);
     const previewSequence = useRef(0);
     const prefillSequence = useRef(0);
     const [calculated, setCalculated] = useState(null);
     const [previewKey, setPreviewKey] = useState('');
     const [formErrors, setFormErrors] = useState([]);
-    const currentKey = JSON.stringify({ agreement_type: agreementType, data: fields });
+    const currentKey = JSON.stringify({ agreement_type: agreementType, source: selected?.source, source_id: selected?.id, data: fields });
     const computed = previewKey === currentKey ? calculated : null;
 
     const copyLink = (a) => {
@@ -35,6 +37,19 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
         navigator.clipboard?.writeText(a.signing_url).then(() => { setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); });
     };
     const resend = (a) => router.post(`/portal/accommodation/forms/agreements/${a.id}/resend`, {}, { preserveScroll: true });
+    const displayedAgreements = showArchived ? archivedAgreements : agreements;
+    const manageAgreement = (a, action) => {
+        const identifier = `${a.client_name || "Unnamed client"} · ${a.type_label} · ${statusLabel(a.status)} · #${a.id}`;
+        if (action === "delete" && !window.confirm(`Permanently delete this agreement?\n${identifier}`)) return;
+        setChangingAgreement(true);
+        const url = `/portal/accommodation/forms/agreements/${a.id}`;
+        const options = { preserveScroll: true, onFinish: () => setChangingAgreement(false) };
+        if (action === "delete") {
+            router.delete(url, options);
+        } else {
+            router.patch(`${url}/${action}`, {}, options);
+        }
+    };
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -82,12 +97,12 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
         previewTimer.current = setTimeout(() => refreshPreview(), 500);
         return () => clearTimeout(previewTimer.current);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fields, agreementType]);
+    }, [fields, agreementType, selected]);
 
     const refreshPreview = async () => {
         if (!fields) return;
         const sequence = ++previewSequence.current;
-        const key = JSON.stringify({ agreement_type: agreementType, data: fields });
+        const key = currentKey;
         setPreviewLoading(true);
         try {
             const res = await fetch("/portal/accommodation/forms/agreements/preview", {
@@ -322,20 +337,25 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
             </div>
 
             {/* Generated agreements */}
-            {agreements.length > 0 && (
                 <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
-                    <div className="border-b border-gray-100 px-4 py-2.5">
-                        <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400">Generated agreements</h2>
+                    <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+                        <button type="button" aria-pressed={!showArchived} onClick={() => setShowArchived(false)}
+                            className={agreementViewClass(!showArchived)}>Generated Agreements</button>
+                        <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived(true)}
+                            className={agreementViewClass(showArchived)}>Archived Agreements</button>
                     </div>
                     <div className="divide-y divide-gray-50">
-                        {agreements.map((a) => (
+                        {displayedAgreements.length === 0 && <p className="px-4 py-4 text-sm text-gray-500">
+                            {showArchived ? "No archived agreements." : "No generated agreements."}
+                        </p>}
+                        {displayedAgreements.map((a) => (
                             <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm font-medium text-gray-900">{a.client_name}</span>
                                     <span className="text-xs text-gray-400">{a.type_label}</span>
                                     <StatusBadge status={a.status} />
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                     {a.tenant_id && <a href={`/portal/accommodation/tenants/${a.tenant_id}`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Open tenant</a>}
                                     {a.can_link_tenant && !a.tenant_id && <a href={`/portal/accommodation/forms/agreements/${a.id}/tenant-link`} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700">Link tenant</a>}
                                     {a.can_resend_copy && <button onClick={() => resend(a)} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700">Resend signed copy</button>}
@@ -355,12 +375,21 @@ export default function Agreements({ clients = [], agreements = [], types = {}, 
                                     <a href={`/portal/accommodation/forms/agreements/${a.id}/download`} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                                         <Download size={13} /> {a.signed ? "Signed PDF" : "PDF"}
                                     </a>
+                                    {canManageAgreements && <button type="button" disabled={changingAgreement}
+                                        onClick={() => manageAgreement(a, showArchived ? "restore" : "archive")}
+                                        className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                                        {showArchived ? "Restore" : "Archive"}
+                                    </button>}
+                                    {!showArchived && a.can_delete && <button type="button" disabled={changingAgreement}
+                                        onClick={() => manageAgreement(a, "delete")}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                                        <Trash2 size={13} /> Delete
+                                    </button>}
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
-            )}
 
             <PdfPreviewModal open={!!docPreview} onClose={() => setDocPreview(null)} url={docPreview?.url} title={docPreview?.title} downloadUrl={docPreview?.downloadUrl} />
         </div>
@@ -403,6 +432,15 @@ function Mini({ label, value, onChange, full = false, type = "text", options = n
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UTILITY_OPTIONS = [{ value: "1", label: "1 — Exalt manages utilities" }, { value: "2", label: "2 — Tenant arranges directly" }];
 
+function agreementViewClass(active) {
+    return `rounded-lg px-3 py-1.5 text-sm font-semibold ${active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`;
+}
+
+function statusLabel(status) {
+    const labels = { sent: "Sent · awaiting signature", viewed: "Viewed", signed: "Signed", draft: "Draft", generated: "Generated" };
+    return labels[status] || status;
+}
+
 function StatusBadge({ status }) {
     const map = {
         sent: "bg-blue-100 text-blue-700",
@@ -411,8 +449,7 @@ function StatusBadge({ status }) {
         draft: "bg-gray-100 text-gray-500",
         generated: "bg-gray-100 text-gray-500",
     };
-    const label = { sent: "Sent · awaiting signature", viewed: "Viewed", signed: "Signed", draft: "Draft", generated: "Generated" };
-    return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${map[status] || "bg-gray-100 text-gray-500"}`}>{label[status] || status}</span>;
+    return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${map[status] || "bg-gray-100 text-gray-500"}`}>{statusLabel(status)}</span>;
 }
 
 function emptySub() {

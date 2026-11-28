@@ -18,8 +18,9 @@ class RoomInventoryController extends Controller
         RoomInventory::authorizeStaff($request);
         abort_unless(PropertyRoomVerification::available(), 503, 'Room verification is being installed. Please retry shortly.');
         $data = $request->validate([
+            'total_rooms' => 'required_without:unavailable|integer|min:1|max:50',
             'occupied' => 'required|integer|min:0|max:50', 'vacant' => 'required|integer|min:0|max:50',
-            'unavailable' => 'required|integer|min:0|max:50', 'version' => 'required|string|size:64',
+            'unavailable' => 'required_without:total_rooms|integer|min:0|max:50', 'version' => 'required|string|size:64',
             'observed_on' => 'required|date_format:Y-m-d|before_or_equal:'.now('Pacific/Auckland')->toDateString(),
             'source_ref' => 'required|string|max:500', 'vacancy_notes' => 'nullable|string|max:1000',
             'confirm' => 'accepted',
@@ -37,18 +38,32 @@ class RoomInventoryController extends Controller
             if (! hash_equals($summary['version'], $data['version'])) {
                 throw ValidationException::withMessages(['version' => 'The property or its tenancies changed. Refresh and verify the current figures.']);
             }
-            if (! $summary['total'] || ($data['occupied'] + $data['vacant'] + $data['unavailable']) !== $summary['total']) {
-                throw ValidationException::withMessages(['occupied' => 'Occupied, vacant and unavailable rooms must equal the verified property room capacity. Update that capacity first if needed.']);
+            $occupied = (int) $data['occupied'];
+            $vacant = (int) $data['vacant'];
+            $total = (int) ($data['total_rooms'] ?? $summary['total']);
+            $unavailable = $total - $occupied - $vacant;
+            if ($total < 1 || $unavailable < 0) {
+                throw ValidationException::withMessages(['occupied' => 'Occupied and vacant rooms combined cannot exceed Total Rooms.']);
+            }
+            // Older open forms send an explicit unavailable count and use the stored capacity.
+            if (isset($data['unavailable']) && (int) $data['unavailable'] !== $unavailable) {
+                throw ValidationException::withMessages(['occupied' => 'Occupied, vacant and unavailable rooms must add up to the property total.']);
             }
             $old = PropertyRoomVerification::where('property_id', $property->id)->first();
-            $before = $old?->only(['occupied', 'vacant', 'unavailable', 'observed_on']);
+            $before = ['total_rooms' => $property->total_rooms, ...($old?->only(['occupied', 'vacant', 'unavailable', 'observed_on']) ?? [])];
+            if ($property->total_rooms !== $total) {
+                $property->update(['total_rooms' => $total]);
+            }
+            $counts = ['total_rooms' => $total, 'occupied' => $occupied, 'vacant' => $vacant, 'unavailable' => $unavailable,
+                'observed_on' => $data['observed_on']];
             PropertyRoomVerification::updateOrCreate(['property_id' => $property->id], [
-                ...array_diff_key($data, ['version' => true, 'confirm' => true]), 'total_rooms' => $summary['total'], 'verified_by' => $request->user()->id,
+                ...$counts, 'source_ref' => $data['source_ref'], 'verified_by' => $request->user()->id,
+                ...array_intersect_key($data, ['vacancy_notes' => true]),
                 'tenancy_fingerprint' => RoomInventory::fingerprint($property, $residents),
             ]);
             ActivityLog::record('accommodation.rooms_verified', ['properties' => [
                 'property_id' => $property->id, 'before' => $before,
-                'after' => array_intersect_key($data, array_flip(['occupied', 'vacant', 'unavailable', 'observed_on'])),
+                'after' => $counts,
             ]]);
         });
 

@@ -47,6 +47,7 @@ class CalendarEventAggregator
 
         return EoiSubmission::query()
             ->with('property')
+            ->whereNull('viewing_attendee_id')
             ->whereNotNull('viewing_scheduled_at')
             ->whereBetween('viewing_scheduled_at', [$start, $end])
             ->when($propertyIds, fn ($q) => $q->where(fn ($w) => $w->whereIn('property_id', $propertyIds)->orWhereNull('property_id')))

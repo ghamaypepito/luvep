@@ -86,6 +86,8 @@ class PropertyController extends Controller
             'property_manager_name' => 'nullable|string|max:255',
             'property_manager_phone' => 'nullable|string|max:50',
             'property_manager_email' => 'nullable|email|max:255',
+            'property_owner_name' => 'nullable|string|max:255',
+            'property_owner_email' => 'nullable|email|max:255',
             'pm_payment_schedule' => ['nullable', Rule::in(Property::PAYMENT_SCHEDULES)],
             'power_due_date' => 'nullable|date',
             'water_due_date' => 'nullable|date',
@@ -124,7 +126,7 @@ class PropertyController extends Controller
             ->when($sort === 'latest', fn ($q) => $q->latest())
             // Default: numeric-aware sort by code, nulls last.
             ->when(! in_array($sort, ['address', 'latest'], true), fn ($q) => $q
-                ->orderByRaw('code IS NULL, CAST(code AS UNSIGNED), code'))
+                ->inPortfolioOrder())
             ->paginate(15)
             ->withQueryString();
         $summaries = \App\Services\Accommodation\RoomInventory::forProperties($properties->getCollection())->keyBy('id');
@@ -295,6 +297,9 @@ class PropertyController extends Controller
         } catch (QueryException $e) {
             if ($property->hasPurchaseInvoiceHistory()) {
                 return redirect()->back()->with('error', Property::PURCHASE_INVOICE_DELETE_ERROR);
+            }
+            if ($property->hasWeeklyFinanceHistory()) {
+                return redirect()->back()->with('error', Property::WEEKLY_FINANCE_DELETE_ERROR);
             }
             throw $e;
         }

@@ -88,6 +88,8 @@ export default function DashboardLayout({
         ...nav.slice(0,1),
         ...(driveRoles.includes(user?.role)?[{name:user.role==='lead'?'Shared folders':'Media Drive',href:driveHref,icon:<FolderOpen size={20}/>}]:[]),
         ...nav.slice(1),
+        ...(portalPath !== 'accommodation' && grantedModules.includes('accommodation_finance')
+            ? [{ name: "Accommodation Finance", href: "/portal/accommodation/rent-utilities", icon: <Wallet size={20} /> }] : []),
         ...(hr?.enabled && (hr?.employee || Object.values(hr?.permissions || {}).some(Boolean)) ? [{name: "HR Portal", href: "/portal/hr/dashboard", icon: <LayoutGrid size={20} />}]: []),
         ...(moduleExtras.length > 0 ? [{ section: true, name: "Tools" }, ...moduleExtras] : []),
         ...(portals.length > 1
