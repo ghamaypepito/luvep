@@ -12,6 +12,7 @@ const posts = []; const empty = () => null;
 const inertia = { Head: empty, Link: ({ children, ...props }) => React.createElement('a', props, children), router: { post: (...args) => posts.push(args) } };
 function load(file, exportName = 'default') {
     const output = buildSync({ entryPoints: [file], bundle: true, write: false, format: 'cjs', platform: 'node', jsx: 'automatic',
+        alias: { '@': path.resolve('resources/js') },
         external: ['react', 'react/jsx-runtime', '@inertiajs/react', 'lucide-react'] }).outputFiles[0].text;
     const loaded = new Module(path.resolve('room-inventory-test.cjs'), module); loaded.filename = path.resolve('room-inventory-test.cjs'); loaded.paths = module.paths;
     loaded.require = name => name === '@inertiajs/react' ? inertia : name === 'lucide-react' ? new Proxy({}, { get: () => empty }) : module.require(name);
@@ -58,18 +59,33 @@ const change = (label, value) => act(async () => {
     assert.equal(value('Active tenant agreements'),'0');
     assert.ok(card('Available rooms to let'));
     assert.equal(JSON.stringify(stats),immutable); assert.equal(posts.length,0,'Dashboard filtering/rendering is read-only');
-    const summary={total:5,households:1,occupied:null,vacant:null,unavailable:null,state:'unverified',installed:true,version:'a'.repeat(64),today:'2026-11-24',unlabelled_households:1};
+    const summary={total:null,households:1,occupied:null,vacant:null,unavailable:null,state:'unverified',installed:true,version:'a'.repeat(64),today:'2026-11-24',unlabelled_households:1};
     await render(Verify,{propertyId:1,summary,canVerify:false}); assert.equal(document.querySelector('form'),null);
     await render(Verify,{propertyId:1,summary,canVerify:true});
-    assert.equal(document.querySelector('[aria-label="Occupied rooms"]').value,'','Unknown occupancy is blank, not zero');
-    await change('Occupied rooms','4'); await change('Vacant rooms','1'); await change('Unavailable rooms','0'); await change('Source / reason','Approved register');
+    assert.equal(document.querySelector('[aria-label="Total Occupied Rooms"]').value,'','Unknown occupancy is blank, not zero');
+    assert.equal(document.querySelector('[aria-label="Unavailable rooms"]'),null);
+    await change('Total Rooms','6'); await change('Total Occupied Rooms','4'); await change('Total Vacant Rooms','1'); await change('Source / reason','Approved register');
+    assert.match(document.body.textContent,/1 room stays outside the occupied and vacant totals/);
     await act(async()=>document.querySelector('input[type="checkbox"]').click());
     await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
     assert.equal(posts.length,1);assert.equal(posts[0][0],'/portal/accommodation/properties/1/room-occupancy');
-    assert.equal(posts[0][1].unavailable,'0');assert.equal(posts[0][1].version,summary.version);assert.equal(posts[0][1].confirm,true);
+    assert.equal(posts[0][1].total_rooms,'6');assert.equal(posts[0][1].occupied,'4');assert.equal(posts[0][1].vacant,'1');
+    assert.equal('unavailable' in posts[0][1],false);assert.equal(posts[0][1].version,summary.version);assert.equal(posts[0][1].confirm,true);
     await act(async()=>{posts[0][2].onError({version:'Record changed. Refresh.'});posts[0][2].onFinish();});
     assert.match(document.querySelector('[role="alert"]').textContent,/Record changed/);
-    assert.equal(document.querySelector('[aria-label="Occupied rooms"]').value,'4','Failed save retains entered counts');
+    assert.equal(document.querySelector('[aria-label="Total Rooms"]').value,'6','Failed save retains entered capacity');
+    assert.equal(document.querySelector('[aria-label="Total Occupied Rooms"]').value,'4','Failed save retains entered counts');
+    const Properties = load('resources/js/pages/portal/accommodation/Properties.jsx');
+    await render(Properties, { properties: { data: [
+        { id: 1, name: 'Verified property', total_rooms: 6, room_summary: { total: 6, verified_total: 4, occupied: 3, vacant: 1, state: 'verified' } },
+        { id: 2, name: 'Unverified property', total_rooms: 6, room_summary: { total: 6, verified_total: null, occupied: null, state: 'unverified' } },
+        { id: 3, name: 'Vacant property', room_summary: { verified_total: 4, occupied: 0, vacant: 4, state: 'verified' } },
+    ] } });
+    const roomsColumn = [...document.querySelectorAll('thead th')].findIndex(cell => cell.textContent.toLowerCase() === 'rooms');
+    assert.ok(roomsColumn >= 0);
+    const propertyRows = [...document.querySelectorAll('tbody tr')];
+    assert.deepEqual(propertyRows.map(row => row.cells[roomsColumn].textContent), ['3/4', '—', '0/4']);
+    assert.match(propertyRows[1].textContent, /Needs room check/);
     await act(async()=>root.unmount());dom.window.close();
     console.log('Accommodation room inventory actual React checks passed: separate totals, vacancy navigation, unknown/error states, role visibility, versioned confirmation and failed-save retention.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
