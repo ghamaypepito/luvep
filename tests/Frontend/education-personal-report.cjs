@@ -63,7 +63,8 @@ const submit = node => act(async () => node.dispatchEvent(new Event("submit", { 
     await render(data);
     assert.match(byLabel("My activity totals").textContent, /2 activities · 1 distinct clients \/ names/);
     assert.equal(document.querySelectorAll("tbody tr").length, 2, "Repeated enrolments must keep separate rows");
-    assert.match(byLabel("My lead contact activity").textContent, /My Lead/);
+    assert.equal(byLabel("My lead contact activity"), null);
+    assert.ok(byLabel("My activity totals").nextElementSibling.contains(byLabel("Record an accomplishment")));
     await submit(byLabel("Record an accomplishment"));
     assert.equal(posts.length, 0);
     assert.match(document.body.textContent, /choose a client first/);

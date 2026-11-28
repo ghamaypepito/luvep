@@ -168,6 +168,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/portal/english/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.english.dtr');
     Route::get('/portal/immigration/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.immigration.dtr');
     Route::get('/portal/accommodation/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.accommodation.dtr');
+    Route::post('/portal/accommodation/dtr/shared-tasks', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'store']);
+    Route::patch('/portal/accommodation/dtr/shared-tasks/{id}', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'update'])->whereNumber('id');
+    Route::post('/portal/accommodation/dtr/shared-tasks/{id}/complete', [\App\Http\Controllers\AccommodationDtrTaskController::class, 'complete'])->whereNumber('id');
     Route::get('/portal/agent/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.agent.dtr');
     Route::get('/portal/finance/dtr', [\App\Http\Controllers\DtrController::class, 'show'])->name('portal.finance.dtr');
 });
@@ -235,6 +238,19 @@ Route::middleware(['auth', 'portal:admin,education'])->post('/admin/education/us
 Route::post('/webhook/zernio', [App\Http\Controllers\AiAdsWebhookController::class, 'zernioWebhook'])->name('webhook.zernio');
 
 Route::get('/accommodation', [PublicAccommodationController::class, 'index']);
+
+$viewingBooking = \App\Http\Controllers\Portal\Accommodation\ViewingBookingController::class;
+Route::get('/accommodation/book-viewing/{property}', [$viewingBooking, 'show'])
+    ->middleware('signed')->name('accommodation.viewing-booking');
+Route::post('/accommodation/book-viewing/{property}', [$viewingBooking, 'book'])
+    ->middleware(['signed', 'throttle:8,1']);
+
+$exaltEmail = \App\Http\Controllers\Portal\Accommodation\ExaltEmailController::class;
+Route::middleware(['signed', 'throttle:20,1'])->group(function () use ($exaltEmail) {
+    Route::get('/accommodation/viewing-attendance/{attendee}/{response}', [$exaltEmail, 'attendance'])->name('accommodation.email.attendance');
+    Route::post('/accommodation/viewing-attendance/{attendee}/{response}', [$exaltEmail, 'recordAttendance']);
+    Route::get('/accommodation/move-in-invoice/{invoice}', [$exaltEmail, 'invoice'])->whereNumber('invoice')->name('accommodation.email.invoice');
+});
 // Expression of Interest — must be declared BEFORE /accommodation/{id} so the
 // literal path isn't captured as an {id}.
 Route::get('/accommodation/expression-of-interest-cold', [PublicAccommodationController::class, 'eoiForm'])->name('accommodation.eoi');
@@ -453,6 +469,8 @@ Route::controller(\App\Http\Controllers\AffiliateApplicationController::class)->
         ->middleware([\App\Http\Middleware\PrivateAffiliateLink::class, 'signed:relative', 'throttle:60,1'])->name('affiliate.application.')->group(function () {
             Route::get('/', 'status')->name('status');
             Route::post('/verify', 'verify')->name('verify');
+            Route::post('/save', 'save')->name('save');
+            Route::get('/review', 'review')->name('review');
             Route::get('/document', 'document')->name('document');
             Route::get('/download', 'document')->name('download');
             Route::post('/sign', 'sign')->name('sign');
@@ -1282,13 +1300,18 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware("portal:{$deptRole}")
             ->prefix("portal/{$deptRole}")
             ->name("portal.{$deptRole}.")
-            ->group(function () {
+            ->group(function () use ($deptRole) {
                 // Compose — one-off email to picked leads and/or typed addresses.
                 $compose = \App\Http\Controllers\ComposeController::class;
                 Route::get('/compose', [$compose, 'index'])->name('compose');
                 Route::post('/compose/send', [$compose, 'send'])->name('compose.send');
                 Route::post('/compose/upload-image', [$compose, 'uploadImage'])->name('compose.upload-image');
                 Route::get('/compose/leads', [$compose, 'searchLeads'])->name('compose.leads');
+                if ($deptRole === 'accommodation') {
+                    Route::get('/compose/contacts', [$compose, 'searchAccommodationContacts'])->name('compose.contacts');
+                    Route::get('/compose/sent/{message}/attachments/{index}', [$compose, 'downloadAccommodationAttachment'])
+                        ->whereNumber(['message', 'index'])->name('compose.sent.attachment');
+                }
 
                 $c = \App\Http\Controllers\MessageTemplateController::class;
                 Route::get('/email-templates', [$c, 'index'])->name('email-templates');
@@ -1720,7 +1743,7 @@ Route::middleware(['auth'])->group(function () {
             // Installment payment plan (pay-later) — set terms + mark a payment paid.
             Route::post('/cases/{lead}/installment-plan', [$cp, 'setInstallmentPlan']);
             Route::post('/cases/{lead}/installments/{installment}/pay', [$cp, 'payInstallment']);
-            // Multi-visa — start the client's next visa application from an approved case.
+            // Multi-visa — start the client's next visa application after a decision.
             Route::post('/cases/{lead}/next-visa', [$cp, 'startNextVisa'])->name('cases.next-visa');
             Route::post('/cases/{lead}/inz-forms/{code}/generate', [$cp, 'generateInzForm'])->where('code', 'INZ[0-9]+');
             Route::post('/cases/{lead}/inz-forms/{code}/assign', [$cp, 'assignInzForm'])->where('code', 'INZ[0-9]+');
@@ -1850,6 +1873,9 @@ Route::middleware(['auth'])->group(function () {
             // EducationLayout instead of AdminLayout.
             Route::get('/schools', [\App\Http\Controllers\SchoolController::class, 'index'])->name('schools');
             Route::get('/schools/{id}/profile', [\App\Http\Controllers\SchoolController::class, 'show'])->name('schools.show');
+            Route::get('/schools/{id}/management', [\App\Http\Controllers\SchoolWorkspaceController::class, 'show']);
+            Route::post('/schools/{id}/management/{kind}/{recordId?}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'save']);
+            Route::get('/schools/{id}/management-records/{recordId}/files/{fileId}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'download']);
             Route::get('/documents', [EducationController::class, 'documents'])->name('documents');
             // Public assessment submissions (free-assessment + education-enrolment).
             Route::get('/assessments', [EducationController::class, 'assessments'])->name('assessments');
@@ -2337,6 +2363,23 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
         });
 
+        Route::middleware('module:accommodation_finance')->prefix('accommodation')->name('portal.accommodation.')->group(function () {
+            Route::get('/rent-utilities', [RentUtilitiesController::class, 'index'])->name('rent-utilities');
+            Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
+            Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
+            $summary = \App\Http\Controllers\Portal\Accommodation\WeeklyPropertySummaryController::class;
+            Route::get('/finance/weekly-property-summary', [$summary, 'index'])->name('finance.weekly-property-summary');
+            Route::patch('/finance/weekly-property-summary/{property}', [$summary, 'update'])->name('finance.weekly-property-summary.update');
+        });
+
+        Route::prefix('accommodation/rental-invoices')->name('portal.accommodation.rental-invoices.')->group(function () {
+            $rentalInvoice = \App\Http\Controllers\Portal\Accommodation\RentalInvoiceController::class;
+            Route::get('/{kind}', [$rentalInvoice, 'index'])->name('index');
+            Route::post('/{kind}/tenants/{tenant}/preview', [$rentalInvoice, 'preview'])->name('preview');
+            Route::post('/{kind}/tenants/{tenant}', [$rentalInvoice, 'store'])->name('store');
+            Route::get('/{kind}/{invoice}/pdf', [$rentalInvoice, 'download'])->name('download');
+        });
+
         Route::middleware('portal:accommodation')->prefix('accommodation')->name('portal.accommodation.')->group(function () {
             Route::get('/dashboard', [AccommodationController::class, 'dashboard'])->name('dashboard');
             Route::get('/tasks', [AccommodationController::class, 'tasks'])->name('tasks');
@@ -2345,6 +2388,14 @@ Route::middleware(['auth'])->group(function () {
             // Property viewing bookings from the public /accommodation page —
             // table + calendar, with per-booking status management.
             Route::get('/viewings', [AccommodationController::class, 'viewings'])->name('viewings');
+            $exaltEmail = \App\Http\Controllers\Portal\Accommodation\ExaltEmailController::class;
+            Route::get('/compose/exalt-template/options', [$exaltEmail, 'options'])->name('compose.exalt-template.options');
+            Route::post('/compose/exalt-template/preview', [$exaltEmail, 'preview'])->name('compose.exalt-template.preview');
+            Route::post('/compose/exalt-template/send', [$exaltEmail, 'send'])->name('compose.exalt-template.send');
+            $viewingBooking = \App\Http\Controllers\Portal\Accommodation\ViewingBookingController::class;
+            Route::post('/viewings/slots', [$viewingBooking, 'saveSlot'])->name('viewings.slots.save');
+            Route::patch('/viewings/attendees/{attendee}/status', [$viewingBooking, 'updateAttendee'])->name('viewings.attendees.status');
+            Route::post('/viewings/attendees/{attendee}/resend', [$viewingBooking, 'resend'])->name('viewings.attendees.resend');
             Route::post('/viewings/{id}/status', [AccommodationController::class, 'updateViewingStatus'])->name('viewings.status');
             Route::post('/viewings/{id}/resend', [AccommodationController::class, 'resendViewingConfirmation'])->name('viewings.resend');
 
@@ -2381,9 +2432,23 @@ Route::middleware(['auth'])->group(function () {
             // `applications.*` to match the model/controller; the canonical URL
             // is /onboarding, with /applications kept as a backwards-compat alias.
             Route::get('/onboarding', [EoiSubmissionController::class, 'index'])->name('onboarding');
+            Route::prefix('move-out')->name('move-out.')->controller(\App\Http\Controllers\Portal\Accommodation\MoveOutController::class)->group(function () {
+                Route::get('/', 'index')->name('index');
+                Route::get('/create', 'create')->name('create');
+                Route::post('/', 'store')->name('store');
+                Route::patch('/automation', 'automation')->name('automation');
+                Route::get('/{moveOut}', 'show')->name('show');
+                Route::patch('/{moveOut}/automation', 'recordAutomation')->name('record-automation');
+                Route::patch('/{moveOut}/assignee', 'assign')->name('assign');
+                Route::patch('/{moveOut}/agreement', 'link')->name('link');
+                Route::post('/{moveOut}/advance', 'advance')->name('advance');
+                Route::get('/{moveOut}/files/{event}/{index}', 'file')->whereNumber(['event', 'index'])->name('file');
+            });
+
             Route::get('/applications', [EoiSubmissionController::class, 'index'])->name('applications.index');
             Route::get('/applications/{submission}', [EoiSubmissionController::class, 'show'])->name('applications.show');
             Route::patch('/applications/{submission}/status', [EoiSubmissionController::class, 'updateStatus'])->name('applications.update-status');
+            Route::patch('/applications/{submission}/registration-review', [EoiSubmissionController::class, 'reviewRegistration'])->name('applications.registration-review');
             Route::post('/applications/{submission}/assign', [EoiSubmissionController::class, 'assignTo'])->name('applications.assign');
             Route::post('/applications/{submission}/link-property', [EoiSubmissionController::class, 'linkToProperty'])->name('applications.link-property');
             Route::post('/applications/{submission}/note', [EoiSubmissionController::class, 'addInternalNote'])->name('applications.note');
@@ -2422,6 +2487,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/forms/agreements/{agreement}/download', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'download'])->name('forms.agreements.download');
             Route::post('/forms/agreements/{agreement}/resend', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'resend'])->name('forms.agreements.resend');
             Route::delete('/forms/agreements/{agreement}', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'destroy'])->name('forms.agreements.destroy');
+            Route::patch('/forms/agreements/{agreement}/archive', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'archive'])->name('forms.agreements.archive');
+            Route::patch('/forms/agreements/{agreement}/restore', [\App\Http\Controllers\Portal\AccommodationAgreementController::class, 'restore'])->name('forms.agreements.restore');
 
             // Work (Tenants + Onboarding + Calendar are real above; Task Tracker
             // uses the shared Task Board; the rest are scaffolded placeholders).
@@ -2432,14 +2499,12 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/calendar/events', [CalendarController::class, 'storeCustomEvent'])->name('calendar.events.store');
             Route::patch('/calendar/events/{event}', [CalendarController::class, 'updateCustomEvent'])->name('calendar.events.update');
             Route::delete('/calendar/events/{event}', [CalendarController::class, 'destroyCustomEvent'])->name('calendar.events.destroy');
-            Route::get('/rent-utilities', [RentUtilitiesController::class, 'index'])->name('rent-utilities');
-            Route::patch('/rent-utilities/tenants/{tenant}/payment', [RentUtilitiesController::class, 'savePayment'])->name('rent-utilities.payment');
-            Route::patch('/rent-utilities/tenants/{tenant}/rent', [RentUtilitiesController::class, 'saveRentUtilities'])->name('rent-utilities.rent');
             Route::get('/payment-schedule', [PaymentScheduleController::class, 'index'])->name('payment-schedule');
             Route::get('/purchase-invoices', [PurchaseInvoiceController::class, 'index'])->name('purchase-invoices');
             Route::post('/tenants/{tenant}/purchase-invoices', [PurchaseInvoiceController::class, 'store'])->name('purchase-invoices.store');
             Route::get('/purchase-invoices/{invoice}/files/{file}', [PurchaseInvoiceController::class, 'download'])->whereNumber('file')->name('purchase-invoices.download');
             Route::get('/gas-delivery', [GasDeliveryController::class, 'index'])->name('gas-delivery');
+            Route::post('/gas-delivery', [GasDeliveryController::class, 'store'])->name('gas-delivery.store');
             Route::get('/concerns', [App\Http\Controllers\ConcernController::class, 'index'])->name('concerns');
             Route::patch('/concerns/{concern}', [App\Http\Controllers\ConcernController::class, 'update'])->name('concerns.update');
             Route::get('/message-templates', [MessageTemplateController::class, 'index'])->name('message-templates');

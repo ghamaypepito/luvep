@@ -256,7 +256,7 @@ const PropertyDetails = ({ property }) => {
                 )}
               </div>
 
-              <a href={`/accommodation/expression-of-interest-hot?property=${encodeURIComponent([property?.name, property?.suburb].filter(Boolean).join(' — '))}`} className="w-full py-4 bg-[#1F5A8B] text-white rounded-full font-bold hover:bg-[#184A73] transition-colors shadow-lg shadow-[#1F5A8B]/20 text-center block">
+              <a href={`/accommodation/expression-of-interest-hot?listing=${property.id}`} className="w-full py-4 bg-[#1F5A8B] text-white rounded-full font-bold hover:bg-[#184A73] transition-colors shadow-lg shadow-[#1F5A8B]/20 text-center block">
                 Interested? Click here
               </a>
               <p className="text-center text-xs text-gray-500 mt-4">We'll get back to you within 24 hours</p>

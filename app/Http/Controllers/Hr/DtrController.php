@@ -22,7 +22,8 @@ class DtrController extends Controller
         $weeks = HrWeeklySignoff::where('hr_employee_id', $employee->id)->orderByDesc('week_start')->limit(20)->get();
 
         return Inertia::render('hr/Dtr', ['entries' => $entries, 'weeks' => $weeks, 'today' => now($employee->schedule?->timezone ?? 'UTC')->toDateString(), 'date_filter' => $filters['date'] ?? null,
-            'creativeRequests' => \App\Models\CreativeRequest::assignedFor($employee->user)]);
+            'creativeRequests' => \App\Models\CreativeRequest::assignedFor($employee->user),
+            'sharedAccommodationDtr' => app(\App\Http\Controllers\AccommodationDtrTaskController::class)->panel($request)]);
     }
 
     public function store(Request $request)

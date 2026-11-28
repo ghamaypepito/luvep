@@ -1,0 +1,7 @@
+# Affiliate onboarding: save, resume and sign
+
+Approved scope: Eireen/Admin can start a partner registration. Applicants can save unfinished contact details, return through their private email link, submit for review, and read/sign the issued agreement inside onboarding. Downloading is optional. Reuse EP branding, existing approval/signature/document history owners and expiring signed links.
+
+Invariants: anonymous submissions never overwrite an existing application; email ownership is verified before draft updates/submission; optimistic draft revision rejects stale writes; submission freezes applicant contact details for Admin review. Existing applications remain submitted after migration. Admin approval creates an inactive partner; only both signatures on the same selected, current agreement activate access. No commission/template changes, permission broadening, real invitations or signatures during validation. Client referral registration is unchanged.
+
+Eireen already has Admin and Affiliate Partners access. Add a visible Start registration link, using the same applicant process and email verification, rather than a bypass. The existing frozen agreement HTML can be reviewed in a sandboxed in-page frame, with the existing digital signature modal as the final step. Continue links expire after two days and can be renewed through the existing email form. No new email provider or dependency.

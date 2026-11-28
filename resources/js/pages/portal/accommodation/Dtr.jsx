@@ -1,2 +1,9 @@
-// Re-export of the DTR page under portal/accommodation/ so app.jsx wraps it in the matching layout.
-export { default } from '@/pages/dtr/DtrPage';
+import DtrPage from '@/pages/dtr/DtrPage';
+import SharedDtrTasks from './SharedDtrTasks';
+
+export default function AccommodationDtr({ sharedAccommodationDtr, ...props }) {
+    return <>
+        {sharedAccommodationDtr && <SharedDtrTasks board={sharedAccommodationDtr} />}
+        <DtrPage {...props} />
+    </>;
+}

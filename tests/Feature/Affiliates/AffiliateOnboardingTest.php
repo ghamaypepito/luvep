@@ -22,6 +22,68 @@ class AffiliateOnboardingTest extends TestCase
 
     private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAC0lEQVQImWNgQAYAAA4AAbGa6gYAAAAASUVORK5CYII=';
 
+    public function test_draft_can_be_saved_resumed_and_submitted_only_by_its_verified_owner(): void
+    {
+        Mail::fake();
+        $input = ['name' => 'Draft Partner', 'email' => 'draft@example.test', 'consent' => 1, 'intent' => 'save'];
+        $this->post('/affiliate/apply', $input)->assertRedirect('/affiliate/apply')->assertSessionHasNoErrors();
+        $draft = AffiliateApplication::sole();
+        $this->assertNull($draft->submitted_at);
+        $this->assertDatabaseMissing('users', ['email' => $draft->email]);
+        $link = Mail::queued(AffiliateApplicationMail::class)->first()->link;
+        $page = $this->get($link)->assertOk()->viewData('page')['props'];
+        $this->assertNull($page['draft']);
+        $save = $this->signed($draft, 'save');
+        $this->post($save, ['intent' => 'save', 'draft_version' => 0, 'name' => 'Changed'])->assertForbidden();
+        $this->post($page['verifyUrl'])->assertRedirect();
+        $this->assertSame('Draft', $draft->fresh()->status());
+        $page = $this->get($link)->viewData('page')['props'];
+        $this->assertSame($draft->email, $page['draft']['email']);
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->post("/admin/agents/applications/{$draft->id}/approve")->assertSessionHasErrors('application');
+        $this->get("/admin/agents/applications/{$draft->id}")->assertInertia(fn ($p) => $p->where('application.approve_url', null));
+        Auth::logout();
+        $this->post('/affiliate/apply', $input + ['phone' => 'attacker'])->assertRedirect();
+        $this->assertSame('', $draft->fresh()->phone);
+        $this->post($save, ['intent' => 'save', 'draft_version' => 0, 'name' => 'Updated Draft', 'email' => 'other@example.test'])->assertRedirect();
+        $this->assertSame('draft@example.test', $draft->fresh()->email);
+        $this->post($save, ['intent' => 'save', 'draft_version' => 0, 'name' => 'Stale'])->assertSessionHasErrors('draft_version');
+        $this->assertSame('Updated Draft', $draft->fresh()->name);
+        $this->post($save, ['intent' => 'submit', 'draft_version' => 1, 'name' => 'Updated Draft'])->assertSessionHasErrors(['phone', 'location']);
+        $this->post($save, ['intent' => 'submit', 'draft_version' => 1, 'name' => 'Updated Draft', 'phone' => '123', 'location' => 'Canada'])->assertRedirect();
+        $this->assertNotNull($draft->fresh()->submitted_at);
+        $this->post($save, ['intent' => 'save', 'draft_version' => 2, 'name' => 'Too Late'])->assertSessionHasErrors('application');
+        $this->assertSame('Awaiting review', $draft->fresh()->status());
+        $this->actingAs($admin)->post("/admin/agents/applications/{$draft->id}/approve")->assertRedirect();
+        $this->assertFalse($draft->fresh()->user->is_active);
+        $this->assertDatabaseCount('leads', 0);
+    }
+
+    public function test_private_agreement_review_is_inline_and_selected_version_only(): void
+    {
+        $this->freezeTime();
+        $app = $this->application();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $partner = $this->approve($app, $admin);
+        $this->post("/admin/agents/{$partner->id}/agreement/generate")->assertRedirect();
+        $agreement = AgentAgreement::sole();
+        Auth::logout();
+        $page = $this->get($this->signed($app, 'status', $agreement))->viewData('page')['props'];
+        $this->assertNotEmpty($page['agreement']['review_url']);
+        $this->get($page['agreement']['review_url'])->assertOk()->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+            ->assertHeader('Referrer-Policy', 'no-referrer')->assertSee('Synthetic Applicant');
+        $this->get($page['agreement']['review_url'].'&unexpected=1')->assertForbidden();
+        $this->get($this->signed($app, 'review', $agreement, now()->subMinute()))->assertForbidden();
+        $this->assertFalse($partner->fresh()->is_active);
+        $this->assertNull($agreement->fresh()->agent_signed_at);
+        $this->actingAs($admin)->post("/admin/agents/{$partner->id}/agreement/send?agreement={$agreement->id}")->assertRedirect();
+        Auth::logout();
+        $this->get($this->signed($app, 'status'))->assertRedirect($this->signed($app, 'status', $agreement));
+        $this->actingAs($admin)->post("/admin/agents/{$partner->id}/agreement/generate")->assertRedirect();
+        Auth::logout();
+        $this->get($page['agreement']['review_url'])->assertNotFound();
+    }
+
     private function application(): AffiliateApplication
     {
         Mail::fake();

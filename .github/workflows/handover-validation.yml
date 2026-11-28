@@ -39,12 +39,23 @@ jobs:
           node tests/Frontend/accommodation-carousel.cjs
           node tests/Frontend/accommodation-tenant-link.cjs
           node tests/Frontend/accommodation-agreements.cjs
+          node tests/Frontend/accommodation-welcome-packages.cjs
           node tests/Frontend/accommodation-move-in.cjs
           node tests/Frontend/accommodation-room-inventory.cjs
+          node tests/Frontend/accommodation-weekly-property-summary.cjs
           node tests/Frontend/accommodation-insights.cjs
+          node tests/Frontend/accommodation-shared-dtr.cjs
+          node tests/Frontend/accommodation-gas-delivery.cjs
+          node tests/Frontend/accommodation-pre-tenancy-citizenship.cjs
+          node tests/Frontend/accommodation-viewing-booking.cjs
+          node tests/Frontend/accommodation-exalt-email-templates.cjs
+          node tests/Frontend/accommodation-onboarding.cjs
+          node tests/Frontend/accommodation-move-out.cjs
           node tests/Frontend/brief-references.cjs
+          node tests/Frontend/accommodation-rental-invoices.cjs
           node tests/Frontend/compose-studio.cjs
           node tests/Frontend/compose-video.cjs
+          node tests/Frontend/accommodation-email-compose.cjs
           node tests/Frontend/marketing-workflow-save.cjs
           node tests/Frontend/calendar-social-post.cjs
           node tests/Frontend/ghl-calendar.cjs
@@ -123,4 +134,5 @@ jobs:
           node tests/Frontend/education-note-documents.cjs
           node tests/Frontend/education-activity-days.cjs
           node tests/Frontend/education-age.cjs
+          node tests/Frontend/school-workspace.cjs
           node --test tests/Frontend/ep-admin.test.cjs tests/js/ep-admin.test.mjs tests/js/ep-admin-time.test.mjs tests/Frontend/ep-agent.test.cjs tests/Frontend/ep-manager.test.cjs tests/Frontend/ep-navigation.test.cjs tests/js/ep-agent-client.test.mjs tests/Frontend/assessment-notes.cjs tests/js/task-comments.test.mjs tests/js/case-thread-replies.test.mjs tests/js/http-client-csrf.test.mjs tests/js/compose-message-panel.test.mjs tests/js/payment-proof-upload.test.mjs tests/js/payment-proof-review.test.mjs

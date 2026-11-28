@@ -39,7 +39,30 @@ class HandoverRegressionTest extends TestCase
         $this->assertDatabaseCount('visa_applications', 2);
     }
 
-    public function test_next_visa_rejects_an_unapproved_case(): void
+    public function test_staff_can_start_a_linked_application_after_a_decline(): void
+    {
+        $lead = $this->lead();
+        $lead->update(['immigration_stage' => 'Decline Visa']);
+        $staff = User::factory()->create(['role' => 'immigration', 'is_active' => true]);
+        $visas = app(VisaApplicationService::class);
+        $url = "/portal/immigration/cases/{$lead->id}/next-visa";
+
+        $this->assertTrue($visas->chainData($lead)['can_start_next']);
+        $this->actingAs($staff)->post($url, ['visa_label' => 'Work Visa'])->assertRedirect();
+
+        $this->assertSame('Decline Visa', $lead->fresh()->immigration_stage);
+        $this->assertDatabaseHas('visa_applications', [
+            'lead_id' => $lead->id, 'status' => 'closed', 'outcome' => 'Decline Visa',
+        ]);
+        $this->assertDatabaseHas('visa_applications', [
+            'root_lead_id' => $lead->id, 'previous_lead_id' => $lead->id, 'sequence' => 2, 'status' => 'active',
+        ]);
+        $this->assertFalse($visas->chainData($lead->fresh())['can_start_next']);
+        $this->post($url, ['visa_label' => 'Work Visa'])->assertUnprocessable();
+        $this->assertDatabaseCount('visa_applications', 2);
+    }
+
+    public function test_next_visa_rejects_a_case_still_in_assessment(): void
     {
         $lead = $this->lead();
         $lead->update(['immigration_stage' => 'For Assessment']);

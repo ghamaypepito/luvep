@@ -1,81 +1,88 @@
-import { Head } from "@inertiajs/react";
-import { Flame } from "lucide-react";
+import { Head, router, useForm } from "@inertiajs/react";
+import { useRef, useState } from "react";
 
-const fmtDate = (v) => {
-    if (!v) return null;
-    const d = new Date(`${v}T00:00:00`);
-    return isNaN(d.getTime()) ? null : d.toLocaleDateString();
-};
+const tracker = "/portal/accommodation/gas-delivery";
+const money = new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" });
+const formatPaid = (cents) => money.format(cents / 100);
+const field = "mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm";
+const button = "rounded-lg bg-blue-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50";
 
-const daysSince = (v) => {
-    if (!v) return null;
-    const d = new Date(`${v}T00:00:00`);
-    if (isNaN(d.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.round((today - d) / 86400000);
-};
+function NewOrder({ today }) {
+    const key = useRef(null);
+    const form = useForm({ ordered_on: today, bottles: "", amount_paid: "" });
 
-const sinceLabel = (n) => (n == null ? "—" : n <= 0 ? "Today" : n === 1 ? "1 day ago" : `${n} days ago`);
+    const save = (event) => {
+        event.preventDefault();
+        key.current ??= globalThis.crypto.randomUUID();
+        form.transform((data) => ({ ...data, submission_key: key.current }));
+        form.post(tracker, { preserveScroll: true, onSuccess: () => { key.current = null; form.reset(); } });
+    };
 
-export default function GasDelivery({ properties = [] }) {
+    return (
+        <form aria-label="Record gas order" onSubmit={save} className="space-y-3 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold">Record gas order</h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+                <label className="text-sm font-medium">Order date
+                    <input className={field} type="date" required max={today} value={form.data.ordered_on} onChange={(e) => form.setData("ordered_on", e.target.value)} />
+                </label>
+                <label className="text-sm font-medium">Gas bottles ordered
+                    <input className={field} type="number" required min="1" max="10000" step="1" value={form.data.bottles} onChange={(e) => form.setData("bottles", e.target.value)} />
+                </label>
+                <label className="text-sm font-medium">Total amount paid (NZD)
+                    <input className={field} type="number" required min="0" max="999999" step="0.01" value={form.data.amount_paid} onChange={(e) => form.setData("amount_paid", e.target.value)} />
+                </label>
+            </div>
+            {Object.entries(form.errors).map(([key, error]) => <p key={key} role="alert" className="text-sm text-red-700">{error}</p>)}
+            <button className={button} disabled={form.processing}>Save order</button>
+        </form>
+    );
+}
+
+export default function GasDelivery({ property, orders = [], month, today, total_paid_cents }) {
+    const [selected, setSelected] = useState(month);
+
     return (
         <div className="mx-auto max-w-6xl space-y-5">
             <Head title="Gas Delivery Tracker" />
-
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">Gas Delivery Tracker</h1>
-                <p className="text-sm text-gray-500">Bottled-gas usage and the last recorded gas delivery, per property.</p>
-            </div>
-
-            {properties.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-gray-200 bg-white p-16 text-center">
-                    <Flame className="mx-auto mb-3 text-gray-300" size={40} />
-                    <p className="font-semibold text-gray-900">No active properties</p>
-                    <p className="text-sm text-gray-500">Add a property to track its gas deliveries.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Gas Delivery Tracker</h1>
+            {!property ? <p role="status" className="rounded-xl bg-white p-5">31 Vazey Way, Hobsonville could not be matched to an active property. Check the Properties record before logging an order.</p> : <>
+                <div>
+                    <h2 className="text-lg font-semibold">{property.address}</h2>
+                    {property.legacy_purchase_date && <p className="text-sm text-gray-600">Previous purchase date on file: {property.legacy_purchase_date}. Bottle count and amount are unavailable for this record.</p>}
                 </div>
-            ) : (
-                <div className="overflow-x-auto rounded-3xl border border-gray-50 bg-white shadow-sm">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
-                            <tr>
-                                <th className="px-4 py-4 font-semibold">Property</th>
-                                <th className="px-4 py-4 font-semibold">Bottled gas</th>
-                                <th className="px-4 py-4 font-semibold">Last gas delivery</th>
-                                <th className="px-4 py-4 font-semibold">Days since</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {properties.map((p) => {
-                                const since = p.uses_bottled_gas ? daysSince(p.last_gas_purchase) : null;
-                                return (
-                                    <tr key={p.id} className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                            <div className="text-gray-900">{p.address}</div>
-                                            <div className="text-xs text-gray-500">{p.code ? `#${p.code}` : ""}</div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            {p.uses_bottled_gas ? (
-                                                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                                                    <Flame size={12} /> Yes
-                                                </span>
-                                            ) : (
-                                                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">No</span>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                            {p.uses_bottled_gas ? (fmtDate(p.last_gas_purchase) ?? <span className="text-gray-400">Not recorded</span>) : <span className="text-gray-300">—</span>}
-                                        </td>
-                                        <td className={`px-4 py-3 ${since != null && since > 30 ? "font-semibold text-amber-600" : "text-gray-600"}`}>
-                                            {p.uses_bottled_gas ? sinceLabel(since) : <span className="text-gray-300">—</span>}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                <NewOrder today={today} />
+                <section aria-label="Gas order history" className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+                        <div>
+                            <h2 className="text-lg font-bold">Order history</h2>
+                            <p className="text-sm text-gray-600">Total paid for {month}: <strong>{formatPaid(total_paid_cents)}</strong></p>
+                        </div>
+                        <form className="flex items-end gap-2" onSubmit={(event) => {
+                            event.preventDefault();
+                            router.get(tracker, { month: selected }, { preserveScroll: true });
+                        }}>
+                            <label className="text-sm font-medium">Month
+                                <input className={field} type="month" required value={selected} onChange={(e) => setSelected(e.target.value)} />
+                            </label>
+                            <button className={button}>Apply</button>
+                        </form>
+                    </div>
+                    {orders.length ? <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-left">
+                                <tr><th className="p-3">Order date</th><th className="p-3">Bottles</th><th className="p-3 text-right">Amount paid</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {orders.map((order) => <tr key={order.id}>
+                                    <td className="p-3">{order.ordered_on}</td>
+                                    <td className="p-3">{order.bottles}</td>
+                                    <td className="p-3 text-right tabular-nums">{formatPaid(order.paid_cents)}</td>
+                                </tr>)}
+                            </tbody>
+                        </table>
+                    </div> : <p className="text-sm text-gray-600">No gas orders recorded for this month.</p>}
+                </section>
+            </>}
         </div>
     );
 }

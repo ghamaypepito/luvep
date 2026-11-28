@@ -2,6 +2,8 @@
 
 namespace App\Services\Accommodation;
 
+use App\Models\AccommodationViewingAttendee;
+use App\Models\AccommodationViewingSlot;
 use App\Models\Booking;
 use App\Models\LeadTask;
 use App\Services\Reports\ReportPeriod;
@@ -45,6 +47,22 @@ class AccommodationInsights
                 'property' => $booking->property?->name, 'date' => $booking->appointment_date->toDateString(),
                 'time' => $booking->appointment_time, 'status' => $booking->status ?: 'Pending',
             ])->all();
+
+        $groups = AccommodationViewingSlot::where('viewing_date', '>=', $monthStart->toDateString())
+            ->where('viewing_date', '<', $monthStart->addMonth()->toDateString())
+            ->withCount([
+                'attendees as active_attendees' => fn ($query) => $query->where('status', '!=', AccommodationViewingAttendee::CANCELLED),
+                'attendees as confirmed_attendees' => fn ($query) => $query->where('status', AccommodationViewingAttendee::CONFIRMED),
+            ])
+            ->get(['id', 'property_address', 'viewing_date', 'start_time'])
+            ->filter(fn ($slot) => $slot->active_attendees > 0)
+            ->map(fn ($slot) => [
+                'id' => 'group-viewing-'.$slot->id,
+                'name' => $slot->active_attendees.' '.($slot->active_attendees === 1 ? 'attendee' : 'attendees'),
+                'property' => $slot->property_address, 'date' => $slot->viewing_date, 'time' => $slot->start_time,
+                'status' => $slot->confirmed_attendees > 0 ? 'Confirmed' : 'Completed',
+            ]);
+        $bookings = collect($bookings)->concat($groups)->sortBy(['date', 'time', 'id'])->values()->all();
 
         return [
             'inventoryStats' => RoomInventory::dashboard(),

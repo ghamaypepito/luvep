@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\Event;
 use App\Models\Lead;
 use App\Models\Program;
+use App\Models\VisaType;
 use App\Services\Reports\ReportPeriod;
 use App\Services\Reports\ReportWeek;
 use App\Traits\BuildsLeadRow;
@@ -257,6 +258,10 @@ class SalesController extends Controller
     public function agentLeadsPage($id)
     {
         $agent = \App\Models\User::where('role', 'agent')->findOrFail($id);
+        $isEducation = request()->is('portal/education/*');
+        $studentVisaTypes = $isEducation
+            ? VisaType::withTrashed()->where('category', 'Student')->pluck('name')->all()
+            : [];
 
         $leads = Lead::where('agent_id', $agent->id)
             ->with([
@@ -272,11 +277,27 @@ class SalesController extends Controller
             ->withCount(['tasks as tasks_open_count' => fn ($q) => $q->where('completed', false)])
             ->latest()
             ->get()
-            ->map(fn (Lead $l) => $this->leadRow($l));
+            ->map(function (Lead $lead) use ($isEducation, $studentVisaTypes) {
+                $row = $this->leadRow($lead);
+                if (! $isEducation) {
+                    return $row;
+                }
+
+                $stages = array_filter([
+                    'Education' => $lead->education_stage,
+                    'Immigration' => $lead->immigration_stage,
+                ]);
+                if (! in_array($lead->inz_visa_type, $studentVisaTypes, true) && isset($stages['Immigration'])) {
+                    unset($stages['Education']);
+                }
+                $row['department_stages'] = (object) $stages;
+
+                return $row;
+            });
 
         [$component, $portalBase] = match (true) {
             request()->is('admin/*') => ['admin/AgentLeads', '/admin'],
-            request()->is('portal/education/*') => ['portal/education/AgentLeads', '/portal/education'],
+            $isEducation => ['portal/education/AgentLeads', '/portal/education'],
             request()->is('portal/immigration-adviser/*') => ['portal/immigration-adviser/AgentLeads', '/portal/immigration-adviser'],
             request()->is('portal/sub-agent/*') => ['portal/sub-agent/AgentLeads', '/portal/sub-agent'],
             default => ['portal/sales/AgentLeads', '/portal/sales'],

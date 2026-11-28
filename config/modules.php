@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'accommodation_finance_accounts' => [
+        'exaltinfo@luvep.com',
+        'janille@janilles.me',
+        'dev@dimmigration.co',
+        'dinah@luvep.com',
+        'support@luvep.com',
+        'digital@luvep.com',
+    ],
 
     /*
     |--------------------------------------------------------------------------

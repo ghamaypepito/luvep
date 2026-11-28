@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EoiSubmission;
 use App\Models\PreTenancyForm;
+use App\Services\Accommodation\WelcomePackages;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
@@ -19,6 +20,12 @@ use Illuminate\Validation\ValidationException;
  */
 class PreTenancyFormController extends Controller
 {
+    private const NZ_CITIZEN = 'New Zealand citizen';
+
+    private const UPLOAD_RULES = 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480';
+
+    private const VISA_UPLOAD_RULES = 'exclude_if:visa_type,'.self::NZ_CITIZEN.'|'.self::UPLOAD_RULES;
+
     private const ROOM_TYPES = [
         'One Room with its own private toilet and bathroom (ensuite)',
         'One Single room with shared toilet and bathroom',
@@ -80,6 +87,7 @@ class PreTenancyFormController extends Controller
 
         return inertia('accommodation/PreTenancyForm', [
             'token' => $token,
+            'citizenshipOption' => self::NZ_CITIZEN,
             'completed' => $submission->preTenancyFormCompleted(),
             'prefill' => [
                 'full_legal_name' => $submission->full_legal_name,
@@ -103,6 +111,8 @@ class PreTenancyFormController extends Controller
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
                 'visa_types' => $this->visaTypeOptions(),
+                'welcome_packages' => WelcomePackages::CATALOGUE,
+                'welcome_package_service_note' => WelcomePackages::SERVICE_NOTE,
             ],
         ]);
     }
@@ -138,8 +148,8 @@ class PreTenancyFormController extends Controller
             'occupants.*.mobile' => 'nullable|string|max:40',
             'occupants.*.visa_type' => 'nullable|string|max:191',
             // Documents
-            'valid_id' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
-            'visa' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
+            'valid_id' => self::UPLOAD_RULES,
+            'visa' => self::VISA_UPLOAD_RULES,
             // Bank details
             'account_name' => 'required|string|max:191',
             'account_number' => 'required|string|max:60',
@@ -154,7 +164,7 @@ class PreTenancyFormController extends Controller
             'referee_name' => 'required|string|max:191',
             'referee_phone' => 'required|string|max:40',
             'referee_email' => 'required|email|max:191',
-        ]);
+        ] + WelcomePackages::rules());
 
         // At least the first occupant's name when they said "yes".
         if ($data['has_additional_occupants'] === 'yes' && empty($data['occupants'][0]['full_name'] ?? null)) {
@@ -170,9 +180,7 @@ class PreTenancyFormController extends Controller
         }
 
         try {
-            $dir = "pre-tenancy/{$submission->id}";
-            $validIdPath = $request->file('valid_id')->store($dir, 'local');
-            $visaPath = $request->file('visa')->store($dir, 'local');
+            $documents = $this->storeDocuments($data, "pre-tenancy/{$submission->id}");
 
             // Keep only occupant rows the tenant actually filled in.
             $occupants = collect($data['has_additional_occupants'] === 'yes' ? ($data['occupants'] ?? []) : [])
@@ -192,10 +200,7 @@ class PreTenancyFormController extends Controller
                 ],
                 'has_additional_occupants' => $data['has_additional_occupants'] === 'yes',
                 'occupants' => $occupants,
-                'documents' => [
-                    'valid_id' => ['path' => $validIdPath, 'name' => $request->file('valid_id')->getClientOriginalName()],
-                    'visa' => ['path' => $visaPath, 'name' => $request->file('visa')->getClientOriginalName()],
-                ],
+                'documents' => $documents,
                 'bank' => [
                     'account_name' => $data['account_name'],
                     'account_number' => $data['account_number'],
@@ -215,6 +220,8 @@ class PreTenancyFormController extends Controller
                     'referee_email' => $data['referee_email'],
                 ],
                 'submitted_at' => now()->toIso8601String(),
+                'arriving_from_overseas' => $data['arriving_from_overseas'] ?? null,
+                'welcome_packages' => WelcomePackages::snapshot($data['welcome_packages'] ?? []),
             ];
 
             // Mirror the corrected contact details + move-in onto the record so
@@ -279,6 +286,7 @@ class PreTenancyFormController extends Controller
     {
         return inertia('accommodation/PreTenancyForm', [
             'token' => 'general',
+            'citizenshipOption' => self::NZ_CITIZEN,
             'general' => true,
             'completed' => false,
             'prefill' => [],
@@ -288,6 +296,8 @@ class PreTenancyFormController extends Controller
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
                 'visa_types' => $this->visaTypeOptions(),
+                'welcome_packages' => WelcomePackages::CATALOGUE,
+                'welcome_package_service_note' => WelcomePackages::SERVICE_NOTE,
             ],
         ]);
     }
@@ -312,8 +322,8 @@ class PreTenancyFormController extends Controller
             'occupants.*.email' => 'nullable|email|max:191',
             'occupants.*.mobile' => 'nullable|string|max:40',
             'occupants.*.visa_type' => 'nullable|string|max:191',
-            'valid_id' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
-            'visa' => 'required|file|mimes:pdf,jpg,jpeg,png,heic,webp|max:20480',
+            'valid_id' => self::UPLOAD_RULES,
+            'visa' => self::VISA_UPLOAD_RULES,
             'account_name' => 'required|string|max:191',
             'account_number' => 'required|string|max:60',
             'property_address' => 'required|string|max:500',
@@ -325,7 +335,7 @@ class PreTenancyFormController extends Controller
             'referee_name' => 'required|string|max:191',
             'referee_phone' => 'required|string|max:40',
             'referee_email' => 'required|email|max:191',
-        ]);
+        ] + WelcomePackages::rules());
 
         if ($data['has_additional_occupants'] === 'yes' && empty($data['occupants'][0]['full_name'] ?? null)) {
             throw ValidationException::withMessages(['occupants.0.full_name' => "Please provide the first occupant's full name."]);
@@ -344,9 +354,7 @@ class PreTenancyFormController extends Controller
                 'submitted_at' => now(),
             ]);
 
-            $dir = "pre-tenancy-general/{$form->id}";
-            $validIdPath = $request->file('valid_id')->store($dir, 'local');
-            $visaPath = $request->file('visa')->store($dir, 'local');
+            $documents = $this->storeDocuments($data, "pre-tenancy-general/{$form->id}");
 
             $occupants = collect($data['has_additional_occupants'] === 'yes' ? ($data['occupants'] ?? []) : [])
                 ->filter(fn ($o) => ! empty($o['full_name']))->values()->all();
@@ -363,10 +371,7 @@ class PreTenancyFormController extends Controller
                 ],
                 'has_additional_occupants' => $data['has_additional_occupants'] === 'yes',
                 'occupants' => $occupants,
-                'documents' => [
-                    'valid_id' => ['path' => $validIdPath, 'name' => $request->file('valid_id')->getClientOriginalName()],
-                    'visa' => ['path' => $visaPath, 'name' => $request->file('visa')->getClientOriginalName()],
-                ],
+                'documents' => $documents,
                 'bank' => [
                     'account_name' => $data['account_name'],
                     'account_number' => $data['account_number'],
@@ -384,6 +389,8 @@ class PreTenancyFormController extends Controller
                     'referee_email' => $data['referee_email'],
                 ],
                 'submitted_at' => now()->toIso8601String(),
+                'arriving_from_overseas' => $data['arriving_from_overseas'] ?? null,
+                'welcome_packages' => WelcomePackages::snapshot($data['welcome_packages'] ?? []),
             ];
             $form->save();
 
@@ -393,6 +400,19 @@ class PreTenancyFormController extends Controller
 
             return back()->with('error', 'Something went wrong submitting the form. Please try again.');
         }
+    }
+
+    private function storeDocuments(array $data, string $directory): array
+    {
+        $documents = [];
+        foreach (array_intersect_key($data, ['valid_id' => true, 'visa' => true]) as $kind => $file) {
+            $documents[$kind] = [
+                'path' => $file->store($directory, 'local'),
+                'name' => $file->getClientOriginalName(),
+            ];
+        }
+
+        return $documents;
     }
 
     /**

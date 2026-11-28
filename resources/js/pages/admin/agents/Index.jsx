@@ -335,6 +335,7 @@ export default function AgentsIndex({
                     </p>
                 </div>
                 <div className="print-hidden flex flex-wrap gap-2">
+                    <a href="/affiliate/apply" target="_blank" rel="noreferrer" className={`${control} inline-flex items-center gap-2 font-semibold`}>Start registration</a>
                     <Link
                         href="/admin/agents/agreements"
                         className={`${control} inline-flex items-center gap-2 font-semibold`}

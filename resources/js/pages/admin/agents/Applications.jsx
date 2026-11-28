@@ -16,7 +16,7 @@ export default function Applications({ applications }) {
                 <tbody>{applications.data.map(row => <tr className="border-t border-[#e5ebe1]" key={row.id}>
                     <td className="px-5 py-4"><Link className="font-semibold text-[#285d46] underline" href={row.detail_url}>{row.name}</Link><small className="mt-1 block">{row.email}</small></td>
                     <td className="px-5 py-4">{row.location}</td><td className="px-5 py-4">{row.status}</td>
-                    <td className="px-5 py-4">{new Date(row.submitted_at).toLocaleDateString("en-NZ")}</td>
+                    <td className="px-5 py-4">{row.submitted_at ? new Date(row.submitted_at).toLocaleDateString("en-NZ") : "Not submitted"}</td>
                 </tr>)}</tbody>
             </table>
             {!applications.data.length && <p className="p-8 text-center text-sm text-[#53655a]">No affiliate applications yet.</p>}

@@ -192,7 +192,13 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
 
                                             {/* STAGE — colour-coded picker */}
                                             <td className="px-3 py-2.5 relative">
-                                                <StagePicker
+                                                {portalBase === '/portal/education' && Object.keys(r.department_stages ?? {}).length ? (
+                                                    <ul className="space-y-1 text-xs">
+                                                        {Object.entries(r.department_stages).map(([department, stage]) => (
+                                                            <li key={department}><span className="text-gray-500">{department}: </span><strong className="text-gray-900">{stage}</strong></li>
+                                                        ))}
+                                                    </ul>
+                                                ) : <StagePicker
                                                     lead={r}
                                                     stages={statuses}
                                                     open={openStageId === r.id}
@@ -200,7 +206,7 @@ export default function AgentLeads({ agent, leads = [], statuses = [], portalBas
                                                     onClose={() => setOpenStageId(null)}
                                                     onSelect={(stage) => changeStage(r, stage)}
                                                     isSaving={savingId === r.id}
-                                                />
+                                                />}
                                             </td>
 
                                             {/* CONTACT */}

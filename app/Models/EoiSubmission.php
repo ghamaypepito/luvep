@@ -43,6 +43,7 @@ class EoiSubmission extends Model
         'invoice_amount_nzd', 'invoice_sent_at', 'payment_confirmed_at',
         'move_in_date', 'not_proceeding_reason', 'declined_reason',
         'converted_to_tenant_id', 'assigned_to_user_id', 'internal_notes',
+        'registration_reviewed_at', 'verified_move_in_amount_nzd', 'move_in_invoice_id', 'viewing_attendee_id', 'welcome_email_sent_at',
     ];
 
     protected $casts = [
@@ -69,6 +70,9 @@ class EoiSubmission extends Model
         'move_in_date' => 'date',
         'pre_tenancy_form_data' => 'array',
         'invoice_amount_nzd' => 'decimal:2',
+        'registration_reviewed_at' => 'datetime',
+        'verified_move_in_amount_nzd' => 'decimal:2',
+        'welcome_email_sent_at' => 'datetime',
     ];
 
     protected $appends = ['days_at_current_stage'];

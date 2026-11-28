@@ -20,6 +20,7 @@ class EnsureModuleAccess
     {
         $user = $request->user();
 
+        abort_if($module === 'accommodation_finance' && $request->attributes->has('user_view_actor'), 403);
         abort_unless($user && $user->canSeeModule($module), 403);
 
         return $next($request);
