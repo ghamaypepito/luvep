@@ -43,7 +43,13 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     const selected = accommodation && selection ? sent.find((message) => message.id === selection.id) || selection : selection;
     const [sending, setSending] = useState(false);
     const [sendErrors, setSendErrors] = useState({});
+    const [newDraftRequest, setNewDraftRequest] = useState(0);
     const fileRef = useRef(null);
+    const recipientRef = useRef(null);
+
+    useEffect(() => {
+        if (newDraftRequest) recipientRef.current?.focus();
+    }, [newDraftRequest]);
 
     const dateLabel = accommodation ? fmtAccommodationDate : fmtDate;
     const loadHistory = (url, params = {}) => router.get(url, params, {
@@ -127,6 +133,16 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
         setSendErrors({});
     };
 
+    const startNew = () => {
+        setSelected(null);
+        resetForm();
+        if (accommodation) {
+            setBuilderOpen(false);
+            setPreviewOpen(false);
+            setNewDraftRequest((request) => request + 1);
+        }
+    };
+
     const canSend = !exaltTemplate && (leads.length > 0 || emails.length > 0) && (subject.trim() || body.trim()) && !sending;
     const clearExaltTemplate = () => {
         setExaltTemplate(null);
@@ -173,7 +189,10 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
             <aside className={`shrink-0 flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${accommodation ? "w-full max-h-72 lg:max-h-none lg:w-72" : "w-72"}`}>
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <span className="text-sm font-bold text-gray-900 flex items-center gap-2"><Mail size={16} /> Sent</span>
-                    <button type="button" onClick={() => { setSelected(null); resetForm(); }} className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1"><PenSquare size={12} /> New</button>
+                    <button type="button" onClick={startNew} disabled={accommodation && sending}
+                        className="text-[11px] font-semibold text-[#436235] hover:text-[#375029] inline-flex items-center gap-1 disabled:opacity-40">
+                        <PenSquare size={12} /> {accommodation ? "New email" : "New"}
+                    </button>
                 </div>
                 {accommodation && <div className="flex items-center gap-2 border-b border-gray-100 p-3">
                     <input type="search" aria-label="Search sent emails by recipient or subject" placeholder="Recipient or subject"
@@ -246,13 +265,15 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
                                     {emails.map((e) => (
                                         <span key={`e${e}`} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full pl-2 pr-1 py-0.5">{e} <button type="button" disabled={!!partnerRecipient} onClick={() => removeEmail(e)} className="hover:text-gray-900"><X size={12} /></button></span>
                                     ))}
-                                    <input disabled={!!partnerRecipient} value={query} aria-label={accommodation ? "Search accommodation contacts" : undefined}
+                                    <input ref={recipientRef} disabled={!!partnerRecipient} value={query} aria-label={accommodation ? "Search accommodation contacts" : undefined}
+                                        aria-describedby={accommodation ? "accommodation-recipient-help" : undefined}
                                         onFocus={() => { if (accommodation) setContactPickerOpen(true); }}
                                         onChange={(e) => { setQuery(e.target.value); if (accommodation) setContactPickerOpen(true); }}
                                         maxLength={accommodation ? 150 : undefined} onKeyDown={onRecipientKey}
                                         placeholder={accommodation ? "Search by name or email…" : (leads.length || emails.length ? "" : "Type a name to find a lead, or an email address…")}
                                         className="flex-1 min-w-[160px] outline-none text-sm py-1" />
                                 </div>
+                                {accommodation && <p id="accommodation-recipient-help" className="mt-1 text-xs text-gray-600">Type an email address and press Enter to add it.</p>}
                                 {accommodation && <div aria-label="Contact type" className="mt-2 flex flex-wrap gap-2">
                                     {Object.entries(contactTypes).map(([type, label]) => <button key={type} type="button" aria-pressed={contactType === type}
                                         onClick={() => { setContactType(type); setContactPickerOpen(true); }}
