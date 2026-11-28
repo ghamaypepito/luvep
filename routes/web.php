@@ -238,6 +238,12 @@ Route::middleware(['auth', 'portal:admin,education'])->post('/admin/education/us
 Route::post('/webhook/zernio', [App\Http\Controllers\AiAdsWebhookController::class, 'zernioWebhook'])->name('webhook.zernio');
 
 Route::get('/accommodation', [PublicAccommodationController::class, 'index']);
+
+$viewingBooking = \App\Http\Controllers\Portal\Accommodation\ViewingBookingController::class;
+Route::get('/accommodation/book-viewing/{property}', [$viewingBooking, 'show'])
+    ->middleware('signed')->name('accommodation.viewing-booking');
+Route::post('/accommodation/book-viewing/{property}', [$viewingBooking, 'book'])
+    ->middleware(['signed', 'throttle:8,1']);
 // Expression of Interest — must be declared BEFORE /accommodation/{id} so the
 // literal path isn't captured as an {id}.
 Route::get('/accommodation/expression-of-interest-cold', [PublicAccommodationController::class, 'eoiForm'])->name('accommodation.eoi');
@@ -2375,6 +2381,10 @@ Route::middleware(['auth'])->group(function () {
             // Property viewing bookings from the public /accommodation page —
             // table + calendar, with per-booking status management.
             Route::get('/viewings', [AccommodationController::class, 'viewings'])->name('viewings');
+            $viewingBooking = \App\Http\Controllers\Portal\Accommodation\ViewingBookingController::class;
+            Route::post('/viewings/slots', [$viewingBooking, 'saveSlot'])->name('viewings.slots.save');
+            Route::patch('/viewings/attendees/{attendee}/status', [$viewingBooking, 'updateAttendee'])->name('viewings.attendees.status');
+            Route::post('/viewings/attendees/{attendee}/resend', [$viewingBooking, 'resend'])->name('viewings.attendees.resend');
             Route::post('/viewings/{id}/status', [AccommodationController::class, 'updateViewingStatus'])->name('viewings.status');
             Route::post('/viewings/{id}/resend', [AccommodationController::class, 'resendViewingConfirmation'])->name('viewings.resend');
 

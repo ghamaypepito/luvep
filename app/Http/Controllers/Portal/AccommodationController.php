@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccommodationViewingSlot;
 use App\Models\Booking;
 use App\Models\EoiSubmission;
 use App\Models\Property;
 use Illuminate\Database\Eloquent\Builder;
+use App\Services\Accommodation\ViewingSchedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -26,8 +28,12 @@ class AccommodationController extends Controller
      * Property-viewing bookings submitted from the public /accommodation page
      * (service_type = "Accommodation Viewing"). Table + calendar surface.
      */
-    public function viewings()
+    public function viewings(Request $request, ViewingSchedule $schedule)
     {
+        $date = $request->validate(['schedule_date' => 'nullable|date_format:Y-m-d'])['schedule_date']
+            ?? now(AccommodationViewingSlot::TIMEZONE)->toDateString();
+        $sharedSchedule = ViewingSchedule::staffCanManage($request->user()) ? $schedule->staffDay($date) : null;
+
         try {
             $rows = $this->viewingBookings()
                 ->with('property:id,name,suburb,location')
@@ -49,11 +55,14 @@ class AccommodationController extends Controller
             return inertia('portal/accommodation/Viewings', [
                 'viewings' => $rows,
                 'statuses' => self::VIEWING_STATUSES,
+                'sharedSchedule' => $sharedSchedule,
             ]);
         } catch (\Throwable $e) {
             Log::error('Accommodation viewings page failed', ['error' => $e->getMessage()]);
 
-            return inertia('portal/accommodation/Viewings', ['viewings' => [], 'statuses' => self::VIEWING_STATUSES]);
+            return inertia('portal/accommodation/Viewings', [
+                'viewings' => [], 'statuses' => self::VIEWING_STATUSES, 'sharedSchedule' => $sharedSchedule,
+            ]);
         }
     }
 

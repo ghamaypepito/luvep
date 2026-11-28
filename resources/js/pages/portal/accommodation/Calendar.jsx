@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
 import { toast } from "sonner";
+import { viewingDate, viewingTime } from "@/lib/viewingSchedule";
 import {
     ChevronLeft, ChevronRight, Plus, SlidersHorizontal, X, Home, FileText,
     CalendarDays, Loader2, Pencil, Trash2, ExternalLink, Eye, CalendarClock,
@@ -17,6 +18,8 @@ const sameDay = (a, b) => ymd(a) === ymd(b);
 const mondayOf = (d) => { const x = startOfDay(d); const day = (x.getDay() + 6) % 7; return addDays(x, -day); };
 const fmtTime = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const fmtDay = (d) => d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+const eventDay = (event) => event.meta?.viewing_date ?? ymd(new Date(event.starts_at));
+const eventTime = (event) => event.meta?.start_time ? viewingTime(event.meta.start_time) : fmtTime(new Date(event.starts_at));
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const VIEWS = ["month", "week", "day", "agenda"];
 
@@ -212,7 +215,7 @@ function EventChip({ event, onSelect, compact = false }) {
             title={event.title}
         >
             {!compact && <Icon size={11} className="shrink-0" />}
-            {!event.is_all_day && <span className="shrink-0 opacity-90">{fmtTime(new Date(event.starts_at))}</span>}
+            {!event.is_all_day && <span className="shrink-0 opacity-90">{eventTime(event)}</span>}
             <span className="truncate">{event.title}</span>
         </button>
     );
@@ -222,7 +225,7 @@ function MonthView({ start, anchor, events, onSelect }) {
     const cells = Array.from({ length: 42 }, (_, i) => addDays(start, i));
     const byDay = useMemo(() => {
         const m = {};
-        for (const e of events) { const k = ymd(new Date(e.starts_at)); (m[k] ??= []).push(e); }
+        for (const e of events) { const k = eventDay(e); (m[k] ??= []).push(e); }
         return m;
     }, [events]);
 
@@ -255,7 +258,7 @@ function ListView({ start, days, events, onSelect }) {
     const cols = Array.from({ length: days }, (_, i) => addDays(start, i));
     const byDay = useMemo(() => {
         const m = {};
-        for (const e of events) { const k = ymd(new Date(e.starts_at)); (m[k] ??= []).push(e); }
+        for (const e of events) { const k = eventDay(e); (m[k] ??= []).push(e); }
         for (const k in m) m[k].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
         return m;
     }, [events]);
@@ -282,7 +285,7 @@ function AgendaView({ events, onSelect }) {
     const groups = useMemo(() => {
         const m = {};
         for (const e of [...events].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))) {
-            const k = ymd(new Date(e.starts_at)); (m[k] ??= []).push(e);
+            const k = eventDay(e); (m[k] ??= []).push(e);
         }
         return m;
     }, [events]);
@@ -306,7 +309,7 @@ function AgendaView({ events, onSelect }) {
                                         <p className="truncate text-sm font-semibold text-gray-900">{e.title}</p>
                                         {e.subtitle && <p className="truncate text-xs text-gray-500">{e.subtitle}</p>}
                                     </div>
-                                    <span className="shrink-0 text-xs text-gray-500">{e.is_all_day ? "All day" : fmtTime(new Date(e.starts_at))}</span>
+                                    <span className="shrink-0 text-xs text-gray-500">{e.is_all_day ? "All day" : eventTime(e)}</span>
                                 </button>
                             );
                         })}
@@ -351,8 +354,23 @@ function EventDrawer({ event, currentUser, onClose, onChanged, onEdit }) {
                     <h2 className="text-xl font-bold text-gray-900">{event.title}</h2>
                     {event.subtitle && <p className="text-sm text-gray-500">{event.subtitle}</p>}
                     <p className="text-sm text-gray-700">
-                        {event.is_all_day ? "All day" : `${fmtDay(new Date(event.starts_at))} · ${fmtTime(new Date(event.starts_at))}`}
+                        {event.is_all_day ? "All day" : m.viewing_date
+                            ? `${viewingDate(m.viewing_date)} · ${eventTime(event)} NZ time`
+                            : `${fmtDay(new Date(event.starts_at))} · ${eventTime(event)}`}
                     </p>
+
+                    {event.source_type === "group_viewing" && (
+                        <ul className="divide-y divide-gray-100 rounded-xl border border-gray-100 px-3">
+                            {m.attendees.map((attendee) => (
+                                <li key={attendee.id} className="space-y-1 py-3 text-sm text-gray-700">
+                                    <p className="font-semibold text-gray-900">{attendee.name}</p>
+                                    <Detail label="Email" value={attendee.email} />
+                                    <Detail label="Mobile" value={attendee.mobile} />
+                                    <Detail label="Status" value={attendee.status} />
+                                </li>
+                            ))}
+                        </ul>
+                    )}
 
                     {event.source_type === "viewing" && (
                         <div className="space-y-1 text-sm text-gray-700">
