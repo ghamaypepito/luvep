@@ -1,0 +1,7 @@
+# TKT-VDWUCT — saved middle name missing from the case header
+
+The two supplied screenshots show the Immigration case Personal Information form retaining a middle name and the same case's heading omitting it. The case-profile serializer already supplies `middle_name`; `CaseProfileHeader` composed only first and last names. This is a display defect, not lost saved data or missing name-correction access.
+
+Compose the existing header display from first, middle and last names, trimming only surrounding whitespace and omitting empty parts. Preserve spelling, compound names, Unicode, partial-name support and the existing case-reference/unnamed fallbacks. The existing heading, avatar title and case-header action feedback share that display value. No database, permission, route, identity-write or unrelated portal formatter change is needed.
+
+The actual-component regression fails on the old formatter, then covers saved/refreshed middle names, absent/blank parts, Unicode/compound names, fallbacks and no automatic writes. A backend round-trip confirms an authorised middle-name save reaches the read-only case payload without granting the reader name-correction access. Existing permission/access checks remain the nearest regression gate. Use synthetic records; no real client name is edited for testing. Independent testing, separate review and exact-revision release verification are required before Done.
