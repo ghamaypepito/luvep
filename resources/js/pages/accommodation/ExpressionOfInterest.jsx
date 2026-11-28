@@ -377,6 +377,7 @@ function Section2({ data, setData, localErrors, serverErrors, isHot }) {
                     </HelpText>
                     <TextInput
                         value={data.property_interested}
+                        readOnly={Boolean(data.property_id)}
                         onChange={(e) => setData('property_interested', e.target.value)}
                     />
                     <FieldError msg={err('property_interested')} />
@@ -763,7 +764,7 @@ function Section8({ data, setData, localErrors, serverErrors }) {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export default function ExpressionOfInterest({ variant = "cold", propertyPrefill = null }) {
+export default function ExpressionOfInterest({ variant = "cold", propertyPrefill = null, listingId = null }) {
     const isHot = variant === "hot";
     const { flash } = usePage().props;
 
@@ -784,6 +785,7 @@ export default function ExpressionOfInterest({ variant = "cold", propertyPrefill
         age: '',
         // Section 2 — Property & Room Interest
         property_interested: propertyPrefill ?? "",
+        property_id: listingId,
         room_type_interest: '',
         tenancy_start_date: '',
         stay_duration: '',

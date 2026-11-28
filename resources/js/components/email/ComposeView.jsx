@@ -23,11 +23,11 @@ const isFullHtml = (html) => /^\s*<(!doctype|html)\b/i.test(html || "");
  * drag-and-drop builder, attachments).
  */
 export default function ComposeView({ basePath = "/admin/email/compose", sent = [], templates = [], partnerRecipient = null,
-    accommodation = false, sentSearch = "", sentPages = {} }) {
+    accommodation = false, sentSearch = "", sentPages = {}, onboardingDraft = null }) {
     const [leads, setLeads] = useState([]);      // [{id,name,email}]
-    const [emails, setEmails] = useState(partnerRecipient ? [partnerRecipient.email.toLowerCase()] : []);     // [string]
+    const [emails, setEmails] = useState(() => [partnerRecipient?.email ?? onboardingDraft?.email].filter(Boolean).map((email) => email.toLowerCase()));
     const [subject, setSubject] = useState("");
-    const [exaltTemplate, setExaltTemplate] = useState(null);
+    const [exaltTemplate, setExaltTemplate] = useState(() => templates.find((template) => template.id === onboardingDraft?.template_id) ?? null);
     const [body, setBody] = useState("");
     const [designJson, setDesignJson] = useState(null);
     const [attachments, setAttachments] = useState([]); // File[]
@@ -136,6 +136,8 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
     };
     const exaltRecipients = [...new Set([...emails, ...leads.map((lead) => lead.email)].filter(Boolean).map((email) => email.toLowerCase()))];
     const exaltRecipient = exaltRecipients.length === 1 ? exaltRecipients[0] : null;
+    const linkedDraft = exaltTemplate?.id === onboardingDraft?.template_id && exaltRecipient === onboardingDraft?.email?.toLowerCase()
+        ? onboardingDraft : null;
 
     const send = () => {
         if (!canSend) return;
@@ -293,7 +295,7 @@ export default function ComposeView({ basePath = "/admin/email/compose", sent = 
 
                             {exaltTemplate ? <ExaltTemplateDraft key={`${exaltTemplate.id}:${exaltRecipient}`}
                                 template={exaltTemplate} email={exaltRecipient} attachments={attachments}
-                                basePath={basePath} onSent={resetForm} onClear={clearExaltTemplate} /> : <>
+                                basePath={basePath} onSent={resetForm} onClear={clearExaltTemplate} onboarding={linkedDraft} /> : <>
                             {/* Subject */}
                             <label className="block">
                                 <span className="block text-xs font-semibold text-gray-600 mb-1">Subject</span>

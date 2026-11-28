@@ -49,6 +49,7 @@ jobs:
           node tests/Frontend/accommodation-pre-tenancy-citizenship.cjs
           node tests/Frontend/accommodation-viewing-booking.cjs
           node tests/Frontend/accommodation-exalt-email-templates.cjs
+          node tests/Frontend/accommodation-onboarding.cjs
           node tests/Frontend/brief-references.cjs
           node tests/Frontend/accommodation-rental-invoices.cjs
           node tests/Frontend/compose-studio.cjs

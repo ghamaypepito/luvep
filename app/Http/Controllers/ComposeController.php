@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Lead;
+use App\Models\EoiSubmission;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Accommodation\ComposeContacts;
 use App\Services\Accommodation\ExaltEmailTemplates;
+use App\Services\Accommodation\OnboardingEmailMilestones;
+use App\Services\Accommodation\ViewingSchedule;
 use App\Services\CommunicationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -29,6 +32,7 @@ class ComposeController extends Controller
         $accommodation = $this->isAccommodation($request);
         $sentSearch = $accommodation ? trim($request->validate(['sent_search' => 'nullable|string|max:150'])['sent_search'] ?? '') : '';
         $history = $accommodation ? $this->accommodationHistory($sentSearch) : null;
+        $templates = $this->composeTemplates($request);
 
         return inertia($ctx['component'], [
             'partnerRecipient' => ($partner = $this->partnerRecipient($request)) ? ['id' => $partner->id, 'name' => $partner->name, 'email' => $partner->email] : null,
@@ -38,8 +42,34 @@ class ComposeController extends Controller
                 'sentSearch' => $sentSearch,
                 'sentPages' => ['previous' => $history->previousPageUrl(), 'next' => $history->nextPageUrl()],
             ] : []),
-            'templates' => $this->composeTemplates($request),
+            'templates' => $templates,
+            ...($accommodation && $request->has('onboarding') ? [
+                'onboardingDraft' => $this->onboardingDraft($request, $templates),
+            ] : []),
         ]);
+    }
+
+    private function onboardingDraft(Request $request, $templates): ?array
+    {
+        abort_unless(ViewingSchedule::staffCanManage($request->user()), 403);
+        $id = $request->validate(['onboarding' => 'required|integer'])['onboarding'];
+        $source = EoiSubmission::findOrFail($id);
+        $key = OnboardingEmailMilestones::TEMPLATE_BY_STATUS[$source->status] ?? null;
+        $template = $templates->firstWhere('key', $key);
+        if (! $key || ! $template || $source->welcome_email_sent_at) {
+            return null;
+        }
+
+        return [
+            'id' => $source->id, 'name' => $source->full_legal_name, 'email' => $source->email,
+            'template_id' => $template->id,
+            'action_id' => match ($key) {
+                'exalt_client_02' => $source->property_id,
+                'exalt_client_04' => $source->id,
+                'exalt_client_08' => $source->converted_to_tenant_id,
+                default => null,
+            },
+        ];
     }
 
     private function composeTemplates(Request $request)

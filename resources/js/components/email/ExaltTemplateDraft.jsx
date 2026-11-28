@@ -13,17 +13,18 @@ const actionLabels = {
 
 const input = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm read-only:bg-gray-50";
 
-export default function ExaltTemplateDraft({ template, email, attachments, basePath, onSent, onClear }) {
+export default function ExaltTemplateDraft({ template, email, attachments, basePath, onSent, onClear, onboarding = null }) {
     const path = `${basePath}/exalt-template`;
     const { fields, action } = template.exalt;
     const [values, setValues] = useState({});
     const [options, setOptions] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [actionId, setActionId] = useState("");
+    const [actionId, setActionId] = useState(() => String(onboarding?.action_id ?? ""));
     const [preview, setPreview] = useState(null);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
-    const recordFields = options.find((option) => String(option.id) === actionId)?.fields ?? {};
+    const record = options.find((option) => String(option.id) === actionId);
+    const recordFields = record?.fields ?? {};
 
     useEffect(() => {
         if (!action || !email) return;
@@ -42,9 +43,9 @@ export default function ExaltTemplateDraft({ template, email, attachments, baseP
         return () => controller.abort();
     }, [action, email, path, template.id]);
 
-    const complete = email && (!action || actionId !== "")
+    const complete = email && (!action || record)
         && fields.every(({ key, optional }) => optional || (recordFields[key] ?? values[key] ?? "").trim());
-    const payload = { template_id: template.id, action_id: actionId || null, email, fields: values };
+    const payload = { template_id: template.id, action_id: actionId || null, email, fields: values, onboarding_id: onboarding?.id ?? null };
     const showError = (errors) => setError(Object.values(errors || {}).flat().join(" ") || "Could not prepare the email.");
     const previewEmail = async () => {
         setError("");
@@ -77,6 +78,7 @@ export default function ExaltTemplateDraft({ template, email, attachments, baseP
                 <h3 className="font-semibold text-gray-900">{template.name}</h3>
                 <button type="button" onClick={onClear} disabled={busy} className="text-sm text-gray-600">Clear template</button>
             </div>
+            {onboarding && <p className="text-sm text-gray-600">Onboarding application · {onboarding.name}</p>}
             {!email && <p className="text-sm text-gray-600">Select one recipient in the To field.</p>}
             {email && action && (
                 <label className="block space-y-1 text-sm font-medium">
