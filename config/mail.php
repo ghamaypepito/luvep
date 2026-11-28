@@ -110,7 +110,10 @@ return [
     |
     */
 
-    'accommodation_signed_copy_to' => env('ACCOMMODATION_SIGNED_COPY_TO'),
+    'accommodation_signed_copy_to' => env(
+        'ACCOMMODATION_SIGNED_COPY_TO',
+        env('APP_ENV') === 'production' ? 'exaltinfo@luvep.com' : null,
+    ),
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
