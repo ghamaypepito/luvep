@@ -1877,6 +1877,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/schools', [\App\Http\Controllers\SchoolController::class, 'index'])->name('schools');
             Route::get('/schools/{id}/profile', [\App\Http\Controllers\SchoolController::class, 'show'])->name('schools.show');
             Route::get('/schools/{id}/management', [\App\Http\Controllers\SchoolWorkspaceController::class, 'show']);
+            Route::post('/schools/{id}/management-email', [\App\Http\Controllers\SchoolWorkspaceController::class, 'sendEmail'])->middleware('throttle:15,1');
             Route::post('/schools/{id}/management/{kind}/{recordId?}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'save']);
             Route::get('/schools/{id}/management-records/{recordId}/files/{fileId}', [\App\Http\Controllers\SchoolWorkspaceController::class, 'download']);
             Route::get('/documents', [EducationController::class, 'documents'])->name('documents');
