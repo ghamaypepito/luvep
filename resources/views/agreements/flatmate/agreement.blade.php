@@ -235,6 +235,19 @@
     {{-- ---------- Appendices (identical across all three agreement types) ---------- --}}
     <div class="appendix">@include('agreements.flatmate._terms')</div>
     <div class="appendix">@include('agreements.flatmate._house_rules')</div>
+    @if(!empty($data['welcome_packages']['packages']))
+        <div class="appendix">
+            <h2 class="section">Exalt Welcome Packages</h2>
+            @foreach($data['welcome_packages']['packages'] as $package)
+                <h3 class="tc-head">{{ $package['name'] }} | ${{ number_format($package['price'], 2) }} NZD</h3>
+                @foreach($package['inclusions'] as $inclusion)
+                    <p class="clause" style="text-align: left">{{ $inclusion }}</p>
+                @endforeach
+            @endforeach
+            <p class="clause">{{ $data['welcome_packages']['service_note'] }}</p>
+            <p class="clause"><strong>Total package cost (service included): ${{ number_format($data['welcome_packages']['total'], 2) }} NZD</strong></p>
+        </div>
+    @endif
     {{-- A normal agreement signature does not complete the separately witnessed declaration. --}}
     <div class="appendix">@include('agreements.flatmate._declaration', [
         'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,

@@ -39,6 +39,7 @@ jobs:
           node tests/Frontend/accommodation-carousel.cjs
           node tests/Frontend/accommodation-tenant-link.cjs
           node tests/Frontend/accommodation-agreements.cjs
+          node tests/Frontend/accommodation-welcome-packages.cjs
           node tests/Frontend/accommodation-move-in.cjs
           node tests/Frontend/accommodation-room-inventory.cjs
           node tests/Frontend/accommodation-insights.cjs

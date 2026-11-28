@@ -89,9 +89,14 @@ class AccommodationAgreementController extends Controller
         $v = $request->validate([
             'agreement_type' => 'required|in:'.implode(',', array_keys(self::TITLES)),
             'data' => 'nullable|array',
+            'source' => 'nullable|required_with:source_id|in:general,onboarding',
+            'source_id' => 'nullable|required_with:source|integer',
         ]);
 
         $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
+        $ctx = isset($v['source']) ? $this->builder->resolve($v['source'], (int) $v['source_id']) : null;
+        abort_if(isset($v['source']) && $ctx === null, 404);
+        $data = $this->withWelcomePackages($data, $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
             'agreementType' => $v['agreement_type'],
@@ -126,6 +131,7 @@ class AccommodationAgreementController extends Controller
         abort_if($ctx === null, 404);
 
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
+        $data = $this->withWelcomePackages($data, $ctx);
         $signatory = app(AgreementTerms::class)->signatory();
         if (! $signatory) {
             throw \Illuminate\Validation\ValidationException::withMessages(['agreement' => 'Alane\'s approved Accommodation account must be active and have a saved signature before issuing agreements.']);
@@ -287,5 +293,16 @@ class AccommodationAgreementController extends Controller
         }
 
         return back()->with('success', 'Agreement deleted.');
+    }
+
+    private function withWelcomePackages(array $data, ?array $source): array
+    {
+        unset($data['welcome_packages']);
+        $packages = $source['data']['welcome_packages'] ?? null;
+        if (! empty($packages['packages'])) {
+            $data['welcome_packages'] = $packages;
+        }
+
+        return $data;
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EoiSubmission;
 use App\Models\PreTenancyForm;
+use App\Services\Accommodation\WelcomePackages;
 use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
@@ -103,6 +104,8 @@ class PreTenancyFormController extends Controller
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
                 'visa_types' => $this->visaTypeOptions(),
+                'welcome_packages' => WelcomePackages::CATALOGUE,
+                'welcome_package_service_note' => WelcomePackages::SERVICE_NOTE,
             ],
         ]);
     }
@@ -154,7 +157,7 @@ class PreTenancyFormController extends Controller
             'referee_name' => 'required|string|max:191',
             'referee_phone' => 'required|string|max:40',
             'referee_email' => 'required|email|max:191',
-        ]);
+        ] + WelcomePackages::rules());
 
         // At least the first occupant's name when they said "yes".
         if ($data['has_additional_occupants'] === 'yes' && empty($data['occupants'][0]['full_name'] ?? null)) {
@@ -215,6 +218,8 @@ class PreTenancyFormController extends Controller
                     'referee_email' => $data['referee_email'],
                 ],
                 'submitted_at' => now()->toIso8601String(),
+                'arriving_from_overseas' => $data['arriving_from_overseas'] ?? null,
+                'welcome_packages' => WelcomePackages::snapshot($data['welcome_packages'] ?? []),
             ];
 
             // Mirror the corrected contact details + move-in onto the record so
@@ -288,6 +293,8 @@ class PreTenancyFormController extends Controller
                 'funding' => self::FUNDING,
                 'properties' => $this->propertyOptions(),
                 'visa_types' => $this->visaTypeOptions(),
+                'welcome_packages' => WelcomePackages::CATALOGUE,
+                'welcome_package_service_note' => WelcomePackages::SERVICE_NOTE,
             ],
         ]);
     }
@@ -325,7 +332,7 @@ class PreTenancyFormController extends Controller
             'referee_name' => 'required|string|max:191',
             'referee_phone' => 'required|string|max:40',
             'referee_email' => 'required|email|max:191',
-        ]);
+        ] + WelcomePackages::rules());
 
         if ($data['has_additional_occupants'] === 'yes' && empty($data['occupants'][0]['full_name'] ?? null)) {
             throw ValidationException::withMessages(['occupants.0.full_name' => "Please provide the first occupant's full name."]);
@@ -384,6 +391,8 @@ class PreTenancyFormController extends Controller
                     'referee_email' => $data['referee_email'],
                 ],
                 'submitted_at' => now()->toIso8601String(),
+                'arriving_from_overseas' => $data['arriving_from_overseas'] ?? null,
+                'welcome_packages' => WelcomePackages::snapshot($data['welcome_packages'] ?? []),
             ];
             $form->save();
 
