@@ -214,6 +214,7 @@
     {{-- ---------- Signatures (sub-tenants + Exalt Property Management) ---------- --}}
     @php $signature = $signature ?? null; $signedMeta = $signedMeta ?? null; $adminSignature = $adminSignature ?? null; $adminName = $adminName ?? null; @endphp
     @if($revised)
+        @include('agreements.flatmate._welcome_packages')
         <div class="appendix">@include('agreements.flatmate._declaration', ['signature' => null, 'signedMeta' => null])</div>
     @endif
     <h2 class="section{{ $revised ? ' appendix' : '' }}">Signatures</h2>
@@ -279,6 +280,7 @@
         <div class="appendix">@include('agreements.flatmate._house_rules')</div>
     @endunless
     @unless($revised)
+        @include('agreements.flatmate._welcome_packages')
         {{-- Preserve the previously issued layout and signature treatment. --}}
         <div class="appendix">@include('agreements.flatmate._declaration', [
             'signature' => ($data['workflow_version'] ?? null) === 2 ? null : $signature,

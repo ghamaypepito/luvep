@@ -1,0 +1,42 @@
+{
+    "exalt_client_01": {
+        "name": "Registration Acknowledgement",
+        "subject": "We’ve received your registration for [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Thank you for completing the registration form for [Room / Property Name] at [Property Address]. Our Accommodation team will review the information you provided and get back to you with an update.</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_02": {
+        "name": "Approved to Book a Viewing",
+        "subject": "You’re approved to book a viewing at [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Congratulations! We’ve reviewed your registration and approved you to move forward to a viewing of [Room / Property Name] at [Property Address].</p>\n<p>Please use the link below to choose a date and time that works for you.</p>\n<p>[Book a Room / Property Viewing]</p>\n<p>We look forward to meeting you!</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_03": {
+        "name": "Viewing Attendance Confirmation",
+        "subject": "Please confirm your viewing attendance at [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Your viewing for [Room / Property Name] is booked for [Viewing Date] at [Viewing Time] New Zealand time at [Property Address].</p>\n<p>Please select one of the options below to let us know whether you can attend.</p>\n<p>[Confirm Attendance]</p>\n<p>[Decline Attendance]</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_04": {
+        "name": "Thank You for Viewing + Proposal and Pre-Tenancy Form",
+        "subject": "Thank you for viewing | Your proposal for [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Thank you for taking the time to visit [Property Name]. It was lovely meeting you and showing you around. Here are the details for the room we discussed.</p>\n<p><strong>Room and household details</strong></p>\n<ul>\n<li>Property — [Property Address]</li>\n<li>Room — [Floor, Room Label and Room Type]</li>\n<li>Bathroom — [Shared Toilet and Bathroom / Private Ensuite]</li>\n<li>Current occupants — [Number of Occupants]</li>\n<li>Household overview — [Optional general description, including age ranges or nationalities occupants have agreed to share]</li>\n<li>Weekly price — [Weekly Rent and Applicable Bills]</li>\n</ul>\n<p><strong>Proposed move-in costs</strong></p>\n<ul>\n<li>One week’s bond — [Amount]</li>\n<li>One week’s deposit — [Amount]</li>\n<li>One week’s rent in advance — [Amount and Monday-to-Sunday Dates Covered]</li>\n<li>Prorated rent for a midweek start, if applicable — [Amount and Dates Covered]</li>\n<li>Total — [Total Proposed Move-In Cost]</li>\n</ul>\n<p>If you’d like to be considered for the room, please complete the pre-tenancy form by [Submission Deadline].</p>\n<p>[Complete the Pre-Tenancy Form]</p>\n<p>Submitting the form puts your application forward for consideration. Once we’ve reviewed the completed forms, we’ll contact the selected applicant and send them the agreement to review and sign.</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_05": {
+        "name": "Agreement Sent",
+        "subject": "Congratulations! Your agreement is ready to sign | [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Congratulations! We’re pleased to offer you [Room / Property Name] at [Property Address].</p>\n<p>Please use the link below to read and sign your agreement. If you have any questions before signing, feel free to reply to this email.</p>\n<p>[Review and Sign Agreement]</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_06": {
+        "name": "Signed Agreement Sent",
+        "subject": "Your signed agreement | [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Thank you for signing your agreement for [Room / Property Name]. Your fully signed agreement is available below for you to download and keep for your records.</p>\n<p>[Download Signed Agreement]</p>\n<p>Your move-in invoice will follow with the amount due based on the agreement signed, payment deadline and bank transfer details.</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_07": {
+        "name": "Move-In Cost Invoice Sent",
+        "subject": "Your move-in invoice | [Property Name]",
+        "body": "<p>Hi [First Name],</p>\n<p>Your move-in invoice for [Room / Property Name] is ready. Please arrange payment of [Total Amount Due] by [Payment Due Date] to secure your booking.</p>\n<p>[View or Download Invoice]</p>\n<p>The invoice shows your bond, deposit and rent in advance, along with any applicable prorated rent or selected Exalt Welcome Packages. Please use the bank transfer details and payment reference shown on the invoice.</p>\n<p>Once you’ve paid, please reply to this email with your proof of payment so we can verify it and confirm your booking.</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    },
+    "exalt_client_08": {
+        "name": "Welcome Email Sent",
+        "subject": "Welcome to [Property Name] | Your move-in details",
+        "body": "<p>Hi [First Name],</p>\n<p>Welcome to [Property Name]! Here’s everything you need before moving in.</p>\n<p><strong>Arrival and access</strong></p>\n<ul>\n<li>Address — [Property Address]</li>\n<li>Your room — [Floor and Room Label]</li>\n<li>Move-in date and time — [Move-In Date and Time]</li>\n<li>House passcode — [House Passcode]</li>\n<li>Room access — [Room Access Details, including whether individual rooms have keys]</li>\n</ul>\n<p><strong>Wi-Fi</strong></p>\n<ul>\n<li>Network name — [Wi-Fi Name]</li>\n<li>Password — [Wi-Fi Password]</li>\n</ul>\n<p><strong>Your allocated storage</strong></p>\n<ul>\n<li>Kitchen cupboard — [Cupboard Location]</li>\n<li>Fridge — [Shelf or Compartment]</li>\n<li>Freezer — [Shelf or Compartment]</li>\n</ul>\n<p>The attached photos show where to find your allocated spaces.</p>\n<p><strong>What’s included</strong></p>\n<p>Your room comes with [Room Features, e.g. a double mattress and double bed frame]. Please bring your own mattress protector, as this is required.</p>\n<p>Shared amenities include [Shared Amenities, e.g. a washing machine, fridge, dining table, microwave, kettle and couch].</p>\n<p><strong>Room condition report</strong></p>\n<p>The attached report and photos show the condition of your room before move-in. Please review them when you arrive and reply within 48 hours of moving in if anything needs to be added or corrected.</p>\n<p>If you have any questions before you arrive, just reply to this email. We look forward to welcoming you!</p>\n<p>Ngā mihi,<br>Exalt Accommodation Team</p>"
+    }
+}

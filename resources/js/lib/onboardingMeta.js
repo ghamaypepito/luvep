@@ -79,7 +79,7 @@ export const daysStyle = (d) => {
 export const STAGE_INPUTS = {
     viewing_booked: [{ name: "viewing_scheduled_at", label: "Viewing date & time", type: "datetime-local", required: true }],
     viewing_completed: [{ name: "viewing_outcome", label: "Viewing outcome (optional)", type: "textarea" }],
-    invoice_sent: [{ name: "invoice_amount_nzd", label: "Invoice amount (NZD)", type: "number", required: true }],
+    payment_confirmed: [{ name: "verified_move_in_amount_nzd", label: "Verified amount received (NZD)", type: "number", required: true }],
     declined: [{ name: "declined_reason", label: "Reason for declining", type: "textarea", required: true }],
     not_proceeding: [{ name: "not_proceeding_reason", label: "Reason for not proceeding", type: "textarea", required: true }],
 };

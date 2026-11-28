@@ -3,6 +3,8 @@
 namespace App\Listeners;
 
 use App\Models\MessageLog;
+use App\Services\Accommodation\OnboardingEmailMilestones;
+use App\Services\OnboardingTransitionService;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\Log;
 
@@ -26,9 +28,12 @@ class MarkMessageLogSent
                 return;
             }
 
-            MessageLog::where('id', $id)
+            $updated = MessageLog::where('id', $id)
                 ->where('status', MessageLog::STATUS_QUEUED)
                 ->update(['status' => MessageLog::STATUS_SENT, 'sent_at' => now()]);
+            if ($updated && ($log = MessageLog::find($id)) && ! empty($log->compose_details['onboarding'])) {
+                app(OnboardingEmailMilestones::class)->sent($log, app(OnboardingTransitionService::class));
+            }
         } catch (\Throwable $e) {
             // Never let status bookkeeping break mail delivery.
             Log::warning('MarkMessageLogSent failed', ['error' => $e->getMessage()]);

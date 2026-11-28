@@ -18,11 +18,12 @@ class DtrController extends Controller
     {
         $employee = app(HrContext::class)->subject($request);
         $filters = $request->validate(['date' => 'nullable|date_format:Y-m-d']);
-        $entries = DtrEntry::where('user_id', $employee->user_id)->when($filters['date'] ?? null, fn ($q, $date) => $q->whereDate('work_date', $date))->orderByDesc('work_date')->limit(60)->get()->map(fn ($e) => app(DtrService::class)->row($e));
+        $entries = DtrEntry::where('user_id', $employee->user_id)->when($filters['date'] ?? null, fn ($q, $date) => $q->whereDate('work_date', $date))->orderByDesc('work_date')->limit(60)->get()->map(fn ($e) => app(DtrService::class)->row($e, includeTimeline: true));
         $weeks = HrWeeklySignoff::where('hr_employee_id', $employee->id)->orderByDesc('week_start')->limit(20)->get();
 
         return Inertia::render('hr/Dtr', ['entries' => $entries, 'weeks' => $weeks, 'today' => now($employee->schedule?->timezone ?? 'UTC')->toDateString(), 'date_filter' => $filters['date'] ?? null,
-            'creativeRequests' => \App\Models\CreativeRequest::assignedFor($employee->user)]);
+            'creativeRequests' => \App\Models\CreativeRequest::assignedFor($employee->user),
+            'sharedAccommodationDtr' => app(\App\Http\Controllers\AccommodationDtrTaskController::class)->panel($request)]);
     }
 
     public function store(Request $request)

@@ -268,10 +268,10 @@ class CommunicationService
     /**
      * Send a manually composed email (Compose module) to an arbitrary address,
      * or to a lead when $leadId is given. Subject/body are already substituted by
-     * the caller. Logs with source='compose' and recipient_type 'lead'/'raw'.
+     * the caller. Tags the message log with the relevant Compose workflow.
      * $rawHtml=true sends a self-contained builder email (no branded shell).
      */
-    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false, ?int $partnerId = null): MessageLog
+    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false, ?int $partnerId = null, ?array $accommodation = null): MessageLog
     {
         // Primary To address(es) plus any template "To — also send to" extras,
         // lower-cased and deduped. Accepts a single address or a list (a staff
@@ -281,8 +281,10 @@ class CommunicationService
             ->map(fn ($e) => strtolower(trim((string) $e)))
             ->filter()->unique()->values()->all();
 
+        $fromEmail = $accommodation === null ? null : config('mail.from.address');
+        $fromName = $accommodation === null ? null : config('mail.from.name');
         $log = $this->log([
-            'source' => $partnerId ? 'partner-tracker' : 'compose',
+            'source' => $accommodation !== null ? MessageLog::SOURCE_ACCOMMODATION_COMPOSE : ($partnerId ? 'partner-tracker' : 'compose'),
             'channel' => MessageLog::CHANNEL_EMAIL,
             'recipient_type' => $partnerId ? 'user' : ($leadId ? 'lead' : 'raw'),
             'recipient_id' => $partnerId ?? $leadId,
@@ -290,6 +292,14 @@ class CommunicationService
             'subject' => $subject,
             'body' => $body,
             'status' => MessageLog::STATUS_QUEUED,
+            ...($accommodation === null ? [] : ['compose_details' => [
+                'recipient_name' => $accommodation['recipient_name'] ?? null,
+                'attachments' => $attachments,
+                'from_email' => $fromEmail,
+                'from_name' => $fromName,
+                'sender' => auth()->user()?->name,
+              ...(! empty($accommodation['onboarding']) ? ['onboarding' => $accommodation['onboarding']] : []),
+            ]]),
         ]);
 
         if (empty($recipients)) {
@@ -298,13 +308,14 @@ class CommunicationService
             return $log;
         }
 
-        $enqueue = function () use ($recipients, $subject, $body, $attachments, $log, $cc, $bcc, $rawHtml): void {
+        $replyToEmail = $accommodation['reply_to_email'] ?? null;
+        $enqueue = function () use ($recipients, $subject, $body, $attachments, $log, $cc, $bcc, $rawHtml, $fromEmail, $fromName, $replyToEmail): void {
             // Cc/Bcc ride along via TemplatedMessage's envelope, same as the
             // templated client path — so a staff notice honours the template's
             // configured Cc/Bcc, not just the resolved role address.
             try {
                 Mail::to($recipients)->queue(
-                    new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, null, null, $cc, $bcc, null, $rawHtml)
+                    new TemplatedMessage($subject ?? '', $body, $attachments, null, null, $log->id, $fromEmail, $fromName, $cc, $bcc, null, $rawHtml, $replyToEmail)
                 );
             } catch (\Throwable $e) {
                 Log::error('Composed email failed', ['address' => implode(', ', $recipients), 'error' => $e->getMessage()]);

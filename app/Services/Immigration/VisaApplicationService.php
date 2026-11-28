@@ -77,13 +77,17 @@ class VisaApplicationService
             'sequence' => $current->sequence,
             'total' => count($chain),
             'closed' => $current->isClosed(),
-            // Can start the next visa only from the latest, still-open application
-            // that has reached a positive outcome (Approved Visa).
-            'can_start_next' => ! $current->isClosed()
-                && $current->sequence === collect($chain)->max('sequence')
-                && $lead->immigration_stage === 'Approved Visa',
+            'can_start_next' => $this->canStartNext($lead, $current, (int) collect($chain)->max('sequence')),
             'chain' => $chain,
         ];
+    }
+
+    private function canStartNext(Lead $lead, VisaApplication $current, int $latestSequence): bool
+    {
+        return $lead->is_immigration_case
+            && in_array($lead->immigration_stage, ['Approved Visa', 'Decline Visa'], true)
+            && ! $current->isClosed()
+            && $current->sequence === $latestSequence;
     }
 
     /**
@@ -97,9 +101,8 @@ class VisaApplicationService
             $from = Lead::whereKey($from->id)->lockForUpdate()->firstOrFail();
             $current = $this->ensureFor($from);
             $latest = VisaApplication::where('root_lead_id', $current->root_lead_id)->max('sequence');
-            abort_unless($from->is_immigration_case && $from->immigration_stage === 'Approved Visa'
-                && ! $current->isClosed() && $current->sequence === (int) $latest,
-                422, 'Only the latest approved, open application can start another visa.');
+            abort_unless($this->canStartNext($from, $current, (int) $latest), 422,
+                'Only the latest open application with an approved or declined outcome can start another visa.');
 
             // 1. New case Lead — copy the client's personal details.
             $attrs = ['lead_id' => Lead::generateLeadId()];

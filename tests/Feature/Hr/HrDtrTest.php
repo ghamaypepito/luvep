@@ -6,6 +6,7 @@ use App\Models\DtrEntry;
 use App\Models\DtrSetting;
 use App\Models\HrDtrReview;
 use App\Models\HrEmployee;
+use App\Models\HrShift;
 use App\Models\HrWeeklySignoff;
 use App\Models\User;
 use App\Services\Hr\ClockService;
@@ -61,6 +62,34 @@ class HrDtrTest extends TestCase
         $this->assertSame(1800, $row['break_seconds']);
         $this->assertSame(3600, $row['task_seconds']);
         $this->assertSame('Office', $saved->work_location);
+    }
+
+    public function test_my_dtr_includes_recorded_work_and_breaks_in_order_including_an_open_break(): void
+    {
+        [$employee,, $entry] = $this->fixture();
+        $shift = HrShift::create([
+            'hr_employee_id' => $employee->id,
+            'work_date' => '2026-10-19',
+            'timezone' => 'Asia/Manila',
+            'started_at' => '2026-10-19 09:00:00',
+            'schedule_snapshot' => [],
+        ]);
+        $shift->breaks()->create(['started_at' => '2026-10-19 09:45:00']);
+        Carbon::setTestNow(Carbon::parse('2026-10-19 10:00', 'UTC'));
+
+        $timeline = app(DtrService::class)->row($entry->fresh(), includeTimeline: true)['timeline'];
+        $this->assertSame([
+            ['work', '08:00:00', '12:00:00'],
+            ['break', '12:00:00', '12:30:00'],
+            ['work', '12:30:00', '16:00:00'],
+            ['work', '17:00:00', '17:45:00'],
+            ['break', '17:45:00', null],
+        ], array_map(fn ($interval) => [
+            $interval['kind'],
+            substr($interval['started_at'], 11, 8),
+            $interval['ended_at'] === null ? null : substr($interval['ended_at'], 11, 8),
+        ], $timeline));
+        $this->assertSame(['Asia/Manila'], array_values(array_unique(array_column($timeline, 'timezone'))));
     }
 
     public function test_submission_locks_edits_and_only_assigned_ops_can_review(): void

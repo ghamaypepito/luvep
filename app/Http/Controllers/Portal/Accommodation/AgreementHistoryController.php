@@ -40,7 +40,7 @@ class AgreementHistoryController extends Controller
             'countersignedUrl' => ! empty($signature['path']) ? route('portal.accommodation.forms.agreements.countersigned-pdf', $agreement) : null,
             'reviewHash' => $canCountersign ? $countersign->originalHash($agreement) : null,
             'needsExaltSignature' => $hasOriginal && $countersign->eligible($agreement),
-            'canEmailExalt' => $hasOriginal && ($agreement->data['layout_version'] ?? null) === AccommodationAgreement::LAYOUT_EXALT_2026_11
+            'canEmailExalt' => $hasOriginal && $agreement->archived_at === null && ($agreement->data['layout_version'] ?? null) === AccommodationAgreement::LAYOUT_EXALT_2026_11
                 && ! $request->attributes->get('user_view_actor'),
             'exaltMailboxConfigured' => AgreementEmail::exaltAddress() !== null,
         ]);
@@ -69,7 +69,7 @@ class AgreementHistoryController extends Controller
     {
         TenantDocument::authorizeStaff($request->user());
         abort_if($request->attributes->get('user_view_actor'), 403);
-        abort_unless($agreement->status === AccommodationAgreement::STATUS_SIGNED
+        abort_unless($agreement->archived_at === null && $agreement->status === AccommodationAgreement::STATUS_SIGNED
             && ($agreement->data['layout_version'] ?? null) === AccommodationAgreement::LAYOUT_EXALT_2026_11, 409);
 
         return $email->completedCopy($agreement, exalt: true)

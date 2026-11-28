@@ -19,9 +19,19 @@ export function InsightsHeader({ reports = false, asOf, children }) {
     </header>;
 }
 
-export function PortfolioSummary({ stats, onFilter = () => {} }) {
+export function PortfolioSummary({ stats, dashboardCounts = null, onFilter = () => {} }) {
     const complete = inventoryComplete(stats);
-    const cards = [
+    const roomReview = 'Room setup needs review';
+    const inventoryLink = '#room-inventory';
+    const cards = dashboardCounts ? [
+        ['Total Active Properties', stats?.properties, 'Managed portfolio', '/portal/accommodation/properties'],
+        ['Total Rooms', stats && !stats.missing_capacity ? stats.rooms : null, 'Recorded room and unit capacity', inventoryLink],
+        ['Total Active Agreements', stats?.households, 'Current household tenancies', '/portal/accommodation/tenants'],
+        ['Total Occupied Rooms', complete ? stats.occupied : null, complete ? 'Distinct rooms and units in use' : roomReview, inventoryLink],
+        ['Total Vacant Rooms', complete ? stats.vacant : null, complete ? 'Verified empty rooms and units' : roomReview, inventoryLink, 'vacant'],
+        ['Total Leads', dashboardCounts.leads, 'Website registrations', '/portal/accommodation/onboarding'],
+        ['Total Viewings', dashboardCounts.viewings, 'Recorded in Viewings', '/portal/accommodation/viewings'],
+    ] : [
         ['Active properties', stats?.properties, 'Managed portfolio', '/portal/accommodation/properties'],
         ['Total rooms', stats && !stats.missing_capacity ? stats.rooms : null, 'Recorded room capacity', '#room-inventory'],
         ['Occupied rooms', complete ? stats.occupied : null, complete ? 'Distinct rooms in use' : 'Room setup needs review', '#room-inventory'],

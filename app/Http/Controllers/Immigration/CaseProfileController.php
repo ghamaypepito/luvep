@@ -131,7 +131,7 @@ class CaseProfileController extends Controller
             'dependents' => $this->loadDependents($lead),
             // Multi-visa — this case's place in the client's chain of visa
             // applications (Visa N of M), lock state, and whether the next
-            // application can be started (Approved Visa, latest, still open).
+            // application can be started (approved or declined, latest, still open).
             'visaChain' => app(\App\Services\Immigration\VisaApplicationService::class)->chainData($lead),
             // When this case is itself tied to a parent's case as a dependant,
             // the parent it belongs to (reciprocal indicator in the header).

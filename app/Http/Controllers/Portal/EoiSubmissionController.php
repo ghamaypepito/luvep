@@ -8,14 +8,21 @@ use App\Http\Requests\Onboarding\AssignRequest;
 use App\Http\Requests\Onboarding\ConvertToTenantRequest;
 use App\Http\Requests\Onboarding\LinkPropertyRequest;
 use App\Http\Requests\Onboarding\UpdateStatusRequest;
+use App\Models\ActivityLog;
 use App\Models\EoiSubmission;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Accommodation\OnboardingEmailMilestones;
+use App\Services\Accommodation\OnboardingOwners;
 use App\Services\Accommodation\RoomInventory;
+use App\Services\Accommodation\ViewingSchedule;
 use App\Services\OnboardingTransitionService;
+use App\Support\AccommodationOnboardingStages;
 use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class EoiSubmissionController extends Controller
 {
@@ -24,36 +31,28 @@ class EoiSubmissionController extends Controller
 
     public function index(Request $request)
     {
-        $view = $request->query('view') === 'pipeline' ? 'pipeline' : 'table';
-
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:150',
+            'stage' => 'nullable|string|max:60',
+            'assigned_to' => 'nullable|string|max:24',
+        ]);
         $shared = [
-            'view' => $view,
-            'filters' => $request->only([
-                'search', 'status', 'form_type', 'lead_temperature',
-                'assigned_to', 'property_id', 'active_pipeline', 'days_at_stage_min', 'sort',
-            ]),
-            'options' => $this->options(),
+            'filters' => $filters,
+            'options' => ['stages' => AccommodationOnboardingStages::options(), 'team' => OnboardingOwners::options()],
         ];
 
-        if ($view === 'pipeline') {
-            // Whole board (incl. terminal states), capped — grouped client-side.
-            $board = $this->filteredQuery($request, forBoard: true)
-                ->with(['property', 'assignedTo', 'convertedTenant'])
-                ->limit(500)
-                ->get()
-                ->each(fn (EoiSubmission $s) => $s->property?->makeVisible(['code', 'address']));
-
-            return inertia('portal/accommodation/Applications', array_merge($shared, ['board' => $board]));
-        }
-
         $submissions = $this->filteredQuery($request)
-            ->with(['property', 'assignedTo', 'convertedTenant'])
+            ->with(['property', 'assignedTo'])
             ->paginate(15)
             ->withQueryString()
             ->through(function (EoiSubmission $s) {
-                $s->property?->makeVisible(['code', 'address']);
-
-                return $s;
+                return [
+                    'id' => $s->id, 'full_legal_name' => $s->full_legal_name, 'email' => $s->email,
+                    'mobile' => $s->mobile, 'created_at' => $s->created_at,
+                    'property_label' => $s->property?->address ?: ($s->property?->name ?: $s->property_interested),
+                    'assigned_to' => $s->assignedTo?->only(['id', 'name']),
+                    'stage_label' => AccommodationOnboardingStages::label($s),
+                ];
             });
 
         return inertia('portal/accommodation/Applications', array_merge($shared, ['submissions' => $submissions]));
@@ -77,8 +76,14 @@ class EoiSubmissionController extends Controller
 
         return inertia('portal/accommodation/ApplicationDetails', [
             'submission' => $submission,
+            'stageLabel' => AccommodationOnboardingStages::label($submission),
+            'history' => $this->history($submission),
+            'onboardingComposeUrl' => ! $submission->welcome_email_sent_at
+                && isset(OnboardingEmailMilestones::TEMPLATE_BY_STATUS[$submission->status])
+                && ViewingSchedule::staffCanManage(request()->user())
+                ? route('portal.accommodation.compose', ['onboarding' => $submission->id], false) : null,
             'options' => $this->options(withRooms: true),
-            'allowedTransitions' => OnboardingPipeline::allowedFrom($submission->status),
+            'allowedTransitions' => array_values(array_diff(OnboardingPipeline::allowedFrom($submission->status), ['agreement_signed', 'invoice_sent'])),
             'agreement' => $agreement ? [
                 'id' => $agreement->id,
                 'type_label' => $agreement->typeLabel(),
@@ -92,8 +97,39 @@ class EoiSubmissionController extends Controller
         ]);
     }
 
+    public function reviewRegistration(Request $request, EoiSubmission $submission, OnboardingTransitionService $service)
+    {
+        $decision = $request->validate(['decision' => 'required|in:reviewed,approved,not_approved'])['decision'];
+        DB::transaction(function () use ($submission, $service, $decision) {
+            $source = EoiSubmission::lockForUpdate()->findOrFail($submission->id);
+            if (! in_array($source->status, ['new', 'reviewed', 'declined'], true)) {
+                throw ValidationException::withMessages(['decision' => 'This registration has already moved forward.']);
+            }
+
+            $source->registration_reviewed_at ??= now();
+            if ($source->status === 'new' || ($source->status === 'declined' && $decision === 'approved')) {
+                $service->transition($source, 'reviewed');
+            }
+            if ($decision === 'approved') {
+                $service->transition($source, 'shortlisted');
+            } elseif ($decision === 'not_approved' && $source->status === 'reviewed') {
+                $service->transition($source, 'declined');
+            }
+            if ($source->isDirty()) {
+                $source->save();
+            }
+        }, 3);
+
+        return back()->with('success', 'Registration review saved.');
+    }
+
     public function updateStatus(UpdateStatusRequest $request, EoiSubmission $submission, OnboardingTransitionService $service)
     {
+        if (in_array($request->input('status'), ['viewing_email_sent', 'viewing_booked', 'post_viewing_followup',
+            'pre_tenancy_form_sent', 'agreement_sent', 'agreement_signed', 'invoice_sent'], true)) {
+            throw ValidationException::withMessages(['status' => 'Use the booking, email or agreement action. This stage advances from its confirmed record.']);
+        }
+
         // Reaching moved_in creates a Tenant, which needs contract data — that
         // goes through the dedicated Convert to Tenant flow, not a bare status flip.
         if ($request->input('status') === 'moved_in') {
@@ -106,7 +142,23 @@ class EoiSubmissionController extends Controller
             return redirect()->back()->with('error', 'The tenant has not submitted their pre-tenancy form yet — this stage completes automatically once they do.');
         }
 
-        $service->transition($submission, $request->input('status'), $request->stageData());
+        DB::transaction(function () use ($request, $submission, $service) {
+            $source = EoiSubmission::lockForUpdate()->findOrFail($submission->id);
+            $data = $request->stageData();
+            if ($request->input('status') === 'viewing_completed' && $source->viewing_scheduled_at?->isFuture()) {
+                throw ValidationException::withMessages(['status' => 'The scheduled viewing has not started yet.']);
+            }
+            if ($request->input('status') === 'payment_confirmed') {
+                $received = (int) round((float) $data['verified_move_in_amount_nzd'] * 100);
+                $due = (int) round((float) $source->invoice_amount_nzd * 100);
+                if ($due <= 0 || $received < $due) {
+                    throw ValidationException::withMessages(['verified_move_in_amount_nzd' => 'Enter a verified amount that covers the full sent invoice.']);
+                }
+            } else {
+                unset($data['verified_move_in_amount_nzd']);
+            }
+            $service->transition($source, $request->input('status'), $data);
+        }, 3);
 
         // Actually send the staff-composed stage email (e.g. the Pre-Tenancy
         // form invite with its native link) to the applicant, if one was
@@ -130,7 +182,10 @@ class EoiSubmissionController extends Controller
 
     public function assignTo(AssignRequest $request, EoiSubmission $submission)
     {
-        $submission->update(['assigned_to_user_id' => $request->input('user_id')]);
+        DB::transaction(function () use ($request, $submission) {
+            EoiSubmission::lockForUpdate()->findOrFail($submission->id)
+                ->update(['assigned_to_user_id' => $request->validated('user_id')]);
+        }, 3);
 
         // NOTE: assignee notification is deferred until the messaging system exists.
 
@@ -235,7 +290,7 @@ class EoiSubmissionController extends Controller
 
     // ---- Helpers ----------------------------------------------------------
 
-    private function filteredQuery(Request $request, bool $forBoard = false)
+    private function filteredQuery(Request $request)
     {
         $search = $request->query('search');
         $status = $request->query('status');
@@ -244,6 +299,7 @@ class EoiSubmissionController extends Controller
         $assigned = $request->query('assigned_to');
         $propertyId = $request->query('property_id');
         $daysMin = $request->query('days_at_stage_min');
+        $stage = $request->query('stage');
 
         $query = EoiSubmission::query()
             ->when($search, fn ($q) => $q->where(fn ($w) => $w
@@ -252,6 +308,9 @@ class EoiSubmissionController extends Controller
                 ->orWhere('email', 'like', "%{$search}%")
                 ->orWhere('mobile', 'like', "%{$search}%")))
             ->when(OnboardingPipeline::isValidStatus((string) $status), fn ($q) => $q->where('status', $status))
+            ->when(is_string($stage) && isset(AccommodationOnboardingStages::STAGES[$stage]), fn ($q) => $stage === 'welcome_sent'
+                ? $q->whereNotNull('welcome_email_sent_at')
+                : $q->whereNull('welcome_email_sent_at')->whereIn('status', AccommodationOnboardingStages::STAGES[$stage][1]))
             ->when(in_array($formType, ['hot', 'cold'], true), fn ($q) => $q->where('form_type', $formType))
             ->when(in_array($temperature, ['hot', 'cold'], true), fn ($q) => $q->where('lead_temperature', $temperature))
             ->when($propertyId, fn ($q) => $q->where('property_id', $propertyId))
@@ -260,8 +319,7 @@ class EoiSubmissionController extends Controller
             ->when($assigned && ! in_array($assigned, ['me', 'unassigned'], true), fn ($q) => $q->where('assigned_to_user_id', $assigned))
             ->when($daysMin !== null && $daysMin !== '', fn ($q) => $q->where('updated_at', '<=', now()->subDays((int) $daysMin)));
 
-        // Table view defaults to active-pipeline-only; the board shows everything.
-        if (! $forBoard && $request->query('active_pipeline', '1') !== '0') {
+        if ($request->query('active_pipeline') === '1') {
             $query->inActivePipeline();
         }
 
@@ -294,7 +352,7 @@ class EoiSubmissionController extends Controller
             'transitions' => OnboardingPipeline::TRANSITIONS,
             'auto_timestamp' => OnboardingPipeline::AUTO_TIMESTAMP,
             'properties' => $this->propertyOptions($withRooms),
-            'team' => $this->teamOptions(),
+            'team' => OnboardingOwners::options(),
             'contract_types' => Tenant::CONTRACT_TYPES,
         ];
     }
@@ -309,12 +367,24 @@ class EoiSubmissionController extends Controller
             ->all();
     }
 
-    private function teamOptions(): array
+    private function history(EoiSubmission $submission): array
     {
-        return User::whereIn('role', ['accommodation', 'admin'])
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name])
-            ->all();
+        $events = ActivityLog::where('action', 'eoi_submission.updated')->where('properties->subject_id', $submission->id)
+            ->latest('id')->get(['id', 'actor_name', 'created_at', 'properties'])
+            ->filter(fn (ActivityLog $log) => isset($log->properties['changes']['assigned_to_user_id']) || isset($log->properties['changes']['status']));
+        $owners = User::whereIn('id', $events->flatMap(fn (ActivityLog $log) => array_values($log->properties['changes']['assigned_to_user_id'] ?? []))
+            ->filter()->unique())->pluck('name', 'id');
+
+        return $events->map(function (ActivityLog $log) use ($owners) {
+            $changes = $log->properties['changes'];
+            $assignment = $changes['assigned_to_user_id'] ?? null;
+            $name = fn ($id) => $id ? ($owners[$id] ?? "Staff #{$id}") : 'Unassigned';
+
+            return [
+                'id' => $log->id, 'actor' => $log->actor_name, 'at' => $log->created_at,
+                'assignment' => $assignment ? ['old' => $name($assignment['old']), 'new' => $name($assignment['new'])] : null,
+                'stage' => $changes['status'] ?? null,
+            ];
+        })->values()->all();
     }
 }

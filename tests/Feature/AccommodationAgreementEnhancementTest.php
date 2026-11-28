@@ -12,9 +12,11 @@ use App\Models\User;
 use App\Services\Accommodation\AgreementTerms;
 use App\Services\PdfGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 class AccommodationAgreementEnhancementTest extends TestCase
@@ -29,6 +31,7 @@ class AccommodationAgreementEnhancementTest extends TestCase
         Mail::fake();
         $this->withoutVite();
         $staff = User::factory()->create(['role' => 'accommodation']);
+        config(['modules.accommodation_finance_accounts' => [$staff->email]]);
         $alane = User::factory()->create(['role' => 'accommodation', 'name' => 'Alane', 'email' => AgreementTerms::SIGNATORY_EMAIL, 'signature_path' => 'signatures/alane.png']);
         $image = imagecreatetruecolor(500, 80);
         imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
@@ -94,6 +97,117 @@ class AccommodationAgreementEnhancementTest extends TestCase
         return $this->post('/agreement/'.$agreement->signing_token.'/sign', [
             'signer_name' => 'Synthetic Tenant', 'signature_data' => self::PNG, 'terms_accepted' => true,
         ]);
+    }
+
+    private function preTenancyPayload(): array
+    {
+        return [
+            'full_legal_name' => 'Synthetic Applicant', 'id_number' => 'TEST', 'age' => '30',
+            'email' => 'applicant@example.test', 'mobile' => '000', 'current_address' => 'Synthetic address',
+            'has_additional_occupants' => 'no', 'valid_id' => UploadedFile::fake()->create('id.pdf', 10, 'application/pdf'),
+            'visa' => UploadedFile::fake()->create('visa.pdf', 10, 'application/pdf'),
+            'account_name' => 'Synthetic', 'account_number' => '123', 'property_address' => 'Synthetic property',
+            'move_in_date' => '2026-12-01', 'length_of_stay' => '3 months',
+            'room_type' => 'One Single room with shared toilet and bathroom', 'rent_funding' => 'Savings',
+            'referee_name' => 'Synthetic Referee', 'referee_phone' => '000', 'referee_email' => 'referee@example.test',
+        ];
+    }
+
+    public function test_welcome_packages_use_the_submitted_snapshot_in_preview_pdf_and_signing_document(): void
+    {
+        [, , , , $data] = $this->setupAgreement();
+        $this->post('/apply/pre-tenancy', $this->preTenancyPayload() + [
+            'arriving_from_overseas' => 'yes', 'welcome_packages' => ['kitchenware', 'grocery', 'bedding'],
+            'welcome_total' => 1,
+        ])->assertRedirect()->assertSessionHas('success')->assertSessionHasNoErrors();
+        $source = PreTenancyForm::latest('id')->firstOrFail();
+        $snapshot = $source->data['welcome_packages'];
+        $this->assertSame(600, $snapshot['total']);
+        $this->assertSame([250, 150, 200], array_column($snapshot['packages'], 'price'));
+
+        $data['welcome_packages'] = ['total' => 1, 'packages' => [['name' => 'Injected']]];
+        $preview = $this->postJson('/portal/accommodation/forms/agreements/preview', [
+            'source' => 'general', 'source_id' => $source->id,
+            'agreement_type' => 'standard_flatmate', 'data' => $data,
+        ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
+        $this->assertSameSectionOrder($preview, [
+            '>House Rules</h2>', '>Main Tenant [Exalt Property] Details</h3>', '>Exalt Welcome Packages</h2>', '>Signatures</h2>',
+        ]);
+        $this->assertStringContainsString('eggs (2 dozen)', $preview);
+        $this->assertStringNotContainsString('Injected', $preview);
+
+        $agreement = $this->generate($source, $data);
+        $this->assertSame($snapshot, $agreement->data['welcome_packages']);
+        $pdfText = (new Parser)->parseContent(Storage::disk('local')->get($agreement->pdf_path))->getText();
+        $this->assertStringContainsString('EXALT WELCOME PACKAGES', $pdfText);
+        $this->assertStringContainsString('600.00 NZD', $pdfText);
+        $this->assertMatchesRegularExpression('/kitchen knife,\s+chopping board/', $pdfText);
+        $source->update(['data' => []]);
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()->assertSee('600.00 NZD');
+        $this->assertArrayNotHasKey('welcome_packages', $this->generate($source, $data)->data);
+
+        $source->update(['data' => ['welcome_packages' => $snapshot]]);
+        $shortTermPreview = $this->postJson('/portal/accommodation/forms/agreements/preview', [
+            'source' => 'general', 'source_id' => $source->id,
+            'agreement_type' => 'transient_flatmate', 'data' => $data,
+        ])->assertOk()->assertJsonPath('data.welcome_packages.total', 600)->json('html');
+        $this->assertStringContainsString('Exalt Welcome Packages', $shortTermPreview);
+
+        $shortTerm = $this->generate($source, $data, 'transient_flatmate');
+        $this->assertSame($snapshot, $shortTerm->data['welcome_packages']);
+        $this->get(route('agreement.sign.document', $shortTerm->signing_token))->assertOk()
+            ->assertSee('Grocery Package')->assertSee('600.00 NZD');
+        $this->post('/agreement/'.$shortTerm->signing_token.'/sign', [
+            'signer_name' => 'Synthetic Tenant', 'signature_data' => $shortTerm->data['admin_signature'],
+            'terms_accepted' => true,
+        ])->assertRedirect('/agreement/'.$shortTerm->signing_token.'/signed');
+        $signedBytes = Storage::disk('local')->get($shortTerm->fresh()->signed_pdf_path);
+        $signedText = (new Parser)->parseContent($signedBytes)->getText();
+        $this->assertStringContainsString('EXALT WELCOME PACKAGES', $signedText);
+        $this->assertStringContainsString('600.00 NZD', $signedText);
+        $this->assertGreaterThan(strpos($signedText, 'EXALT WELCOME PACKAGES'), strpos($signedText, 'SIGNATURES'));
+    }
+
+    public function test_welcome_package_selection_is_optional_and_must_be_valid_for_overseas_arrivals(): void
+    {
+        Storage::fake('local');
+        foreach (['no' => ['grocery'], 'yes' => []] as $answer => $selection) {
+            $this->post('/apply/pre-tenancy', $this->preTenancyPayload() + [
+                'arriving_from_overseas' => $answer, 'welcome_packages' => $selection,
+            ])->assertSessionHasNoErrors()->assertSessionHas('success');
+            $this->assertSame([], PreTenancyForm::latest('id')->firstOrFail()->data['welcome_packages']['packages']);
+        }
+        $this->post('/apply/pre-tenancy', $this->preTenancyPayload() + [
+            'arriving_from_overseas' => 'yes', 'welcome_packages' => ['grocery', 'grocery', 'unknown'],
+        ])->assertSessionHasErrors(['welcome_packages.0', 'welcome_packages.2']);
+        $this->assertDatabaseCount('pre_tenancy_forms', 2);
+    }
+
+    public function test_tokenized_pre_tenancy_packages_transfer_to_whole_property_agreements(): void
+    {
+        [, , $property, , $data] = $this->setupAgreement();
+        $source = EoiSubmission::create([
+            'full_legal_name' => 'Synthetic Applicant', 'email' => 'applicant@example.test', 'mobile' => '000',
+            'id_number' => 'synthetic', 'visa_status' => 'Work Visa', 'nationality' => 'Synthetic',
+            'preferred_name' => 'Synthetic', 'age' => 30, 'room_type_interest' => 'single',
+            'tenancy_start_date' => '2026-12-01', 'stay_duration' => '3 months', 'occupants' => '1',
+            'occupant_ages' => '30', 'employment_status' => 'Employed', 'current_address' => 'Synthetic',
+            'current_address_duration' => '1 year', 'living_situation' => 'Renting', 'reason_for_moving' => 'Synthetic',
+            'drinks_alcohol' => 'No', 'work_hours' => 'Day', 'flatmate_description' => 'Synthetic',
+            'preferred_viewing_time' => 'Any', 'status' => 'pre_tenancy_form_sent', 'property_id' => $property->id,
+        ]);
+        $this->post('/pre-tenancy/'.$source->ensurePublicToken(), $this->preTenancyPayload() + [
+            'arriving_from_overseas' => 'yes', 'welcome_packages' => ['grocery', 'bedding'],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('pre_tenancy_form_completed', $source->fresh()->status);
+        $this->assertSame(350, $source->fresh()->pre_tenancy_form_data['welcome_packages']['total']);
+        $this->post('/portal/accommodation/forms/agreements/generate', [
+            'source' => 'onboarding', 'source_id' => $source->id, 'agreement_type' => 'whole_property', 'data' => $data,
+        ])->assertSessionHasNoErrors()->assertSessionHas('success');
+        $agreement = AccommodationAgreement::sole();
+        $this->assertSame(350, $agreement->data['welcome_packages']['total']);
+        $this->get(route('agreement.sign.document', $agreement->signing_token))->assertOk()
+            ->assertSee('Grocery Package')->assertSee('Bedding Essentials Package')->assertDontSee('Kitchenware Package');
     }
 
     public function test_preview_generate_and_signed_copy_share_canonical_terms(): void
@@ -339,8 +453,8 @@ class AccommodationAgreementEnhancementTest extends TestCase
         $url = '/portal/accommodation/applications/'.$source->id;
         $this->post($url.'/convert', $payload)->assertSessionHas('error');
         $this->assertSame('pending_payment', Tenant::find($tenantId)->current_status);
-        $this->patch($url.'/status', ['status' => 'invoice_sent', 'invoice_amount_nzd' => 1500])->assertSessionHasNoErrors();
-        $this->patch($url.'/status', ['status' => 'payment_confirmed'])->assertSessionHasNoErrors();
+        app(\App\Services\OnboardingTransitionService::class)->transition($source->fresh(), 'invoice_sent', ['invoice_amount_nzd' => 1500]);
+        $this->patch($url.'/status', ['status' => 'payment_confirmed', 'verified_move_in_amount_nzd' => 1500])->assertSessionHasNoErrors();
         $roomId = (string) \Illuminate\Support\Str::uuid();
         $property->forceFill(['total_rooms' => 1, 'room_register' => [['id' => $roomId, 'name' => 'Room A', 'hold' => false]]])->save();
         $payload['assigned_room_ids'] = [$roomId];

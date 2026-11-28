@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class DtrService
 {
-    public function row(DtrEntry $entry): array
+    public function row(DtrEntry $entry, bool $includeTimeline = false): array
     {
         $setting = DtrSetting::where('user_id', $entry->user_id)->first();
         $shifts = $entry->time_source === 'live' ? HrShift::with('breaks')->whereHas('employee', fn ($q) => $q->where('user_id', $entry->user_id))->whereDate('work_date', $entry->work_date)->get() : collect();
@@ -30,6 +30,15 @@ class DtrService
             'can_change_report' => $entry->work_date->toDateString() <= now($setting?->timezone ?? 'UTC')->toDateString(),
             'review_comment' => HrDtrReview::where('dtr_entry_id', $entry->id)->latest('id')->value('comment'),
             'work_date' => $entry->work_date->toDateString(), ...$totals,
+            ...($includeTimeline ? ['timeline' => $shifts->sortBy('started_at')->flatMap(fn (HrShift $shift) => array_map(
+                fn (array $interval) => [
+                    'kind' => $interval[0],
+                    'started_at' => $interval[1]->setTimezone($shift->timezone)->toIso8601String(),
+                    'ended_at' => $interval[2]?->setTimezone($shift->timezone)->toIso8601String(),
+                    'timezone' => $shift->timezone,
+                ],
+                $this->shiftIntervals($shift, $shift->ended_at)
+            ))->values()->all()] : []),
             'task_seconds' => (int) collect($entry->tasks ?? [])->sum('seconds'), 'time_source' => $entry->time_source];
     }
 
@@ -461,20 +470,10 @@ class DtrService
                 if ($localTo->lessThanOrEqualTo($localFrom)) {
                     $localTo = CarbonImmutable::parse($localFrom->addDay()->toDateString().' '.$task['end'], $zone);
                 }
-                $segments = [];
-                $cursor = $shift->started_at;
-                foreach ($shift->breaks->sortBy('started_at') as $pause) {
-                    $breakStart = $pause->started_at->min($end);
-                    $breakEnd = ($pause->ended_at ?? $end)->min($end);
-                    if ($breakStart->greaterThan($cursor)) {
-                        $segments[] = [$cursor, $breakStart];
+                foreach ($this->shiftIntervals($shift, $end) as [$kind, $segmentStart, $segmentEnd]) {
+                    if ($kind !== 'work') {
+                        continue;
                     }
-                    $cursor = $cursor->max($breakEnd);
-                }
-                if ($cursor->lessThan($end)) {
-                    $segments[] = [$cursor, $end];
-                }
-                foreach ($segments as [$segmentStart, $segmentEnd]) {
                     $f = $localFrom->utc();
                     $t = $localTo->utc();
                     // Minute entries at a recorded boundary use its exact instant; never bridge a break.
@@ -506,6 +505,32 @@ class DtrService
         unset($task);
 
         return $tasks;
+    }
+
+    private function shiftIntervals(HrShift $shift, ?CarbonImmutable $end): array
+    {
+        $intervals = [];
+        $cursor = $shift->started_at;
+        foreach ($shift->breaks->sortBy('started_at') as $pause) {
+            $breakStart = $end ? $pause->started_at->min($end) : $pause->started_at;
+            $breakEnd = $end ? ($pause->ended_at ?? $end)->min($end) : $pause->ended_at;
+            if ($breakStart->greaterThan($cursor)) {
+                $intervals[] = ['work', $cursor, $breakStart];
+            }
+            $breakStart = $cursor->max($breakStart);
+            if (! $breakEnd || $breakEnd->greaterThan($breakStart)) {
+                $intervals[] = ['break', $breakStart, $breakEnd];
+            }
+            if (! $breakEnd) {
+                return $intervals;
+            }
+            $cursor = $cursor->max($breakEnd);
+        }
+        if (! $end || $cursor->lessThan($end)) {
+            $intervals[] = ['work', $cursor, $end];
+        }
+
+        return $intervals;
     }
 
     private function minutes(string $time): int

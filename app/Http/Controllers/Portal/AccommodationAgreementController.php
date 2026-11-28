@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Models\AccommodationAgreement;
+use App\Models\ActivityLog;
 use App\Models\EoiSubmission;
+use App\Models\TenantDocument;
 use App\Services\Accommodation\AgreementBuilder;
 use App\Services\Accommodation\AgreementEmail;
 use App\Services\Accommodation\AgreementTerms;
@@ -12,6 +14,7 @@ use App\Services\OnboardingTransitionService;
 use App\Support\OnboardingPipeline;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -34,30 +37,36 @@ class AccommodationAgreementController extends Controller
 
     public function __construct(private readonly AgreementBuilder $builder) {}
 
-    public function index()
+    public function index(Request $request)
     {
-        \App\Models\TenantDocument::authorizeStaff(request()->user());
+        TenantDocument::authorizeStaff($request->user());
+        $canManage = $request->user()->is_active && ! $request->attributes->get('user_view_actor');
         $agreements = AccommodationAgreement::with('creator')->latest()->get()->map(fn ($a) => [
             'id' => $a->id,
             'type' => $a->agreement_type,
             'type_label' => $a->typeLabel(),
             'client_name' => $a->client_name,
             'status' => $a->status,
-            'signing_url' => $a->signingUrl(),
+            'signing_url' => $a->archived_at ? null : $a->signingUrl(),
             'tenant_id' => $a->tenant_id,
-            'can_link_tenant' => request()->user()->is_active && ! request()->attributes->get('user_view_actor') && $a->status === 'signed',
+            'can_link_tenant' => $canManage && ! $a->archived_at && $a->status === 'signed',
             'signed' => $a->status === AccommodationAgreement::STATUS_SIGNED,
-            'can_resend_copy' => $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
+            'can_resend_copy' => ! $a->archived_at && $a->status === AccommodationAgreement::STATUS_SIGNED && ($a->data['workflow_version'] ?? null) === 2,
+            'can_delete' => $canManage && $a->canDeleteFromGeneratedList(),
+            'archived_at' => $a->archived_at?->toIso8601String(),
             'created_at' => optional($a->created_at)->toIso8601String(),
             'created_by' => optional($a->creator)->name,
         ]);
+        [$archived, $active] = $agreements->partition(fn ($a) => $a['archived_at'] !== null);
 
         $properties = \App\Models\Property::where('is_active', true)
             ->get()->map(fn ($p) => ['id' => $p->id, 'label' => $p->address ?: $p->name])->values()->all();
 
         return inertia('portal/accommodation/forms/Agreements', [
             'clients' => $this->builder->clients(),
-            'agreements' => $agreements,
+            'agreements' => $active->values(),
+            'archivedAgreements' => $archived->sortByDesc('archived_at')->values(),
+            'canManageAgreements' => $canManage,
             'types' => AccommodationAgreement::TYPES,
             'maxSubtenants' => AgreementTerms::MAX_SUBTENANTS,
             'properties' => $properties,
@@ -89,9 +98,14 @@ class AccommodationAgreementController extends Controller
         $v = $request->validate([
             'agreement_type' => 'required|in:'.implode(',', array_keys(self::TITLES)),
             'data' => 'nullable|array',
+            'source' => 'nullable|required_with:source_id|in:general,onboarding',
+            'source_id' => 'nullable|required_with:source|integer',
         ]);
 
         $data = app(AgreementTerms::class)->calculate($v['data'] ?? []);
+        $ctx = isset($v['source']) ? $this->builder->resolve($v['source'], (int) $v['source_id']) : null;
+        abort_if(isset($v['source']) && $ctx === null, 404);
+        $data = $this->withWelcomePackages($data, $ctx);
         $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
         $html = view('agreements.flatmate.agreement', [
@@ -127,6 +141,7 @@ class AccommodationAgreementController extends Controller
         abort_if($ctx === null, 404);
 
         $data = app(AgreementTerms::class)->calculate($v['data'], issuing: true);
+        $data = $this->withWelcomePackages($data, $ctx);
         // Preserve the issued layout when the signing flow re-renders this agreement.
         $data['layout_version'] = AccommodationAgreement::LAYOUT_EXALT_2026_11;
         $signatory = app(AgreementTerms::class)->signatory();
@@ -259,22 +274,63 @@ class AccommodationAgreementController extends Controller
         return Storage::disk('local')->download($path, $file);
     }
 
+    public function archive(Request $request, AccommodationAgreement $agreement)
+    {
+        return $this->setArchived($request, $agreement, true);
+    }
+
+    public function restore(Request $request, AccommodationAgreement $agreement)
+    {
+        return $this->setArchived($request, $agreement, false);
+    }
+
+    private function setArchived(Request $request, AccommodationAgreement $agreement, bool $archive)
+    {
+        $this->authorizeAgreementManagement($request);
+        DB::transaction(function () use ($agreement, $archive) {
+            $current = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
+            if (($current->archived_at !== null) === $archive) {
+                return;
+            }
+            $current->archived_at = $archive ? now() : null;
+            $current->save();
+            ActivityLog::record($archive ? 'accommodation.agreement.archived' : 'accommodation.agreement.restored', [
+                'portal' => 'accommodation',
+                'entity_type' => AccommodationAgreement::class,
+                'entity_id' => $current->id,
+            ]);
+        });
+
+        return back()->with('success', $archive ? 'Agreement archived.' : 'Agreement restored.');
+    }
+
+    private function authorizeAgreementManagement(Request $request): void
+    {
+        TenantDocument::authorizeStaff($request->user());
+        abort_unless($request->user()->is_active && ! $request->attributes->get('user_view_actor'), 403);
+    }
+
     public function destroy(AccommodationAgreement $agreement)
     {
-        \App\Models\TenantDocument::authorizeStaff(request()->user());
-        $result = \Illuminate\Support\Facades\DB::transaction(function () use ($agreement) {
+        $this->authorizeAgreementManagement(request());
+        $result = DB::transaction(function () use ($agreement) {
             $current = AccommodationAgreement::whereKey($agreement->id)->lockForUpdate()->firstOrFail();
-            if ($current->status === AccommodationAgreement::STATUS_SIGNED || $current->tenant_id
-                || ! empty($current->data['tenant_signatures'])) {
+            if (! $current->canDeleteFromGeneratedList()) {
                 return null;
             }
             $path = $current->pdf_path;
+            ActivityLog::record('accommodation.agreement.deleted', [
+                'portal' => 'accommodation',
+                'entity_type' => AccommodationAgreement::class,
+                'entity_id' => $current->id,
+                'properties' => ['client_name' => $current->client_name, 'status' => $current->status],
+            ]);
             $current->delete();
 
             return ['path' => $path];
         });
         if ($result === null) {
-            return back()->with('error', 'Signed, partially signed or tenant-linked agreements must be retained.');
+            return back()->with('error', 'Signed, partially signed, or tenant-linked agreements must be retained. Restore archived unsigned agreements before deleting them.');
         }
         // A failed/rolled-back delete must never remove the agreement's evidence.
         if ($result['path']) {
@@ -282,5 +338,16 @@ class AccommodationAgreementController extends Controller
         }
 
         return back()->with('success', 'Agreement deleted.');
+    }
+
+    private function withWelcomePackages(array $data, ?array $source): array
+    {
+        unset($data['welcome_packages']);
+        $packages = $source['data']['welcome_packages'] ?? null;
+        if (! empty($packages['packages'])) {
+            $data['welcome_packages'] = $packages;
+        }
+
+        return $data;
     }
 }

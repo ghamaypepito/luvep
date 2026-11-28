@@ -21,7 +21,7 @@ import {
 
 // Multi-visa chain bar — shows the client's visa applications (Visa N of M),
 // a switcher between them, a read-only banner on a closed application, and the
-// "apply for another visa" action once this case is approved.
+// "apply for another visa" action after an approval or decline.
 function VisaChainBar({ visaChain, leadId, visaTypes }) {
     const { sequence = 1, total = 1, closed = false, can_start_next = false, chain = [] } = visaChain || {};
     const [open, setOpen] = useState(false);
@@ -86,7 +86,7 @@ function VisaChainBar({ visaChain, leadId, visaTypes }) {
                 )}
             </div>
             {can_start_next && open && (
-                <p className="mt-2 text-[11px] text-gray-400">A new case is created with this client's details and the documents the new visa also needs; this approved application is then closed.</p>
+                <p className="mt-2 text-[11px] text-gray-400">A new case uses this client’s details and matching documents. The previous application closes with its recorded outcome.</p>
             )}
         </div>
     );

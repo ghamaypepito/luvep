@@ -10,7 +10,12 @@ Object.defineProperty(global,'navigator',{value:dom.window.navigator, configurab
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const React=require('react'), {act}=React, {createRoot}=require('react-dom/client');
 const posts=[];
-const inertia={Head:()=>null,router:{post:(...args)=>posts.push(args)}};
+const management=[];
+const inertia={Head:()=>null,router:{
+  post:(...args)=>posts.push(args),
+  patch:(url,data,options)=>management.push({method:'patch',url,options}),
+  delete:(url,options)=>management.push({method:'delete',url,options}),
+}};
 let rejectPreview=false;
 global.fetch=async(url,options)=>{
   const payload=JSON.parse(options.body);
@@ -66,6 +71,32 @@ const settle=async()=>{await act(async()=>new Promise(resolve=>setTimeout(resolv
   await act(async()=>root.render(React.createElement(Page,{...props,signatoryReady:false})));
   assert.match(document.body.textContent,/Alane Beryl Lozada/);assert.equal(button('Generate & send').disabled,true);
   assert.equal(posts.length,1);
+  const signed = {id: 10, client_name: 'Synthetic Client', type_label: 'Whole-Property House', signed: true, status: 'signed', tenant_id: 24};
+  const viewed = {id: 11, client_name: 'Synthetic Client', type_label: 'Standard Flatmate', status: 'viewed', can_delete: true};
+  const archived = {id: 12, client_name: 'Archived Client', type_label: 'Standard Flatmate', status: 'signed', signed: true};
+  await act(async()=>root.render(React.createElement(Page,{...props,agreements:[signed,viewed],archivedAgreements:[archived],canManageAgreements:true})));
+  assert.equal(document.body.textContent.includes('Archived Client'),false);
+  assert.equal([...document.querySelectorAll('button')].filter(x=>x.textContent.trim()==='Delete').length,1);
+  let confirmation;
+  window.confirm = text => { confirmation=text; return false; };
+  await click(button('Delete'));
+  assert.match(confirmation,/Synthetic Client.*Standard Flatmate.*Viewed.*#11/);
+  assert.equal(management.length,0);
+  window.confirm = () => true;
+  await click(button('Delete'));
+  assert.equal(management.at(-1).method,'delete');
+  assert.match(management.at(-1).url,/agreements\/11$/);
+  await act(async()=>management.at(-1).options.onFinish());
+  await click(button('Archive'));
+  assert.match(management.at(-1).url,/agreements\/10\/archive$/);
+  await act(async()=>management.at(-1).options.onFinish());
+  await click(button('Archived Agreements'));
+  assert.equal(button('Delete'),undefined);
+  assert.ok(button('Preview'));
+  assert.ok(document.querySelector('a[href$="/12/download"]'));
+  await click(button('Restore'));
+  assert.match(management.at(-1).url,/agreements\/12\/restore$/);
+  await act(async()=>management.at(-1).options.onFinish());
   dom.window.HTMLCanvasElement.prototype.getContext=()=>({clearRect(){},fillText(){},measureText:()=>({width:100})});
   dom.window.HTMLCanvasElement.prototype.toDataURL=()=> 'data:image/png;base64,synthetic';
   const signPath=path.resolve('resources/js/pages/accommodation/SignAgreement.jsx');

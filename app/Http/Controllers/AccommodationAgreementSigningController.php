@@ -88,20 +88,18 @@ class AccommodationAgreementSigningController extends Controller
         }
 
         // State/idempotency guard — only an unsigned, sent/viewed agreement signs.
-        abort_unless(
-            in_array($agreement->status, [AccommodationAgreement::STATUS_SENT, AccommodationAgreement::STATUS_VIEWED], true),
-            404,
-            'This agreement is not available for signing.'
-        );
-
-        $agreement->fill([
-            'signer_name' => $data['signer_name'],
-            'signature_data' => $data['signature_data'],
-            'signer_ip' => $request->ip(),
-            'signer_user_agent' => $request->userAgent(),
-            'signed_at' => now(),
-            'status' => AccommodationAgreement::STATUS_SIGNED,
-        ])->save();
+        $signed = AccommodationAgreement::whereKey($agreement->id)
+            ->whereIn('status', [AccommodationAgreement::STATUS_SENT, AccommodationAgreement::STATUS_VIEWED])
+            ->update([
+                'signer_name' => $data['signer_name'],
+                'signature_data' => $data['signature_data'],
+                'signer_ip' => $request->ip(),
+                'signer_user_agent' => $request->userAgent(),
+                'signed_at' => now(),
+                'status' => AccommodationAgreement::STATUS_SIGNED,
+            ]);
+        abort_unless($signed === 1, 404, 'This agreement is not available for signing.');
+        $agreement->refresh();
 
         // Bake the signed PDF (signature image + audit block embedded).
         try {

@@ -18,7 +18,8 @@ class CountersignAgreement
 {
     public function eligible(AccommodationAgreement $agreement): bool
     {
-        return $agreement->status === AccommodationAgreement::STATUS_SIGNED
+        return $agreement->archived_at === null
+            && $agreement->status === AccommodationAgreement::STATUS_SIGNED
             && filled($agreement->signed_pdf_path)
             && empty($agreement->data['admin_signature'])
             && empty($agreement->data['exalt_countersignature']);

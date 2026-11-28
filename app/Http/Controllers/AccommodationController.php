@@ -127,23 +127,47 @@ class AccommodationController extends Controller
      */
     public function eoiHotForm(Request $request)
     {
+        $listing = $request->integer('listing');
+        $property = $listing ? $this->availableListings()->findOrFail($listing) : null;
+
         return inertia('accommodation/ExpressionOfInterest', [
             'variant' => 'hot',
-            'propertyPrefill' => $request->query('property'),
+            'propertyPrefill' => $property?->name ?? $request->query('property'),
+            'listingId' => $property?->id,
         ]);
     }
 
     public function eoiHotStore(Request $request)
     {
         $data = $request->validate(array_merge($this->eoiRules(), [
-            'property_interested' => 'required|string|max:255',
+            'property_interested' => 'required_without:property_id|nullable|string|max:255',
+            'property_id' => ['nullable', 'integer', Rule::exists('accommodation_properties', 'id')->where('is_active', true)->where('status', 'available')],
         ]));
+        if (! empty($data['property_id'])) {
+            $property = $this->availableListings()->findOrFail($data['property_id']);
+            $data['property_interested'] = $property->address ?: $property->name;
+        } elseif (! empty($data['property_interested'])) {
+            $label = mb_strtolower(trim($data['property_interested']));
+            $matches = $this->availableListings()->get(['id', 'name', 'suburb', 'address'])
+                ->filter(fn ($property) => in_array($label, array_map(
+                    fn ($value) => mb_strtolower(trim((string) $value)),
+                    [$property->name, $property->address, implode(' — ', array_filter([$property->name, $property->suburb]))],
+                ), true));
+            if ($matches->count() === 1) {
+                $data['property_id'] = $matches->first()->id;
+            }
+        }
         $data['form_type'] = 'hot';
 
         EoiSubmission::create($data);
 
         return redirect()->route('accommodation.eoi-hot')
             ->with('success', 'Thank you for registering with Exalt Property Management LTD.');
+    }
+
+    private function availableListings()
+    {
+        return Property::where('is_active', true)->where('status', 'available');
     }
 
     // Allowed option values — shared by validation and surfaced to the React form.

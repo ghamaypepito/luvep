@@ -9,6 +9,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Schedule::call(fn () => \App\Support\WeeklyRentCharge::capturePortfolio())
+    ->hourly()->name('accommodation-weekly-rent-charges')->withoutOverlapping();
+
 // Warm the NZ migration news cache hourly so visitors never trigger the
 // HTTP fetch on the critical render path. Cache key + TTL are managed by
 // the service itself.
@@ -117,3 +120,8 @@ Schedule::command('immigration:onboarding-reminders')
     ->withoutOverlapping();
 
 Schedule::command('editorial:dispatch-social')->everyMinute()->withoutOverlapping(5);
+
+Schedule::command('accommodation:send-move-out-emails')
+    ->dailyAt('09:00')
+    ->timezone('Pacific/Auckland')
+    ->withoutOverlapping();
