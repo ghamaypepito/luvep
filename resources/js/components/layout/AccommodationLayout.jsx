@@ -10,6 +10,7 @@ const ACCOMMODATION_NAV = [
 
     { name: "Work", section: true },
     { name: "Onboarding", href: "/portal/accommodation/onboarding", icon: <Workflow size={20} /> },
+    { name: "Move-Out Pipeline", href: "/portal/accommodation/move-out", icon: <Workflow size={20} /> },
     { name: "Viewings", href: "/portal/accommodation/viewings", icon: <CalendarCheck size={20} /> },
     { name: "Calendar", href: "/portal/accommodation/calendar", icon: <CalendarDays size={20} /> },
     { name: "Rent & Utilities", href: "/portal/accommodation/rent-utilities", icon: <Receipt size={20} /> },

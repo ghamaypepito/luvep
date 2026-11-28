@@ -117,3 +117,8 @@ Schedule::command('immigration:onboarding-reminders')
     ->withoutOverlapping();
 
 Schedule::command('editorial:dispatch-social')->everyMinute()->withoutOverlapping(5);
+
+Schedule::command('accommodation:send-move-out-emails')
+    ->dailyAt('09:00')
+    ->timezone('Pacific/Auckland')
+    ->withoutOverlapping();

@@ -2386,6 +2386,19 @@ Route::middleware(['auth'])->group(function () {
             // `applications.*` to match the model/controller; the canonical URL
             // is /onboarding, with /applications kept as a backwards-compat alias.
             Route::get('/onboarding', [EoiSubmissionController::class, 'index'])->name('onboarding');
+            Route::prefix('move-out')->name('move-out.')->controller(\App\Http\Controllers\Portal\Accommodation\MoveOutController::class)->group(function () {
+                Route::get('/', 'index')->name('index');
+                Route::get('/create', 'create')->name('create');
+                Route::post('/', 'store')->name('store');
+                Route::patch('/automation', 'automation')->name('automation');
+                Route::get('/{moveOut}', 'show')->name('show');
+                Route::patch('/{moveOut}/automation', 'recordAutomation')->name('record-automation');
+                Route::patch('/{moveOut}/assignee', 'assign')->name('assign');
+                Route::patch('/{moveOut}/agreement', 'link')->name('link');
+                Route::post('/{moveOut}/advance', 'advance')->name('advance');
+                Route::get('/{moveOut}/files/{event}/{index}', 'file')->whereNumber(['event', 'index'])->name('file');
+            });
+
             Route::get('/applications', [EoiSubmissionController::class, 'index'])->name('applications.index');
             Route::get('/applications/{submission}', [EoiSubmissionController::class, 'show'])->name('applications.show');
             Route::patch('/applications/{submission}/status', [EoiSubmissionController::class, 'updateStatus'])->name('applications.update-status');
