@@ -82,6 +82,28 @@ class EnglishStudentArchiveTest extends TestCase
         $this->assertNull($english->fresh()->english_students_archived_at);
     }
 
+    public function test_existing_students_remain_available_until_archive_migration_is_installed(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'education']));
+        $mixed = Lead::create(['first_name' => 'Mixed', 'last_name' => 'Synthetic', 'is_student' => true, 'english_stage' => 'PTE Review']);
+        $english = Lead::create(['first_name' => 'English', 'last_name' => 'Synthetic', 'stage' => 'English Pro']);
+        $migration = require database_path('migrations/2026_11_27_150000_add_english_students_archived_at_to_leads.php');
+        $migration->down();
+        try {
+            $before = $english->fresh()->getRawOriginal();
+            $this->get(self::STUDENTS.'?tab=english')->assertOk()->assertInertia(fn ($page) => $page
+                ->has('students', 2)->where('canManageEnglishArchive', false)->where('initialStudentView', 'english'));
+            $this->get(self::STUDENTS.'/english-archive')->assertStatus(503);
+            $this->patchJson($this->action($mixed), ['archived' => true])->assertStatus(503);
+            $this->assertSame($before, $english->fresh()->getRawOriginal());
+            $this->assertSame(0, ActivityLog::where('action', 'education.english_student_archived')->count());
+            $this->actingAs(User::factory()->create(['role' => 'sales', 'portal_access' => ['education']]));
+            $this->get(self::STUDENTS.'/english-archive')->assertForbidden();
+        } finally {
+            $migration->up();
+        }
+    }
+
     private function action(Lead $lead): string
     {
         return self::STUDENTS.'/'.$lead->id.'/english-archive';

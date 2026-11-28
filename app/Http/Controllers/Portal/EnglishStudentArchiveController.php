@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Lead;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class EnglishStudentArchiveController extends Controller
 {
@@ -18,9 +19,20 @@ class EnglishStudentArchiveController extends Controller
             && ! $request->attributes->has('user_view_actor');
     }
 
-    public function index(Request $request)
+    public static function installed(): bool
+    {
+        return Schema::hasColumn('leads', 'english_students_archived_at');
+    }
+
+    private function authorizeStaff(Request $request): void
     {
         abort_unless(self::canManage($request), 403);
+        abort_unless(self::installed(), 503, 'English student archiving is being installed. The existing Students list remains available. Please retry shortly.');
+    }
+
+    public function index(Request $request)
+    {
+        $this->authorizeStaff($request);
 
         $search = trim($request->validate(['search' => 'nullable|string|max:120'])['search'] ?? '');
         $pattern = '%'.strtr(mb_strtolower($search), ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
@@ -41,7 +53,7 @@ class EnglishStudentArchiveController extends Controller
 
     public function update(Request $request, int $lead)
     {
-        abort_unless(self::canManage($request), 403);
+        $this->authorizeStaff($request);
         $request->validate(['archived' => 'required|boolean']);
         $archive = $request->boolean('archived');
 
