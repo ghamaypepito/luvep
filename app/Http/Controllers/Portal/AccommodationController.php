@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\EoiSubmission;
 use App\Models\Property;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,11 @@ class AccommodationController extends Controller
     /** Manageable statuses for a property viewing. */
     private const VIEWING_STATUSES = ['Pending', 'Confirmed', 'Completed', 'Cancelled'];
 
+    private function viewingBookings(): Builder
+    {
+        return Booking::where('service_type', 'like', '%Accommodation Viewing%');
+    }
+
     /**
      * Property-viewing bookings submitted from the public /accommodation page
      * (service_type = "Accommodation Viewing"). Table + calendar surface.
@@ -23,7 +29,7 @@ class AccommodationController extends Controller
     public function viewings()
     {
         try {
-            $rows = Booking::where('service_type', 'like', '%Accommodation Viewing%')
+            $rows = $this->viewingBookings()
                 ->with('property:id,name,suburb,location')
                 ->orderByDesc('appointment_date')->limit(300)->get()
                 ->map(fn (Booking $b) => [
@@ -109,6 +115,7 @@ class AccommodationController extends Controller
                     'hot' => EoiSubmission::where('form_type', 'hot')->count(),
                     'cold' => EoiSubmission::where('form_type', 'cold')->count(),
                 ],
+                'viewingTotal' => $this->viewingBookings()->count(),
                 'recentProperties' => Property::with('images')->latest()->take(5)->get(),
                 'recentApplications' => EoiSubmission::latest()->take(5)->get(),
             ]);
