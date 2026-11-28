@@ -220,7 +220,7 @@ export default function ApplicationDetails({ submission, options = {}, allowedTr
     const registration = ["new", "reviewed", "declined"].includes(submission.status);
     const transitions = allowedTransitions.filter((target) =>
         !((registration && ["reviewed", "shortlisted", "declined"].includes(target)) ||
-        (onboardingComposeUrl && ["viewing_email_sent", "post_viewing_followup", "pre_tenancy_form_sent"].includes(target))));
+        ["viewing_email_sent", "viewing_booked", "post_viewing_followup", "pre_tenancy_form_sent", "agreement_sent", "agreement_signed", "invoice_sent"].includes(target)));
     const composeLabel = {
         shortlisted: "Approve and send viewing link",
         viewing_email_sent: "Send viewing booking link",

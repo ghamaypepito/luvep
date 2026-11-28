@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccommodationViewingSlot;
 use App\Models\Booking;
 use App\Models\EoiSubmission;
 use App\Models\LeadTask;
@@ -61,6 +62,35 @@ class AccommodationInsightsTest extends TestCase
         $this->assertSame('Synthetic viewing property', $props['insights']['calendar']['bookings'][0]['property']);
         $this->assertArrayNotHasKey('email', $props['insights']['calendar']['bookings'][0]);
         $this->getJson('/portal/accommodation/dashboard?month=invalid')->assertUnprocessable();
+    }
+
+    public function test_group_viewings_count_once_per_booked_slot_and_appear_in_both_insight_calendars(): void
+    {
+        $property = Property::create(['name' => 'Synthetic group viewing', 'address' => 'Test address', 'is_active' => true]);
+        foreach (['11:00' => 2, '12:00' => 1, '16:00' => 3] as $time => $count) {
+            $slot = AccommodationViewingSlot::create(['property_id' => $property->id, 'property_address' => 'Test address',
+                'viewing_date' => '2026-11-10', 'start_time' => $time, 'capacity' => 5, 'blocked' => false]);
+            for ($i = 0; $i < $count; $i++) {
+                $slot->attendees()->create(['name' => 'Synthetic visitor '.$i, 'email' => "visitor{$i}@example.test", 'mobile' => '000', 'status' => 'Confirmed']);
+            }
+        }
+        $cancelled = AccommodationViewingSlot::create(['property_id' => $property->id, 'property_address' => 'Test address',
+            'viewing_date' => '2026-11-10', 'start_time' => '13:00', 'capacity' => 5, 'blocked' => false]);
+        $cancelled->attendees()->create(['name' => 'Cancelled visitor', 'email' => 'cancelled@example.test', 'mobile' => '000', 'status' => 'Cancelled']);
+        AccommodationViewingSlot::create(['property_id' => $property->id, 'property_address' => 'Test address',
+            'viewing_date' => '2026-11-10', 'start_time' => '14:00', 'capacity' => 5, 'blocked' => false]);
+        $dashboard = $this->get('/portal/accommodation/dashboard')->assertOk()->inertiaProps();
+        $this->assertSame(4, $dashboard['viewingTotal'], 'Count recorded viewing groups across statuses, not empty slots or individual attendees.');
+        foreach (['/portal/accommodation/dashboard', '/portal/accommodation/reports'] as $path) {
+            $calendar = $this->get($path)->assertOk()->inertiaProps()['insights']['calendar']['bookings'];
+            $this->assertCount(3, $calendar, 'Cancelled-only groups do not appear in the schedule.');
+            $this->assertSame(['11:00', '12:00', '16:00'], array_column($calendar, 'time'));
+            $this->assertSame(['2 attendees', '1 attendee', '3 attendees'], array_column($calendar, 'name'));
+            foreach ($calendar as $item) {
+                $this->assertArrayNotHasKey('email', $item);
+                $this->assertArrayNotHasKey('mobile', $item);
+            }
+        }
     }
 
     public function test_zero_and_unverified_inventory_stay_distinct_on_both_screens(): void

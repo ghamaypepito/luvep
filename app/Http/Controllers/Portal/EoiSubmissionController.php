@@ -13,13 +13,13 @@ use App\Models\EoiSubmission;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Services\Accommodation\RoomInventory;
-use App\Services\Accommodation\OnboardingOwners;
 use App\Services\Accommodation\OnboardingEmailMilestones;
+use App\Services\Accommodation\OnboardingOwners;
+use App\Services\Accommodation\RoomInventory;
 use App\Services\Accommodation\ViewingSchedule;
 use App\Services\OnboardingTransitionService;
-use App\Support\OnboardingPipeline;
 use App\Support\AccommodationOnboardingStages;
+use App\Support\OnboardingPipeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -125,8 +125,9 @@ class EoiSubmissionController extends Controller
 
     public function updateStatus(UpdateStatusRequest $request, EoiSubmission $submission, OnboardingTransitionService $service)
     {
-        if (in_array($request->input('status'), ['agreement_signed', 'invoice_sent'], true)) {
-            throw ValidationException::withMessages(['status' => 'This stage advances when the agreement is fully signed or the issued invoice is emailed.']);
+        if (in_array($request->input('status'), ['viewing_email_sent', 'viewing_booked', 'post_viewing_followup',
+            'pre_tenancy_form_sent', 'agreement_sent', 'agreement_signed', 'invoice_sent'], true)) {
+            throw ValidationException::withMessages(['status' => 'Use the booking, email or agreement action. This stage advances from its confirmed record.']);
         }
 
         // Reaching moved_in creates a Tenant, which needs contract data — that

@@ -7,8 +7,8 @@ use App\Models\AccommodationViewingSlot;
 use App\Models\Booking;
 use App\Models\EoiSubmission;
 use App\Models\Property;
-use Illuminate\Database\Eloquent\Builder;
 use App\Services\Accommodation\ViewingSchedule;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -124,7 +124,7 @@ class AccommodationController extends Controller
                     'hot' => EoiSubmission::where('form_type', 'hot')->count(),
                     'cold' => EoiSubmission::where('form_type', 'cold')->count(),
                 ],
-                'viewingTotal' => $this->viewingBookings()->count(),
+                'viewingTotal' => $this->viewingBookings()->count() + AccommodationViewingSlot::whereHas('attendees')->count(),
                 'recentProperties' => Property::with('images')->latest()->take(5)->get(),
                 'recentApplications' => EoiSubmission::latest()->take(5)->get(),
             ]);

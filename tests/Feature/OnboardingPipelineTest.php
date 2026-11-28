@@ -7,18 +7,18 @@ use App\Mail\TemplatedMessage;
 use App\Models\AccommodationAgreement;
 use App\Models\AccommodationViewingSlot;
 use App\Models\EoiSubmission;
-use App\Models\PreTenancyForm;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Models\PreTenancyForm;
 use App\Models\Property;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as AssertInertia;
@@ -258,6 +258,22 @@ class OnboardingPipelineTest extends TestCase
 
     // ---- State machine ----------------------------------------------------
 
+    public function test_booking_and_sent_milestones_cannot_be_claimed_by_manual_status_updates(): void
+    {
+        foreach ([
+            'viewing_email_sent' => 'shortlisted',
+            'viewing_booked' => 'viewing_email_sent',
+            'post_viewing_followup' => 'viewing_completed',
+            'pre_tenancy_form_sent' => 'post_viewing_followup',
+            'agreement_sent' => 'pre_tenancy_form_completed',
+        ] as $target => $initial) {
+            $source = $this->submission(['status' => $initial]);
+            $this->patchStatus($source, ['status' => $target, 'viewing_scheduled_at' => '2026-12-01 11:00:00'])
+                ->assertSessionHasErrors('status');
+            $this->assertSame($initial, $source->fresh()->status);
+        }
+    }
+
     public function test_valid_transition_succeeds(): void // 5
     {
         $s = $this->submission(); // new
@@ -272,14 +288,14 @@ class OnboardingPipelineTest extends TestCase
         $this->assertEquals('new', $s->fresh()->status);
     }
 
-    public function test_shortlisted_moves_to_viewing_email_sent_and_stamps(): void // 6b
+    public function test_shortlisted_cannot_claim_a_viewing_email_without_sending_it(): void
     {
         $s = $this->submission(['status' => 'shortlisted']);
-        $this->patchStatus($s, ['status' => 'viewing_email_sent'])->assertRedirect();
+        $this->patchStatus($s, ['status' => 'viewing_email_sent'])->assertSessionHasErrors('status');
 
         $fresh = $s->fresh();
-        $this->assertEquals('viewing_email_sent', $fresh->status);
-        $this->assertNotNull($fresh->viewing_email_sent_at); // auto-stamped on entry
+        $this->assertEquals('shortlisted', $fresh->status);
+        $this->assertNull($fresh->viewing_email_sent_at);
     }
 
     public function test_viewing_booked_requires_scheduled_at(): void // 7
@@ -287,19 +303,19 @@ class OnboardingPipelineTest extends TestCase
         $s = $this->submission(['status' => 'viewing_email_sent']);
         $this->patchStatus($s, ['status' => 'viewing_booked'])->assertSessionHasErrors(['viewing_scheduled_at']);
 
-        $this->patchStatus($s, ['status' => 'viewing_booked', 'viewing_scheduled_at' => '2026-07-01 10:00:00'])->assertRedirect();
-        $this->assertEquals('viewing_booked', $s->fresh()->status);
-        $this->assertNotNull($s->fresh()->viewing_scheduled_at);
+        $this->patchStatus($s, ['status' => 'viewing_booked', 'viewing_scheduled_at' => '2026-07-01 10:00:00'])->assertSessionHasErrors('status');
+        $this->assertEquals('viewing_email_sent', $s->fresh()->status);
+        $this->assertNull($s->fresh()->viewing_scheduled_at);
     }
 
-    public function test_viewing_completed_moves_to_post_viewing_followup_and_stamps(): void // 7b
+    public function test_viewing_completed_cannot_claim_a_proposal_email_without_sending_it(): void
     {
         $s = $this->submission(['status' => 'viewing_completed']);
-        $this->patchStatus($s, ['status' => 'post_viewing_followup'])->assertRedirect();
+        $this->patchStatus($s, ['status' => 'post_viewing_followup'])->assertSessionHasErrors('status');
 
         $fresh = $s->fresh();
-        $this->assertEquals('post_viewing_followup', $fresh->status);
-        $this->assertNotNull($fresh->post_viewing_followup_at); // auto-stamped on entry
+        $this->assertEquals('viewing_completed', $fresh->status);
+        $this->assertNull($fresh->post_viewing_followup_at);
     }
 
     public function test_invoice_stage_cannot_be_manually_marked_sent(): void
