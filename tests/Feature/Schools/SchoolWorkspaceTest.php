@@ -4,6 +4,7 @@ namespace Tests\Feature\Schools;
 
 use App\Models\ActivityLog;
 use App\Models\Lead;
+use App\Models\MessageLog;
 use App\Models\Program;
 use App\Models\School;
 use App\Models\SchoolWorkspaceRecord;
@@ -13,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -85,6 +87,62 @@ class SchoolWorkspaceTest extends TestCase
         $this->assertSame($before, $this->student->fresh()->getRawOriginal());
         $this->assertSame($program, $this->program->fresh()->getRawOriginal());
         $this->assertSame($this->staff->id, ActivityLog::where('action', 'school.workspace_saved')->firstOrFail()->user_id);
+    }
+
+    public function test_student_programmes_are_scoped_by_school_and_confirmed_rows_take_precedence(): void
+    {
+        $second = School::create(['name' => 'Second Synthetic School']);
+        $secondProgram = Program::create(['school_id' => $second->id, 'title' => 'Second Course', 'level' => 7,
+            'category' => 'bachelors', 'status' => 'published']);
+        $this->student->studyPlans()->create([
+            'preferred_course' => 'Synthetic Course · Second Course', 'qualification_level' => '',
+            'program_schools' => [$this->school->name, $second->name],
+            'program_intakes' => [['program' => 'Synthetic Course', 'intake' => '2027-02-01'], ['program' => 'Second Course', 'intake' => '2027-07-01']],
+        ]);
+        $this->student->update(['education_stage' => 'Course Ongoing']);
+        $first = $this->get($this->url())->assertOk()->inertiaProps()['studentAssociations'];
+        $this->assertEquals([$this->program->id], array_column($first, 'program_id'));
+        $this->assertSame('2027-02-01', $first[0]['intake']);
+        $this->assertNull($first[0]['status'], 'Student-wide status cannot verify multiple programmes');
+        $linked = $this->get("/portal/education/schools/{$second->id}/management")->assertOk()->inertiaProps()['studentAssociations'];
+        $this->assertEquals([$secondProgram->id], array_column($linked, 'program_id'));
+        $this->assertSame('2027-07-01', $linked[0]['intake']);
+        $this->assertSame(0, SchoolWorkspaceRecord::count());
+        $this->post($this->url('/enrolment'), $this->enrolment())->assertSessionHasNoErrors();
+        $this->assertSame([], $this->get($this->url())->inertiaProps()['studentAssociations']);
+        $plan = $this->student->studyPlans()->firstOrFail();
+        $plan->update(['preferred_course' => 'Synthetic Course', 'program_schools' => [$this->school->name],
+            'program_intakes' => [['program' => 'Synthetic Course', 'intake' => '2028-02-01']]]);
+        $this->student->update(['education_notes' => ['actual_course_started_on' => '2028-02-05']]);
+        $progress = $this->get($this->url())->inertiaProps()['studentAssociations'][0];
+        $this->assertSame('Currently Studying', $progress['status']);
+        $this->assertSame('2028-02-05', $progress['starts_on']);
+    }
+
+    public function test_school_email_queues_to_a_saved_contact_and_records_private_correspondence(): void
+    {
+        Mail::fake();
+        $this->school->update(['contacts' => [['name' => 'School Contact', 'email' => 'contact@example.test']]]);
+        $payload = ['to' => 'contact@example.test', 'cc' => ['cc@example.test'], 'subject' => 'School update',
+            'body' => '<p>Example message</p>'];
+        $route = str_replace('/management', '/management-email', $this->url());
+        $this->postJson($route, array_replace($payload, ['to' => 'unrelated@example.test']))
+            ->assertUnprocessable()->assertJsonValidationErrors('to');
+        $this->post($route, $payload + ['attachments' => [UploadedFile::fake()->create('update.pdf', 10, 'application/pdf')]])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $message = MessageLog::where('source', MessageLog::SOURCE_SCHOOL_CORRESPONDENCE)->sole();
+        Mail::assertQueued(\App\Mail\TemplatedMessage::class, fn ($mail) => $mail->hasTo('contact@example.test')
+            && collect($mail->envelope()->cc)->contains(fn ($address) => $address->address === 'cc@example.test'));
+        $this->assertEquals($this->school->id, $message->recipient_id);
+        $record = SchoolWorkspaceRecord::sole();
+        $this->assertEquals($message->id, $record->data['message_log_id']);
+        $this->assertSame('Example message', $record->data['summary']);
+        $props = $this->get($this->url())->assertOk()->inertiaProps();
+        $this->assertSame('queued', $props['records'][0]['delivery']['status']);
+        $file = $record->files()->sole();
+        $this->get(str_replace('/management', "/management-records/{$record->id}/files/{$file->id}", $this->url()))
+            ->assertDownload('update.pdf');
+        $this->actingAs(User::factory()->create(['role' => 'agent']))->postJson($route, $payload)->assertForbidden();
     }
 
     public function test_dates_are_validated_without_guessing_missing_start_dates(): void

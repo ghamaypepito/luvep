@@ -21,6 +21,8 @@ class MessageLog extends Model
 
     public const SOURCE_ACCOMMODATION_COMPOSE = 'accommodation-mail';
 
+    public const SOURCE_SCHOOL_CORRESPONDENCE = 'school-correspondence';
+
     protected $fillable = [
         'template_key',
         'source',

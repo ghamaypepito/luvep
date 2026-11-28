@@ -8,10 +8,13 @@ use App\Models\Program;
 use App\Models\School;
 use App\Models\SchoolWorkspaceFile;
 use App\Models\SchoolWorkspaceRecord;
+use App\Services\CommunicationService;
+use App\Services\SchoolWorkspaceData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class SchoolWorkspaceController extends Controller
 {
@@ -30,7 +33,63 @@ class SchoolWorkspaceController extends Controller
         $this->authorizeStaff($request);
         $school = School::findOrFail($id);
 
-        return inertia('portal/education/SchoolWorkspace', \App\Services\SchoolWorkspaceData::forSchool($request, $school));
+        return inertia('portal/education/SchoolWorkspace', SchoolWorkspaceData::forSchool($request, $school));
+    }
+
+    public function sendEmail(Request $request, $id, CommunicationService $comms)
+    {
+        $this->authorizeStaff($request);
+        $school = School::findOrFail($id);
+        $data = $request->validate([
+            'to' => 'required|email|max:191',
+            'cc' => 'nullable|array|max:10',
+            'cc.*' => 'email|max:191',
+            'subject' => 'required|string|max:255|not_regex:/[\r\n]/',
+            'body' => 'nullable|string|max:100000',
+            'attachments' => 'nullable|array|max:5',
+            'attachments.*' => 'file|mimes:pdf,doc,docx,xls,xlsx,csv,txt,jpg,jpeg,png,eml,msg|max:10240',
+        ]);
+        $body = $data['body'] ?? '';
+        $summary = trim(html_entity_decode(strip_tags(preg_replace('~</(?:p|div|li)>|<br\s*/?>~i', "\n", $body)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if ($summary === '' && empty($data['attachments'])) {
+            throw ValidationException::withMessages(['body' => 'Write a message or attach a file first.']);
+        }
+        $paths = [];
+        try {
+            foreach ($request->file('attachments', []) as $file) {
+                $path = $file->store('school-workspace/'.$id, 'local');
+                if (! $path) {
+                    throw ValidationException::withMessages(['attachments' => 'The attachment could not be stored. Please try again.']);
+                }
+                $paths[] = ['name' => mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 200), 'path' => $path];
+            }
+            DB::transaction(function () use ($school, $request, $data, $comms, $body, $summary, $paths) {
+                $current = School::whereKey($school->id)->lockForUpdate()->firstOrFail();
+                $to = strtolower($data['to']);
+                $contact = collect(SchoolWorkspaceData::emailContacts($current))->firstWhere('email', $to);
+                if (! $contact) {
+                    throw ValidationException::withMessages(['to' => 'Choose a current email contact for this school.']);
+                }
+                $cc = array_values(array_diff(array_unique(array_map('strtolower', $data['cc'] ?? [])), [$to]));
+                $log = $comms->sendComposedEmail($to, $data['subject'], $body, $paths,
+                    cc: implode(', ', $cc), afterCommit: true, schoolId: $school->id);
+                $record = SchoolWorkspaceRecord::create(['school_id' => $school->id, 'kind' => 'communication',
+                    'created_by' => $request->user()->id, 'updated_by' => $request->user()->id, 'version' => 1,
+                    'data' => ['type' => 'Email', 'status' => 'Awaiting Response', 'subject' => $data['subject'],
+                        'communicated_on' => now('Pacific/Auckland')->toDateString(), 'staff_id' => $request->user()->id,
+                        'contact' => $contact['name'] ?: $to, 'summary' => $summary, 'to' => $to, 'cc' => $cc,
+                        'message_log_id' => $log->id],
+                ]);
+                $record->files()->createMany($paths);
+                ActivityLog::record('school.workspace_saved', ['properties' => ['school_id' => $school->id,
+                    'record_id' => $record->id, 'kind' => 'communication', 'version' => 1]]);
+            });
+        } catch (\Throwable $e) {
+            Storage::disk('local')->delete(array_column($paths, 'path'));
+            throw $e;
+        }
+
+        return back()->with('success', 'School email queued.');
     }
 
     public function save(Request $request, $id, $kind, $recordId = null)
@@ -100,8 +159,9 @@ class SchoolWorkspaceController extends Controller
                     ->when($recordId, fn ($q) => $q->where('id', '!=', $recordId))->exists()) {
                     throw \Illuminate\Validation\ValidationException::withMessages(['record' => 'This student already has an enrolment for this programme and intake. Edit the existing record.']);
                 }
+                $retained = array_intersect_key($record->data ?? [], array_flip(['message_log_id', 'to', 'cc']));
                 $record->fill(['program_id' => $validated['program_id'] ?? null, 'lead_id' => $validated['lead_id'] ?? null,
-                    'data' => array_intersect_key($validated, $fields), 'updated_by' => $request->user()->id, 'version' => $record->version + 1])->save();
+                    'data' => array_intersect_key($validated, $fields) + $retained, 'updated_by' => $request->user()->id, 'version' => $record->version + 1])->save();
                 foreach ($paths as $path) {
                     $record->files()->create($path);
                 }

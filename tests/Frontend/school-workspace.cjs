@@ -11,15 +11,18 @@ const React = require('react'); const { act } = React; const { createRoot } = re
 const posts = [];
 const inertia = { Head: () => null, Link: ({ children, ...props }) => React.createElement('a', props, children), router: { post: (...args) => posts.push(args) } };
 const output = buildSync({ entryPoints: ['resources/js/pages/portal/education/SchoolWorkspace.jsx'], bundle: true, write: false,
-    format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react/jsx-runtime', '@inertiajs/react'] }).outputFiles[0].text;
+    format: 'cjs', platform: 'node', jsx: 'automatic', alias: { '@': path.resolve('resources/js') },
+    external: ['react', 'react/jsx-runtime', 'react-dom', '@inertiajs/react'] }).outputFiles[0].text;
 const loaded = new Module(path.resolve('school-workspace-test.cjs'), module); loaded.filename = path.resolve('school-workspace-test.cjs'); loaded.paths = module.paths;
 loaded.require = name => name === '@inertiajs/react' ? inertia : module.require(name); loaded._compile(output, loaded.filename);
 const Page = loaded.exports.default;
 const root = createRoot(document.getElementById('root'));
 const props = { school: { id: 1, name: 'Synthetic School' }, today: '2026-11-24',
-    programs: [{ id: 10, title: 'Course One', level: 7, status: 'published', tuition_fee: 12345,
+    programs: [{ id: 10, title: 'Course One', level: 7, status: 'published', tuition_fee: 12345, intake_months: 'February, July',
         tuition_fees: [null, { label: 'Legacy zero fee', amount: 0 }], entry_requirements: [null, { intro: 'Recorded requirement', bullets: null }] }, { id: 11, title: 'Course Two', status: 'published' }],
     students: [{ id: 20, first_name: 'Synthetic', last_name: 'Student', school_id: 1 }, { id: 21, first_name: 'Review', last_name: 'Student', school_id: 1 }],
+    studentAssociations: [{ key: '21-0', lead_id: 21, program_id: 10, programme: 'Course One', intake: 'March 2027' }],
+    emailContacts: [{ name: 'School Contact', email: 'contact@example.test' }],
     staff: [{ id: 30, name: 'Synthetic Staff' }],
     statuses: { enrolment: ['Enrolled', 'Currently Studying', 'Completed', 'Deferred', 'Withdrawn'], communication: ['Pending', 'Completed', 'Awaiting Response'], intake: ['Open', 'Closing Soon', 'Closed', 'Fully Booked', 'Postponed'] },
     records: [
@@ -53,6 +56,7 @@ const count = label => [...document.querySelectorAll('main > div:first-of-type >
     await change('Filter intake', 'February');
     assert.equal(document.querySelectorAll('section[aria-label="Student Enrolments"] article').length, 0);
     await click('Communications');
+    assert.equal(button('New email').disabled, false);
     const articles = [...document.querySelectorAll('section[aria-label="Communications"] article')];
     assert.match(articles[0].textContent, /Latest meeting/);
     assert.equal(document.querySelector('a[href*="management-records"]')?.getAttribute('href'), '/portal/education/schools/1/management-records/4/files/8');
@@ -60,7 +64,8 @@ const count = label => [...document.querySelectorAll('main > div:first-of-type >
     assert.match(document.body.textContent, /Legacy zero fee: 0/); assert.match(document.body.textContent, /Recorded requirement/);
     assert.ok(document.querySelector('a[href="/portal/education/programs"]'));
     await click('Intakes'); await change('Filter intake', 'February');
-    assert.equal(document.querySelectorAll('section[aria-label="Intakes"] article').length, 1);
+    assert.equal(document.querySelectorAll('section[aria-label="Intakes"] article').length, 2);
+    assert.match(document.querySelector('section[aria-label="Intakes"]').textContent, /February, July.*From Programs/);
     await click('Edit record'); await change('Intake name / period', 'Updated intake');
     await act(async () => document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
     assert.equal(posts.length, 1); assert.equal(posts[0][0], '/portal/education/schools/1/management/intake/6');
@@ -72,7 +77,7 @@ const count = label => [...document.querySelectorAll('main > div:first-of-type >
     assert.equal(document.querySelectorAll('section[aria-label="Student Enrolments"] article').length, 0);
     await change('Filter status', 'Enrolled');
     assert.equal(document.querySelectorAll('section[aria-label="Student Enrolments"] article').length, 1, 'Enrolled status filter is exact');
-    await click('Communications'); await click('Add communication');
+    await click('Communications'); await click('Log communication');
     await change('Subject', 'New meeting'); await change('Responsible staff', '30'); await change('Summary / details', 'Synthetic meeting notes');
     await act(async () => document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
     assert.equal(posts[1][0], '/portal/education/schools/1/management/communication');
@@ -85,6 +90,11 @@ const count = label => [...document.querySelectorAll('main > div:first-of-type >
     assert.equal(posts[2][0], '/portal/education/schools/1/management/course');
     assert.equal(posts[2][1].program_id, 10); assert.equal(posts[2][1].application_fee, '0'); assert.equal('lead_id' in posts[2][1], false);
     await act(async () => { posts[2][2].onFinish(); });
+    await click('Cancel');
+    await click('Communications'); await click('New email');
+    assert.equal(document.querySelector('form select').value, 'contact@example.test');
+    assert.ok(document.querySelector('form [contenteditable]'), 'The same rich text editor used in Students is available');
+    assert.equal(button('Send email').disabled, false);
     await click('Cancel');
     assert.equal(JSON.stringify(props), immutable, 'Rendering/filtering/editing does not mutate server records');
     assert.equal(posts.length, 3, 'Only the three explicit Save actions write');

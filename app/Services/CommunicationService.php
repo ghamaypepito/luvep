@@ -271,7 +271,7 @@ class CommunicationService
      * the caller. Tags the message log with the relevant Compose workflow.
      * $rawHtml=true sends a self-contained builder email (no branded shell).
      */
-    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false, ?int $partnerId = null, ?array $accommodation = null): MessageLog
+    public function sendComposedEmail(string|array $address, ?string $subject, string $body, array $attachments = [], bool $rawHtml = false, ?int $leadId = null, ?string $toExtra = null, ?string $cc = null, ?string $bcc = null, bool $afterCommit = false, ?int $partnerId = null, ?array $accommodation = null, ?int $schoolId = null): MessageLog
     {
         // Primary To address(es) plus any template "To — also send to" extras,
         // lower-cased and deduped. Accepts a single address or a list (a staff
@@ -284,10 +284,15 @@ class CommunicationService
         $fromEmail = $accommodation === null ? null : config('mail.from.address');
         $fromName = $accommodation === null ? null : config('mail.from.name');
         $log = $this->log([
-            'source' => $accommodation !== null ? MessageLog::SOURCE_ACCOMMODATION_COMPOSE : ($partnerId ? 'partner-tracker' : 'compose'),
+            'source' => match (true) {
+                $schoolId !== null => MessageLog::SOURCE_SCHOOL_CORRESPONDENCE,
+                $accommodation !== null => MessageLog::SOURCE_ACCOMMODATION_COMPOSE,
+                $partnerId !== null => 'partner-tracker',
+                default => 'compose',
+            },
             'channel' => MessageLog::CHANNEL_EMAIL,
-            'recipient_type' => $partnerId ? 'user' : ($leadId ? 'lead' : 'raw'),
-            'recipient_id' => $partnerId ?? $leadId,
+            'recipient_type' => $schoolId !== null ? 'school' : ($partnerId ? 'user' : ($leadId ? 'lead' : 'raw')),
+            'recipient_id' => $schoolId ?? $partnerId ?? $leadId,
             'recipient_address' => implode(', ', $recipients),
             'subject' => $subject,
             'body' => $body,

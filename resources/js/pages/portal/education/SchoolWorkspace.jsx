@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
+import RichTextEditor from '@/components/templates/RichTextEditor';
 
 const tabs = { enrolment: 'Student Enrolments', communication: 'Communications', course: 'Courses & Fees', intake: 'Intakes' };
 const labelClass = 'block text-xs font-semibold text-gray-600';
 const inputClass = 'mt-1 w-full rounded-lg border border-gray-300 p-2 text-sm';
 const name = student => [student?.first_name, student?.middle_name, student?.last_name, student?.suffix].filter(Boolean).join(' ') || 'Unavailable student';
-export default function SchoolWorkspace({ school, records = [], programs = [], students = [], staff = [], statuses = {}, today, initialSection = 'enrolment' }) {
+export default function SchoolWorkspace({ school, records = [], programs = [], students = [], studentAssociations = [], emailContacts = [], staff = [], statuses = {}, today, initialSection = 'enrolment' }) {
     const [tab, setTab] = useState(initialSection);
     const [editing, setEditing] = useState(null);
+    const [composing, setComposing] = useState(false);
     const [programFilter, setProgramFilter] = useState('');
     const [periodFilter, setPeriodFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -16,11 +18,15 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
     const [failure, setFailure] = useState('');
     const base = `/portal/education/schools/${school.id}`;
     const programme = id => programs.find(p => p.id === Number(id));
-    const enrolments = records.filter(r => r.kind === 'enrolment');
+    const enrolments = [
+        ...records.filter(r => r.kind === 'enrolment'),
+        ...studentAssociations.filter(row => row.status).map(row => ({ lead_id: row.lead_id, data: { status: row.status } })),
+    ];
     const intakes = records.filter(r => r.kind === 'intake');
     const communications = records.filter(r => r.kind === 'communication');
     const offered = programs.filter(p => p.status === 'published' && !records.some(r => r.kind === 'course' && r.program_id === p.id && r.data.status !== 'Active'));
     const activeIntakes = intakes.filter(r => offered.some(p => p.id === r.program_id) && ['Open', 'Closing Soon'].includes(r.data.status) && r.data.starts_on >= today);
+    const catalogueIntakes = offered.filter(p => p.intake_months?.trim());
     const pending = communications.filter(r => r.data.status !== 'Completed');
     const uniqueStudents = values => new Set(values.map(r => r.lead_id)).size;
     const stats = [
@@ -33,8 +39,9 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
     ];
     const upcomingCompletions = enrolments.filter(r => ['Enrolled', 'Currently Studying'].includes(r.data.status) && r.data.ends_on >= today)
         .sort((a, b) => a.data.ends_on.localeCompare(b.data.ends_on));
-    const changeTab = key => { setTab(key); setEditing(null); setErrors({}); setFailure(''); setProgramFilter(''); setPeriodFilter(''); setStatusFilter(''); };
+    const changeTab = key => { setTab(key); setEditing(null); setComposing(false); setErrors({}); setFailure(''); setProgramFilter(''); setPeriodFilter(''); setStatusFilter(''); };
     const begin = (record = null) => {
+        setComposing(false);
         setErrors({}); setFailure('');
         setEditing(record ? { ...record.data, id: record.id, version: record.version, program_id: record.program_id || '', lead_id: record.lead_id || '' }
             : { program_id: '', lead_id: '', status: statuses[tab]?.[0] || 'Active', type: 'Email', communicated_on: today, staff_id: '', currency: '', starts_on: '', ends_on: '', opens_on: '', closes_on: '' });
@@ -44,6 +51,9 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
         event.preventDefault();
         const payload = { ...editing };
         delete payload.id;
+        delete payload.message_log_id;
+        delete payload.to;
+        delete payload.cc;
         if (tab === 'communication') delete payload.program_id;
         if (tab !== 'enrolment') delete payload.lead_id;
         setBusy(true); setErrors({}); setFailure('');
@@ -74,13 +84,14 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
     const filtered = records.filter(r => r.kind === tab && matches(r)).sort((a, b) => tab === 'communication'
         ? (b.data.communicated_on || '').localeCompare(a.data.communicated_on || '') || b.id - a.id
         : tab === 'intake' ? a.data.starts_on.localeCompare(b.data.starts_on) : a.id - b.id);
+    const linkedStudents = studentAssociations.filter(row => matches({ program_id: row.program_id, data: { intake: row.intake, status: row.status } }));
+    const listedIntakes = catalogueIntakes.filter(program => matches({ program_id: program.id, data: { intake: program.intake_months } }));
     const errorList = [...Object.entries(errors).map(([key, value]) => `${key}: ${value}`), ...(failure ? [failure] : [])];
     return <main className="mx-auto max-w-6xl space-y-5 p-5">
         <Head title={`${school.name} — School dashboard`} />
         <Link className="text-blue-700 underline" href={`${base}/profile#school-information`}>School information</Link>{' · '}
         <Link className="text-blue-700 underline" href="/portal/education/schools">All schools</Link>
         <h1 className="text-2xl font-bold">{school.name}</h1>
-        <p className="text-sm text-gray-600">Confirmed school records. Planned programmes and month-only catalogue intakes are not automatically treated as enrolments or exact dates.</p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{stats.map(([label, count]) => <div key={label} className="rounded-xl border bg-white p-4"><div className="text-2xl font-bold">{count}</div><div>{label}</div></div>)}</div>
         <div className="grid gap-4 md:grid-cols-3">
             <Summary title="Upcoming course completions" rows={upcomingCompletions.map(r => `${name(students.find(s => s.id === r.lead_id))} · ${r.data.ends_on}`)} />
@@ -90,17 +101,18 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
         </div>
         <nav className="flex flex-wrap gap-2" aria-label="School sections">{Object.entries(tabs).map(([key, label]) => <button key={key} aria-pressed={key === tab} onClick={() => changeTab(key)} className={`rounded-lg border p-3 ${tab === key ? 'bg-emerald-800 text-white' : 'bg-white'}`}>{label}</button>)}</nav>
         {tab === 'course' && <p className="text-sm">Course names, levels, durations, tuition, entry requirements and catalogue status use existing <Link className="text-blue-700 underline" href="/portal/education/programs">Programs management</Link>. Add/edit courses there; use Archive rather than Delete to retain history. School-specific application fees, status and private brochures are below.</p>}
-        {tab === 'enrolment' && <><p className="text-sm">Add verified enrolments using existing student profiles. These statuses are school enrolment statuses; saving does not change a client’s Education stage or visa outcome. Multiple programmes count once per student in each summary.</p>
-            <details className="rounded-lg border p-3"><summary>Existing school associations to review (not confirmed enrolments)</summary>
-                {students.filter(s => s.school_id === school.id && !enrolments.some(r => r.lead_id === s.id)).map(s => <Link key={s.id} className="mt-2 block text-blue-700 underline" href={`/portal/education/leads/${s.id}`}>{name(s)}</Link>)}
-                <p className="text-sm text-gray-600">Confirm programme, dates and enrolment status before adding these students to the totals. Other programme-school associations can be reviewed in their student profiles.</p>
-            </details></>}
+        {tab === 'enrolment' && <p className="text-sm">Student profile links appear automatically. Totals include confirmed school records and recorded course progress that can be matched to one programme.</p>}
+        {tab === 'intake' && <p className="text-sm">Intake periods come from Programs. The upcoming count uses confirmed dates.</p>}
         <div className="flex flex-wrap gap-3">
             {tab !== 'communication' && <select aria-label="Filter programme" className={inputClass} value={programFilter} onChange={e => setProgramFilter(e.target.value)}><option value="">All programmes</option>{programs.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</select>}
             {['intake', 'enrolment'].includes(tab) && <input aria-label="Filter intake" placeholder="Filter intake period" className={inputClass} value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} />}
             {statuses[tab] && <select aria-label="Filter status" className={inputClass} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">All statuses</option>{statuses[tab].map(status => <option key={status}>{status}</option>)}</select>}
-            <button className="rounded-lg bg-gray-900 p-3 text-white" onClick={() => begin()}>Add {tab === 'course' ? 'course details' : tab}</button>
+            {tab === 'communication' && <button type="button" disabled={!emailContacts.length}
+                className="rounded-lg bg-gray-900 p-3 text-white disabled:opacity-50" onClick={() => { setEditing(null); setComposing(true); }}>New email</button>}
+            <button className="rounded-lg bg-gray-900 p-3 text-white" onClick={() => begin()}>{tab === 'communication' ? 'Log communication' : `Add ${tab === 'course' ? 'course details' : tab}`}</button>
         </div>
+        {tab === 'communication' && !emailContacts.length && <p className="text-sm text-gray-600">Add a contact email under School information to send email from here.</p>}
+        {composing && <SchoolEmail contacts={emailContacts} url={`${base}/management-email`} onClose={() => setComposing(false)} />}
         {editing && <form onSubmit={save} className="space-y-4 rounded-xl border bg-white p-5">
             <h2 className="font-bold">{editing.id ? 'Edit' : 'Add'} {tabs[tab]}</h2>
             <div className="grid gap-4 md:grid-cols-2">
@@ -136,12 +148,69 @@ export default function SchoolWorkspace({ school, records = [], programs = [], s
             }) : filtered.map(record => <article key={record.id} className="space-y-2 rounded-xl border bg-white p-4">
                 {tab === 'enrolment' && <><Link className="font-bold text-blue-700 underline" href={`/portal/education/leads/${record.lead_id}`}>{name(students.find(s => s.id === record.lead_id))}</Link><p>{programme(record.program_id)?.title || 'Unavailable programme'} · {record.data.intake}</p><p>Start: {record.data.starts_on || 'Not specified'} · Completion: {record.data.ends_on || 'Not specified'}</p></>}
                 {tab === 'communication' && <><h2 className="font-bold">{record.data.communicated_on} · {record.data.subject}</h2><p>{record.data.type} · {record.data.contact || 'Contact not specified'} · {staff.find(s => s.id === Number(record.data.staff_id))?.name || 'Former/unavailable staff'}</p><p className="whitespace-pre-wrap">{record.data.summary}</p><p>Follow-up: {record.data.follow_up || 'Not specified'} · {record.data.follow_up_on || 'Date not specified'}</p></>}
+                {tab === 'communication' && record.data.to && <p>To {record.data.to}{record.data.cc?.length ? ` · CC ${record.data.cc.join(', ')}` : ''}{record.delivery && ` · Delivery ${record.delivery.status}`}</p>}
                 {tab === 'intake' && <><h2 className="font-bold">{programme(record.program_id)?.title || 'Unavailable programme'} · {record.data.name}</h2><p>Applications: {record.data.opens_on || 'Not specified'} → {record.data.closes_on || 'Not specified'}</p><p>Course: {record.data.starts_on} → {record.data.ends_on || 'Not specified'} · {record.data.campus || 'Campus not specified'}</p></>}
                 <p>{record.data.status}</p>{files(record)}<button className="text-blue-700 underline" onClick={() => begin(record)}>Edit record</button>
             </article>)}
-            {tab !== 'course' && !filtered.length && <p>No matching records. Existing study plans have not been converted into confirmed enrolments.</p>}
+            {tab === 'enrolment' && linkedStudents.map(row => <article key={row.key} className="space-y-2 rounded-xl border bg-white p-4">
+                <Link className="font-bold text-blue-700 underline" href={`/portal/education/leads/${row.lead_id}`}>{name(students.find(s => s.id === row.lead_id))}</Link>
+                <p>{row.programme || 'Programme not recorded'} · {row.intake || 'Intake not recorded'}</p>
+                <p className="text-sm text-gray-600">From student profile · {row.status || 'Enrolment to verify'}</p>
+                {row.starts_on && <p>Start: {row.starts_on}</p>}
+                {row.program_id && <button className="text-blue-700 underline" onClick={() => {
+                    begin();
+                    setEditing(previous => ({ ...previous, lead_id: row.lead_id, program_id: row.program_id,
+                        intake: row.intake || '', status: row.status || previous.status, starts_on: row.starts_on || '' }));
+                }}>Confirm enrolment</button>}
+            </article>)}
+            {tab === 'intake' && listedIntakes.map(program => <article key={program.id} className="space-y-2 rounded-xl border bg-white p-4">
+                <h2 className="font-bold">{program.title} · {program.intake_months}</h2>
+                <p>{program.location || 'Campus not specified'}</p>
+                <p className="text-sm text-gray-600">From Programs · Dates and availability to verify</p>
+            </article>)}
+            {tab !== 'course' && !filtered.length && !(tab === 'intake' && listedIntakes.length)
+                && !(tab === 'enrolment' && linkedStudents.length) && <p>No matching records.</p>}
         </section>
     </main>;
+}
+function SchoolEmail({ contacts, url, onClose }) {
+    const [to, setTo] = useState(contacts.length === 1 ? contacts[0].email : '');
+    const [cc, setCc] = useState('');
+    const [subject, setSubject] = useState('');
+    const [body, setBody] = useState('');
+    const [attachments, setAttachments] = useState([]);
+    const [busy, setBusy] = useState(false);
+    const [errors, setErrors] = useState({});
+    const send = event => {
+        event.preventDefault();
+        setBusy(true);
+        setErrors({});
+        router.post(url, { to, cc: cc.split(/[,;]/).map(address => address.trim()).filter(Boolean), subject, body, attachments }, {
+            forceFormData: true, preserveScroll: true, onSuccess: onClose, onError: setErrors, onFinish: () => setBusy(false),
+        });
+    };
+    return <form onSubmit={send} className="space-y-3 rounded-xl border bg-white p-5">
+        <h2 className="font-bold">New email</h2>
+        <label className={labelClass}>To
+            <select className={inputClass} value={to} onChange={event => setTo(event.target.value)} required>
+                <option value="">Select school contact</option>
+                {contacts.map(contact => <option key={contact.email} value={contact.email}>{contact.name ? `${contact.name} · ${contact.email}` : contact.email}</option>)}
+            </select>
+        </label>
+        <label className={labelClass}>CC (optional)
+            <input className={inputClass} value={cc} onChange={event => setCc(event.target.value)} placeholder="Separate email addresses with commas" />
+        </label>
+        <label className={labelClass}>Subject
+            <input className={inputClass} value={subject} onChange={event => setSubject(event.target.value)} maxLength={255} required />
+        </label>
+        <RichTextEditor value={body} onChange={setBody} />
+        <label className={labelClass}>Attachments (up to 5 files, 10 MB each)
+            <input type="file" multiple className={inputClass} onChange={event => setAttachments(Array.from(event.target.files))} />
+        </label>
+        {Object.keys(errors).length > 0 && <div role="alert" className="text-red-700">{Object.values(errors).map((error, index) => <p key={index}>{error}</p>)}</div>}
+        <button disabled={busy || !to} className="rounded-lg bg-emerald-800 p-3 text-white disabled:opacity-50">{busy ? 'Queuing…' : 'Send email'}</button>{' '}
+        <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
+    </form>;
 }
 function Summary({ title, rows }) {
     return <section className="rounded-xl border bg-white p-4"><h2 className="font-bold">{title}</h2>{rows.length ? <ul>{rows.map((row, i) => <li className="mt-2 text-sm" key={i}>{row}</li>)}</ul> : <p className="mt-2 text-sm text-gray-500">No recorded items.</p>}</section>;
