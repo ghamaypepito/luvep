@@ -510,7 +510,8 @@ function CreateCaseModal({ stages, visaTypes, agents = [], editing = null, canCo
         });
     };
 
-    const fullName = `${data.first_name} ${data.last_name}`.trim() || editing?.name || "New case";
+    const fullName = [data.first_name, data.middle_name, data.last_name].map(part => part.trim()).filter(Boolean).join(" ")
+        || editing?.name || "New case";
 
     return (
         <div

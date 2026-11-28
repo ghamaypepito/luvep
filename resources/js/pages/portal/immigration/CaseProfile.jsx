@@ -163,7 +163,7 @@ export default function CaseProfile() {
     };
     const ActiveTab = TABS.find((t) => t.key === activeTab)?.Comp ?? PersonalTab;
 
-    const fullName = `${lead.first_name ?? ""} ${lead.last_name ?? ""}`.trim() || lead.lead_id || "Case";
+    const fullName = lead.full_name || lead.lead_id || "Case";
 
     return (
         <div className="max-w-[1300px] mx-auto pb-12 space-y-5">

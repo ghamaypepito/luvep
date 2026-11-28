@@ -73,6 +73,25 @@ class CaseProfileDataLoadingTest extends TestCase
             );
     }
 
+    public function test_saved_middle_name_is_displayed_on_the_case_profile_and_cases_list(): void
+    {
+        $this->adminActing();
+        $case = $this->makeCase();
+        $base = "/portal/immigration/cases/{$case->id}";
+        $this->get($base.'/profile')->assertInertia(fn (Assert $page) => $page->where('lead.full_name', 'Pat Patel'));
+
+        $this->from($base.'/profile')->post($base.'/personal', [
+            'first_name' => $case->first_name, 'middle_name' => '  Renée  ', 'last_name' => $case->last_name, 'email' => $case->email,
+        ])
+            ->assertSessionHasNoErrors()->assertRedirect($base.'/profile');
+        $this->get($base.'/profile')->assertInertia(fn (Assert $page) => $page
+            ->where('lead.middle_name', 'Renée')->where('lead.full_name', 'Pat Renée Patel'));
+        $this->get('/portal/immigration/cases')->assertInertia(fn (Assert $page) => $page->where('cases.0.name', 'Pat Renée Patel'));
+
+        $this->actingAs(User::factory()->create(['role' => 'immigration_manager']));
+        $this->get($base.'/profile')->assertInertia(fn (Assert $page) => $page->where('lead.full_name', 'Pat Renée Patel'));
+    }
+
     public function test_legacy_assessment_case_loads_intake_data_for_matching_name_and_email(): void
     {
         $this->adminActing();

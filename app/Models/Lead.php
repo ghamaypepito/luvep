@@ -726,6 +726,13 @@ class Lead extends Model
 
     // ─── Computed accessors used by the Personal Info tab ─────────────
 
+    public function fullName(): string
+    {
+        $parts = array_map(fn ($part) => trim((string) $part), [$this->first_name, $this->middle_name, $this->last_name]);
+
+        return implode(' ', array_filter($parts, fn ($part) => $part !== ''));
+    }
+
     /**
      * Age in whole years, derived from `dob`. Overrides the legacy `age`
      * column so the value can't drift out of sync with the date-of-birth

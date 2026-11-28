@@ -55,7 +55,7 @@ export default function CaseProfileHeader({
 
     const go = (tab) => onNavigate && onNavigate(tab);
 
-    const fullName = `${lead.first_name ?? ""} ${lead.last_name ?? ""}`.trim() || lead.lead_id || "Unnamed case";
+    const fullName = lead.full_name || lead.lead_id || "Unnamed case";
     const visa = lead.inz_visa_type || intake?.data?.visa_type_label || "Visa type not set";
     const currentVisaId = visaTypes.find((v) => v.name === lead.inz_visa_type)?.id ?? "";
     const stage = lead.immigration_stage || lead.stage || "Stage not set";
